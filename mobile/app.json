@@ -45,7 +45,9 @@
           "color": "#C9A96E"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-splash-screen",
+      "expo-status-bar"
     ]
   }
 }
