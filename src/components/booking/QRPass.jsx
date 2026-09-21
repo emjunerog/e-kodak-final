@@ -218,6 +218,25 @@ export default function QRPass({
                 <Printer size={14} /> Print Pass
               </button>
             </div>
+
+            {/* ── Companion App Banner ── */}
+            <div className="mt-5 rounded-2xl border border-gold/30 bg-gradient-to-br from-[#1a1508] to-[#0f0f0a] p-4 text-left">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-gold/10 border border-gold/30 flex items-center justify-center">
+                  <QrCode size={18} className="text-gold" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-gold mb-0.5 font-body">
+                    📱 Track live in the E-Kodak App
+                  </p>
+                  <p className="text-[11px] text-neutral-400 leading-relaxed font-body">
+                    Scan this QR code in the <strong className="text-neutral-300">E-Kodak Companion App</strong> to
+                    get real-time status updates, milestone tracking, and delivery
+                    notifications directly on your phone.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -788,11 +788,35 @@ export default function BookingPage() {
 
           <div className="space-y-3">
             <Link to={`/dashboard/bookings/${bookingResult.id}`} className="btn-primary w-full flex items-center justify-center gap-2 py-3.5 text-sm font-semibold">
-              View Booking Details & Order <ArrowRight size={16} />
+              View Booking Details &amp; Order <ArrowRight size={16} />
             </Link>
             <Link to="/dashboard/bookings" className="btn-outline w-full flex items-center justify-center py-3 text-sm">
               Go to My Bookings
             </Link>
+          </div>
+
+          {/* ── Mobile Companion App Banner ── */}
+          <div className="mt-5 rounded-2xl border border-gold/30 bg-gradient-to-br from-[#1a1508]/80 to-[#0f0f0a]/80 p-4 text-left">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-gold/10 border border-gold/30 flex items-center justify-center">
+                <span className="text-lg">📱</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gold mb-1 font-body">
+                  Track your booking live on your phone
+                </p>
+                <p className="text-xs text-neutral-400 leading-relaxed font-body mb-2">
+                  Download the <strong className="text-neutral-300">E-Kodak Companion App</strong> and scan your QR
+                  pass above to receive real-time updates, milestone notifications, and delivery alerts
+                  directly on your device.
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] text-neutral-500 font-body italic">
+                    ✓ Status updates &nbsp;·&nbsp; ✓ Milestone tracking &nbsp;·&nbsp; ✓ Delivery alerts
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

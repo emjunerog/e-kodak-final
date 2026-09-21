@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Environment variables — NEVER commit
+.env
+*.env.local
+
+# Build outputs
+android/
+ios/
+*.apk
+*.aab
+*.ipa
+
+# OS cruft
+.DS_Store
+Thumbs.db

@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "E-Kodak Studio",
+    "slug": "ekodak-companion",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0B0E"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.ekodak.companion"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B0B0E"
+      },
+      "package": "com.ekodak.companion",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "E-Kodak needs camera access to scan your booking QR code."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#C9A96E"
+        }
+      ],
+      "expo-secure-store",
+      "expo-blur"
+    ]
+  }
+}
