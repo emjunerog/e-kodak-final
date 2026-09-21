@@ -42,3 +42,6 @@ test-query.js
 Thumbs.db
 ehthumbs.db
 desktop.ini
+
+# Android native skeleton (Expo mobile/ is active app)
+EkodakAndroid/
