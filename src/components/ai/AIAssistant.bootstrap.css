@@ -1,0 +1,592 @@
+/**
+ * AIAssistant.bootstrap.css
+ * =========================
+ * Premium Bootstrap-powered CSS for E-Kodak AI Studio Assistant & Co-Pilot.
+ * Pixel-perfect spacing, strictly bounded vertical flex, high-contrast typography,
+ * smooth momentum scrolling, and gold glassmorphic accents.
+ */
+
+:root {
+  --ai-gold: #c9a96e;
+  --ai-gold-light: #e8d5b0;
+  --ai-gold-dark: #a8843a;
+  --ai-bg-dark: #151413;
+  --ai-card-surface: #1e1c1a;
+  --ai-border: rgba(255, 255, 255, 0.14);
+  --ai-border-gold: rgba(201, 169, 110, 0.4);
+  --ai-text-main: #ffffff;
+  --ai-text-muted: #d6d1c8;
+}
+
+/* ── Container & Floating Launcher ────────────────────────────────────────── */
+
+.ai-assistant-wrapper {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 1060;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  user-select: none;
+}
+
+.ai-launcher-btn {
+  position: relative;
+  width: 3.6rem;
+  height: 3.6rem;
+  border-radius: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #c9a96e 0%, #a8843a 100%);
+  color: #121110;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 12px 28px -4px rgba(201, 169, 110, 0.5), 0 8px 16px -6px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  outline: none;
+}
+
+.ai-launcher-btn:hover {
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 16px 32px -4px rgba(201, 169, 110, 0.65), 0 12px 20px -6px rgba(0, 0, 0, 0.7);
+  color: #000000;
+}
+
+.ai-launcher-btn:active {
+  transform: translateY(0) scale(0.96);
+}
+
+.ai-launcher-btn.is-active {
+  background: #252321;
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  transform: rotate(90deg) scale(0.96);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.7);
+}
+
+.ai-launcher-pulse {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #10b981;
+  border: 2px solid #151413;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.9);
+  animation: ai-pulse 2s infinite;
+}
+
+@keyframes ai-pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.75); }
+  70% { transform: scale(1.1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.ai-launcher-tooltip {
+  position: absolute;
+  right: calc(100% + 14px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(26, 24, 23, 0.96);
+  border: 1px solid rgba(201, 169, 110, 0.35);
+  color: #ffffff;
+  padding: 0.35rem 0.8rem;
+  border-radius: 50rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.ai-launcher-btn:hover .ai-launcher-tooltip {
+  opacity: 1;
+  transform: translateY(-50%) translateX(-4px);
+}
+
+/* ── Bounded Modal Window Shell ───────────────────────────────────────────── */
+
+.ai-modal-card {
+  width: 430px;
+  max-width: min(430px, calc(100vw - 2rem));
+  height: 600px;
+  max-height: calc(100vh - 4.5rem);
+  display: flex !important;
+  flex-direction: column !important;
+  background: rgba(21, 20, 19, 0.97) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(201, 169, 110, 0.32) !important;
+  border-radius: 1.35rem !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.85), 0 0 35px rgba(201, 169, 110, 0.14) !important;
+  overflow: hidden !important;
+  animation: ai-slide-up 0.26s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  margin-bottom: 0.5rem;
+}
+
+@keyframes ai-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ── Universal Single Header Bar ─────────────────────────────────────────── */
+
+.ai-modal-header {
+  padding: 0.85rem 1.15rem;
+  background: linear-gradient(135deg, rgba(32, 30, 27, 0.98), rgba(42, 38, 33, 0.95)) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.ai-brand-badge {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(201, 169, 110, 0.2);
+  border: 1px solid rgba(201, 169, 110, 0.4);
+  color: #f5d89f;
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+
+.ai-header-title {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  font-size: 0.88rem !important;
+  line-height: 1.2 !important;
+  margin: 0 !important;
+}
+
+.ai-status-subtitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #a8a29e;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.ai-dot-online {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.8);
+  flex-shrink: 0;
+}
+
+.ai-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.ai-header-btn {
+  background: transparent;
+  border: none;
+  color: #c2bcb2;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.ai-header-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+/* ── Content Viewport (Strictly Bounded) ──────────────────────────────────── */
+
+.ai-modal-body {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0.85rem 1.15rem;
+  background: transparent;
+}
+
+/* ── Screen Breadcrumb / Title Bar (For sub-screens) ──────────────────────── */
+
+.ai-subscreen-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.65rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.ai-subscreen-title {
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* ── Suggestion Chips (Compact Horizontal Carousel) ──────────────────────── */
+
+.ai-chips-scroll {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.65rem;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+
+.ai-chips-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.ai-chip-pill {
+  padding: 0.32rem 0.8rem;
+  border-radius: 50rem;
+  font-size: 0.73rem;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f0ede8;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ai-chip-pill:hover:not(:disabled) {
+  background: rgba(201, 169, 110, 0.22);
+  border-color: #c9a96e;
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.ai-chip-pill:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Scrollable Chat Message Stream ───────────────────────────────────────── */
+
+.ai-msg-stream {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.4rem;
+  margin-bottom: 0.65rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(201, 169, 110, 0.4) transparent;
+}
+
+.ai-msg-stream::-webkit-scrollbar {
+  width: 5px;
+}
+
+.ai-msg-stream::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ai-msg-stream::-webkit-scrollbar-thumb {
+  background: rgba(201, 169, 110, 0.35);
+  border-radius: 5px;
+}
+
+.ai-msg-stream::-webkit-scrollbar-thumb:hover {
+  background: rgba(201, 169, 110, 0.6);
+}
+
+/* ── Message Bubbles (Clear Distinction) ──────────────────────────────────── */
+
+.ai-user-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.ai-bot-row {
+  display: flex;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.ai-bubble-user {
+  background: linear-gradient(135deg, #c9a96e 0%, #b89355 100%) !important;
+  color: #121110 !important;
+  border-radius: 1.15rem 1.15rem 0.25rem 1.15rem !important;
+  padding: 0.65rem 0.95rem !important;
+  font-size: 0.84rem !important;
+  font-weight: 500 !important;
+  line-height: 1.45 !important;
+  box-shadow: 0 4px 14px rgba(201, 169, 110, 0.28) !important;
+  max-width: 82%;
+  word-break: break-word;
+}
+
+.ai-bubble-bot {
+  background: rgba(30, 28, 26, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #f7f5f0 !important;
+  border-radius: 1.15rem 1.15rem 1.15rem 0.25rem !important;
+  padding: 0.85rem 1rem !important;
+  font-size: 0.84rem !important;
+  line-height: 1.55 !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45) !important;
+  max-width: 88%;
+  word-break: break-word;
+}
+
+.ai-avatar-user {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: #c9a96e;
+  color: #121110;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.ai-avatar-bot {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: rgba(201, 169, 110, 0.15);
+  border: 1px solid rgba(201, 169, 110, 0.35);
+  color: #f5d89f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.92rem;
+  flex-shrink: 0;
+}
+
+/* ── Fixed Footer & Input Group ───────────────────────────────────────────── */
+
+.ai-modal-footer {
+  padding: 0.75rem 1.15rem;
+  background: rgba(18, 17, 16, 0.98);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.ai-input-wrapper {
+  display: flex;
+  align-items: center;
+  background: rgba(14, 13, 12, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50rem;
+  padding: 0.3rem 0.4rem 0.3rem 1.1rem;
+  transition: all 0.25s ease;
+}
+
+.ai-input-wrapper:focus-within {
+  border-color: #c9a96e;
+  box-shadow: 0 0 0 3px rgba(201, 169, 110, 0.25);
+  background: rgba(18, 17, 16, 1);
+}
+
+.ai-input-field {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #ffffff !important;
+  font-size: 0.84rem;
+  outline: none;
+  padding-right: 0.5rem;
+}
+
+.ai-input-field::placeholder {
+  color: #9c968d !important;
+  opacity: 1;
+}
+
+.ai-input-send-btn {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #c9a96e, #a8843a);
+  border: none;
+  color: #121110;
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.ai-input-send-btn:hover:not(:disabled) {
+  transform: scale(1.06);
+  background: linear-gradient(135deg, #dfc086, #b8934d);
+  color: #000000;
+}
+
+.ai-input-send-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── High-Contrast Home View & Action Cards ───────────────────────────────── */
+
+.ai-home-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ai-action-card {
+  padding: 0.95rem;
+  border-radius: 0.95rem;
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  text-align: left;
+  width: 100%;
+}
+
+.ai-action-card:hover {
+  background: rgba(201, 169, 110, 0.12) !important;
+  border-color: rgba(201, 169, 110, 0.5) !important;
+  transform: translateY(-2px);
+}
+
+.ai-action-card-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.ai-action-card-title {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  font-size: 0.84rem !important;
+  line-height: 1.3 !important;
+  margin: 0 !important;
+}
+
+.ai-action-card-subtitle {
+  color: #b8b3ab !important;
+  font-size: 0.73rem !important;
+  line-height: 1.35 !important;
+  margin: 0 !important;
+}
+
+/* ── Accordion & List Item Styling ────────────────────────────────────────── */
+
+.ai-accordion-card {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 0.85rem;
+  overflow: hidden;
+  margin-bottom: 0.55rem;
+  transition: border-color 0.2s ease;
+}
+
+.ai-accordion-card:hover {
+  border-color: rgba(201, 169, 110, 0.4);
+}
+
+.ai-accordion-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem 0.95rem;
+  background: transparent;
+  border: none;
+  color: #ffffff !important;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-accordion-content {
+  padding: 0 0.95rem 0.85rem 0.95rem;
+  color: #d1cdc7 !important;
+  font-size: 0.79rem;
+  line-height: 1.55;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 0.55rem;
+}
+
+/* ── Clean Copy Button (Inside Bot Bubble) ────────────────────────────────── */
+
+.ai-bubble-copy-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #c9c3b8;
+  border-radius: 0.45rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.ai-bubble-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(201, 169, 110, 0.5);
+  color: #ffffff;
+}
+
+.ai-bubble-copy-btn.copied {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.4);
+  background: rgba(52, 211, 153, 0.12);
+}

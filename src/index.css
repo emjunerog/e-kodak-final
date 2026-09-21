@@ -1,0 +1,510 @@
+/*
+ * index.css
+ * =========
+ * GLOBAL BASE STYLES
+ *
+ * This file does three things:
+ * 1. Loads Tailwind's base, component, and utility layers
+ * 2. Defines global CSS custom properties (design tokens available in plain CSS)
+ * 3. Sets base element styles (typography, scrollbar, selection, etc.)
+ *
+ * Do NOT put component-specific styles here.
+ * Component styles belong in their respective JSX files via Tailwind classes.
+ */
+
+/* ── Tailwind Layers ──────────────────────────────────────────────────────── */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── CSS Custom Properties (Design Tokens) ───────────────────────────────── */
+:root {
+  /* Colors */
+  --color-primary: #1a1a1a;
+  --color-gold: #c9a96e;
+  --color-gold-light: #e8d5b0;
+  --color-gold-dark: #a8843a;
+  --color-bg: #fafaf8;
+  --color-surface: #ffffff;
+  --color-text: #0f0f0f;
+  --color-text-muted: #6b6358;
+
+  /* Fonts */
+  --font-heading: "Playfair Display", Georgia, serif;
+  --font-body: "Inter", system-ui, sans-serif;
+
+  /* Transitions */
+  --transition-base: 200ms ease;
+  --transition-smooth: 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* ── Base Element Styles ─────────────────────────────────────────────────── */
+@layer base {
+  html {
+    font-size: 17.5px;
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply font-body text-primary bg-neutral-50;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    font-feature-settings: "kern" 1, "liga" 1;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  /* Increase readability and prevent microscopic text across all admin and customer dashboards */
+  .text-\[9px\],
+  .text-\[10px\],
+  .text-\[11px\] {
+    font-size: 0.8125rem !important; /* ~14.2px */
+    line-height: 1.25rem !important;
+  }
+  .text-\[12px\] {
+    font-size: 0.875rem !important; /* ~15.3px */
+    line-height: 1.35rem !important;
+  }
+
+  /* Heading elements use the editorial serif font */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-heading;
+  }
+
+  /* Prevent technical monospace fonts across the app */
+  code,
+  kbd,
+  samp,
+  pre,
+  tt {
+    font-family: var(--font-body) !important;
+  }
+
+  /* Better image defaults */
+  img {
+    @apply block max-w-full;
+  }
+
+  /* Custom scrollbar — minimal, warm-toned */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-neutral-100;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-neutral-300 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gold-dark;
+  }
+
+  /* Text selection — gold accent */
+  ::selection {
+    background-color: rgba(201, 169, 110, 0.25);
+    color: var(--color-primary);
+  }
+
+  /* Focus visible ring — accessibility */
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+}
+
+/* ── Reusable Component Layer ────────────────────────────────────────────── */
+@layer components {
+  /* ── Button Variants ─────────────────────────────────────────────────── */
+
+  /* Primary button — dark fill */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-primary text-white font-body font-medium text-sm tracking-wide transition-all duration-300 ease-smooth hover:bg-primary-light hover:shadow-warm-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold active:scale-[0.98];
+  }
+
+  /* Gold accent button */
+  .btn-gold {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-gold text-primary font-body font-medium text-sm tracking-wide transition-all duration-300 ease-smooth hover:bg-gold-dark hover:text-white hover:shadow-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold active:scale-[0.98];
+  }
+
+  /* Outline button — minimal */
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg border border-primary text-primary font-body font-medium text-sm tracking-wide bg-transparent transition-all duration-300 ease-smooth hover:bg-primary hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary active:scale-[0.98];
+  }
+
+  /* Ghost button — on dark backgrounds */
+  .btn-ghost-white {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg border border-white/40 text-white font-body font-medium text-sm tracking-wide bg-white/10 backdrop-blur-sm transition-all duration-300 ease-smooth hover:bg-white/20 hover:border-white/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 active:scale-[0.98];
+  }
+
+  /* ── Section Layout ──────────────────────────────────────────────────── */
+  .section-padding {
+    @apply py-20 md:py-28 lg:py-32;
+  }
+
+  .container-custom {
+    @apply max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10;
+  }
+
+  /* ── Section Heading ─────────────────────────────────────────────────── */
+  .section-eyebrow {
+    @apply font-body text-gold font-medium text-xs uppercase tracking-[0.2em] mb-3;
+  }
+
+  .section-title {
+    @apply font-heading text-primary text-3xl sm:text-4xl lg:text-5xl leading-tight;
+  }
+
+  .section-subtitle {
+    @apply font-body text-neutral-500 text-base sm:text-lg leading-relaxed mt-4 max-w-2xl;
+  }
+
+  /* ── Card Base ───────────────────────────────────────────────────────── */
+  .card {
+    @apply bg-surface rounded-xl shadow-card transition-all duration-400 ease-smooth;
+  }
+
+  .card-hover {
+    @apply hover:shadow-card-hover hover:-translate-y-1;
+  }
+
+  /* ── Scroll Reveal Animation ─────────────────────────────────────────── */
+  .reveal {
+    @apply opacity-0 translate-y-6 transition-all duration-700 ease-smooth;
+  }
+
+  .reveal.is-visible {
+    @apply opacity-100 translate-y-0;
+  }
+
+  /* ── Gold Divider ────────────────────────────────────────────────────── */
+  .gold-divider {
+    @apply w-12 h-px bg-gold my-4;
+  }
+
+  /* ── Glassmorphism ───────────────────────────────────────────────────── */
+  .glass {
+    @apply bg-white/70 backdrop-blur-md border border-white/40 shadow-sm;
+  }
+  
+  .glass-dark {
+    @apply bg-primary/80 backdrop-blur-md border border-primary/40 shadow-md;
+  }
+  
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-lg border border-white/50 shadow-card transition-all duration-400 ease-smooth;
+  }
+  
+  .glass-card-hover {
+    @apply hover:shadow-card-hover hover:-translate-y-1 hover:bg-white/90;
+  }
+
+  /* ── Dashboard Ambient Background Gradients ──────────────────────────── */
+  .dashboard-gradient-bg {
+    background-color: #f7f6f2;
+    background-image: 
+      radial-gradient(1200px circle at 85% -10%, rgba(232, 213, 176, 0.22) 0%, transparent 60%),
+      radial-gradient(1000px circle at 10% 110%, rgba(201, 169, 110, 0.08) 0%, transparent 50%),
+      linear-gradient(180deg, #fafaf8 0%, #f5f4f0 45%, #ede9e1 100%);
+    background-attachment: local;
+  }
+}
+
+/* ── Utility Layer Additions ─────────────────────────────────────────────── */
+@layer utilities {
+
+  /* Respect user's reduced-motion preference */
+  @media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  /* Text balance for headings */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Prevent image drag */
+  .no-drag {
+    -webkit-user-drag: none;
+    user-drag: none;
+  }
+
+  /* Hide scrollbar while retaining scroll functionality */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Animation utility classes */
+  .animate-slide-up {
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.25s ease-out forwards;
+  }
+
+  .animate-fade-up {
+    animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  /* alias — some components use hide-scrollbar, others use scrollbar-hide */
+  .hide-scrollbar::-webkit-scrollbar,
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar,
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* ── Global Keyframe Animations ──────────────────────────────────────────────
+   @keyframes cannot live inside @layer blocks — they must be at the root.
+   These are consumed by .animate-slide-up and .animate-fade-in above.
+──────────────────────────────────────────────────────────────────────────── */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Global Dark Mode & Compact Layout Styling ───────────────────────────── */
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #0c0b0a;
+  color: #ede9e1;
+}
+
+html.dark .bg-white {
+  background-color: #141312 !important;
+  color: #ede9e1;
+}
+
+html.dark .bg-neutral-50 {
+  background-color: #1a1917 !important;
+}
+
+html.dark .bg-neutral-100 {
+  background-color: #22201d !important;
+}
+
+html.dark .bg-neutral-200 {
+  background-color: #2e2b27 !important;
+}
+
+html.dark .border-neutral-100,
+html.dark .border-neutral-200,
+html.dark .border-neutral-200\/80,
+html.dark .border-neutral-200\/70,
+html.dark .border-neutral-200\/90 {
+  border-color: #292723 !important;
+}
+
+html.dark .divide-neutral-50 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-neutral-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #292723 !important;
+}
+
+html.dark .text-primary {
+  color: #f5f4f0 !important;
+}
+
+html.dark .text-neutral-900,
+html.dark .text-neutral-800,
+html.dark .text-neutral-700 {
+  color: #dedad2 !important;
+}
+
+html.dark .text-neutral-600,
+html.dark .text-neutral-500 {
+  color: #a8a296 !important;
+}
+
+html.dark .text-neutral-400 {
+  color: #8c8577 !important;
+}
+
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #1c1b18 !important;
+  color: #ede9e1 !important;
+  border-color: #33302a !important;
+}
+
+html.dark .btn-outline {
+  border-color: #3a3731 !important;
+  color: #ede9e1 !important;
+}
+
+html.dark .btn-outline:hover {
+  background-color: #24221e !important;
+}
+
+/* ── Custom Luxury Dropdown Select Styling ───────────────────────────────── */
+select {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23c9a96e' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' d='M6 8l4 4 4-4'/%3e%3c/svg%3e") !important;
+  background-position: right 0.75rem center !important;
+  background-repeat: no-repeat !important;
+  background-size: 1.2em 1.2em !important;
+  padding-right: 2.4rem !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  cursor: pointer;
+}
+
+html.dark select option {
+  background-color: #1a1917;
+  color: #ede9e1;
+  padding: 8px 12px;
+}
+
+/* ── Compact Layout Density (Subtle and spacious, preserving breathing room) ── */
+html.compact-layout {
+  --compact-density: 0.95;
+}
+
+/* ── Interactive Tooltips & Hover-Reveal UI (100% Reliable, Zero Color Pollution) ── */
+.has-tooltip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.has-tooltip .tooltip-bubble {
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background-color: #1a1714;
+  color: #ffffff;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  pointer-events: none;
+  z-index: 9999;
+  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1), transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.has-tooltip:hover .tooltip-bubble,
+.has-tooltip:focus-within .tooltip-bubble {
+  visibility: visible;
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Tooltip Down Position */
+.has-tooltip-bottom .tooltip-bubble {
+  bottom: auto;
+  top: calc(100% + 7px);
+  transform: translateX(-50%) translateY(-4px);
+}
+
+.has-tooltip-bottom:hover .tooltip-bubble,
+.has-tooltip-bottom:focus-within .tooltip-bubble {
+  visibility: visible;
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Arrow */
+.has-tooltip .tooltip-bubble::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: #1a1714 transparent transparent transparent;
+}
+
+.has-tooltip-bottom .tooltip-bubble::after {
+  top: auto;
+  bottom: 100%;
+  border-color: transparent transparent #1a1714 transparent;
+}
+
+/* Hover-Reveal Pill Buttons (Icon expands smoothly to reveal text) */
+.hover-reveal-pill {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-reveal-pill .reveal-label {
+  display: inline-block;
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: max-width 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, margin-left 0.2s ease;
+  margin-left: 0;
+}
+
+.hover-reveal-pill:hover .reveal-label,
+.hover-reveal-pill:focus-within .reveal-label {
+  max-width: 240px;
+  opacity: 1;
+  margin-left: 6px;
+}
