@@ -8,7 +8,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { StatusBar } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
@@ -24,8 +24,10 @@ SplashScreen.preventAutoHideAsync();
 // ── Navigation Theme ──────────────────────────────────────────────────────────
 
 const APP_THEME = {
+  ...DefaultTheme,
   dark: true,
   colors: {
+    ...DefaultTheme.colors,
     primary:      Colors.gold.DEFAULT,
     background:   Colors.bg.base,
     card:         Colors.bg.card,
