@@ -1,43 +1,73 @@
 /**
  * HomeScreen.jsx
- * Landing hub for customers — quick scan, saved bookings preview,
- * and mode selector (customer/photographer).
+ * Luxury Editorial Landing Hub for E-Kodak Photography Studio.
+ * Features:
+ * - Playfair Display & Inter typography
+ * - Darkroom warm studio gradient lighting
+ * - Dual-layer animated brand aperture
+ * - VIP booking pass card
+ * - Tactile quick action cards
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   StatusBar, ScrollView, Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import {
-  QrCode, BookOpen, Aperture, ChevronRight, Camera, Star,
-} from 'lucide-react-native';
-import { getSavedBookings } from '../services/storageService';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback } from 'react';
-import GoldButton from '../components/GoldButton';
+import {
+  QrCode, BookOpen, Aperture, ChevronRight, Camera,
+  Sparkles, Calendar, ArrowUpRight,
+} from 'lucide-react-native';
+
+import { getSavedBookings } from '../services/storageService';
 import GlassCard from '../components/GlassCard';
 import StatusBadge from '../components/StatusBadge';
-import { Colors, Typography, Spacing, Radius } from '../theme';
+import { Colors, Gradients, Typography, Spacing, Radius, Shadow } from '../theme';
 
-// ── Animated brand logo ───────────────────────────────────────────────────
+// ── Animated Brand Logo ───────────────────────────────────────────────────
 
 function BrandLogo() {
   const pulse = useRef(new Animated.Value(1)).current;
+  const rotate = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.08, duration: 2000, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 2000, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1.06, duration: 2400, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 2400, useNativeDriver: true }),
       ])
     ).start();
-  }, [pulse]);
+
+    Animated.loop(
+      Animated.timing(rotate, {
+        toValue: 1,
+        duration: 20000,
+        useNativeDriver: true,
+      })
+    ).start();
+  }, [pulse, rotate]);
+
+  const spin = rotate.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   return (
     <Animated.View style={[styles.logoWrapper, { transform: [{ scale: pulse }] }]}>
-      <Aperture size={36} color={Colors.gold.DEFAULT} strokeWidth={1.5} />
+      <LinearGradient
+        colors={Gradients.gold}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.logoGradientRing}
+      >
+        <View style={styles.logoInner}>
+          <Animated.View style={{ transform: [{ rotate: spin }] }}>
+            <Aperture size={30} color={Colors.gold.light} strokeWidth={1.5} />
+          </Animated.View>
+        </View>
+      </LinearGradient>
     </Animated.View>
   );
 }
@@ -46,91 +76,160 @@ function BrandLogo() {
 
 function QuickCard({ icon: Icon, title, sub, onPress, accent = Colors.gold.DEFAULT }) {
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={{ flex: 1 }}>
-      <GlassCard style={styles.quickCard}>
-        <View style={[styles.quickIcon, { backgroundColor: accent + '22', borderColor: accent + '44' }]}>
-          <Icon size={24} color={accent} strokeWidth={1.5} />
+    <TouchableOpacity onPress={onPress} activeOpacity={0.82} style={{ flex: 1 }}>
+      <GlassCard highlight style={styles.quickCard}>
+        <View style={styles.quickCardTop}>
+          <View style={[styles.quickIconWrapper, { borderColor: accent + '40', backgroundColor: accent + '18' }]}>
+            <Icon size={22} color={accent} strokeWidth={1.75} />
+          </View>
+          <ArrowUpRight size={16} color={Colors.neutral[500]} />
         </View>
         <Text style={styles.quickTitle}>{title}</Text>
-        <Text style={styles.quickSub}>{sub}</Text>
+        <Text style={styles.quickSub} numberOfLines={2}>{sub}</Text>
       </GlassCard>
     </TouchableOpacity>
   );
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
+// ── Main Home Screen ─────────────────────────────────────────────────────────
 
 export default function HomeScreen({ navigation }) {
   const [savedBookings, setSavedBookings] = useState([]);
 
-  useFocusEffect(useCallback(() => {
-    getSavedBookings().then(setSavedBookings);
-  }, []));
+  useFocusEffect(
+    useCallback(() => {
+      getSavedBookings().then(setSavedBookings);
+    }, [])
+  );
 
   const recentBooking = savedBookings[0];
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0E" />
+      <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Editorial Studio Hero ── */}
+        <LinearGradient
+          colors={Gradients.darkStudio}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.hero}
+        >
+          {/* Subtle warm ambient lighting overlay */}
+          <LinearGradient
+            colors={Gradients.ambientSpot}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={styles.ambientLight}
+          />
 
-        {/* ── Hero Header ── */}
-        <LinearGradient colors={['#0F0F14', '#0B0B0E']} style={styles.hero}>
-          <View style={styles.heroTop}>
+          <View style={styles.heroTopRow}>
             <BrandLogo />
             <View style={styles.heroBranding}>
-              <Text style={styles.studioName}>E-Kodak Studio</Text>
-              <View style={styles.goldLine} />
-              <Text style={styles.studioTagline}>Photography Excellence</Text>
+              <Text style={styles.studioName}>E-KODAK STUDIO</Text>
+              <View style={styles.goldLineWrapper}>
+                <LinearGradient
+                  colors={Gradients.gold}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.goldLine}
+                />
+              </View>
+              <Text style={styles.studioTagline}>Bespoke Photography · Cebu</Text>
             </View>
           </View>
-          <Text style={styles.heroWelcome}>Welcome back</Text>
-          <Text style={styles.heroSub}>
-            Track your sessions, scan your QR pass, or view your schedule.
-          </Text>
+
+          <View style={styles.heroTextGroup}>
+            <Text style={styles.heroHeadlineLead}>Your Moments,</Text>
+            <Text style={styles.heroHeadlineAccent}>Preserved in Elegance.</Text>
+            <Text style={styles.heroSub}>
+              Scan your booking QR code to track live studio shoots, proofs, retouching, and delivery in real time.
+            </Text>
+          </View>
         </LinearGradient>
 
-        {/* ── Quick Actions ── */}
+        {/* ── Quick Action Cards ── */}
         <View style={styles.quickRow}>
           <QuickCard
             icon={QrCode}
-            title="Scan QR"
-            sub="Load your booking pass"
+            title="Scan QR Pass"
+            sub="Load studio booking pass"
             accent={Colors.gold.DEFAULT}
             onPress={() => navigation.navigate('Scanner')}
           />
           <QuickCard
             icon={BookOpen}
-            title="My Bookings"
-            sub="View saved sessions"
-            accent='#3B82F6'
+            title="Saved Sessions"
+            sub="View all tracked bookings"
+            accent="#60A5FA"
             onPress={() => navigation.navigate('Bookings')}
           />
         </View>
 
-        {/* ── Recent Booking Preview ── */}
+        {/* ── VIP Recent Booking Pass ── */}
         {recentBooking && (
           <View style={styles.sectionBlock}>
-            <Text style={styles.sectionLabel}>Recent Booking</Text>
+            <View style={styles.sectionHeader}>
+              <Sparkles size={14} color={Colors.gold.DEFAULT} />
+              <Text style={styles.sectionLabel}>Active Studio Pass</Text>
+            </View>
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={() => navigation.navigate('Bookings')}
             >
-              <GlassCard glow style={styles.recentCard}>
-                <View style={styles.recentTop}>
-                  <View>
-                    <Text style={styles.recentNum}>#{recentBooking.bookingNumber || '—'}</Text>
-                    {recentBooking.clientName && (
-                      <Text style={styles.recentClient}>{recentBooking.clientName}</Text>
-                    )}
-                    {recentBooking.serviceName && (
-                      <Text style={styles.recentService}>{recentBooking.serviceName}</Text>
-                    )}
+              <GlassCard glow style={styles.vipPassCard}>
+                {/* Gold left indicator spine */}
+                <LinearGradient
+                  colors={Gradients.gold}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={styles.passSpine}
+                />
+
+                <View style={styles.passContent}>
+                  <View style={styles.passTop}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.passNumber}>
+                        #{recentBooking.bookingNumber || '—'}
+                      </Text>
+                      {recentBooking.clientName && (
+                        <Text style={styles.passClient} numberOfLines={1}>
+                          {recentBooking.clientName}
+                        </Text>
+                      )}
+                      {recentBooking.serviceName && (
+                        <Text style={styles.passService}>
+                          {recentBooking.serviceName}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                      <StatusBadge status={recentBooking.status} size="sm" />
+                      {recentBooking.sessionDate && (
+                        <View style={styles.dateTag}>
+                          <Calendar size={11} color={Colors.text.muted} />
+                          <Text style={styles.dateTagText}>
+                            {new Date(recentBooking.sessionDate).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
-                  <View style={{ alignItems: 'flex-end', gap: 8 }}>
-                    <StatusBadge status={recentBooking.status} />
-                    <ChevronRight size={16} color={Colors.gold.dim} />
+
+                  <View style={styles.passDivider} />
+
+                  <View style={styles.passFooter}>
+                    <Text style={styles.passPrompt}>Tap to open live tracker</Text>
+                    <View style={styles.chevronPill}>
+                      <ChevronRight size={14} color={Colors.gold.light} />
+                    </View>
                   </View>
                 </View>
               </GlassCard>
@@ -138,40 +237,47 @@ export default function HomeScreen({ navigation }) {
           </View>
         )}
 
-        {/* ── Photographer Portal CTA ── */}
+        {/* ── Studio Access (Photographer Portal) ── */}
         <View style={styles.sectionBlock}>
-          <Text style={styles.sectionLabel}>Studio Access</Text>
+          <View style={styles.sectionHeader}>
+            <Camera size={14} color={Colors.gold.DEFAULT} />
+            <Text style={styles.sectionLabel}>Studio Access</Text>
+          </View>
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={() => navigation.navigate('PhotographerLogin')}
           >
-            <GlassCard style={styles.photographerCard}>
+            <GlassCard highlight style={styles.photographerCard}>
               <View style={styles.photographerRow}>
                 <View style={styles.photographerIcon}>
-                  <Camera size={28} color={Colors.gold.DEFAULT} strokeWidth={1.5} />
+                  <Camera size={26} color={Colors.gold.DEFAULT} strokeWidth={1.5} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.photographerTitle}>Photographer Portal</Text>
                   <Text style={styles.photographerSub}>
-                    View daily shoots and manage your schedule
+                    View daily studio shoot schedules and update booking progress
                   </Text>
                 </View>
-                <ChevronRight size={18} color={Colors.gold.dim} />
+                <View style={styles.chevronPill}>
+                  <ChevronRight size={16} color={Colors.gold.light} />
+                </View>
               </View>
             </GlassCard>
           </TouchableOpacity>
         </View>
 
-        {/* ── Brand Footer ── */}
+        {/* ── Editorial Studio Quote Footer ── */}
         <View style={styles.brandFooter}>
-          <Star size={12} color={Colors.gold.dim} />
-          <Text style={styles.brandFooterText}>
-            E-Kodak Photography Studio — Capturing Your Story
+          <View style={styles.footerLine} />
+          <Text style={styles.footerQuote}>
+            "Every frame tells an everlasting story."
           </Text>
-          <Star size={12} color={Colors.gold.dim} />
+          <Text style={styles.footerCopyright}>
+            E-KODAK PHOTOGRAPHY STUDIO · CEBU, PHILIPPINES
+          </Text>
         </View>
 
-        <View style={{ height: 24 }} />
+        <View style={{ height: 28 }} />
       </ScrollView>
     </View>
   );
@@ -179,99 +285,270 @@ export default function HomeScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.bg.base },
-  content: { paddingBottom: 20 },
+  content: { paddingBottom: 24 },
 
   hero: {
     paddingTop: 56,
-    paddingBottom: Spacing[8],
+    paddingBottom: Spacing[7],
     paddingHorizontal: Spacing[6],
     borderBottomWidth: 1,
     borderBottomColor: Colors.gold.border,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  heroTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing[4], marginBottom: Spacing[6] },
+  ambientLight: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.6,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[4],
+    marginBottom: Spacing[6],
+  },
   logoWrapper: {
-    width: 64, height: 64, borderRadius: 32,
-    borderWidth: 1.5, borderColor: Colors.gold.border,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.gold.bg,
-    shadowColor: Colors.gold.DEFAULT,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.35, shadowRadius: 16,
-    elevation: 10,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    ...Shadow.gold,
+  },
+  logoGradientRing: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    padding: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoInner: {
+    width: 59,
+    height: 59,
+    borderRadius: 29.5,
+    backgroundColor: Colors.bg.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   heroBranding: { flex: 1 },
   studioName: {
-    fontSize: Typography.size.xl,
-    fontWeight: Typography.weight.bold,
-    color: Colors.gold.DEFAULT,
-    letterSpacing: 0.5,
+    fontFamily: Typography.fontHeading,
+    fontSize: Typography.size.lg,
+    color: Colors.gold.light,
+    letterSpacing: 2,
   },
-  goldLine: {
-    height: 1, width: 40, backgroundColor: Colors.gold.DEFAULT,
-    marginVertical: Spacing[1],
-  },
+  goldLineWrapper: { marginVertical: 3 },
+  goldLine: { height: 1.5, width: 44, borderRadius: 1 },
   studioTagline: {
+    fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
     color: Colors.text.secondary,
-    letterSpacing: 2,
+    letterSpacing: 1.5,
     textTransform: 'uppercase',
   },
 
-  heroWelcome: {
+  heroTextGroup: { gap: 2 },
+  heroHeadlineLead: {
+    fontFamily: Typography.fontHeading,
     fontSize: Typography.size['3xl'],
-    fontWeight: Typography.weight.bold,
     color: Colors.text.primary,
+    lineHeight: 38,
+  },
+  heroHeadlineAccent: {
+    fontFamily: Typography.fontHeadingItalic,
+    fontSize: Typography.size['2xl'],
+    color: Colors.gold.DEFAULT,
+    lineHeight: 34,
     marginBottom: Spacing[2],
   },
   heroSub: {
-    fontSize: Typography.size.base,
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.sm,
     color: Colors.text.secondary,
-    lineHeight: 24,
+    lineHeight: 22,
   },
 
-  quickRow: { flexDirection: 'row', gap: Spacing[4], padding: Spacing[5] },
-  quickCard: { padding: Spacing[4], gap: Spacing[2], flex: 1 },
-  quickIcon: {
-    width: 48, height: 48, borderRadius: Radius.md,
-    borderWidth: 1, alignItems: 'center', justifyContent: 'center',
+  quickRow: {
+    flexDirection: 'row',
+    gap: Spacing[4],
+    paddingHorizontal: Spacing[5],
+    paddingVertical: Spacing[5],
   },
-  quickTitle: { fontSize: Typography.size.base, fontWeight: Typography.weight.semibold, color: Colors.text.primary, marginTop: Spacing[1] },
-  quickSub: { fontSize: Typography.size.xs, color: Colors.text.secondary, lineHeight: 18 },
-
-  sectionBlock: { paddingHorizontal: Spacing[5], marginBottom: Spacing[5] },
-  sectionLabel: {
+  quickCard: {
+    padding: Spacing[4],
+    gap: Spacing[2],
+    minHeight: 140,
+    justifyContent: 'space-between',
+  },
+  quickCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  quickIconWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickTitle: {
+    fontFamily: Typography.fontHeadingSemi,
+    fontSize: Typography.size.base,
+    color: Colors.text.primary,
+    marginTop: Spacing[1],
+  },
+  quickSub: {
+    fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.gold.dim,
-    fontWeight: Typography.weight.semibold,
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
+    color: Colors.text.secondary,
+    lineHeight: 17,
+  },
+
+  sectionBlock: {
+    paddingHorizontal: Spacing[5],
+    marginBottom: Spacing[5],
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
     marginBottom: Spacing[3],
   },
-
-  recentCard: { padding: Spacing[5] },
-  recentTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  recentNum: { fontSize: Typography.size.lg, fontWeight: Typography.weight.bold, color: Colors.text.primary },
-  recentClient: { fontSize: Typography.size.sm, color: Colors.text.secondary, marginTop: 2 },
-  recentService: { fontSize: Typography.size.xs, color: Colors.gold.dim, marginTop: 1, textTransform: 'uppercase', letterSpacing: 0.5 },
-
-  photographerCard: { padding: Spacing[4] },
-  photographerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[4] },
-  photographerIcon: {
-    width: 52, height: 52, borderRadius: Radius.md,
-    backgroundColor: Colors.gold.bg, borderWidth: 1,
-    borderColor: Colors.gold.border, alignItems: 'center', justifyContent: 'center',
-  },
-  photographerTitle: { fontSize: Typography.size.base, fontWeight: Typography.weight.semibold, color: Colors.text.primary, marginBottom: 3 },
-  photographerSub: { fontSize: Typography.size.sm, color: Colors.text.secondary, lineHeight: 18 },
-
-  brandFooter: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: Spacing[2], paddingVertical: Spacing[4],
-  },
-  brandFooterText: {
+  sectionLabel: {
+    fontFamily: Typography.fontBodySemi,
     fontSize: Typography.size.xs,
-    color: Colors.neutral[600],
-    textAlign: 'center',
+    color: Colors.gold.light,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+
+  // VIP Pass Card
+  vipPassCard: {
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  passSpine: {
+    width: 4,
+  },
+  passContent: {
+    flex: 1,
+    padding: Spacing[4],
+  },
+  passTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  passNumber: {
+    fontFamily: Typography.fontHeading,
+    fontSize: Typography.size.xl,
+    color: Colors.text.primary,
+  },
+  passClient: {
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: Typography.size.sm,
+    color: Colors.text.secondary,
+    marginTop: 2,
+  },
+  passService: {
+    fontFamily: Typography.fontHeadingItalic,
+    fontSize: Typography.size.xs,
+    color: Colors.gold.light,
+    marginTop: 1,
+  },
+  dateTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  dateTagText: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.xs,
+    color: Colors.text.muted,
+  },
+  passDivider: {
+    height: 1,
+    backgroundColor: Colors.gold.border,
+    marginVertical: Spacing[3],
+  },
+  passFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  passPrompt: {
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: Typography.size.xs,
+    color: Colors.gold.light,
     letterSpacing: 0.5,
+  },
+  chevronPill: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: Colors.gold.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Photographer Card
+  photographerCard: {
+    padding: Spacing[4],
+  },
+  photographerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[4],
+  },
+  photographerIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.gold.bg,
+    borderWidth: 1,
+    borderColor: Colors.gold.borderLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photographerTitle: {
+    fontFamily: Typography.fontHeadingSemi,
+    fontSize: Typography.size.base,
+    color: Colors.text.primary,
+    marginBottom: 2,
+  },
+  photographerSub: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.xs,
+    color: Colors.text.secondary,
+    lineHeight: 18,
+  },
+
+  // Footer
+  brandFooter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing[6],
+    paddingTop: Spacing[4],
+    gap: 6,
+  },
+  footerLine: {
+    width: 36,
+    height: 1,
+    backgroundColor: Colors.gold.border,
+    marginBottom: 4,
+  },
+  footerQuote: {
+    fontFamily: Typography.fontHeadingItalic,
+    fontSize: Typography.size.sm,
+    color: Colors.neutral[400],
+    textAlign: 'center',
+  },
+  footerCopyright: {
+    fontFamily: Typography.fontBody,
+    fontSize: 9.5,
+    color: Colors.neutral[600],
+    letterSpacing: 1.5,
+    textAlign: 'center',
   },
 });

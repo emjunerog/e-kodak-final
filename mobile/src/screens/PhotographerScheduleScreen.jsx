@@ -1,36 +1,39 @@
 /**
  * PhotographerScheduleScreen.jsx
- * Daily/weekly shoot schedule for logged-in photographers.
- * Shows date strip, bookings per day, client details, and status actions.
+ * Luxury Daily Shoot Schedule Hub for Studio Photographers.
+ * Features:
+ * - Playfair Display & Inter typography
+ * - Gold gradient date strip with active shoot counts
+ * - Editorial shoot cards with client & package metadata
+ * - Direct navigation to session status management
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  StatusBar, RefreshControl, Alert, ScrollView,
+  StatusBar, RefreshControl, ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import {
   CalendarDays, MapPin, Phone, Camera, ChevronRight,
-  Clock, Aperture, User, PackageCheck,
+  Clock, Aperture, User, Sparkles, ArrowLeft,
 } from 'lucide-react-native';
+
 import { fetchPhotographerSchedule } from '../services/bookingService';
 import GlassCard from '../components/GlassCard';
 import StatusBadge from '../components/StatusBadge';
-import { Colors, Typography, Spacing, Radius } from '../theme';
+import { Colors, Gradients, Typography, Spacing, Radius, Shadow } from '../theme';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function formatShortDate(d) {
-  return new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-}
-
 function formatTime(t) {
   if (!t) return '';
-  const [h, m] = t.split(':');
-  const d = new Date(); d.setHours(+h, +m);
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  try {
+    const [h, m] = t.split(':');
+    const d = new Date(); d.setHours(+h, +m);
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  } catch { return t; }
 }
 
 function getDatesForWeek() {
@@ -63,14 +66,37 @@ function DateStrip({ dates, selected, onSelect, countMap }) {
         return (
           <TouchableOpacity
             key={d}
-            onPress={() => { Haptics.selectionAsync(); onSelect(d); }}
-            style={[styles.dateChip, isSelected && styles.dateChipActive]}
+            onPress={() => {
+              try { Haptics.selectionAsync(); } catch {}
+              onSelect(d);
+            }}
+            activeOpacity={0.8}
+            style={[styles.dateChipWrapper]}
           >
-            <Text style={[styles.dayLabel, isSelected && styles.dayLabelActive]}>{dayLabel}</Text>
-            <Text style={[styles.dateLabel, isSelected && styles.dateLabelActive]}>{dateLabel}</Text>
-            {count > 0 && (
-              <View style={[styles.countBadge, isSelected && styles.countBadgeActive]}>
-                <Text style={[styles.countText, isSelected && styles.countTextActive]}>{count}</Text>
+            {isSelected ? (
+              <LinearGradient
+                colors={Gradients.gold}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[styles.dateChip, styles.dateChipActive]}
+              >
+                <Text style={styles.dayLabelActive}>{dayLabel}</Text>
+                <Text style={styles.dateLabelActive}>{dateLabel}</Text>
+                {count > 0 && (
+                  <View style={styles.countBadgeActive}>
+                    <Text style={styles.countTextActive}>{count}</Text>
+                  </View>
+                )}
+              </LinearGradient>
+            ) : (
+              <View style={[styles.dateChip, styles.dateChipInactive]}>
+                <Text style={styles.dayLabel}>{dayLabel}</Text>
+                <Text style={styles.dateLabel}>{dateLabel}</Text>
+                {count > 0 && (
+                  <View style={styles.countBadge}>
+                    <Text style={styles.countText}>{count}</Text>
+                  </View>
+                )}
               </View>
             )}
           </TouchableOpacity>
@@ -85,20 +111,22 @@ function DateStrip({ dates, selected, onSelect, countMap }) {
 function ShootCard({ booking, onPress }) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
-      <GlassCard style={styles.shootCard}>
+      <GlassCard highlight style={styles.shootCard}>
         {/* Top row: time + status */}
         <View style={styles.shootTop}>
           <View style={styles.timeBlock}>
-            <Clock size={12} color={Colors.gold.dim} />
+            <Clock size={13} color={Colors.gold.light} />
             <Text style={styles.timeText}>
-              {formatTime(booking.session_time) || 'TBD'}
+              {formatTime(booking.session_time) || 'Schedule Pending'}
             </Text>
           </View>
-          <StatusBadge status={booking.status} />
+          <StatusBadge status={booking.status} size="sm" />
         </View>
 
-        {/* Booking number & service */}
-        <Text style={styles.shootNum}>#{booking.booking_number}</Text>
+        <View style={styles.shootDivider} />
+
+        {/* Booking Number & Service */}
+        <Text style={styles.shootNum}>Pass #{booking.booking_number}</Text>
         {booking.services?.name && (
           <Text style={styles.shootService}>{booking.services.name}</Text>
         )}
@@ -106,24 +134,25 @@ function ShootCard({ booking, onPress }) {
         {/* Client */}
         {booking.profile?.full_name && (
           <View style={styles.infoRow}>
-            <User size={13} color={Colors.neutral[500]} />
+            <User size={13} color={Colors.gold.dim} />
             <Text style={styles.infoText}>{booking.profile.full_name}</Text>
           </View>
         )}
+
         {booking.profile?.phone && (
           <View style={styles.infoRow}>
-            <Phone size={13} color={Colors.neutral[500]} />
+            <Phone size={13} color={Colors.gold.dim} />
             <Text style={styles.infoText}>{booking.profile.phone}</Text>
           </View>
         )}
 
         {/* Location */}
         <View style={styles.infoRow}>
-          <MapPin size={13} color={Colors.neutral[500]} />
+          <MapPin size={13} color={Colors.gold.dim} />
           <Text style={styles.infoText}>
             {booking.location_type === 'STUDIO'
-              ? 'E-Kodak Studio'
-              : booking.location_address || 'Location TBD'}
+              ? 'E-Kodak Main Studio Bay'
+              : booking.location_address || 'On-site Location'}
           </Text>
         </View>
 
@@ -139,8 +168,10 @@ function ShootCard({ booking, onPress }) {
         )}
 
         <View style={styles.shootFooter}>
-          <Text style={styles.viewDetails}>View Full Details</Text>
-          <ChevronRight size={14} color={Colors.gold.dim} />
+          <Text style={styles.viewDetails}>Track Session Details</Text>
+          <View style={styles.chevronPill}>
+            <ChevronRight size={13} color={Colors.gold.light} />
+          </View>
         </View>
       </GlassCard>
     </TouchableOpacity>
@@ -152,14 +183,13 @@ function ShootCard({ booking, onPress }) {
 export default function PhotographerScheduleScreen({ navigation, route }) {
   const { photographerId, photographerName } = route.params || {};
 
-  const [allBookings, setAllBookings] = useState([]);
+  const [allBookings, setAllBookings]   = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading]           = useState(true);
+  const [refreshing, setRefreshing]     = useState(false);
 
   const weekDates = getDatesForWeek();
 
-  // Count map: { '2025-09-22': 3, ... }
   const countMap = allBookings.reduce((acc, b) => {
     acc[b.session_date] = (acc[b.session_date] || 0) + 1;
     return acc;
@@ -184,19 +214,31 @@ export default function PhotographerScheduleScreen({ navigation, route }) {
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0E" />
+      <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
 
-      <LinearGradient colors={['#0F0F14', '#0B0B0E']} style={styles.header}>
-        <Aperture size={22} color={Colors.gold.DEFAULT} />
-        <View>
-          <Text style={styles.headerTitle}>My Schedule</Text>
+      {/* ── Editorial Header ── */}
+      <LinearGradient
+        colors={Gradients.darkStudio}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.header}
+      >
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={18} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <View style={styles.headerTitleGroup}>
+          <Text style={styles.headerTitle}>Studio Schedule</Text>
           {photographerName && (
-            <Text style={styles.headerSub}>{photographerName}</Text>
+            <Text style={styles.headerSub}>Lead: {photographerName}</Text>
           )}
         </View>
       </LinearGradient>
 
-      {/* Date strip */}
+      {/* ── Date Strip ── */}
       <DateStrip
         dates={weekDates}
         selected={selectedDate}
@@ -204,32 +246,23 @@ export default function PhotographerScheduleScreen({ navigation, route }) {
         countMap={countMap}
       />
 
-      {/* Summary row */}
-      <View style={styles.summaryRow}>
-        <Text style={styles.summaryDate}>
-          {new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-        </Text>
-        <View style={styles.summaryBadge}>
-          <Camera size={12} color={Colors.gold.DEFAULT} />
-          <Text style={styles.summaryCount}>
-            {bookingsForDay.length} {bookingsForDay.length === 1 ? 'shoot' : 'shoots'}
-          </Text>
-        </View>
-      </View>
-
+      {/* ── Session List ── */}
       <FlatList
         data={bookingsForDay}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <ShootCard
             booking={item}
-            onPress={() => navigation.navigate('BookingTracker', {
-              booking: item,
-              token: item.booking_token,
-            })}
+            onPress={() => {
+              navigation.navigate('BookingTracker', {
+                booking: item,
+                token: item.booking_token,
+              });
+            }}
           />
         )}
         contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -241,12 +274,12 @@ export default function PhotographerScheduleScreen({ navigation, route }) {
         ListEmptyComponent={
           !loading && (
             <View style={styles.empty}>
-              <CalendarDays size={56} color={Colors.neutral[700]} strokeWidth={1} />
-              <Text style={styles.emptyTitle}>No Shoots Today</Text>
+              <View style={styles.emptyIconRing}>
+                <Camera size={44} color={Colors.gold.DEFAULT} strokeWidth={1.25} />
+              </View>
+              <Text style={styles.emptyTitle}>No Shoots Scheduled</Text>
               <Text style={styles.emptyBody}>
-                {bookingsForDay.length === 0
-                  ? 'Enjoy your free day!'
-                  : 'Select a different date to see your schedule.'}
+                You have no studio sessions assigned for this selected date.
               </Text>
             </View>
           )
@@ -258,88 +291,245 @@ export default function PhotographerScheduleScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.bg.base },
+
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing[3],
-    paddingTop: 55,
+    paddingTop: 54,
     paddingBottom: Spacing[4],
     paddingHorizontal: Spacing[5],
     borderBottomWidth: 1,
     borderBottomColor: Colors.gold.border,
   },
-  headerTitle: { fontSize: Typography.size.xl, fontWeight: Typography.weight.bold, color: Colors.text.primary },
-  headerSub: { fontSize: Typography.size.sm, color: Colors.gold.dim, marginTop: 1 },
-
-  dateStrip: { paddingHorizontal: Spacing[4], paddingVertical: Spacing[3], gap: Spacing[2] },
-  dateChip: {
-    alignItems: 'center',
-    paddingHorizontal: Spacing[3],
-    paddingVertical: Spacing[2],
-    borderRadius: Radius.md,
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.bg.card,
     borderWidth: 1,
-    borderColor: Colors.neutral[800],
-    minWidth: 52,
-    gap: 2,
+    borderColor: Colors.gold.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  dateChipActive: { backgroundColor: Colors.gold.bg, borderColor: Colors.gold.border },
-  dayLabel: { fontSize: Typography.size.xs, color: Colors.neutral[500], textTransform: 'uppercase', letterSpacing: 0.5 },
-  dayLabelActive: { color: Colors.gold.dim },
-  dateLabel: { fontSize: Typography.size.lg, fontWeight: Typography.weight.bold, color: Colors.neutral[400] },
-  dateLabelActive: { color: Colors.gold.DEFAULT },
+  headerTitleGroup: { flex: 1 },
+  headerTitle: {
+    fontFamily: Typography.fontHeading,
+    fontSize: Typography.size.xl,
+    color: Colors.text.primary,
+  },
+  headerSub: {
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: Typography.size.xs,
+    color: Colors.gold.light,
+    letterSpacing: 0.5,
+  },
+
+  // Date strip
+  dateStrip: {
+    paddingHorizontal: Spacing[4],
+    paddingVertical: Spacing[4],
+    gap: Spacing[2],
+  },
+  dateChipWrapper: {
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+  },
+  dateChip: {
+    width: 58,
+    height: 74,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing[2],
+  },
+  dateChipActive: {
+    borderRadius: Radius.md,
+    ...Shadow.goldSoft,
+  },
+  dateChipInactive: {
+    backgroundColor: Colors.bg.card,
+    borderWidth: 1,
+    borderColor: Colors.gold.border,
+    borderRadius: Radius.md,
+  },
+  dayLabel: {
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: 11,
+    color: Colors.text.secondary,
+    textTransform: 'uppercase',
+  },
+  dayLabelActive: {
+    fontFamily: Typography.fontBodySemi,
+    fontSize: 11,
+    color: Colors.text.onGold,
+    textTransform: 'uppercase',
+  },
+  dateLabel: {
+    fontFamily: Typography.fontHeading,
+    fontSize: Typography.size.lg,
+    color: Colors.text.primary,
+    marginVertical: 2,
+  },
+  dateLabelActive: {
+    fontFamily: Typography.fontHeading,
+    fontSize: Typography.size.lg,
+    color: Colors.text.onGold,
+    marginVertical: 2,
+  },
   countBadge: {
-    backgroundColor: Colors.neutral[800],
-    borderRadius: Radius.full,
+    backgroundColor: Colors.gold.bg,
+    borderRadius: 9,
     paddingHorizontal: 6,
     paddingVertical: 1,
-    marginTop: 2,
   },
-  countBadgeActive: { backgroundColor: Colors.gold.bg },
-  countText: { fontSize: 10, color: Colors.neutral[400], fontWeight: Typography.weight.bold },
-  countTextActive: { color: Colors.gold.DEFAULT },
+  countBadgeActive: {
+    backgroundColor: 'rgba(26, 23, 20, 0.25)',
+    borderRadius: 9,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  countText: {
+    fontFamily: Typography.fontBodySemi,
+    fontSize: 10,
+    color: Colors.gold.light,
+  },
+  countTextActive: {
+    fontFamily: Typography.fontBodySemi,
+    fontSize: 10,
+    color: Colors.text.onGold,
+  },
 
-  summaryRow: {
+  list: {
+    padding: Spacing[4],
+    gap: Spacing[3],
+  },
+
+  // Shoot card
+  shootCard: {
+    padding: Spacing[4],
+    marginBottom: Spacing[2],
+  },
+  shootTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: Spacing[5],
-    paddingBottom: Spacing[3],
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gold.border + '44',
   },
-  summaryDate: { fontSize: Typography.size.sm, color: Colors.text.secondary, fontWeight: Typography.weight.medium },
-  summaryBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.gold.bg, paddingHorizontal: Spacing[3], paddingVertical: 4, borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.gold.border },
-  summaryCount: { fontSize: Typography.size.xs, color: Colors.gold.DEFAULT, fontWeight: Typography.weight.semibold },
-
-  list: { padding: Spacing[4], gap: Spacing[4] },
-
-  shootCard: { padding: Spacing[4], gap: Spacing[2] },
-  shootTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing[1] },
-  timeBlock: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  timeText: { fontSize: Typography.size.sm, color: Colors.gold.dim, fontWeight: Typography.weight.medium },
-  shootNum: { fontSize: Typography.size.md, fontWeight: Typography.weight.bold, color: Colors.text.primary },
-  shootService: { fontSize: Typography.size.sm, color: Colors.gold.DEFAULT, fontWeight: Typography.weight.medium, marginTop: 1 },
-
-  infoRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2], marginTop: 2 },
-  infoText: { fontSize: Typography.size.sm, color: Colors.text.secondary, flex: 1 },
-
-  addonsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing[2], marginTop: Spacing[1] },
-  addonChip: { backgroundColor: Colors.bg.overlay, borderRadius: Radius.sm, paddingHorizontal: Spacing[2], paddingVertical: 3 },
-  addonText: { fontSize: Typography.size.xs, color: Colors.neutral[400] },
-
-  shootFooter: {
+  timeBlock: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 4,
-    marginTop: Spacing[3],
-    paddingTop: Spacing[3],
-    borderTopWidth: 1,
-    borderTopColor: Colors.gold.border + '44',
+    gap: 6,
+    backgroundColor: Colors.gold.bg,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: Colors.gold.border,
   },
-  viewDetails: { fontSize: Typography.size.xs, color: Colors.gold.dim, fontWeight: Typography.weight.medium, letterSpacing: 0.5 },
+  timeText: {
+    fontFamily: Typography.fontBodySemi,
+    fontSize: Typography.size.xs,
+    color: Colors.gold.light,
+  },
+  shootDivider: {
+    height: 1,
+    backgroundColor: Colors.gold.border,
+    marginVertical: Spacing[3],
+  },
+  shootNum: {
+    fontFamily: Typography.fontHeading,
+    fontSize: Typography.size.lg,
+    color: Colors.text.primary,
+    marginBottom: 2,
+  },
+  shootService: {
+    fontFamily: Typography.fontHeadingItalic,
+    fontSize: Typography.size.sm,
+    color: Colors.gold.light,
+    marginBottom: Spacing[3],
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  infoText: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.sm,
+    color: Colors.text.secondary,
+  },
+  addonsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: Spacing[2],
+  },
+  addonChip: {
+    backgroundColor: Colors.bg.surface,
+    borderWidth: 1,
+    borderColor: Colors.gold.border,
+    borderRadius: Radius.sm,
+    paddingVertical: 2,
+    paddingHorizontal: 7,
+  },
+  addonText: {
+    fontFamily: Typography.fontBody,
+    fontSize: 11,
+    color: Colors.gold.light,
+  },
+  shootFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: Spacing[3],
+    paddingTop: Spacing[2],
+    borderTopWidth: 1,
+    borderTopColor: Colors.gold.border,
+  },
+  viewDetails: {
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: Typography.size.xs,
+    color: Colors.gold.light,
+    letterSpacing: 0.5,
+  },
+  chevronPill: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.gold.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
-  empty: { alignItems: 'center', justifyContent: 'center', padding: Spacing[10], gap: Spacing[4] },
-  emptyTitle: { fontSize: Typography.size.xl, fontWeight: Typography.weight.bold, color: Colors.text.primary, textAlign: 'center' },
-  emptyBody: { fontSize: Typography.size.base, color: Colors.text.secondary, textAlign: 'center', lineHeight: 24 },
+  // Empty state
+  empty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing[12],
+    paddingHorizontal: Spacing[6],
+  },
+  emptyIconRing: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.gold.bg,
+    borderWidth: 1,
+    borderColor: Colors.gold.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing[4],
+  },
+  emptyTitle: {
+    fontFamily: Typography.fontHeading,
+    fontSize: Typography.size.lg,
+    color: Colors.text.primary,
+    marginBottom: Spacing[2],
+  },
+  emptyBody: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.sm,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
 });

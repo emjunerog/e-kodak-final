@@ -1,7 +1,11 @@
 /**
  * TutorialScreen.jsx
- * Animated onboarding walkthrough shown on first app launch.
- * 4 slides presenting the app concept with gold animations.
+ * Luxury Editorial Onboarding Walkthrough for E-Kodak Photography Studio.
+ * Features:
+ * - Playfair Display & Inter typography
+ * - Darkroom warm studio gradients
+ * - Expanding gold indicator pills
+ * - Metallic gradient CTA button
  */
 
 import React, { useState, useRef } from 'react';
@@ -14,8 +18,9 @@ import * as Haptics from 'expo-haptics';
 import {
   QrCode, Activity, Bell, Camera, ChevronRight, Check,
 } from 'lucide-react-native';
+
 import GoldButton from '../components/GoldButton';
-import { Colors, Typography, Spacing, Radius } from '../theme';
+import { Colors, Gradients, Typography, Spacing, Radius } from '../theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -24,61 +29,61 @@ const SLIDES = [
     id: 'welcome',
     icon: Camera,
     iconColor: Colors.gold.DEFAULT,
-    badge: 'E-Kodak Studio',
-    headline: 'Your Memories,\nPerfectly Captured.',
-    body: 'Welcome to the official E-Kodak Photography Studio companion app. Designed for clients and photographers alike.',
-    gradient: ['#0B0B0E', '#16100A'],
+    badge: 'E-KODAK STUDIO',
+    headline: 'Your Memories,\nCaptured in Perfection.',
+    body: 'Welcome to the official E-Kodak Studio companion. Designed to connect clients and studio artists in real time.',
+    gradient: Gradients.darkStudio,
   },
   {
     id: 'scan',
     icon: QrCode,
     iconColor: Colors.gold.light,
-    badge: 'QR Booking Pass',
-    headline: 'Scan Your\nBooking QR Code.',
-    body: 'Every E-Kodak booking has a unique QR pass. Scan it once and track your session in real-time directly in this app.',
-    gradient: ['#0B0B0E', '#0A0E16'],
+    badge: 'QR BOOKING PASS',
+    headline: 'Instant Access with\nYour Studio QR Pass.',
+    body: 'Scan the QR code from your booking receipt or web dashboard to link your session directly to this device.',
+    gradient: ['#1C1813', '#120F0B', '#0D0B09'],
   },
   {
     id: 'track',
     icon: Activity,
-    iconColor: '#10B981',
-    badge: 'Live Updates',
-    headline: 'Track Every\nStep of Your Session.',
-    body: 'From pending review to ready for pickup — watch your booking status update automatically as your photos come to life.',
-    gradient: ['#0B0B0E', '#0A160E'],
+    iconColor: Colors.status.ready,
+    badge: 'REAL-TIME TRACKING',
+    headline: 'Track Every Milestone\nFrom Shoot to Pickup.',
+    body: 'Watch your photos progress through scheduling, studio shooting, high-end color grading, retouching, and printing.',
+    gradient: ['#141A16', '#0E1210', '#0D0B09'],
   },
   {
     id: 'notify',
     icon: Bell,
-    iconColor: '#8B5CF6',
-    badge: 'Smart Alerts',
-    headline: 'Get Notified\nWhen It Matters.',
-    body: 'Receive instant push notifications when your booking is confirmed, your session starts, and when your photos are ready.',
-    gradient: ['#0B0B0E', '#100A16'],
+    iconColor: '#A78BFA',
+    badge: 'STUDIO ALERTS',
+    headline: 'Stay Informed\nat Every Critical Step.',
+    body: 'Receive instant notifications when your session date approaches, photographer is assigned, and proofs are ready.',
+    gradient: ['#1A141C', '#120E14', '#0D0B09'],
   },
 ];
 
 function Slide({ item, animValue }) {
   const IconComponent = item.icon;
-  const scale = animValue.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] });
+  const scale = animValue.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] });
   const opacity = animValue.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
 
   return (
     <LinearGradient colors={item.gradient} style={styles.slide}>
       <Animated.View style={[styles.slideContent, { opacity, transform: [{ scale }] }]}>
-        {/* Icon circle */}
+        {/* Dual-ring Icon Container */}
         <View style={[styles.iconRing, { borderColor: item.iconColor + '55' }]}>
-          <View style={[styles.iconInner, { backgroundColor: item.iconColor + '22' }]}>
-            <IconComponent size={48} color={item.iconColor} strokeWidth={1.5} />
+          <View style={[styles.iconInner, { backgroundColor: item.iconColor + '18' }]}>
+            <IconComponent size={44} color={item.iconColor} strokeWidth={1.5} />
           </View>
         </View>
 
-        {/* Badge */}
-        <View style={[styles.badge, { borderColor: item.iconColor + '44', backgroundColor: item.iconColor + '18' }]}>
+        {/* Studio Pill Badge */}
+        <View style={[styles.badge, { borderColor: item.iconColor + '44', backgroundColor: item.iconColor + '14' }]}>
           <Text style={[styles.badgeText, { color: item.iconColor }]}>{item.badge}</Text>
         </View>
 
-        {/* Text */}
+        {/* Editorial Typography */}
         <Text style={styles.headline}>{item.headline}</Text>
         <Text style={styles.body}>{item.body}</Text>
       </Animated.View>
@@ -92,11 +97,12 @@ export default function TutorialScreen({ onComplete }) {
   const animValues = useRef(SLIDES.map((_, i) => new Animated.Value(i === 0 ? 1 : 0))).current;
 
   const goToSlide = (index) => {
-    Haptics.selectionAsync();
+    try {
+      Haptics.selectionAsync();
+    } catch {}
     listRef.current?.scrollToIndex({ index, animated: true });
-    // Animate out old, animate in new
-    Animated.timing(animValues[currentIndex], { toValue: 0, duration: 200, useNativeDriver: true }).start();
-    Animated.timing(animValues[index], { toValue: 1, duration: 350, useNativeDriver: true }).start();
+    Animated.timing(animValues[currentIndex], { toValue: 0, duration: 180, useNativeDriver: true }).start();
+    Animated.timing(animValues[index], { toValue: 1, duration: 320, useNativeDriver: true }).start();
     setCurrentIndex(index);
   };
 
@@ -104,14 +110,16 @@ export default function TutorialScreen({ onComplete }) {
     if (currentIndex < SLIDES.length - 1) {
       goToSlide(currentIndex + 1);
     } else {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch {}
       onComplete?.();
     }
   };
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0E" />
+      <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
 
       <FlatList
         ref={listRef}
@@ -129,24 +137,27 @@ export default function TutorialScreen({ onComplete }) {
 
       {/* ── Bottom Controls ── */}
       <View style={styles.controls}>
-        {/* Dot indicators */}
+        {/* Expanding Gold Indicator Pills */}
         <View style={styles.dots}>
           {SLIDES.map((_, i) => (
-            <TouchableOpacity key={i} onPress={() => goToSlide(i)}>
-              <Animated.View style={[
-                styles.dot,
-                i === currentIndex && styles.dotActive,
-              ]} />
+            <TouchableOpacity key={i} onPress={() => goToSlide(i)} activeOpacity={0.7}>
+              <View
+                style={[
+                  styles.dot,
+                  i === currentIndex && styles.dotActive,
+                ]}
+              />
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Navigation buttons */}
+        {/* Action Row */}
         <View style={styles.navRow}>
           {currentIndex > 0 && (
             <TouchableOpacity
               onPress={() => goToSlide(currentIndex - 1)}
               style={styles.backBtn}
+              activeOpacity={0.7}
             >
               <Text style={styles.backText}>Back</Text>
             </TouchableOpacity>
@@ -156,15 +167,16 @@ export default function TutorialScreen({ onComplete }) {
             onPress={handleNext}
             icon={currentIndex < SLIDES.length - 1 ? ChevronRight : Check}
             style={styles.nextBtn}
+            size="md"
           >
-            {currentIndex < SLIDES.length - 1 ? 'Next' : "Let's Go!"}
+            {currentIndex < SLIDES.length - 1 ? 'Continue' : "Enter Studio"}
           </GoldButton>
         </View>
 
-        {/* Skip */}
+        {/* Skip action */}
         {currentIndex < SLIDES.length - 1 && (
-          <TouchableOpacity onPress={onComplete} style={styles.skipBtn}>
-            <Text style={styles.skipText}>Skip tutorial</Text>
+          <TouchableOpacity onPress={onComplete} style={styles.skipBtn} activeOpacity={0.7}>
+            <Text style={styles.skipText}>Skip introduction</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -173,99 +185,120 @@ export default function TutorialScreen({ onComplete }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B0B0E' },
-  slide: { width, minHeight: height * 0.72, paddingTop: 60 },
-  slideContent: { flex: 1, alignItems: 'center', paddingHorizontal: Spacing[8], paddingTop: Spacing[12] },
+  container: { flex: 1, backgroundColor: Colors.bg.base },
+  slide: { width, minHeight: height * 0.72, paddingTop: 64 },
+  slideContent: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: Spacing[8],
+    paddingTop: Spacing[10],
+  },
 
   iconRing: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing[6],
   },
   iconInner: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   badge: {
+    paddingVertical: 4,
     paddingHorizontal: Spacing[4],
-    paddingVertical: Spacing[1],
     borderRadius: Radius.full,
     borderWidth: 1,
-    marginBottom: Spacing[4],
+    marginBottom: Spacing[5],
   },
   badgeText: {
+    fontFamily: Typography.fontBodySemi,
     fontSize: Typography.size.xs,
-    fontWeight: Typography.weight.semibold,
     letterSpacing: 1.5,
-    textTransform: 'uppercase',
   },
 
   headline: {
-    fontSize: Typography.size['3xl'],
-    fontWeight: Typography.weight.bold,
+    fontFamily: Typography.fontHeading,
+    fontSize: Typography.size['2xl'],
     color: Colors.text.primary,
     textAlign: 'center',
-    lineHeight: 40,
-    marginBottom: Spacing[5],
+    lineHeight: 34,
+    marginBottom: Spacing[4],
   },
   body: {
+    fontFamily: Typography.fontBody,
     fontSize: Typography.size.base,
     color: Colors.text.secondary,
     textAlign: 'center',
     lineHeight: 24,
-    maxWidth: 300,
+    paddingHorizontal: Spacing[2],
   },
 
+  // Bottom Controls
   controls: {
-    backgroundColor: Colors.bg.base,
     paddingHorizontal: Spacing[6],
-    paddingTop: Spacing[5],
     paddingBottom: Spacing[10],
-    borderTopWidth: 1,
-    borderTopColor: Colors.gold.border,
-    alignItems: 'center',
-    gap: Spacing[4],
+    gap: Spacing[5],
   },
-  dots: { flexDirection: 'row', gap: 8, marginBottom: Spacing[1] },
+  dots: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: Colors.neutral[700],
+    backgroundColor: Colors.neutral[800],
   },
   dotActive: {
-    backgroundColor: Colors.gold.DEFAULT,
-    width: 24,
+    width: 28,
+    height: 8,
     borderRadius: 4,
+    backgroundColor: Colors.gold.DEFAULT,
   },
 
   navRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing[4],
-    width: '100%',
+    gap: Spacing[3],
   },
-  nextBtn: { flex: 1 },
   backBtn: {
-    paddingHorizontal: Spacing[5],
     paddingVertical: Spacing[3],
+    paddingHorizontal: Spacing[5],
     borderRadius: Radius.md,
+    backgroundColor: Colors.bg.card,
     borderWidth: 1,
     borderColor: Colors.gold.border,
+    minHeight: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backText: {
-    color: Colors.gold.DEFAULT,
-    fontSize: Typography.size.base,
-    fontWeight: Typography.weight.medium,
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: Typography.size.sm,
+    color: Colors.text.secondary,
   },
-  skipBtn: { paddingVertical: Spacing[2] },
-  skipText: { color: Colors.neutral[500], fontSize: Typography.size.sm },
+  nextBtn: {
+    flex: 1,
+  },
+
+  skipBtn: {
+    alignItems: 'center',
+    paddingVertical: Spacing[2],
+  },
+  skipText: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.xs,
+    color: Colors.neutral[500],
+    letterSpacing: 0.5,
+  },
 });

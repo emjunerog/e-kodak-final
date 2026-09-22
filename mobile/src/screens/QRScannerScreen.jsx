@@ -1,7 +1,11 @@
 /**
  * QRScannerScreen.jsx
- * Camera-based QR scanner with animated gold reticle, haptics,
- * and fallback manual token entry.
+ * Luxury Camera Viewfinder for scanning E-Kodak Studio QR Passes.
+ * Features:
+ * - Playfair Display & Inter typography
+ * - Gold reticle with glowing laser scanline
+ * - Haptic feedback on detection & errors
+ * - Translucent frosted manual token entry modal
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -12,16 +16,18 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
-  QrCode, X, Flashlight, FlashlightOff, Keyboard, ChevronRight
+  QrCode, X, Flashlight, FlashlightOff, Keyboard, ChevronRight,
 } from 'lucide-react-native';
+
 import { parseQRPayload, fetchBookingByToken, logQRScan } from '../services/bookingService';
 import { saveBookingToken } from '../services/storageService';
 import GoldButton from '../components/GoldButton';
-import { Colors, Typography, Spacing, Radius } from '../theme';
+import { Colors, Gradients, Typography, Spacing, Radius, Shadow } from '../theme';
 
 const { width } = Dimensions.get('window');
-const RETICLE_SIZE = width * 0.68;
+const RETICLE_SIZE = width * 0.70;
 
 export default function QRScannerScreen({ navigation }) {
   const [permission, requestPermission] = useCameraPermissions();
@@ -31,7 +37,7 @@ export default function QRScannerScreen({ navigation }) {
   const [manualVisible, setManualVisible] = useState(false);
   const [manualToken, setManualToken]   = useState('');
 
-  // Animated gold scanning line
+  // Animated gold laser scanning line
   const scanAnim = useRef(new Animated.Value(0)).current;
   const cornerAnim = useRef(new Animated.Value(1)).current;
 
@@ -57,8 +63,8 @@ export default function QRScannerScreen({ navigation }) {
 
     Animated.loop(
       Animated.sequence([
-        Animated.timing(cornerAnim, { toValue: 0.5, duration: 1100, useNativeDriver: true }),
-        Animated.timing(cornerAnim, { toValue: 1, duration: 1100, useNativeDriver: true }),
+        Animated.timing(cornerAnim, { toValue: 0.4, duration: 1200, useNativeDriver: true }),
+        Animated.timing(cornerAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
       ])
     ).start();
   };
@@ -73,12 +79,16 @@ export default function QRScannerScreen({ navigation }) {
     setScanning(false);
     setLoading(true);
 
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
 
     const { valid, token, error } = parseQRPayload(data);
     if (!valid) {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Invalid QR Code', error || 'This QR code is not a valid E-Kodak booking pass.', [
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } catch {}
+      Alert.alert('Invalid Studio Pass', error || 'This QR code is not a valid E-Kodak booking pass.', [
         { text: 'Try Again', onPress: () => { setScanning(true); setLoading(false); } },
       ]);
       return;
@@ -92,16 +102,16 @@ export default function QRScannerScreen({ navigation }) {
     const { data: booking, error } = await fetchBookingByToken(token);
 
     if (error || !booking) {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Booking Not Found', 'We couldn\'t find a booking for this code. Please check with your studio.', [
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } catch {}
+      Alert.alert('Booking Not Found', 'We could not find a booking for this code. Please verify with the studio.', [
         { text: 'Try Again', onPress: () => { setScanning(true); setLoading(false); } },
       ]);
       return;
     }
 
-    // Log the scan
     await logQRScan({ bookingId: booking.id });
-    // Persist locally
     await saveBookingToken(token, booking);
 
     setLoading(false);
@@ -113,10 +123,12 @@ export default function QRScannerScreen({ navigation }) {
   if (!permission.granted) {
     return (
       <View style={[styles.dark, styles.centered]}>
-        <QrCode size={64} color={Colors.gold.DEFAULT} strokeWidth={1} />
-        <Text style={styles.permTitle}>Camera Access Required</Text>
+        <View style={styles.permIconRing}>
+          <QrCode size={52} color={Colors.gold.DEFAULT} strokeWidth={1.25} />
+        </View>
+        <Text style={styles.permTitle}>Camera Permission Required</Text>
         <Text style={styles.permBody}>
-          E-Kodak needs camera access to scan your booking QR code.
+          E-Kodak requires camera access to scan your studio pass and track your session live.
         </Text>
         <GoldButton onPress={requestPermission} style={{ marginTop: Spacing[6] }}>
           Grant Camera Access
@@ -127,9 +139,9 @@ export default function QRScannerScreen({ navigation }) {
 
   return (
     <View style={styles.dark}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0E" />
+      <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
 
-      {/* Camera */}
+      {/* Camera View */}
       <CameraView
         style={StyleSheet.absoluteFill}
         facing="back"
@@ -138,84 +150,98 @@ export default function QRScannerScreen({ navigation }) {
         onBarcodeScanned={scanning && !loading ? handleScanned : undefined}
       />
 
-      {/* Overlay: darken everything outside the reticle */}
+      {/* Dark Studio HUD Mask */}
       <View style={styles.overlay}>
-        {/* Top dark area */}
         <View style={styles.overlayTop} />
 
-        {/* Middle row */}
         <View style={styles.overlayMiddle}>
           <View style={styles.overlaySide} />
 
           {/* ── Reticle ── */}
           <View style={styles.reticle}>
-            {/* Corner brackets */}
-            {['tl','tr','bl','br'].map((corner) => (
+            {/* Gold Corner Brackets */}
+            {['tl', 'tr', 'bl', 'br'].map((corner) => (
               <Animated.View
                 key={corner}
                 style={[styles.corner, styles[`corner_${corner}`], { opacity: cornerAnim }]}
               />
             ))}
 
-            {/* Animated scan line */}
+            {/* Gold Laser Scanline */}
             <Animated.View
-              style={[styles.scanLine, { transform: [{ translateY: scanLineY }] }]}
-            />
+              style={[styles.scanLineWrapper, { transform: [{ translateY: scanLineY }] }]}
+            >
+              <LinearGradient
+                colors={Gradients.gold}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.scanLine}
+              />
+            </Animated.View>
           </View>
 
           <View style={styles.overlaySide} />
         </View>
 
-        {/* Bottom dark area */}
         <View style={styles.overlayBottom} />
       </View>
 
-      {/* ── Header ── */}
+      {/* ── Header Controls ── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-          <X size={22} color={Colors.text.primary} />
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.iconBtn}
+          activeOpacity={0.7}
+        >
+          <X size={20} color={Colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Scan QR Pass</Text>
-        <TouchableOpacity onPress={() => setTorch(!torch)} style={styles.iconBtn}>
-          {torch
-            ? <FlashlightOff size={22} color={Colors.gold.DEFAULT} />
-            : <Flashlight size={22} color={Colors.text.primary} />
-          }
+        <Text style={styles.headerTitle}>Scan Studio Pass</Text>
+        <TouchableOpacity
+          onPress={() => setTorch(!torch)}
+          style={styles.iconBtn}
+          activeOpacity={0.7}
+        >
+          {torch ? (
+            <FlashlightOff size={20} color={Colors.gold.DEFAULT} />
+          ) : (
+            <Flashlight size={20} color={Colors.text.primary} />
+          )}
         </TouchableOpacity>
       </View>
 
-      {/* ── Instructions ── */}
+      {/* ── Instruction Text ── */}
       <View style={styles.instructions}>
-        <Text style={styles.instructTitle}>Point at your booking QR code</Text>
+        <Text style={styles.instructTitle}>Align QR code inside the frame</Text>
         <Text style={styles.instructSub}>
-          The QR code is on your E-Kodak booking confirmation email or the studio website.
+          Locate the QR code on your booking confirmation or studio reception pass.
         </Text>
       </View>
 
-      {/* ── Manual Entry Button ── */}
+      {/* ── Footer ── */}
       <View style={styles.footer}>
         {loading && (
           <View style={styles.loadingBar}>
-            <Text style={styles.loadingText}>Loading booking details…</Text>
+            <Text style={styles.loadingText}>Retrieving studio booking…</Text>
           </View>
         )}
         <TouchableOpacity
           style={styles.manualBtn}
           onPress={() => setManualVisible(true)}
+          activeOpacity={0.7}
         >
-          <Keyboard size={16} color={Colors.gold.dim} />
-          <Text style={styles.manualText}>Enter booking token manually</Text>
+          <Keyboard size={15} color={Colors.gold.light} />
+          <Text style={styles.manualText}>Enter pass token manually</Text>
         </TouchableOpacity>
       </View>
 
       {/* ── Manual Entry Modal ── */}
       <Modal visible={manualVisible} animationType="slide" transparent>
-        <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+        <BlurView intensity={70} tint="dark" style={StyleSheet.absoluteFill} />
         <View style={styles.modalContainer}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Enter Booking Token</Text>
+            <Text style={styles.modalTitle}>Enter Pass Token</Text>
             <Text style={styles.modalSub}>
-              Find your token in the booking email or the web portal under "My Bookings".
+              Enter the unique verification token found on your studio booking confirmation.
             </Text>
             <TextInput
               style={styles.tokenInput}
@@ -252,7 +278,7 @@ export default function QRScannerScreen({ navigation }) {
                 disabled={!manualToken.trim()}
                 style={{ flex: 1 }}
               >
-                Find Booking
+                Verify Pass
               </GoldButton>
             </View>
           </View>
@@ -262,20 +288,51 @@ export default function QRScannerScreen({ navigation }) {
   );
 }
 
-const OVERLAY_COLOR = 'rgba(0,0,0,0.72)';
-const CORNER_SIZE   = 24;
+const OVERLAY_COLOR = 'rgba(13, 11, 9, 0.78)';
+const CORNER_SIZE   = 28;
 const CORNER_WIDTH  = 3;
 
 const styles = StyleSheet.create({
-  dark:    { flex: 1, backgroundColor: '#0B0B0E' },
+  dark: { flex: 1, backgroundColor: Colors.bg.base },
   centered: { alignItems: 'center', justifyContent: 'center', padding: Spacing[8] },
 
+  permIconRing: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: Colors.gold.bg,
+    borderWidth: 1,
+    borderColor: Colors.gold.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing[5],
+    ...Shadow.goldSoft,
+  },
+  permTitle: {
+    fontFamily: Typography.fontHeading,
+    fontSize: Typography.size.xl,
+    color: Colors.text.primary,
+    textAlign: 'center',
+    marginBottom: Spacing[2],
+  },
+  permBody: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.sm,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+
   // Overlay layout
-  overlay:       { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
-  overlayTop:    { flex: 1, width: '100%', backgroundColor: OVERLAY_COLOR },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  overlayTop: { flex: 1, width: '100%', backgroundColor: OVERLAY_COLOR },
   overlayBottom: { flex: 1, width: '100%', backgroundColor: OVERLAY_COLOR },
   overlayMiddle: { flexDirection: 'row', alignItems: 'center' },
-  overlaySide:   { flex: 1, height: RETICLE_SIZE, backgroundColor: OVERLAY_COLOR },
+  overlaySide: { flex: 1, height: RETICLE_SIZE, backgroundColor: OVERLAY_COLOR },
 
   // Reticle
   reticle: {
@@ -285,7 +342,6 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
 
-  // Gold corner brackets
   corner: {
     position: 'absolute',
     width: CORNER_SIZE,
@@ -298,23 +354,22 @@ const styles = StyleSheet.create({
   corner_br: { bottom: 0, right: 0, borderBottomWidth: CORNER_WIDTH, borderRightWidth: CORNER_WIDTH },
 
   // Scan line
-  scanLine: {
+  scanLineWrapper: {
     position: 'absolute',
     left: 0,
     right: 0,
-    height: 2,
-    backgroundColor: Colors.gold.DEFAULT,
-    shadowColor: Colors.gold.DEFAULT,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 8,
-    elevation: 8,
+    height: 3,
+    ...Shadow.gold,
+  },
+  scanLine: {
+    height: 3,
+    borderRadius: 1.5,
   },
 
   // Header
   header: {
     position: 'absolute',
-    top: 50,
+    top: 52,
     left: 0,
     right: 0,
     flexDirection: 'row',
@@ -323,40 +378,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing[5],
   },
   iconBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(26, 23, 20, 0.75)',
+    borderWidth: 1,
+    borderColor: Colors.gold.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
+    fontFamily: Typography.fontHeading,
     fontSize: Typography.size.lg,
-    fontWeight: Typography.weight.semibold,
     color: Colors.text.primary,
   },
 
   // Instructions
   instructions: {
     position: 'absolute',
-    top: '62%',
+    top: '64%',
     left: 0,
     right: 0,
     alignItems: 'center',
     paddingHorizontal: Spacing[8],
   },
   instructTitle: {
-    fontSize: Typography.size.md,
-    fontWeight: Typography.weight.semibold,
+    fontFamily: Typography.fontHeadingSemi,
+    fontSize: Typography.size.base,
     color: Colors.text.primary,
     textAlign: 'center',
-    marginBottom: Spacing[2],
+    marginBottom: Spacing[1],
   },
   instructSub: {
-    fontSize: Typography.size.sm,
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.xs,
     color: Colors.text.secondary,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 18,
   },
 
   // Footer
@@ -377,9 +435,9 @@ const styles = StyleSheet.create({
     borderColor: Colors.gold.border,
   },
   loadingText: {
-    color: Colors.gold.DEFAULT,
-    fontSize: Typography.size.sm,
-    fontWeight: Typography.weight.medium,
+    color: Colors.gold.light,
+    fontSize: Typography.size.xs,
+    fontFamily: Typography.fontBodySemi,
   },
   manualBtn: {
     flexDirection: 'row',
@@ -388,25 +446,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing[2],
   },
   manualText: {
-    color: Colors.gold.dim,
-    fontSize: Typography.size.sm,
-    textDecorationLine: 'underline',
-  },
-
-  // Permission
-  permTitle: {
-    fontSize: Typography.size.xl,
-    fontWeight: Typography.weight.bold,
-    color: Colors.text.primary,
-    textAlign: 'center',
-    marginTop: Spacing[6],
-    marginBottom: Spacing[3],
-  },
-  permBody: {
-    fontSize: Typography.size.base,
-    color: Colors.text.secondary,
-    textAlign: 'center',
-    lineHeight: 24,
+    color: Colors.gold.light,
+    fontSize: Typography.size.xs,
+    fontFamily: Typography.fontBodyMedium,
+    letterSpacing: 0.5,
   },
 
   // Modal
@@ -420,29 +463,31 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bg.card,
     borderRadius: Radius.xl,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: Colors.gold.borderLight,
     padding: Spacing[6],
     gap: Spacing[4],
+    ...Shadow.card,
   },
   modalTitle: {
+    fontFamily: Typography.fontHeading,
     fontSize: Typography.size.xl,
-    fontWeight: Typography.weight.bold,
     color: Colors.text.primary,
   },
   modalSub: {
-    fontSize: Typography.size.sm,
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.xs,
     color: Colors.text.secondary,
-    lineHeight: 20,
+    lineHeight: 19,
   },
   tokenInput: {
     backgroundColor: Colors.bg.input,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: Colors.gold.border,
     borderRadius: Radius.md,
     padding: Spacing[4],
     fontSize: Typography.size.sm,
     color: Colors.text.primary,
-    fontFamily: 'monospace',
+    fontFamily: Typography.fontBody,
   },
   modalButtons: {
     flexDirection: 'row',

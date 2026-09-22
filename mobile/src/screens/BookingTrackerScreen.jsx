@@ -1,28 +1,34 @@
 /**
  * BookingTrackerScreen.jsx
- * Real-time booking status tracker with milestone stepper,
- * booking details, and live Supabase subscription.
+ * Luxury Live Booking Status Tracker for E-Kodak Photography Studio.
+ * Features:
+ * - Playfair Display & Inter typography
+ * - Live real-time Supabase status subscription
+ * - Editorial session dossier card with gold accents
+ * - Upgraded MilestoneStepper with animated nodes
+ * - Delivery, pickup, and physical output details
  */
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  StatusBar, RefreshControl, Animated, Alert,
+  StatusBar, RefreshControl, Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import {
   ArrowLeft, Calendar, MapPin, Phone, Camera, Package,
-  QrCode, RefreshCw, Share2, Bookmark, BookmarkCheck,
-  Wifi, WifiOff, ChevronDown, ChevronUp,
+  QrCode, RefreshCw, Bookmark, BookmarkCheck,
+  ChevronDown, ChevronUp, Clock, User, Sparkles,
 } from 'lucide-react-native';
+
 import { fetchBookingByToken, subscribeToBookingUpdates } from '../services/bookingService';
 import { saveBookingToken, removeSavedBooking, getSavedBookings } from '../services/storageService';
 import GlassCard from '../components/GlassCard';
 import StatusBadge from '../components/StatusBadge';
 import MilestoneStepper from '../components/MilestoneStepper';
 import GoldButton from '../components/GoldButton';
-import { Colors, Typography, Spacing, Radius } from '../theme';
+import { Colors, Gradients, Typography, Spacing, Radius, Shadow } from '../theme';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -30,7 +36,7 @@ function formatDate(dateStr) {
   if (!dateStr) return '—';
   try {
     return new Date(dateStr).toLocaleDateString('en-PH', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+      weekday: 'short', year: 'numeric', month: 'long', day: 'numeric',
     });
   } catch { return dateStr; }
 }
@@ -44,34 +50,61 @@ function formatTime(timeStr) {
   } catch { return timeStr; }
 }
 
-// ── Delivery Card ─────────────────────────────────────────────────────────────
+// ── Delivery Panel ───────────────────────────────────────────────────────────
 
 function DeliveryPanel({ deliveries }) {
   if (!deliveries?.length) return null;
 
   return (
-    <GlassCard style={styles.section}>
+    <GlassCard highlight style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Package size={16} color={Colors.gold.DEFAULT} />
-        <Text style={styles.sectionTitle}>Delivery / Pickup</Text>
+        <View style={styles.sectionHeaderLeft}>
+          <Package size={16} color={Colors.gold.DEFAULT} />
+          <Text style={styles.sectionTitle}>Print Output & Delivery</Text>
+        </View>
       </View>
       {deliveries.map((d) => (
         <View key={d.id} style={styles.deliveryRow}>
-          <Text style={styles.deliveryType}>{d.delivery_type?.replace('_', ' ')}</Text>
-          <Text style={[styles.deliveryStatus, { color: d.status === 'DELIVERED' ? '#10B981' : Colors.gold.dim }]}>
-            {d.status}
-          </Text>
+          <View style={styles.deliveryTop}>
+            <Text style={styles.deliveryType}>{d.delivery_type?.replace('_', ' ')}</Text>
+            <Text
+              style={[
+                styles.deliveryStatus,
+                { color: d.status === 'DELIVERED' ? Colors.status.ready : Colors.gold.light },
+              ]}
+            >
+              {d.status}
+            </Text>
+          </View>
           {d.tracking_number && (
-            <Text style={styles.tracking}>Tracking: {d.tracking_number}</Text>
+            <Text style={styles.tracking}>Tracking No: {d.tracking_number}</Text>
           )}
           {d.digital_access_expires_at && (
-            <Text style={styles.tracking}>
-              Digital access expires: {formatDate(d.digital_access_expires_at)}
+            <Text style={styles.digitalExpiry}>
+              Digital gallery access expires: {formatDate(d.digital_access_expires_at)}
             </Text>
           )}
         </View>
       ))}
     </GlassCard>
+  );
+}
+
+// ── Info Row Sub-component ───────────────────────────────────────────────────
+
+function InfoRow({ icon: Icon, label, value, highlight = false }) {
+  return (
+    <View style={styles.infoRow}>
+      <View style={styles.infoIconWrapper}>
+        <Icon size={14} color={Colors.gold.light} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.infoLabel}>{label}</Text>
+        <Text style={[styles.infoValue, highlight && styles.infoValueHighlight]}>
+          {value}
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -82,29 +115,32 @@ export default function BookingTrackerScreen({ route, navigation }) {
   const [booking, setBooking]         = useState(initialBooking);
   const [refreshing, setRefreshing]   = useState(false);
   const [isSaved, setIsSaved]         = useState(false);
-  const [isLive, setIsLive]           = useState(true);
   const [stepperOpen, setStepperOpen] = useState(true);
 
-  // Live indicator pulse
+  // Luminous emerald pulse for live indicator
   const livePulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     checkIfSaved();
     const unsubscribe = subscribeToBookingUpdates(booking.id, (updated) => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch {}
       setBooking((prev) => ({ ...prev, ...updated }));
     });
 
-    // Pulse the live dot
     const anim = Animated.loop(
       Animated.sequence([
-        Animated.timing(livePulse, { toValue: 0.3, duration: 700, useNativeDriver: true }),
-        Animated.timing(livePulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(livePulse, { toValue: 0.35, duration: 800, useNativeDriver: true }),
+        Animated.timing(livePulse, { toValue: 1, duration: 800, useNativeDriver: true }),
       ])
     );
     anim.start();
 
-    return () => { unsubscribe(); anim.stop(); };
+    return () => {
+      unsubscribe();
+      anim.stop();
+    };
   }, [booking.id]);
 
   const checkIfSaved = async () => {
@@ -120,7 +156,9 @@ export default function BookingTrackerScreen({ route, navigation }) {
   }, [token]);
 
   const toggleSave = async () => {
-    await Haptics.selectionAsync();
+    try {
+      await Haptics.selectionAsync();
+    } catch {}
     if (isSaved) {
       await removeSavedBooking(token);
       setIsSaved(false);
@@ -132,41 +170,51 @@ export default function BookingTrackerScreen({ route, navigation }) {
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0E" />
+      <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
 
-      {/* ── Header ── */}
+      {/* ── Editorial Header ── */}
       <LinearGradient
-        colors={['#0F0F14', '#0B0B0E']}
+        colors={Gradients.darkStudio}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
         style={styles.header}
       >
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <ArrowLeft size={22} color={Colors.text.primary} />
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={20} color={Colors.text.primary} />
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            Booking #{booking.booking_number}
+            Pass #{booking.booking_number}
           </Text>
-          {/* Live indicator */}
+          {/* Live Studio Sync Pill */}
           <View style={styles.liveRow}>
             <Animated.View style={[styles.liveDot, { opacity: livePulse }]} />
-            <Text style={styles.liveText}>Live</Text>
+            <Text style={styles.liveText}>LIVE STUDIO SYNC</Text>
           </View>
         </View>
 
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={toggleSave} style={styles.iconBtn}>
-            {isSaved
-              ? <BookmarkCheck size={20} color={Colors.gold.DEFAULT} />
-              : <Bookmark size={20} color={Colors.text.secondary} />
-            }
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          onPress={toggleSave}
+          style={styles.actionBtn}
+          activeOpacity={0.7}
+        >
+          {isSaved ? (
+            <BookmarkCheck size={20} color={Colors.gold.DEFAULT} />
+          ) : (
+            <Bookmark size={20} color={Colors.neutral[400]} />
+          )}
+        </TouchableOpacity>
       </LinearGradient>
 
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -176,194 +224,363 @@ export default function BookingTrackerScreen({ route, navigation }) {
           />
         }
       >
-        {/* ── Status Hero ── */}
-        <GlassCard glow style={styles.heroCard}>
+        {/* ── Session Dossier Card ── */}
+        <GlassCard glow highlight style={styles.heroCard}>
           <View style={styles.heroTop}>
-            <View>
-              <Text style={styles.heroLabel}>Current Status</Text>
-              <StatusBadge status={booking.status} style={{ marginTop: 6 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.heroLabel}>CURRENT SESSION PHASE</Text>
+              <StatusBadge status={booking.status} size="md" style={{ marginTop: 6 }} />
             </View>
             <View style={styles.qrBadge}>
-              <QrCode size={28} color={Colors.gold.dim} strokeWidth={1.5} />
+              <QrCode size={26} color={Colors.gold.light} strokeWidth={1.5} />
             </View>
           </View>
 
-          <View style={styles.divider} />
+          <View style={styles.cardDivider} />
 
-          {/* Session Info */}
+          {/* Session Service Title */}
+          {booking.services?.name && (
+            <View style={styles.serviceHeader}>
+              <Text style={styles.serviceSubtitle}>SESSION PACKAGE</Text>
+              <Text style={styles.serviceTitle}>{booking.services.name}</Text>
+            </View>
+          )}
+
+          {/* Session Metadata Grid */}
           <View style={styles.infoGrid}>
-            <InfoRow icon={Calendar} label="Session Date">
-              {formatDate(booking.session_date)}
-              {booking.session_time && ` at ${formatTime(booking.session_time)}`}
-            </InfoRow>
+            <InfoRow
+              icon={Calendar}
+              label="Session Schedule"
+              value={`${formatDate(booking.session_date)}${booking.session_time ? ` · ${formatTime(booking.session_time)}` : ''}`}
+              highlight
+            />
 
-            <InfoRow icon={MapPin} label="Location">
-              {booking.location_type === 'STUDIO'
-                ? 'E-Kodak Studio'
-                : booking.location_address || 'On-site / Outdoor'}
-            </InfoRow>
-
-            {booking.services?.name && (
-              <InfoRow icon={Camera} label="Service">
-                {booking.services.name}
-              </InfoRow>
-            )}
+            <InfoRow
+              icon={MapPin}
+              label="Studio Location"
+              value={
+                booking.location_type === 'STUDIO'
+                  ? 'E-Kodak Main Studio · Cebu'
+                  : booking.location_address || 'On-site / Outdoor'
+              }
+            />
 
             {booking.photographer?.full_name && (
-              <InfoRow icon={Camera} label="Photographer">
-                {booking.photographer.full_name}
-              </InfoRow>
+              <InfoRow
+                icon={Camera}
+                label="Lead Photographer"
+                value={booking.photographer.full_name}
+              />
             )}
           </View>
         </GlassCard>
 
-        {/* ── Milestone Stepper ── */}
-        <GlassCard style={styles.section}>
+        {/* ── Progress Timeline Stepper ── */}
+        <GlassCard highlight style={styles.section}>
           <TouchableOpacity
             style={styles.sectionHeader}
             onPress={() => setStepperOpen(!stepperOpen)}
             activeOpacity={0.7}
           >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <RefreshCw size={16} color={Colors.gold.DEFAULT} />
-              <Text style={styles.sectionTitle}>Progress Timeline</Text>
+            <View style={styles.sectionHeaderLeft}>
+              <RefreshCw size={15} color={Colors.gold.DEFAULT} />
+              <Text style={styles.sectionTitle}>Studio Progress Timeline</Text>
             </View>
-            {stepperOpen
-              ? <ChevronUp size={16} color={Colors.neutral[500]} />
-              : <ChevronDown size={16} color={Colors.neutral[500]} />
-            }
+            <View style={styles.chevronPill}>
+              {stepperOpen ? (
+                <ChevronUp size={14} color={Colors.gold.light} />
+              ) : (
+                <ChevronDown size={14} color={Colors.gold.light} />
+              )}
+            </View>
           </TouchableOpacity>
+
           {stepperOpen && (
             <MilestoneStepper status={booking.status} />
           )}
         </GlassCard>
 
-        {/* ── Delivery Panel ── */}
+        {/* ── Delivery & Prints Panel ── */}
         <DeliveryPanel deliveries={booking.booking_deliveries} />
 
-        {/* ── Client Info ── */}
+        {/* ── Client Details Card ── */}
         {booking.profile && (
-          <GlassCard style={styles.section}>
+          <GlassCard highlight style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Phone size={16} color={Colors.gold.DEFAULT} />
-              <Text style={styles.sectionTitle}>Contact Details</Text>
+              <View style={styles.sectionHeaderLeft}>
+                <User size={15} color={Colors.gold.DEFAULT} />
+                <Text style={styles.sectionTitle}>Client Information</Text>
+              </View>
             </View>
             <Text style={styles.clientName}>{booking.profile.full_name}</Text>
             {booking.profile.phone && (
-              <Text style={styles.clientDetail}>{booking.profile.phone}</Text>
+              <View style={styles.clientRow}>
+                <Phone size={13} color={Colors.gold.dim} />
+                <Text style={styles.clientDetail}>{booking.profile.phone}</Text>
+              </View>
             )}
             {booking.profile.email && (
-              <Text style={styles.clientDetail}>{booking.profile.email}</Text>
+              <Text style={styles.clientDetailMuted}>{booking.profile.email}</Text>
             )}
           </GlassCard>
         )}
 
-        {/* ── Scan Another ── */}
+        {/* ── Scan Another Pass Action ── */}
         <GoldButton
           variant="outline"
           icon={QrCode}
           onPress={() => navigation.replace('Scanner')}
           style={styles.scanAnotherBtn}
         >
-          Scan Another Booking
+          Scan Another QR Pass
         </GoldButton>
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 36 }} />
       </ScrollView>
     </View>
   );
 }
 
-// ── Info Row Sub-component ───────────────────────────────────────────────────
-
-function InfoRow({ icon: Icon, label, children }) {
-  return (
-    <View style={styles.infoRow}>
-      <View style={styles.infoIcon}>
-        <Icon size={14} color={Colors.gold.dim} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue}>{children}</Text>
-      </View>
-    </View>
-  );
-}
-
-// ── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.bg.base },
+
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 50,
+    paddingTop: 52,
     paddingBottom: Spacing[4],
     paddingHorizontal: Spacing[4],
     borderBottomWidth: 1,
     borderBottomColor: Colors.gold.border,
   },
   backBtn: {
-    width: 40, height: 40, borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: Colors.bg.card,
-    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.gold.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  headerCenter: { flex: 1, alignItems: 'center' },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
   headerTitle: {
+    fontFamily: Typography.fontHeading,
     fontSize: Typography.size.lg,
-    fontWeight: Typography.weight.semibold,
     color: Colors.text.primary,
   },
-  liveRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
-  liveDot: {
-    width: 6, height: 6, borderRadius: 3,
-    backgroundColor: '#10B981',
+  liveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 2,
   },
-  liveText: { fontSize: Typography.size.xs, color: '#10B981', fontWeight: Typography.weight.medium },
-  headerActions: { width: 40, alignItems: 'flex-end' },
-  iconBtn: {
-    width: 36, height: 36, borderRadius: 18,
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.status.ready,
+  },
+  liveText: {
+    fontFamily: Typography.fontBodySemi,
+    fontSize: 9.5,
+    color: Colors.status.ready,
+    letterSpacing: 1,
+  },
+  actionBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: Colors.bg.card,
-    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.gold.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   scroll: { flex: 1 },
-  scrollContent: { padding: Spacing[4], gap: Spacing[4] },
+  scrollContent: {
+    padding: Spacing[4],
+    gap: Spacing[4],
+  },
 
-  heroCard: { padding: Spacing[5] },
-  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Spacing[4] },
-  heroLabel: { fontSize: Typography.size.xs, color: Colors.text.secondary, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 },
+  // Hero Dossier Card
+  heroCard: {
+    padding: Spacing[5],
+  },
+  heroTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  heroLabel: {
+    fontFamily: Typography.fontBodySemi,
+    fontSize: Typography.size.xs,
+    color: Colors.text.secondary,
+    letterSpacing: 1.2,
+  },
   qrBadge: {
-    width: 52, height: 52, borderRadius: Radius.md,
-    backgroundColor: Colors.gold.bg, borderWidth: 1,
-    borderColor: Colors.gold.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-
-  divider: { height: 1, backgroundColor: Colors.gold.border, marginBottom: Spacing[4] },
-
-  infoGrid: { gap: Spacing[3] },
-  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing[3] },
-  infoIcon: {
-    width: 28, height: 28, borderRadius: 8,
+    width: 48,
+    height: 48,
+    borderRadius: Radius.md,
     backgroundColor: Colors.gold.bg,
-    alignItems: 'center', justifyContent: 'center',
-    marginTop: 2,
+    borderWidth: 1,
+    borderColor: Colors.gold.borderLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  infoLabel: { fontSize: Typography.size.xs, color: Colors.text.secondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
-  infoValue: { fontSize: Typography.size.base, color: Colors.text.primary, fontWeight: Typography.weight.medium, lineHeight: 22 },
+  cardDivider: {
+    height: 1,
+    backgroundColor: Colors.gold.border,
+    marginVertical: Spacing[4],
+  },
 
-  section: { padding: Spacing[5] },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2], marginBottom: Spacing[4], justifyContent: 'space-between' },
-  sectionTitle: { fontSize: Typography.size.base, fontWeight: Typography.weight.semibold, color: Colors.text.primary },
+  serviceHeader: {
+    marginBottom: Spacing[4],
+  },
+  serviceSubtitle: {
+    fontFamily: Typography.fontBody,
+    fontSize: 10,
+    color: Colors.gold.light,
+    letterSpacing: 1.5,
+    marginBottom: 2,
+  },
+  serviceTitle: {
+    fontFamily: Typography.fontHeading,
+    fontSize: Typography.size.xl,
+    color: Colors.text.primary,
+  },
 
-  deliveryRow: { borderTopWidth: 1, borderTopColor: Colors.bg.overlay, paddingTop: Spacing[3], marginTop: Spacing[2], gap: 3 },
-  deliveryType: { fontSize: Typography.size.sm, color: Colors.gold.DEFAULT, fontWeight: Typography.weight.medium, textTransform: 'uppercase', letterSpacing: 0.5 },
-  deliveryStatus: { fontSize: Typography.size.sm, fontWeight: Typography.weight.semibold },
-  tracking: { fontSize: Typography.size.xs, color: Colors.text.secondary, marginTop: 2 },
+  infoGrid: {
+    gap: Spacing[3],
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing[3],
+  },
+  infoIconWrapper: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: Colors.gold.bg,
+    borderWidth: 1,
+    borderColor: Colors.gold.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  infoLabel: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.xs,
+    color: Colors.text.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 1,
+  },
+  infoValue: {
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: Typography.size.sm,
+    color: Colors.text.secondary,
+    lineHeight: 20,
+  },
+  infoValueHighlight: {
+    color: Colors.text.primary,
+    fontFamily: Typography.fontBodySemi,
+  },
 
-  clientName: { fontSize: Typography.size.md, fontWeight: Typography.weight.semibold, color: Colors.text.primary, marginBottom: 4 },
-  clientDetail: { fontSize: Typography.size.sm, color: Colors.text.secondary, marginBottom: 2 },
+  // Sections
+  section: {
+    padding: Spacing[5],
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing[3],
+  },
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sectionTitle: {
+    fontFamily: Typography.fontHeadingSemi,
+    fontSize: Typography.size.base,
+    color: Colors.text.primary,
+  },
+  chevronPill: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.gold.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
-  scanAnotherBtn: { marginTop: Spacing[2] },
+  // Delivery Rows
+  deliveryRow: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.gold.border,
+    paddingTop: Spacing[3],
+    marginTop: Spacing[2],
+    gap: 3,
+  },
+  deliveryTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  deliveryType: {
+    fontFamily: Typography.fontHeadingSemi,
+    fontSize: Typography.size.sm,
+    color: Colors.gold.light,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  deliveryStatus: {
+    fontFamily: Typography.fontBodySemi,
+    fontSize: Typography.size.xs,
+  },
+  tracking: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.xs,
+    color: Colors.text.secondary,
+  },
+  digitalExpiry: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.xs,
+    color: Colors.neutral[500],
+  },
+
+  // Client Details
+  clientName: {
+    fontFamily: Typography.fontHeadingSemi,
+    fontSize: Typography.size.base,
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  clientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 3,
+  },
+  clientDetail: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.sm,
+    color: Colors.text.secondary,
+  },
+  clientDetailMuted: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.xs,
+    color: Colors.neutral[500],
+  },
+
+  scanAnotherBtn: {
+    marginTop: Spacing[2],
+  },
 });

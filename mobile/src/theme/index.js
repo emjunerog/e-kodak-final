@@ -1,61 +1,70 @@
 // ─────────────────────────────────────────────────────────────
-//  E-Kodak Studio — Design Tokens
-//  Single source of truth for the luxury dark-gold visual language
+//  E-Kodak Studio — Luxury Design System & Tokens
+//  Single source of truth for the warm near-black + metallic gold
+//  editorial photography aesthetic.
 // ─────────────────────────────────────────────────────────────
 
 export const Colors = {
-  // ── Backgrounds ──────────────────────────────────────────
+  // ── Warm Darkroom Studio Backgrounds ──────────────────────
   bg: {
-    base:      '#0B0B0E',   // deepest background
-    surface:   '#121217',   // card & screen surfaces
-    card:      '#181820',   // elevated cards
-    overlay:   '#1E1E28',   // modal overlays
-    input:     '#16161E',   // text input fills
+    base:         '#0D0B09',   // deepest studio blackroom (matches web neutral-950)
+    surface:      '#14120E',   // dark warm surface (matches web neutral-900)
+    card:         '#1A1714',   // elevated card surface
+    cardElevated: '#24201A',   // high-elevation card surface
+    overlay:      'rgba(13, 11, 9, 0.85)', // modal & drawer overlay
+    input:        '#181512',   // text input fill
+    glass:        'rgba(26, 23, 20, 0.72)',
   },
 
-  // ── Gold Accent Palette ───────────────────────────────────
+  // ── Metallic Gold Accent Palette ──────────────────────────
   gold: {
-    DEFAULT:   '#C9A96E',   // primary gold
-    light:     '#E5CA8F',   // highlight / text-gold
-    dim:       '#A88A52',   // muted gold (labels)
-    glow:      'rgba(201, 169, 110, 0.15)',  // subtle glow/border
-    border:    'rgba(201, 169, 110, 0.25)',  // card borders
-    bg:        'rgba(201, 169, 110, 0.10)',  // tinted badge background
+    DEFAULT:     '#C9A96E',   // signature studio gold
+    light:       '#E8D5B0',   // luminous highlight / text-gold
+    dark:        '#A8843A',   // deep aged gold
+    specular:    '#F3E7D3',   // diamond specular reflection
+    muted:       '#D4B896',   // warm muted gold
+    glow:        'rgba(201, 169, 110, 0.20)',  // ambient gold aura
+    border:      'rgba(201, 169, 110, 0.25)',  // card hairline border
+    borderLight: 'rgba(201, 169, 110, 0.45)',  // active/selected border
+    bg:          'rgba(201, 169, 110, 0.12)',  // tinted badge background
   },
 
-  // ── Status Colors ─────────────────────────────────────────
+  // ── Status Colors (Harmonized with Studio Workflow) ───────
   status: {
-    pending:    '#F59E0B',  // amber — awaiting review
-    confirmed:  '#3B82F6',  // blue — confirmed
-    inProgress: '#8B5CF6',  // violet — shooting/editing
-    ready:      '#10B981',  // emerald — ready for pickup
-    completed:  '#6B7280',  // gray — done
+    pending:    '#F59E0B',  // amber — awaiting deposit/review
+    confirmed:  '#3B82F6',  // blue — scheduled & confirmed
+    inProgress: '#8B5CF6',  // violet — photographer assigned / shoot
+    editing:    '#F97316',  // warm orange — retouching & proofs
+    ready:      '#10B981',  // emerald — outputs ready for pickup
+    completed:  '#22C55E',  // vibrant green — finished
     cancelled:  '#EF4444',  // red — cancelled
     rejected:   '#EF4444',
   },
 
-  // ── Neutral Scale ─────────────────────────────────────────
+  // ── Neutral Warm Gray Scale ───────────────────────────────
   neutral: {
-    50:  '#F9FAFB',
-    100: '#F3F4F6',
-    200: '#E5E7EB',
-    300: '#D1D5DB',
-    400: '#9CA3AF',
-    500: '#6B7280',
-    600: '#4B5563',
-    700: '#374151',
-    800: '#1F2937',
-    900: '#111827',
-    950: '#030712',
+    50:  '#FAFAF8',
+    100: '#F5F4F0',
+    200: '#EDE9E1',
+    300: '#D6D0C4',
+    400: '#B5AE9F',
+    500: '#8F877A',
+    600: '#6B6358',
+    700: '#4D4740',
+    800: '#332F2A',
+    900: '#1A1714',
+    950: '#0D0B09',
   },
 
-  // ── Semantic Aliases ──────────────────────────────────────
+  // ── Semantic Typography Aliases ───────────────────────────
   text: {
-    primary:   '#F5F5F0',   // primary text
-    secondary: '#9CA3AF',   // muted text
-    gold:      '#C9A96E',   // gold accent text
-    onGold:    '#1A1008',   // text on gold backgrounds
-    disabled:  '#4B5563',
+    primary:   '#FAFAF8',   // crisp warm white
+    secondary: '#B5AE9F',   // warm muted text
+    muted:     '#8F877A',   // subtle captions
+    gold:      '#E8D5B0',   // gold accent text
+    goldDark:  '#C9A96E',   // primary gold text
+    onGold:    '#1A1714',   // text on bright metallic gold
+    disabled:  '#4D4740',
   },
 
   white: '#FFFFFF',
@@ -63,22 +72,49 @@ export const Colors = {
   transparent: 'transparent',
 };
 
+// ── Gradients ─────────────────────────────────────────────────
+export const Gradients = {
+  // Rich metallic gold gradient
+  gold: ['#E8D5B0', '#C9A96E', '#A8843A'],
+  // Specular light sheen for primary CTA buttons
+  goldShine: ['#F3E7D3', '#E8D5B0', '#C9A96E', '#A8843A'],
+  // Subtle tinted badge/card fill
+  goldMuted: ['rgba(201, 169, 110, 0.18)', 'rgba(168, 132, 58, 0.06)'],
+  // Deep studio background lighting
+  darkStudio: ['#221E19', '#14120E', '#0D0B09'],
+  darkWarm: ['#1A1714', '#0D0B09'],
+  // Frosted acrylic glass card
+  glassCard: ['rgba(34, 30, 25, 0.88)', 'rgba(20, 18, 15, 0.96)'],
+  // Top specular acrylic edge reflection
+  glassHighlight: ['rgba(243, 231, 211, 0.18)', 'rgba(201, 169, 110, 0)'],
+  // Ambient radial warm glow
+  ambientSpot: ['rgba(201, 169, 110, 0.15)', 'rgba(13, 11, 9, 0)'],
+};
+
+// ── Typography ────────────────────────────────────────────────
 export const Typography = {
-  // Font families — you can swap to custom fonts later with expo-font
-  fontHeading:  'System',   // Replace with 'Cormorant-Italic' after asset load
-  fontBody:     'System',   // Replace with 'Inter-Regular'
+  // Font Families: Playfair Display for editorial elegance, Inter for clean modern body
+  fontHeading:        'PlayfairDisplay_700Bold',
+  fontHeadingSemi:    'PlayfairDisplay_600SemiBold',
+  fontHeadingRegular: 'PlayfairDisplay_400Regular',
+  fontHeadingItalic:  'PlayfairDisplay_400Regular_Italic',
+
+  fontBody:           'Inter_400Regular',
+  fontBodyMedium:     'Inter_500Medium',
+  fontBodySemi:       'Inter_600SemiBold',
+  fontBodyBold:       'Inter_700Bold',
 
   size: {
-    xs:   11,
-    sm:   13,
-    base: 15,
-    md:   17,
-    lg:   19,
-    xl:   22,
+    xs:    11,
+    sm:    13,
+    base:  15,
+    md:    17,
+    lg:    19,
+    xl:    22,
     '2xl': 26,
-    '3xl': 30,
-    '4xl': 36,
-    '5xl': 44,
+    '3xl': 32,
+    '4xl': 40,
+    '5xl': 48,
   },
 
   weight: {
@@ -96,6 +132,7 @@ export const Typography = {
   },
 };
 
+// ── Spacing ───────────────────────────────────────────────────
 export const Spacing = {
   0:   0,
   1:   4,
@@ -111,51 +148,70 @@ export const Spacing = {
   16:  64,
 };
 
+// ── Border Radius ─────────────────────────────────────────────
 export const Radius = {
-  sm:   6,
-  md:   12,
-  lg:   16,
-  xl:   24,
+  xs:   4,
+  sm:   8,
+  md:   14,
+  lg:   20,
+  xl:   28,
   full: 9999,
 };
 
+// ── Shadows ───────────────────────────────────────────────────
 export const Shadow = {
   gold: {
     shadowColor: '#C9A96E',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  goldSoft: {
+    shadowColor: '#C9A96E',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 6,
   },
   card: {
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 24,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.55,
+    shadowRadius: 28,
+    elevation: 14,
+  },
+  cardHover: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.65,
+    shadowRadius: 36,
+    elevation: 18,
   },
 };
 
+// ── Status Metadata ───────────────────────────────────────────
 export const STATUS_META = {
   PENDING:              { color: Colors.status.pending,    label: 'Pending Review',          step: 0 },
   CONFIRMED:            { color: Colors.status.confirmed,  label: 'Confirmed',               step: 1 },
   PHOTOGRAPHER_ASSIGNED:{ color: Colors.status.confirmed,  label: 'Photographer Assigned',   step: 2 },
   CAPTURE:              { color: Colors.status.inProgress, label: 'Studio Session',          step: 3 },
   IN_PROGRESS:          { color: Colors.status.inProgress, label: 'In Progress',             step: 3 },
-  EDITING:              { color: Colors.status.inProgress, label: 'Editing & Retouching',    step: 4 },
-  PRINTING:             { color: Colors.status.inProgress, label: 'Print Production',        step: 5 },
+  EDITING:              { color: Colors.status.editing,    label: 'Editing & Retouching',    step: 4 },
+  PRINTING:             { color: Colors.status.editing,    label: 'Print Production',        step: 5 },
   READY:                { color: Colors.status.ready,      label: 'Ready for Pickup',        step: 6 },
   COMPLETED:            { color: Colors.status.completed,  label: 'Completed',               step: 7 },
   CANCELLED:            { color: Colors.status.cancelled,  label: 'Cancelled',               step: -1 },
   REJECTED:             { color: Colors.status.rejected,   label: 'Rejected',                step: -1 },
 };
 
+// ── Milestone Steps ───────────────────────────────────────────
 export const MILESTONE_STEPS = [
-  { label: 'Request Received',       icon: 'ClipboardCheck',  desc: 'Your booking has been submitted.' },
-  { label: 'Confirmed & Scheduled',  icon: 'CalendarCheck',   desc: 'Booking confirmed. Your session date is locked.' },
-  { label: 'Photographer Assigned',  icon: 'Camera',          desc: 'A photographer has been assigned to your session.' },
-  { label: 'Studio Session',         icon: 'Aperture',        desc: 'Your photoshoot is in progress at the studio.' },
-  { label: 'Editing & Retouching',   icon: 'Sparkles',        desc: 'Your photos are being edited and retouched.' },
-  { label: 'Print Production',       icon: 'Printer',         desc: 'Printing and framing your final outputs.' },
-  { label: 'Ready for Pickup',       icon: 'Package',         desc: 'Your outputs are ready. Come pick them up!' },
+  { label: 'Request Received',       icon: 'ClipboardCheck',  desc: 'Your booking has been submitted & scheduled.' },
+  { label: 'Confirmed & Locked',     icon: 'CalendarCheck',   desc: 'Booking verified. Your studio slot is secured.' },
+  { label: 'Photographer Assigned',  icon: 'Camera',          desc: 'Your dedicated studio photographer is ready.' },
+  { label: 'Studio Session',         icon: 'Aperture',        desc: 'Your photoshoot is in progress in the studio bay.' },
+  { label: 'Editing & Retouching',   icon: 'Sparkles',        desc: 'Color grading, beauty retouching, and proofs.' },
+  { label: 'Print Production',       icon: 'Printer',         desc: 'Museum-grade printing & crystal framing.' },
+  { label: 'Ready for Pickup',       icon: 'Package',         desc: 'Your outputs are packaged & ready for collection.' },
 ];

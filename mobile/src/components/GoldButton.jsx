@@ -1,14 +1,20 @@
 /**
- * GoldButton.jsx — Reusable premium gold button with haptic feedback
- * Supports: primary (filled gold), outline, ghost variants
+ * GoldButton.jsx — Luxury Metallic Gold Button
+ * Features:
+ * - Multi-stop brushed metallic gold gradient (E8D5B0 -> C9A96E -> A8843A)
+ * - Tactile spring scale press animation
+ * - Haptic impact feedback
+ * - Inter_600SemiBold typography with luxury tracking
+ * - Variants: 'primary' (gradient fill), 'outline' (gold hairline), 'ghost' (tinted)
  */
 
-import React from 'react';
+import React, { useRef } from 'react';
 import {
-  TouchableOpacity, Text, StyleSheet, ActivityIndicator, View,
+  Pressable, Text, StyleSheet, ActivityIndicator, View, Animated,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { Colors, Typography, Radius, Spacing } from '../theme';
+import { Colors, Gradients, Typography, Radius, Spacing, Shadow } from '../theme';
 
 export default function GoldButton({
   children,
@@ -19,53 +25,106 @@ export default function GoldButton({
   loading = false,
   icon: Icon,
   style,
+  textStyle: customTextStyle,
 }) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    if (disabled || loading) return;
+    Animated.spring(scaleAnim, {
+      toValue: 0.96,
+      useNativeDriver: true,
+      speed: 25,
+      bounciness: 4,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    if (disabled || loading) return;
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 25,
+      bounciness: 6,
+    }).start();
+  };
+
   const handlePress = async () => {
     if (disabled || loading) return;
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
     onPress?.();
   };
 
-  const containerStyle = [
-    styles.base,
-    styles[`variant_${variant}`],
-    styles[`size_${size}`],
-    disabled && styles.disabled,
-    style,
-  ];
+  const isPrimary = variant === 'primary';
+  const isOutline = variant === 'outline';
+  const isGhost   = variant === 'ghost';
 
-  const textStyle = [
-    styles.text,
-    styles[`text_${variant}`],
-    styles[`textSize_${size}`],
-    disabled && styles.textDisabled,
-  ];
+  const iconColor = isPrimary
+    ? Colors.text.onGold
+    : Colors.gold.light;
+
+  const textColor = isPrimary
+    ? Colors.text.onGold
+    : isOutline
+    ? Colors.gold.light
+    : Colors.gold.DEFAULT;
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.8}
-      onPress={handlePress}
-      style={containerStyle}
-      disabled={disabled || loading}
-    >
-      {loading ? (
-        <ActivityIndicator
-          color={variant === 'primary' ? Colors.text.onGold : Colors.gold.DEFAULT}
-          size="small"
-        />
-      ) : (
-        <View style={styles.inner}>
-          {Icon && (
-            <Icon
-              size={size === 'sm' ? 14 : size === 'lg' ? 20 : 16}
-              color={variant === 'primary' ? Colors.text.onGold : Colors.gold.DEFAULT}
-              style={{ marginRight: 8 }}
-            />
-          )}
-          <Text style={textStyle}>{children}</Text>
-        </View>
-      )}
-    </TouchableOpacity>
+    <Animated.View style={[{ transform: [{ scale: scaleAnim }] }, style]}>
+      <Pressable
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={disabled || loading}
+        style={[
+          styles.base,
+          styles[`size_${size}`],
+          isOutline && styles.variant_outline,
+          isGhost && styles.variant_ghost,
+          disabled && styles.disabled,
+        ]}
+      >
+        {isPrimary && !disabled && (
+          <LinearGradient
+            colors={Gradients.gold}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[StyleSheet.absoluteFill, styles.gradientBg]}
+          />
+        )}
+
+        {isPrimary && disabled && (
+          <View style={[StyleSheet.absoluteFill, styles.disabledPrimaryBg]} />
+        )}
+
+        {loading ? (
+          <ActivityIndicator color={textColor} size="small" />
+        ) : (
+          <View style={styles.inner}>
+            {Icon && (
+              <Icon
+                size={size === 'sm' ? 14 : size === 'lg' ? 20 : 17}
+                color={iconColor}
+                strokeWidth={1.75}
+                style={{ marginRight: 8 }}
+              />
+            )}
+            <Text
+              style={[
+                styles.text,
+                styles[`textSize_${size}`],
+                { color: textColor },
+                customTextStyle,
+              ]}
+            >
+              {children}
+            </Text>
+          </View>
+        )}
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -74,49 +133,62 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  gradientBg: {
+    borderRadius: Radius.md,
+  },
+  disabledPrimaryBg: {
+    backgroundColor: '#3E3424',
+    borderRadius: Radius.md,
   },
   inner: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Variants
-  variant_primary: {
-    backgroundColor: Colors.gold.DEFAULT,
-    shadowColor: Colors.gold.DEFAULT,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
-  },
   variant_outline: {
-    backgroundColor: Colors.transparent,
-    borderWidth: 1.5,
-    borderColor: Colors.gold.border,
+    backgroundColor: 'rgba(201, 169, 110, 0.05)',
+    borderWidth: 1.2,
+    borderColor: Colors.gold.borderLight,
   },
   variant_ghost: {
     backgroundColor: Colors.gold.bg,
   },
 
   // Sizes
-  size_sm: { paddingVertical: Spacing[2], paddingHorizontal: Spacing[4], minHeight: 36 },
-  size_md: { paddingVertical: Spacing[3], paddingHorizontal: Spacing[6], minHeight: 48 },
-  size_lg: { paddingVertical: Spacing[4], paddingHorizontal: Spacing[8], minHeight: 56 },
+  size_sm: {
+    paddingVertical: Spacing[2],
+    paddingHorizontal: Spacing[4],
+    minHeight: 38,
+  },
+  size_md: {
+    paddingVertical: Spacing[3],
+    paddingHorizontal: Spacing[6],
+    minHeight: 50,
+    ...Shadow.goldSoft,
+  },
+  size_lg: {
+    paddingVertical: Spacing[4],
+    paddingHorizontal: Spacing[8],
+    minHeight: 58,
+    ...Shadow.gold,
+  },
 
   // Text
   text: {
-    fontWeight: Typography.weight.semibold,
-    letterSpacing: 0.5,
+    fontFamily: Typography.fontBodySemi,
+    letterSpacing: 0.8,
+    textAlign: 'center',
   },
-  text_primary: { color: Colors.text.onGold },
-  text_outline: { color: Colors.gold.DEFAULT },
-  text_ghost:   { color: Colors.gold.DEFAULT },
-  textSize_sm:  { fontSize: Typography.size.sm },
-  textSize_md:  { fontSize: Typography.size.base },
-  textSize_lg:  { fontSize: Typography.size.md },
+  textSize_sm: { fontSize: Typography.size.xs },
+  textSize_md: { fontSize: Typography.size.sm },
+  textSize_lg: { fontSize: Typography.size.base },
 
-  // States
-  disabled: { opacity: 0.45 },
-  textDisabled: { opacity: 0.45 },
+  disabled: {
+    opacity: 0.45,
+  },
 });

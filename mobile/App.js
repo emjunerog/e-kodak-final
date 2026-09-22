@@ -1,9 +1,9 @@
 /**
  * App.js — E-Kodak Companion App Root
  * Handles:
- * - Splash screen
+ * - Splash screen & Google Fonts preload (Playfair Display & Inter)
  * - First-launch tutorial detection
- * - Navigation container with app theme
+ * - Navigation container with luxury dark-gold theme
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -13,13 +13,26 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import {
+  useFonts,
+  PlayfairDisplay_400Regular,
+  PlayfairDisplay_600SemiBold,
+  PlayfairDisplay_700Bold,
+  PlayfairDisplay_400Regular_Italic,
+} from '@expo-google-fonts/playfair-display';
+import {
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+} from '@expo-google-fonts/inter';
 
 import AppNavigator from './src/navigation/AppNavigator';
 import TutorialScreen from './src/screens/TutorialScreen';
-import { Colors } from './src/theme';
+import { Colors, Typography } from './src/theme';
 
-// Keep splash visible until we're ready
-SplashScreen.preventAutoHideAsync();
+// Keep splash visible until fonts and storage are ready
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // ── Navigation Theme ──────────────────────────────────────────────────────────
 
@@ -30,18 +43,47 @@ const APP_THEME = {
     ...DefaultTheme.colors,
     primary:      Colors.gold.DEFAULT,
     background:   Colors.bg.base,
-    card:         Colors.bg.card,
+    card:         Colors.bg.surface,
     text:         Colors.text.primary,
     border:       Colors.gold.border,
     notification: Colors.gold.DEFAULT,
+  },
+  fonts: {
+    regular: {
+      fontFamily: Typography.fontBody,
+      fontWeight: '400',
+    },
+    medium: {
+      fontFamily: Typography.fontBodyMedium,
+      fontWeight: '500',
+    },
+    bold: {
+      fontFamily: Typography.fontHeadingSemi,
+      fontWeight: '600',
+    },
+    heavy: {
+      fontFamily: Typography.fontHeading,
+      fontWeight: '700',
+    },
   },
 };
 
 // ── App ────────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [appReady, setAppReady]               = useState(false);
-  const [showTutorial, setShowTutorial]       = useState(false);
+  const [appReady, setAppReady]         = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  const [fontsLoaded, fontError] = useFonts({
+    PlayfairDisplay_400Regular,
+    PlayfairDisplay_600SemiBold,
+    PlayfairDisplay_700Bold,
+    PlayfairDisplay_400Regular_Italic,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+  });
 
   useEffect(() => {
     async function prepare() {
@@ -57,15 +99,22 @@ export default function App() {
     prepare();
   }, []);
 
-  const onLayoutRootView = useCallback(async () => {
-    if (appReady) await SplashScreen.hideAsync();
-  }, [appReady]);
+  const isReady = (fontsLoaded || fontError) && appReady;
 
-  if (!appReady) return null;
+  const onLayoutRootView = useCallback(async () => {
+    if (isReady) {
+      try {
+        await SplashScreen.hideAsync();
+      } catch {}
+    }
+  }, [isReady]);
+
+  if (!isReady) return null;
 
   if (showTutorial) {
     return (
       <SafeAreaProvider>
+        <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
         <TutorialScreen
           onComplete={async () => {
             await AsyncStorage.setItem('ekodak:tutorial_done', '1');

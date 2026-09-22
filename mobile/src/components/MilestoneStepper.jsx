@@ -1,43 +1,72 @@
 /**
  * MilestoneStepper.jsx
- * Animated vertical progress stepper showing all booking phases.
- * Completed steps glow gold, active step pulses, future steps are dim.
+ * Luxury editorial timeline stepper for studio booking phases.
+ * Completed steps illuminate in brushed gold with checkmarks,
+ * active step features a dual-halo pulse and elevated card container,
+ * and future steps remain discreetly dimmed.
  */
 
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
-import { MILESTONE_STEPS, STATUS_META, Colors, Typography, Spacing, Radius } from '../theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Check } from 'lucide-react-native';
+import {
+  MILESTONE_STEPS, STATUS_META, Colors, Gradients,
+  Typography, Spacing, Radius, Shadow,
+} from '../theme';
 
-function PulseCircle({ active }) {
-  const pulse = useRef(new Animated.Value(1)).current;
+function PulseCircle({ active, isDone }) {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const opacityAnim = useRef(new Animated.Value(0.6)).current;
 
   useEffect(() => {
     if (!active) return;
     const anim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.35, duration: 900, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.5, duration: 1200, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+        ]),
+        Animated.sequence([
+          Animated.timing(opacityAnim, { toValue: 0.15, duration: 1200, useNativeDriver: true }),
+          Animated.timing(opacityAnim, { toValue: 0.6, duration: 1200, useNativeDriver: true }),
+        ]),
       ])
     );
     anim.start();
     return () => anim.stop();
-  }, [active, pulse]);
+  }, [active, pulseAnim, opacityAnim]);
+
+  if (isDone) {
+    return (
+      <View style={styles.circleWrapper}>
+        <LinearGradient
+          colors={Gradients.gold}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.circleDone}
+        >
+          <Check size={12} color={Colors.text.onGold} strokeWidth={3} />
+        </LinearGradient>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.circleWrapper}>
       {active && (
         <Animated.View
-          style={[styles.pulseBg, { transform: [{ scale: pulse }] }]}
+          style={[
+            styles.pulseHalo,
+            {
+              transform: [{ scale: pulseAnim }],
+              opacity: opacityAnim,
+            },
+          ]}
         />
       )}
-      <View style={[
-        styles.circle,
-        active && styles.circleActive,
-      ]}>
-        <View style={[
-          styles.circleDot,
-          active && styles.circleDotActive,
-        ]} />
+      <View style={[styles.circle, active && styles.circleActive]}>
+        <View style={[styles.circleDot, active && styles.circleDotActive]} />
       </View>
     </View>
   );
@@ -56,29 +85,50 @@ export default function MilestoneStepper({ status }) {
 
         return (
           <View key={index} style={styles.stepRow}>
-            {/* ── Left: circle + connector ── */}
+            {/* ── Left: Node + Connector Line ── */}
             <View style={styles.leftCol}>
-              <PulseCircle active={isActive} />
+              <PulseCircle active={isActive} isDone={isDone} />
               {index < MILESTONE_STEPS.length - 1 && (
-                <View style={[
-                  styles.connector,
-                  isDone && styles.connectorDone,
-                ]} />
+                <View style={styles.connectorTrack}>
+                  {isDone ? (
+                    <LinearGradient
+                      colors={Gradients.gold}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 0, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                  ) : (
+                    <View style={[StyleSheet.absoluteFill, styles.connectorFuture]} />
+                  )}
+                </View>
               )}
             </View>
 
-            {/* ── Right: label + desc ── */}
+            {/* ── Right: Content Card ── */}
             <View style={styles.rightCol}>
-              <Text style={[
-                styles.stepLabel,
-                isActive && styles.stepLabelActive,
-                isDone   && styles.stepLabelDone,
-                isFuture && styles.stepLabelFuture,
-              ]}>
-                {step.label}
-              </Text>
-              {(isActive || isDone) && (
-                <Text style={styles.stepDesc}>{step.desc}</Text>
+              {isActive ? (
+                <View style={styles.activeCard}>
+                  <View style={styles.activeHeaderRow}>
+                    <Text style={styles.stepLabelActive}>{step.label}</Text>
+                    <View style={styles.currentBadge}>
+                      <Text style={styles.currentBadgeText}>CURRENT</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.stepDescActive}>{step.desc}</Text>
+                </View>
+              ) : (
+                <View style={styles.inactiveWrapper}>
+                  <Text
+                    style={[
+                      styles.stepLabel,
+                      isDone && styles.stepLabelDone,
+                      isFuture && styles.stepLabelFuture,
+                    ]}
+                  >
+                    {step.label}
+                  </Text>
+                  {isDone && <Text style={styles.stepDescDone}>{step.desc}</Text>}
+                </View>
               )}
             </View>
           </View>
@@ -88,7 +138,7 @@ export default function MilestoneStepper({ status }) {
   );
 }
 
-const CIRCLE_SIZE = 20;
+const CIRCLE_SIZE = 24;
 
 const styles = StyleSheet.create({
   container: {
@@ -97,11 +147,10 @@ const styles = StyleSheet.create({
   stepRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 0,
   },
   leftCol: {
     alignItems: 'center',
-    width: 36,
+    width: 38,
     marginRight: Spacing[3],
   },
   circleWrapper: {
@@ -109,13 +158,14 @@ const styles = StyleSheet.create({
     height: CIRCLE_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
   circle: {
     width: CIRCLE_SIZE,
     height: CIRCLE_SIZE,
     borderRadius: CIRCLE_SIZE / 2,
-    borderWidth: 2,
-    borderColor: Colors.neutral[700],
+    borderWidth: 1.5,
+    borderColor: Colors.neutral[800],
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.bg.surface,
@@ -123,12 +173,17 @@ const styles = StyleSheet.create({
   },
   circleActive: {
     borderColor: Colors.gold.DEFAULT,
-    backgroundColor: Colors.bg.card,
-    shadowColor: Colors.gold.DEFAULT,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 8,
-    elevation: 6,
+    backgroundColor: Colors.bg.cardElevated,
+    ...Shadow.goldSoft,
+  },
+  circleDone: {
+    width: CIRCLE_SIZE,
+    height: CIRCLE_SIZE,
+    borderRadius: CIRCLE_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+    ...Shadow.goldSoft,
   },
   circleDot: {
     width: 8,
@@ -138,50 +193,99 @@ const styles = StyleSheet.create({
   },
   circleDotActive: {
     backgroundColor: Colors.gold.DEFAULT,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
-  pulseBg: {
+  pulseHalo: {
     position: 'absolute',
     width: CIRCLE_SIZE,
     height: CIRCLE_SIZE,
     borderRadius: CIRCLE_SIZE / 2,
-    backgroundColor: Colors.gold.glow,
+    backgroundColor: Colors.gold.DEFAULT,
     zIndex: 0,
   },
-  connector: {
+  connectorTrack: {
     width: 2,
     flex: 1,
-    minHeight: 32,
+    minHeight: 38,
+    overflow: 'hidden',
+    marginVertical: 4,
+  },
+  connectorFuture: {
     backgroundColor: Colors.neutral[800],
-    marginVertical: 2,
   },
-  connectorDone: {
-    backgroundColor: Colors.gold.dim,
-  },
+
   rightCol: {
     flex: 1,
-    paddingBottom: Spacing[5],
-    paddingTop: 1,
+    paddingBottom: Spacing[4],
   },
-  stepLabel: {
-    fontSize: Typography.size.sm,
-    fontWeight: Typography.weight.medium,
-    color: Colors.neutral[600],
-    marginBottom: 2,
+
+  // Active step elevated card
+  activeCard: {
+    backgroundColor: 'rgba(36, 32, 26, 0.75)',
+    borderWidth: 1,
+    borderColor: Colors.gold.borderLight,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing[3],
+    paddingHorizontal: Spacing[4],
+    gap: 4,
+    ...Shadow.goldSoft,
+  },
+  activeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   stepLabelActive: {
-    color: Colors.gold.light,
-    fontWeight: Typography.weight.semibold,
+    fontFamily: Typography.fontHeadingSemi,
     fontSize: Typography.size.base,
+    color: Colors.gold.light,
+    flex: 1,
+  },
+  currentBadge: {
+    backgroundColor: Colors.gold.bg,
+    borderWidth: 1,
+    borderColor: Colors.gold.borderLight,
+    borderRadius: Radius.full,
+    paddingVertical: 2,
+    paddingHorizontal: 7,
+  },
+  currentBadgeText: {
+    fontFamily: Typography.fontBodySemi,
+    fontSize: 9,
+    letterSpacing: 1,
+    color: Colors.gold.light,
+  },
+  stepDescActive: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.xs,
+    color: Colors.text.secondary,
+    lineHeight: 19,
+  },
+
+  // Inactive states
+  inactiveWrapper: {
+    paddingVertical: 3,
+  },
+  stepLabel: {
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: Typography.size.sm,
+    color: Colors.neutral[500],
   },
   stepLabelDone: {
-    color: Colors.neutral[400],
+    color: Colors.neutral[200],
+    fontFamily: Typography.fontBodyMedium,
   },
   stepLabelFuture: {
     color: Colors.neutral[700],
   },
-  stepDesc: {
+  stepDescDone: {
+    fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
     color: Colors.neutral[500],
     lineHeight: 18,
+    marginTop: 2,
   },
 });

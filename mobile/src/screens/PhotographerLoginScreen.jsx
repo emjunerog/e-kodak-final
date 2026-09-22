@@ -1,7 +1,11 @@
 /**
  * PhotographerLoginScreen.jsx
- * Supabase Auth login for photographers/studio staff.
- * Uses email + password. On success routes to Schedule.
+ * Luxury Studio Portal Sign-in for Staff & Photographers.
+ * Features:
+ * - Playfair Display & Inter typography
+ * - Dark studio gradient backdrop with ambient gold lighting
+ * - Translucent GlassCard container with specular highlights
+ * - Brushed metallic gold gradient CTA button
  */
 
 import React, { useState } from 'react';
@@ -10,11 +14,13 @@ import {
   StatusBar, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Aperture, Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
+import { Aperture, Mail, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+
 import { signInWithEmail, getProfile } from '../services/bookingService';
+import GlassCard from '../components/GlassCard';
 import GoldButton from '../components/GoldButton';
-import { Colors, Typography, Spacing, Radius } from '../theme';
+import { Colors, Gradients, Typography, Spacing, Radius, Shadow } from '../theme';
 
 export default function PhotographerLoginScreen({ navigation }) {
   const [email, setEmail]         = useState('');
@@ -24,22 +30,25 @@ export default function PhotographerLoginScreen({ navigation }) {
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
-      Alert.alert('Missing Fields', 'Please enter your email and password.');
+      Alert.alert('Missing Credentials', 'Please enter your studio email and password.');
       return;
     }
     setLoading(true);
     const { data, error } = await signInWithEmail(email.trim(), password);
 
     if (error || !data?.user) {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Login Failed', error?.message || 'Invalid credentials. Please try again.');
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } catch {}
+      Alert.alert('Authentication Failed', error?.message || 'Invalid credentials. Please verify with studio administration.');
       setLoading(false);
       return;
     }
 
-    // Fetch profile to get photographer id and name
     const profile = await getProfile(data.user.id);
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
 
     navigation.replace('Schedule', {
       photographerId: profile?.id || data.user.id,
@@ -48,30 +57,65 @@ export default function PhotographerLoginScreen({ navigation }) {
   };
 
   return (
-    <LinearGradient colors={['#0B0B0E', '#10100A']} style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0E" />
+    <View style={styles.screen}>
+      <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
+
+      <LinearGradient
+        colors={Gradients.darkStudio}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+
+      {/* Ambient gold glow */}
+      <LinearGradient
+        colors={Gradients.ambientSpot}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 0.6 }}
+        style={styles.ambientOverlay}
+      />
+
+      {/* Top back button */}
+      <TouchableOpacity
+        onPress={() => navigation.goBack()}
+        style={styles.backBtn}
+        activeOpacity={0.7}
+      >
+        <ArrowLeft size={20} color={Colors.text.primary} />
+      </TouchableOpacity>
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.inner}
       >
-        {/* Logo / Brand */}
+        {/* Brand Logo & Editorial Titles */}
         <View style={styles.brand}>
-          <View style={styles.logoRing}>
-            <Aperture size={40} color={Colors.gold.DEFAULT} strokeWidth={1.5} />
+          <View style={styles.logoWrapper}>
+            <LinearGradient
+              colors={Gradients.gold}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.logoGradientRing}
+            >
+              <View style={styles.logoInner}>
+                <Aperture size={36} color={Colors.gold.light} strokeWidth={1.5} />
+              </View>
+            </LinearGradient>
           </View>
-          <Text style={styles.brandName}>E-Kodak Studio</Text>
-          <Text style={styles.brandRole}>Photographer Portal</Text>
+          <Text style={styles.brandName}>E-KODAK STUDIO</Text>
+          <Text style={styles.brandRole}>Photographer & Staff Portal</Text>
         </View>
 
-        {/* Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Sign In</Text>
-          <Text style={styles.cardSub}>Access your shoot schedule and session details.</Text>
+        {/* Form Container */}
+        <GlassCard glow highlight style={styles.card}>
+          <Text style={styles.cardTitle}>Staff Sign In</Text>
+          <Text style={styles.cardSub}>
+            Access assigned daily shoots, clients, and session triggers.
+          </Text>
 
-          {/* Email */}
+          {/* Email Field */}
           <View style={styles.inputWrapper}>
-            <Mail size={16} color={Colors.gold.dim} style={styles.inputIcon} />
+            <Mail size={16} color={Colors.gold.light} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               placeholder="Studio email address"
@@ -85,9 +129,9 @@ export default function PhotographerLoginScreen({ navigation }) {
             />
           </View>
 
-          {/* Password */}
+          {/* Password Field */}
           <View style={styles.inputWrapper}>
-            <Lock size={16} color={Colors.gold.dim} style={styles.inputIcon} />
+            <Lock size={16} color={Colors.gold.light} style={styles.inputIcon} />
             <TextInput
               style={[styles.input, { flex: 1 }]}
               placeholder="Password"
@@ -99,94 +143,160 @@ export default function PhotographerLoginScreen({ navigation }) {
               onSubmitEditing={handleLogin}
             />
             <TouchableOpacity onPress={() => setShowPass(!showPass)} style={styles.eyeBtn}>
-              {showPass
-                ? <EyeOff size={16} color={Colors.neutral[500]} />
-                : <Eye size={16} color={Colors.neutral[500]} />
-              }
+              {showPass ? (
+                <EyeOff size={16} color={Colors.neutral[400]} />
+              ) : (
+                <Eye size={16} color={Colors.neutral[400]} />
+              )}
             </TouchableOpacity>
           </View>
 
-          <GoldButton onPress={handleLogin} loading={loading} style={styles.loginBtn}>
-            Sign In to Schedule
+          <GoldButton
+            onPress={handleLogin}
+            loading={loading}
+            style={styles.loginBtn}
+            size="md"
+          >
+            Access Shoot Schedule
           </GoldButton>
-        </View>
+        </GlassCard>
 
-        <Text style={styles.footer}>
-          This portal is for E-Kodak photographers and studio staff only.
+        <Text style={styles.footerNote}>
+          Authorized access only. Contact studio management for credentials.
         </Text>
       </KeyboardAvoidingView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 },
-  inner: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing[6] },
+  screen: { flex: 1, backgroundColor: Colors.bg.base },
+  ambientOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 340,
+    opacity: 0.8,
+  },
 
-  brand: { alignItems: 'center', marginBottom: Spacing[10] },
-  logoRing: {
-    width: 88, height: 88, borderRadius: 44,
-    borderWidth: 1.5, borderColor: Colors.gold.border,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.gold.bg,
-    marginBottom: Spacing[4],
-    shadowColor: Colors.gold.DEFAULT,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4, shadowRadius: 20,
-    elevation: 12,
+  backBtn: {
+    position: 'absolute',
+    top: 52,
+    left: Spacing[5],
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.bg.card,
+    borderWidth: 1,
+    borderColor: Colors.gold.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+
+  inner: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing[6],
+  },
+
+  brand: {
+    alignItems: 'center',
+    marginBottom: Spacing[8],
+  },
+  logoWrapper: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    marginBottom: Spacing[3],
+    ...Shadow.gold,
+  },
+  logoGradientRing: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    padding: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoInner: {
+    width: 73,
+    height: 73,
+    borderRadius: 36.5,
+    backgroundColor: Colors.bg.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   brandName: {
+    fontFamily: Typography.fontHeading,
     fontSize: Typography.size['2xl'],
-    fontWeight: Typography.weight.bold,
-    color: Colors.gold.DEFAULT,
-    letterSpacing: 1,
+    color: Colors.text.primary,
+    letterSpacing: 2,
     marginBottom: 4,
   },
   brandRole: {
-    fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
+    fontFamily: Typography.fontBodySemi,
+    fontSize: Typography.size.xs,
+    color: Colors.gold.light,
     letterSpacing: 2,
     textTransform: 'uppercase',
   },
 
+  // Form Card
   card: {
     width: '100%',
-    backgroundColor: Colors.bg.card,
-    borderRadius: Radius.xl,
-    borderWidth: 1,
-    borderColor: Colors.gold.border,
     padding: Spacing[6],
     gap: Spacing[4],
   },
-  cardTitle: { fontSize: Typography.size.xl, fontWeight: Typography.weight.bold, color: Colors.text.primary },
-  cardSub: { fontSize: Typography.size.sm, color: Colors.text.secondary, marginTop: -Spacing[2] },
+  cardTitle: {
+    fontFamily: Typography.fontHeading,
+    fontSize: Typography.size.xl,
+    color: Colors.text.primary,
+  },
+  cardSub: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.xs,
+    color: Colors.text.secondary,
+    lineHeight: 18,
+    marginTop: -Spacing[2],
+  },
 
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.bg.input,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: Colors.gold.border,
     borderRadius: Radius.md,
     paddingHorizontal: Spacing[4],
     height: 52,
   },
-  inputIcon: { marginRight: Spacing[3] },
+  inputIcon: {
+    marginRight: Spacing[3],
+  },
   input: {
     flex: 1,
-    fontSize: Typography.size.base,
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.sm,
     color: Colors.text.primary,
   },
-  eyeBtn: { padding: Spacing[1] },
+  eyeBtn: {
+    padding: Spacing[1],
+  },
 
-  loginBtn: { marginTop: Spacing[2] },
+  loginBtn: {
+    marginTop: Spacing[2],
+  },
 
-  footer: {
-    fontSize: Typography.size.xs,
+  footerNote: {
+    fontFamily: Typography.fontBody,
+    fontSize: 11,
     color: Colors.neutral[600],
     textAlign: 'center',
     marginTop: Spacing[8],
-    lineHeight: 18,
     maxWidth: 260,
+    lineHeight: 17,
   },
 });

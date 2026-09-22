@@ -1,7 +1,7 @@
 /**
  * AppNavigator.jsx
- * Root navigation structure for E-Kodak Companion App.
- * Uses React Navigation: Stack for all screens + Bottom Tabs for the main hub.
+ * Luxury Editorial Navigation for E-Kodak Studio Companion App.
+ * Stack for all screens + frosted bottom tabs for main hub navigation.
  */
 
 import React from 'react';
@@ -29,19 +29,19 @@ function MainTabs() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: Colors.bg.card,
+          backgroundColor: Colors.bg.surface,
           borderTopColor: Colors.gold.border,
           borderTopWidth: 1,
           paddingTop: 8,
           height: 64,
           paddingBottom: 10,
         },
-        tabBarActiveTintColor:   Colors.gold.DEFAULT,
-        tabBarInactiveTintColor: Colors.neutral[600],
+        tabBarActiveTintColor:   Colors.gold.light,
+        tabBarInactiveTintColor: Colors.neutral[500],
         tabBarLabelStyle: {
-          fontSize: Typography.size.xs,
-          fontWeight: Typography.weight.semibold,
-          letterSpacing: 0.3,
+          fontFamily: Typography.fontBodySemi,
+          fontSize: 11,
+          letterSpacing: 0.5,
         },
       }}
     >
@@ -50,23 +50,29 @@ function MainTabs() {
         component={HomeScreen}
         options={{
           tabBarLabel: 'Home',
-          tabBarIcon: ({ color, size }) => <Home size={size} color={color} strokeWidth={1.5} />,
+          tabBarIcon: ({ color, size }) => (
+            <Home size={size - 2} color={color} strokeWidth={1.75} />
+          ),
         }}
       />
       <Tab.Screen
         name="Scanner"
         component={QRScannerScreen}
         options={{
-          tabBarLabel: 'Scan QR',
-          tabBarIcon: ({ color, size }) => <QrCode size={size} color={color} strokeWidth={1.5} />,
+          tabBarLabel: 'Scan Pass',
+          tabBarIcon: ({ color, size }) => (
+            <QrCode size={size - 2} color={color} strokeWidth={1.75} />
+          ),
         }}
       />
       <Tab.Screen
         name="Bookings"
         component={SavedBookingsScreen}
         options={{
-          tabBarLabel: 'Bookings',
-          tabBarIcon: ({ color, size }) => <BookOpen size={size} color={color} strokeWidth={1.5} />,
+          tabBarLabel: 'Passes',
+          tabBarIcon: ({ color, size }) => (
+            <BookOpen size={size - 2} color={color} strokeWidth={1.75} />
+          ),
         }}
       />
     </Tab.Navigator>
@@ -87,7 +93,7 @@ export default function AppNavigator() {
       {/* Main Tab Hub */}
       <Stack.Screen name="Main" component={MainTabs} />
 
-      {/* Full-screen push screens */}
+      {/* Full-screen Push Screens */}
       <Stack.Screen
         name="BookingTracker"
         component={BookingTrackerScreen}

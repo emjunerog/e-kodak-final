@@ -1,7 +1,10 @@
 /**
  * SavedBookingsScreen.jsx
- * Lists all QR passes saved to the device.
- * Tapping one navigates directly to the tracker.
+ * Luxury Studio Passes & Tracked Sessions List.
+ * Features:
+ * - Playfair Display & Inter typography
+ * - Physical VIP ticket styling with metallic gold accents
+ * - GlassCard list items with haptics and swipe actions
  */
 
 import React, { useState, useCallback } from 'react';
@@ -11,12 +14,15 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
-import { BookOpen, QrCode, ChevronRight, Trash2 } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
+import { BookOpen, QrCode, ChevronRight, Trash2, Calendar } from 'lucide-react-native';
+
 import { getSavedBookings, removeSavedBooking } from '../services/storageService';
 import { fetchBookingByToken } from '../services/bookingService';
+import GlassCard from '../components/GlassCard';
 import StatusBadge from '../components/StatusBadge';
 import GoldButton from '../components/GoldButton';
-import { Colors, Typography, Spacing, Radius } from '../theme';
+import { Colors, Gradients, Typography, Spacing, Radius, Shadow } from '../theme';
 
 function formatDate(str) {
   if (!str) return '';
@@ -26,11 +32,23 @@ function formatDate(str) {
 }
 
 function BookingPassCard({ item, onPress, onDelete }) {
+  const handleDelete = async () => {
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch {}
+    onDelete?.();
+  };
+
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
-      <View style={styles.card}>
-        {/* Gold left bar */}
-        <View style={styles.cardBar} />
+    <TouchableOpacity onPress={onPress} activeOpacity={0.84}>
+      <GlassCard highlight style={styles.card}>
+        {/* Metallic Gold Left Indicator Spine */}
+        <LinearGradient
+          colors={Gradients.gold}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.cardSpine}
+        />
 
         <View style={styles.cardContent}>
           <View style={styles.cardTop}>
@@ -39,27 +57,34 @@ function BookingPassCard({ item, onPress, onDelete }) {
               {item.clientName ? <Text style={styles.clientName}>{item.clientName}</Text> : null}
               {item.serviceName ? <Text style={styles.serviceName}>{item.serviceName}</Text> : null}
             </View>
-            <View style={{ alignItems: 'flex-end', gap: 8 }}>
-              <StatusBadge status={item.status} />
+            <View style={{ alignItems: 'flex-end', gap: 6 }}>
+              <StatusBadge status={item.status} size="sm" />
               {item.sessionDate && (
-                <Text style={styles.sessionDate}>{formatDate(item.sessionDate)}</Text>
+                <View style={styles.sessionDateTag}>
+                  <Calendar size={11} color={Colors.text.muted} />
+                  <Text style={styles.sessionDateText}>{formatDate(item.sessionDate)}</Text>
+                </View>
               )}
             </View>
           </View>
 
+          <View style={styles.cardDivider} />
+
           <View style={styles.cardFooter}>
             <Text style={styles.savedAt}>
-              Saved {formatDate(item.savedAt)}
+              Added to device {formatDate(item.savedAt)}
             </Text>
             <View style={styles.cardActions}>
-              <TouchableOpacity onPress={onDelete} style={styles.deleteBtn}>
-                <Trash2 size={14} color={Colors.neutral[600]} />
+              <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Trash2 size={15} color={Colors.neutral[500]} />
               </TouchableOpacity>
-              <ChevronRight size={16} color={Colors.gold.dim} />
+              <View style={styles.chevronPill}>
+                <ChevronRight size={14} color={Colors.gold.light} />
+              </View>
             </View>
           </View>
         </View>
-      </View>
+      </GlassCard>
     </TouchableOpacity>
   );
 }
@@ -82,6 +107,9 @@ export default function SavedBookingsScreen({ navigation }) {
   };
 
   const openBooking = async (item) => {
+    try {
+      await Haptics.selectionAsync();
+    } catch {}
     const { data: booking } = await fetchBookingByToken(item.token);
     if (booking) {
       navigation.navigate('BookingTracker', { booking, token: item.token });
@@ -95,26 +123,41 @@ export default function SavedBookingsScreen({ navigation }) {
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0E" />
+      <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
 
-      <LinearGradient colors={['#0F0F14', '#0B0B0E']} style={styles.header}>
-        <BookOpen size={22} color={Colors.gold.DEFAULT} />
-        <Text style={styles.headerTitle}>My Bookings</Text>
+      {/* ── Editorial Header ── */}
+      <LinearGradient
+        colors={Gradients.darkStudio}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.header}
+      >
+        <View style={styles.headerTop}>
+          <View style={styles.headerIconWrapper}>
+            <BookOpen size={20} color={Colors.gold.light} />
+          </View>
+          <View>
+            <Text style={styles.headerTitle}>Studio Passes</Text>
+            <Text style={styles.headerSubtitle}>Saved & tracked client sessions</Text>
+          </View>
+        </View>
       </LinearGradient>
 
       {bookings.length === 0 ? (
         <View style={styles.empty}>
-          <QrCode size={72} color={Colors.neutral[700]} strokeWidth={1} />
-          <Text style={styles.emptyTitle}>No Saved Bookings</Text>
+          <View style={styles.emptyIconRing}>
+            <QrCode size={48} color={Colors.gold.DEFAULT} strokeWidth={1.25} />
+          </View>
+          <Text style={styles.emptyTitle}>No Studio Passes Saved</Text>
           <Text style={styles.emptyBody}>
-            Scan your E-Kodak booking QR code to track your session live.
+            Scan the QR code from your booking receipt or online account to track your photoshoot session live.
           </Text>
           <GoldButton
             icon={QrCode}
             onPress={() => navigation.navigate('Scanner')}
             style={{ marginTop: Spacing[6] }}
           >
-            Scan Booking QR
+            Scan Your Booking QR
           </GoldButton>
         </View>
       ) : (
@@ -145,7 +188,7 @@ export default function SavedBookingsScreen({ navigation }) {
               style={{ marginBottom: Spacing[4] }}
               size="sm"
             >
-              Scan New Booking
+              Scan Another Studio Pass
             </GoldButton>
           }
         />
@@ -156,46 +199,152 @@ export default function SavedBookingsScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.bg.base },
+
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing[3],
-    paddingTop: 55,
-    paddingBottom: Spacing[4],
+    paddingTop: 54,
+    paddingBottom: Spacing[5],
     paddingHorizontal: Spacing[5],
     borderBottomWidth: 1,
     borderBottomColor: Colors.gold.border,
   },
-  headerTitle: {
-    fontSize: Typography.size.xl,
-    fontWeight: Typography.weight.bold,
-    color: Colors.text.primary,
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[3],
   },
-
-  list: { padding: Spacing[4], gap: Spacing[3] },
-
-  card: {
-    backgroundColor: Colors.bg.card,
-    borderRadius: Radius.lg,
+  headerIconWrapper: {
+    width: 42,
+    height: 42,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.gold.bg,
     borderWidth: 1,
     borderColor: Colors.gold.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontFamily: Typography.fontHeading,
+    fontSize: Typography.size.xl,
+    color: Colors.text.primary,
+  },
+  headerSubtitle: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.xs,
+    color: Colors.text.secondary,
+  },
+
+  list: {
+    padding: Spacing[4],
+    gap: Spacing[3],
+  },
+
+  // Pass Card
+  card: {
     flexDirection: 'row',
     overflow: 'hidden',
+    marginBottom: Spacing[2],
   },
-  cardBar: { width: 4, backgroundColor: Colors.gold.DEFAULT },
-  cardContent: { flex: 1, padding: Spacing[4], gap: Spacing[2] },
-  cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing[3] },
-  bookingNum: { fontSize: Typography.size.md, fontWeight: Typography.weight.bold, color: Colors.text.primary },
-  clientName: { fontSize: Typography.size.sm, color: Colors.text.secondary, marginTop: 2 },
-  serviceName: { fontSize: Typography.size.xs, color: Colors.gold.dim, marginTop: 1, textTransform: 'uppercase', letterSpacing: 0.5 },
-  sessionDate: { fontSize: Typography.size.xs, color: Colors.text.secondary },
+  cardSpine: {
+    width: 4,
+  },
+  cardContent: {
+    flex: 1,
+    padding: Spacing[4],
+  },
+  cardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  bookingNum: {
+    fontFamily: Typography.fontHeading,
+    fontSize: Typography.size.lg,
+    color: Colors.text.primary,
+  },
+  clientName: {
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: Typography.size.sm,
+    color: Colors.text.secondary,
+    marginTop: 2,
+  },
+  serviceName: {
+    fontFamily: Typography.fontHeadingItalic,
+    fontSize: Typography.size.xs,
+    color: Colors.gold.light,
+    marginTop: 1,
+  },
+  sessionDateTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  sessionDateText: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.xs,
+    color: Colors.text.muted,
+  },
+  cardDivider: {
+    height: 1,
+    backgroundColor: Colors.gold.border,
+    marginVertical: Spacing[3],
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  savedAt: {
+    fontFamily: Typography.fontBody,
+    fontSize: 11,
+    color: Colors.neutral[500],
+  },
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  deleteBtn: {
+    padding: 4,
+  },
+  chevronPill: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.gold.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: Spacing[1] },
-  savedAt: { fontSize: Typography.size.xs, color: Colors.neutral[600] },
-  cardActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2] },
-  deleteBtn: { padding: 4 },
-
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing[10] },
-  emptyTitle: { fontSize: Typography.size.xl, fontWeight: Typography.weight.bold, color: Colors.text.primary, marginTop: Spacing[6], marginBottom: Spacing[3], textAlign: 'center' },
-  emptyBody: { fontSize: Typography.size.base, color: Colors.text.secondary, textAlign: 'center', lineHeight: 24 },
+  // Empty State
+  empty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing[8],
+  },
+  emptyIconRing: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: Colors.gold.bg,
+    borderWidth: 1,
+    borderColor: Colors.gold.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing[5],
+    ...Shadow.goldSoft,
+  },
+  emptyTitle: {
+    fontFamily: Typography.fontHeading,
+    fontSize: Typography.size.xl,
+    color: Colors.text.primary,
+    marginBottom: Spacing[2],
+  },
+  emptyBody: {
+    fontFamily: Typography.fontBody,
+    fontSize: Typography.size.sm,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
 });
