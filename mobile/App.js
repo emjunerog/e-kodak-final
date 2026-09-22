@@ -2,8 +2,8 @@
  * App.js — E-Kodak Companion App Root
  * Handles:
  * - Splash screen & Google Fonts preload (Playfair Display & Inter)
- * - First-launch tutorial detection
- * - Navigation container with luxury dark-gold theme
+ * - First-launch tutorial & customer vs photographer role routing
+ * - Navigation container with luxury dark-gold theme & 5-tab structure
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -73,6 +73,7 @@ const APP_THEME = {
 export default function App() {
   const [appReady, setAppReady]         = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [initialRoute, setInitialRoute] = useState('Main');
 
   const [fontsLoaded, fontError] = useFonts({
     PlayfairDisplay_400Regular,
@@ -116,8 +117,13 @@ export default function App() {
       <SafeAreaProvider>
         <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
         <TutorialScreen
-          onComplete={async () => {
+          onComplete={async (role) => {
             await AsyncStorage.setItem('ekodak:tutorial_done', '1');
+            if (role === 'photographer') {
+              setInitialRoute('PhotographerLogin');
+            } else {
+              setInitialRoute('Main');
+            }
             setShowTutorial(false);
           }}
         />
@@ -130,7 +136,7 @@ export default function App() {
       <SafeAreaProvider>
         <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
         <NavigationContainer theme={APP_THEME}>
-          <AppNavigator />
+          <AppNavigator initialRouteName={initialRoute} />
         </NavigationContainer>
       </SafeAreaProvider>
     </GestureHandlerRootView>

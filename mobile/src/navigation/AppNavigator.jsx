@@ -1,27 +1,37 @@
 /**
  * AppNavigator.jsx
- * Luxury Editorial Navigation for E-Kodak Studio Companion App.
- * Stack for all screens + frosted bottom tabs for main hub navigation.
+ * Luxury 5-Tab Navigation Structure for E-Kodak Studio Companion.
+ * Tabs:
+ * 1. Home — Centered brandmark, wide hero cards, 3 studio tools, photo reel
+ * 2. Scan Pass — Centered camera viewfinder
+ * 3. Studio Passes — Saved session tickets
+ * 4. Profile — Customer order dossier auto-loaded from QR
+ * 5. Settings — Preferences, cache reset & Photographer portal gateway
  */
 
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { QrCode, BookOpen, Home } from 'lucide-react-native';
+import {
+  QrCode, BookOpen, Home, User, Settings,
+} from 'lucide-react-native';
+
 import { Colors, Typography } from '../theme';
 
 // ── Screens ──────────────────────────────────────────────────────────────────
-import HomeScreen              from '../screens/HomeScreen';
-import QRScannerScreen         from '../screens/QRScannerScreen';
-import BookingTrackerScreen    from '../screens/BookingTrackerScreen';
-import SavedBookingsScreen     from '../screens/SavedBookingsScreen';
-import PhotographerLoginScreen from '../screens/PhotographerLoginScreen';
+import HomeScreen                 from '../screens/HomeScreen';
+import QRScannerScreen            from '../screens/QRScannerScreen';
+import SavedBookingsScreen        from '../screens/SavedBookingsScreen';
+import ProfileScreen              from '../screens/ProfileScreen';
+import SettingsScreen             from '../screens/SettingsScreen';
+import BookingTrackerScreen       from '../screens/BookingTrackerScreen';
+import PhotographerLoginScreen    from '../screens/PhotographerLoginScreen';
 import PhotographerScheduleScreen from '../screens/PhotographerScheduleScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
 
-// ── Bottom Tab Navigator ──────────────────────────────────────────────────────
+// ── 5-Tab Bottom Navigator ───────────────────────────────────────────────────
 
 function MainTabs() {
   return (
@@ -40,8 +50,8 @@ function MainTabs() {
         tabBarInactiveTintColor: Colors.neutral[500],
         tabBarLabelStyle: {
           fontFamily: Typography.fontBodySemi,
-          fontSize: 11,
-          letterSpacing: 0.5,
+          fontSize: 10,
+          letterSpacing: 0.4,
         },
       }}
     >
@@ -51,7 +61,7 @@ function MainTabs() {
         options={{
           tabBarLabel: 'Home',
           tabBarIcon: ({ color, size }) => (
-            <Home size={size - 2} color={color} strokeWidth={1.75} />
+            <Home size={size - 3} color={color} strokeWidth={1.75} />
           ),
         }}
       />
@@ -61,7 +71,7 @@ function MainTabs() {
         options={{
           tabBarLabel: 'Scan Pass',
           tabBarIcon: ({ color, size }) => (
-            <QrCode size={size - 2} color={color} strokeWidth={1.75} />
+            <QrCode size={size - 3} color={color} strokeWidth={1.75} />
           ),
         }}
       />
@@ -71,7 +81,27 @@ function MainTabs() {
         options={{
           tabBarLabel: 'Passes',
           tabBarIcon: ({ color, size }) => (
-            <BookOpen size={size - 2} color={color} strokeWidth={1.75} />
+            <BookOpen size={size - 3} color={color} strokeWidth={1.75} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{
+          tabBarLabel: 'Profile',
+          tabBarIcon: ({ color, size }) => (
+            <User size={size - 3} color={color} strokeWidth={1.75} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{
+          tabBarLabel: 'Settings',
+          tabBarIcon: ({ color, size }) => (
+            <Settings size={size - 3} color={color} strokeWidth={1.75} />
           ),
         }}
       />
@@ -81,25 +111,30 @@ function MainTabs() {
 
 // ── Root Stack Navigator ──────────────────────────────────────────────────────
 
-export default function AppNavigator() {
+export default function AppNavigator({ initialRouteName = 'Main' }) {
   return (
     <Stack.Navigator
+      initialRouteName={initialRouteName}
       screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
         contentStyle: { backgroundColor: Colors.bg.base },
       }}
     >
-      {/* Main Tab Hub */}
+      {/* 5-Tab Main Hub */}
       <Stack.Screen name="Main" component={MainTabs} />
 
-      {/* Full-screen Push Screens */}
+      {/* Push Screens */}
       <Stack.Screen
         name="BookingTracker"
         component={BookingTrackerScreen}
         options={{ animation: 'slide_from_bottom' }}
       />
-      <Stack.Screen name="PhotographerLogin" component={PhotographerLoginScreen} />
+      <Stack.Screen
+        name="PhotographerLogin"
+        component={PhotographerLoginScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
       <Stack.Screen
         name="Schedule"
         component={PhotographerScheduleScreen}

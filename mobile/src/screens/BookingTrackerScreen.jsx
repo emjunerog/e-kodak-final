@@ -23,7 +23,10 @@ import {
 } from 'lucide-react-native';
 
 import { fetchBookingByToken, subscribeToBookingUpdates } from '../services/bookingService';
-import { saveBookingToken, removeSavedBooking, getSavedBookings } from '../services/storageService';
+import {
+  saveBookingToken, removeSavedBooking, getSavedBookings,
+  saveCustomerProfileFromBooking,
+} from '../services/storageService';
 import GlassCard from '../components/GlassCard';
 import StatusBadge from '../components/StatusBadge';
 import MilestoneStepper from '../components/MilestoneStepper';
@@ -122,6 +125,7 @@ export default function BookingTrackerScreen({ route, navigation }) {
 
   useEffect(() => {
     checkIfSaved();
+    saveCustomerProfileFromBooking(booking);
     const unsubscribe = subscribeToBookingUpdates(booking.id, (updated) => {
       try {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
