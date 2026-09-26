@@ -22,11 +22,11 @@ import Gallery from "./pages/Gallery";
 import About from "./pages/About";
 import Contact from "./pages/Contact";
 import Legal from "./pages/Legal";
+import PublicPassPage from "./pages/PublicPassPage";
 
 // ── Auth Pages ────────────────────────────────────────────────────────────────
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
-import AdminLogin from "./pages/auth/AdminLogin";
 import AuthCallback from "./pages/auth/AuthCallback";
 import PendingApproval from "./pages/auth/PendingApproval";
 
@@ -109,6 +109,7 @@ export default function App() {
 
           <Route path="/privacy"  element={<Legal slug="privacy" />} />
           <Route path="/terms"    element={<Legal slug="terms" />} />
+          <Route path="/pass"     element={<PublicPassPage />} />
 
           <Route path="/login"       element={<Login />} />
           <Route path="/register"    element={<Register />} />
@@ -136,6 +137,8 @@ export default function App() {
           <Route path="/admin" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
             <Route index element={<AdminDashboard />} />
             <Route path="bookings" element={<AdminBookings />} />
+            <Route path="done-orders" element={<AdminBookings initialSection="COMPLETED" />} />
+            <Route path="trash" element={<AdminBookings initialSection="DELETED" />} />
             <Route path="bookings/:id" element={<AdminBookingDetail />} />
             <Route path="customers" element={<AdminCustomers />} />
             <Route path="photographers" element={<AdminPhotographers />} />

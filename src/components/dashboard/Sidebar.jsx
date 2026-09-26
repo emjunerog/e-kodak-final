@@ -14,7 +14,8 @@ import {
   LogOut,
   X,
   Layers,
-  CreditCard
+  CreditCard,
+  CheckCircle2
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 

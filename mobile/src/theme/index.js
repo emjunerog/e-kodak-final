@@ -4,16 +4,16 @@
 //  editorial photography aesthetic.
 // ─────────────────────────────────────────────────────────────
 
-export const Colors = {
+export const DarkColors = {
   // ── Warm Darkroom Studio Backgrounds ──────────────────────
   bg: {
-    base:         '#0D0B09',   // deepest studio blackroom (matches web neutral-950)
-    surface:      '#14120E',   // dark warm surface (matches web neutral-900)
+    base:         '#0D0B09',   // deepest studio blackroom
+    surface:      '#14120E',   // dark warm surface
     card:         '#1A1714',   // elevated card surface
     cardElevated: '#24201A',   // high-elevation card surface
-    overlay:      'rgba(13, 11, 9, 0.85)', // modal & drawer overlay
+    overlay:      'rgba(13, 11, 9, 0.85)', // modal overlay
     input:        '#181512',   // text input fill
-    glass:        'rgba(26, 23, 20, 0.72)',
+    glass:        'rgba(26, 23, 20, 0.75)',
   },
 
   // ── Metallic Gold Accent Palette ──────────────────────────
@@ -31,13 +31,13 @@ export const Colors = {
 
   // ── Status Colors (Harmonized with Studio Workflow) ───────
   status: {
-    pending:    '#F59E0B',  // amber — awaiting deposit/review
-    confirmed:  '#3B82F6',  // blue — scheduled & confirmed
-    inProgress: '#8B5CF6',  // violet — photographer assigned / shoot
-    editing:    '#F97316',  // warm orange — retouching & proofs
-    ready:      '#10B981',  // emerald — outputs ready for pickup
-    completed:  '#22C55E',  // vibrant green — finished
-    cancelled:  '#EF4444',  // red — cancelled
+    pending:    '#F59E0B',
+    confirmed:  '#3B82F6',
+    inProgress: '#8B5CF6',
+    editing:    '#F97316',
+    ready:      '#10B981',
+    completed:  '#22C55E',
+    cancelled:  '#EF4444',
     rejected:   '#EF4444',
   },
 
@@ -72,24 +72,109 @@ export const Colors = {
   transparent: 'transparent',
 };
 
+export const LightColors = {
+  // ── Daylight Studio Gallery Backgrounds ───────────────────
+  bg: {
+    base:         '#F7F5F0',   // warm alabaster linen
+    surface:      '#FFFFFF',   // pure crisp white
+    card:         '#FFFFFF',   // elevated card surface
+    cardElevated: '#F0ECE4',   // soft warm elevation
+    overlay:      'rgba(24, 20, 16, 0.45)', // modal overlay
+    input:        '#F3EFE8',   // text input fill
+    glass:        'rgba(255, 255, 255, 0.88)',
+  },
+
+  // ── High-Contrast Antique Gold Palette ─────────────────────
+  gold: {
+    DEFAULT:     '#B8860B',   // dark goldenrod / antique gold for high light readability
+    light:       '#996515',   // deep amber gold
+    dark:        '#7A5200',   // deep bronze
+    specular:    '#D4AF37',   // metallic reflection
+    muted:       '#A67C1E',   // warm muted gold
+    glow:        'rgba(184, 134, 11, 0.16)',
+    border:      'rgba(184, 134, 11, 0.25)',
+    borderLight: 'rgba(184, 134, 11, 0.48)',
+    bg:          'rgba(184, 134, 11, 0.09)',
+  },
+
+  // ── Status Colors ─────────────────────────────────────────
+  status: {
+    pending:    '#D97706',
+    confirmed:  '#2563EB',
+    inProgress: '#7C3AED',
+    editing:    '#EA580C',
+    ready:      '#059669',
+    completed:  '#16A34A',
+    cancelled:  '#DC2626',
+    rejected:   '#DC2626',
+  },
+
+  // ── Neutral Light Scale ───────────────────────────────────
+  neutral: {
+    50:  '#1A1714',
+    100: '#332F2A',
+    200: '#4D4740',
+    300: '#6B6358',
+    400: '#8F877A',
+    500: '#A8A092',
+    600: '#C8C2B5',
+    700: '#E2DDD3',
+    800: '#EFECE6',
+    900: '#F5F4F0',
+    950: '#FAF9F6',
+  },
+
+  // ── Semantic Typography Aliases ───────────────────────────
+  text: {
+    primary:   '#181410',   // deep espresso black ink
+    secondary: '#5C5549',   // warm slate charcoal
+    muted:     '#8A8072',   // soft studio captions
+    gold:      '#996515',   // deep gold accent
+    goldDark:  '#7A5200',   // bronze gold
+    onGold:    '#FFFFFF',   // text on deep gold button
+    disabled:  '#B5AE9F',
+  },
+
+  white: '#FFFFFF',
+  black: '#000000',
+  transparent: 'transparent',
+};
+
+// Default backwards compatibility
+export const Colors = DarkColors;
+
 // ── Gradients ─────────────────────────────────────────────────
-export const Gradients = {
-  // Rich metallic gold gradient
+export const DarkGradients = {
   gold: ['#E8D5B0', '#C9A96E', '#A8843A'],
-  // Specular light sheen for primary CTA buttons
   goldShine: ['#F3E7D3', '#E8D5B0', '#C9A96E', '#A8843A'],
-  // Subtle tinted badge/card fill
   goldMuted: ['rgba(201, 169, 110, 0.18)', 'rgba(168, 132, 58, 0.06)'],
-  // Deep studio background lighting
   darkStudio: ['#221E19', '#14120E', '#0D0B09'],
   darkWarm: ['#1A1714', '#0D0B09'],
-  // Frosted acrylic glass card
   glassCard: ['rgba(34, 30, 25, 0.88)', 'rgba(20, 18, 15, 0.96)'],
-  // Top specular acrylic edge reflection
   glassHighlight: ['rgba(243, 231, 211, 0.18)', 'rgba(201, 169, 110, 0)'],
-  // Ambient radial warm glow
   ambientSpot: ['rgba(201, 169, 110, 0.15)', 'rgba(13, 11, 9, 0)'],
 };
+
+export const LightGradients = {
+  gold: ['#DFBD69', '#B8860B', '#926A08'],
+  goldShine: ['#FFF0C2', '#DFBD69', '#B8860B', '#8C6404'],
+  goldMuted: ['rgba(184, 134, 11, 0.14)', 'rgba(184, 134, 11, 0.04)'],
+  darkStudio: ['#FFFFFF', '#F7F5F0', '#EFECE6'],
+  darkWarm: ['#FFFFFF', '#F7F5F0'],
+  glassCard: ['rgba(255, 255, 255, 0.94)', 'rgba(247, 245, 240, 0.96)'],
+  glassHighlight: ['rgba(255, 255, 255, 0.85)', 'rgba(184, 134, 11, 0.08)'],
+  ambientSpot: ['rgba(184, 134, 11, 0.12)', 'rgba(247, 245, 240, 0)'],
+};
+
+export const Gradients = DarkGradients;
+
+export function getThemeColors(isDark = true) {
+  return isDark ? DarkColors : LightColors;
+}
+
+export function getThemeGradients(isDark = true) {
+  return isDark ? DarkGradients : LightGradients;
+}
 
 // ── Typography ────────────────────────────────────────────────
 export const Typography = {

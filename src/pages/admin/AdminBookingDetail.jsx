@@ -27,7 +27,7 @@ import {
   Image as ImageIcon, History, ChevronRight, Loader2, ExternalLink, Tag, Plus,
   UserCheck, Briefcase, AlertTriangle, ShieldAlert, QrCode, GraduationCap, Phone, Mail,
   Trash2, Truck, Scissors, Award, Sparkles, ShieldCheck, Layers, FileCheck, Check,
-  ArrowRightLeft, Send, ArrowRight, Printer, Copy, Maximize2, Building2, BookOpen
+  ArrowRightLeft, Send, ArrowRight, Printer, Copy, Maximize2, Building2, BookOpen, Archive, RotateCcw
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { StatusBadge, PaymentBadge } from '../../components/ui/StatusBadge';
@@ -53,6 +53,8 @@ import {
   reassignPhotographer,
   unassignPhotographer,
   deleteBookingPermanently,
+  softDeleteBooking,
+  restoreBooking,
 } from '../../services/bookingAdminService';
 import {
   getPhotoOutputs,
@@ -161,9 +163,8 @@ function Toast({ type, message, onDismiss }) {
 
   const isSuccess = type === 'success';
   return (
-    <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-semibold print:hidden animate-fade-in ${
-      isSuccess ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
-    }`}>
+    <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-semibold print:hidden animate-fade-in ${isSuccess ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+      }`}>
       {isSuccess ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
       {message}
     </div>
@@ -207,7 +208,7 @@ function RefImage({ filePath, onPreview }) {
 // ── Status History Entry ───────────────────────────────────────────────────────
 function HistoryItem({ entry, isLast }) {
   const changer = entry.changed_by_profile;
-  const name    = changer ? `${changer.first_name} ${changer.last_name}` : 'Studio Admin / System';
+  const name = changer ? `${changer.first_name} ${changer.last_name}` : 'Studio Admin / System';
   return (
     <div className="flex gap-4">
       <div className="flex flex-col items-center">
@@ -238,10 +239,10 @@ export default function AdminBookingDetail() {
 
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState(null);
-  const [acting, setActing]   = useState(false);
-  const [dialog, setDialog]   = useState(null);
-  const [toast, setToast]     = useState(null);
+  const [error, setError] = useState(null);
+  const [acting, setActing] = useState(false);
+  const [dialog, setDialog] = useState(null);
+  const [toast, setToast] = useState(null);
   const [copiedRef, setCopiedRef] = useState(null);
   const [lightboxImg, setLightboxImg] = useState(null);
   const [qrModalOpen, setQrModalOpen] = useState(false);
@@ -403,10 +404,48 @@ export default function AdminBookingDetail() {
   const [assignConfirmOpen, setAssignConfirmOpen] = useState(false);
   const [assignSubmitting, setAssignSubmitting] = useState(false);
 
-  // Deletion State
+  // Deletion & Trash State
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [deleteReason, setDeleteReason] = useState('Admin deletion request');
+  const [softDeleteModalOpen, setSoftDeleteModalOpen] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('Cancelled / Removed by studio admin');
   const [deleting, setDeleting] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+
+  const handleSoftDeleteBooking = async () => {
+    setDeleting(true);
+    const { success, error } = await softDeleteBooking({
+      bookingId: booking.id,
+      deletedById: profile?.id,
+      deletedByName: `${profile?.first_name || ''} ${profile?.last_name || 'Staff'}`.trim(),
+      reason: deleteReason || 'Moved to Trash by Admin'
+    });
+    setDeleting(false);
+    if (!success || error) {
+      showToast('error', `Failed to move booking to trash: ${error?.message || 'Unknown error'}`);
+    } else {
+      setSoftDeleteModalOpen(false);
+      navigate('/admin/bookings', {
+        state: { flashMessage: `Booking #${booking.booking_number} moved to Trash. Client has been notified.` }
+      });
+    }
+  };
+
+  const handleRestoreBooking = async () => {
+    setIsRestoring(true);
+    const { success, error } = await restoreBooking({
+      bookingId: booking.id,
+      restoredById: profile?.id,
+      restoredByName: `${profile?.first_name || ''} ${profile?.last_name || 'Staff'}`.trim(),
+    });
+    setIsRestoring(false);
+    if (!success || error) {
+      showToast('error', `Failed to restore booking: ${error?.message || 'Unknown error'}`);
+    } else {
+      showToast('success', `Booking #${booking.booking_number} restored to active queue! Client notified.`);
+      const { data } = await getBookingDetail(id);
+      if (data) setBooking(data);
+    }
+  };
 
   const handleDeleteBooking = async () => {
     setDeleting(true);
@@ -421,8 +460,8 @@ export default function AdminBookingDetail() {
       showToast('error', `Failed to delete booking: ${error?.message || 'Unknown error'}`);
     } else {
       setDeleteModalOpen(false);
-      navigate('/admin/bookings', { 
-        state: { flashMessage: `Booking #${booking.booking_number} was permanently removed from active records.` } 
+      navigate('/admin/bookings', {
+        state: { flashMessage: `Booking #${booking.booking_number} was permanently removed from active records.` }
       });
     }
   };
@@ -676,15 +715,15 @@ export default function AdminBookingDetail() {
   // ── Calculated Values ───────────────────────────────────────────────────────
   const { status } = booking;
   const nextStatus = NEXT_STATUS_MAP[status];
-  const customer   = booking.customer;
-  const specs      = customer?.studio_specs || {};
-  const service    = booking.service;
-  const ph         = booking.photographer;
-  const phProfile  = ph?.profile;
-  const history    = booking.booking_status_history || [];
-  const payments   = booking.payments || [];
-  const refImages  = booking.reference_images || [];
-  const addOns     = Array.isArray(booking.selected_add_ons) ? booking.selected_add_ons : [];
+  const customer = booking.customer;
+  const specs = customer?.studio_specs || {};
+  const service = booking.service;
+  const ph = booking.photographer;
+  const phProfile = ph?.profile;
+  const history = booking.booking_status_history || [];
+  const payments = booking.payments || [];
+  const refImages = booking.reference_images || [];
+  const addOns = Array.isArray(booking.selected_add_ons) ? booking.selected_add_ons : [];
 
   // Financial calculations
   const addOnsTotal = addOns.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
@@ -711,6 +750,7 @@ export default function AdminBookingDetail() {
     campus: specs.campus || booking.student_details?.school_address,
     degree: specs.degree || booking.student_details?.course,
     gradYear: specs.gradYear,
+    batch: booking.student_details?.batch || (booking.notes?.match(/• Batch:\s*(.*)/i)?.[1]?.trim()),
     honors: specs.honors,
     studentId: booking.student_details?.student_id,
     section: booking.student_details?.section,
@@ -722,7 +762,7 @@ export default function AdminBookingDetail() {
   };
 
   const hasStudentData = Boolean(
-    studentInfo.school || studentInfo.degree || studentInfo.studentId || 
+    studentInfo.school || studentInfo.degree || studentInfo.studentId ||
     studentInfo.section || studentInfo.togaSize || studentInfo.hoodDiscipline
   );
 
@@ -907,19 +947,101 @@ export default function AdminBookingDetail() {
               </button>
             )}
 
-            {/* Permanent Deletion */}
-            <button
-              type="button"
-              onClick={() => setDeleteModalOpen(true)}
-              disabled={acting || deleting}
-              className="w-10 h-10 inline-flex items-center justify-center shrink-0 border border-neutral-200 hover:border-red-200 text-neutral-400 hover:text-red-600 bg-white hover:bg-red-50 rounded-xl text-sm transition-colors cursor-pointer"
-              title="Delete Booking Permanently"
-            >
-              <Trash2 size={16} />
-            </button>
+            {/* Actions for Deleted vs Active Booking */}
+            {booking.is_deleted ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleRestoreBooking}
+                  disabled={isRestoring}
+                  className="h-10 px-4 bg-neutral-900 hover:bg-neutral-800 text-gold font-bold text-sm rounded-xl border border-gold/40 flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+                  title="Restore booking back to active studio records"
+                >
+                  {isRestoring ? <Loader2 size={16} className="animate-spin text-gold" /> : <RotateCcw size={16} />}
+                  <span>Restore Order</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalOpen(true)}
+                  disabled={deleting}
+                  className="h-10 px-3 bg-red-50 hover:bg-red-100 text-red-700 font-semibold text-xs rounded-xl border border-red-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Directly clear out from database"
+                >
+                  <Trash2 size={15} />
+                  <span>Clear Out</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                {/* Move to Trash (Soft Delete) */}
+                <button
+                  type="button"
+                  onClick={() => setSoftDeleteModalOpen(true)}
+                  disabled={acting || deleting}
+                  className="w-10 h-10 inline-flex items-center justify-center shrink-0 border border-neutral-200 hover:border-amber-300 text-neutral-400 hover:text-amber-700 bg-white hover:bg-amber-50 rounded-xl text-sm transition-colors cursor-pointer"
+                  title="Move Booking to Trash"
+                >
+                  <Archive size={16} />
+                </button>
+
+                {/* Permanent Deletion */}
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalOpen(true)}
+                  disabled={acting || deleting}
+                  className="w-10 h-10 inline-flex items-center justify-center shrink-0 border border-neutral-200 hover:border-red-200 text-neutral-400 hover:text-red-600 bg-white hover:bg-red-50 rounded-xl text-sm transition-colors cursor-pointer"
+                  title="Delete Booking Permanently"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* ── TRASH CYCLE WARNING BANNER (When order is deleted) ───────────── */}
+      {booking.is_deleted && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in shadow-xs">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-800 flex items-center justify-center shrink-0 border border-rose-500/30">
+              <Trash2 size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-sm font-heading font-bold text-primary">
+                  Order is in Trash Cycle
+                </h4>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-900 border border-rose-500/40">
+                  DELETED RECORD
+                </span>
+              </div>
+              <p className="text-xs text-neutral-600 font-body mt-0.5">
+                Deleted on {fmt(booking.deleted_at)} {booking.deletion_reason ? `— Reason: "${booking.deletion_reason}"` : ''}. This booking is hidden from active studio queues and client records.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0 w-full sm:w-auto">
+            <button
+              type="button"
+              disabled={isRestoring}
+              onClick={handleRestoreBooking}
+              className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-neutral-900 hover:bg-neutral-800 text-gold border border-gold/40 flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            >
+              {isRestoring ? <Loader2 size={14} className="animate-spin text-gold" /> : <RotateCcw size={14} />}
+              <span>Restore Order</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeleteModalOpen(true)}
+              className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            >
+              <Trash2 size={14} />
+              <span>Directly Clear Out</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── 2. Session Vitals Quick Strip (4 Large KPI Cells) ───────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-5 font-body">
@@ -1025,15 +1147,15 @@ export default function AdminBookingDetail() {
             {customer ? (
               <div className="space-y-1">
                 <DetailRow label="Full Legal Name" value={`${customer.first_name} ${customer.last_name}`} />
-                <DetailRow 
-                  label="Contact Phone" 
+                <DetailRow
+                  label="Contact Phone"
                   value={
                     customer.phone ? (
                       <a href={`tel:${customer.phone}`} className="text-gold hover:underline flex items-center gap-1.5 justify-end font-semibold">
                         <Phone size={13} /> {customer.phone}
                       </a>
                     ) : null
-                  } 
+                  }
                 />
                 <DetailRow label="Residential Address" value={customer.address} />
                 {customer.bio && <DetailRow label="Customer Profile Notes" value={customer.bio} />}
@@ -1058,14 +1180,13 @@ export default function AdminBookingDetail() {
               className="border-amber-200/80 bg-gradient-to-br from-amber-500/[0.04] via-white to-amber-500/[0.02]"
             >
               <div className="space-y-1">
-                <DetailRow 
-                  label="Scheduling" 
+                <DetailRow
+                  label="Scheduling"
                   value={
-                    <span className={`font-semibold text-xs px-2.5 py-0.5 rounded-md border ${
-                      isSchoolPartner
-                        ? "bg-amber-100 text-amber-900 border-amber-300"
-                        : "bg-emerald-100 text-emerald-900 border-emerald-300"
-                    }`}>
+                    <span className={`font-semibold text-xs px-2.5 py-0.5 rounded-md border ${isSchoolPartner
+                      ? "bg-amber-100 text-amber-900 border-amber-300"
+                      : "bg-emerald-100 text-emerald-900 border-emerald-300"
+                      }`}>
                       {isSchoolPartner ? "School Pictorial (Date set by school)" : "Individual Booking"}
                     </span>
                   }
@@ -1074,14 +1195,24 @@ export default function AdminBookingDetail() {
                 {studentInfo.campus && <DetailRow label="Campus" value={studentInfo.campus} />}
                 <DetailRow label="Course / Strand" value={studentInfo.degree} />
                 {studentInfo.studentId && <DetailRow label="Student ID" value={studentInfo.studentId} mono />}
+                {studentInfo.batch && (
+                  <DetailRow
+                    label="Batch"
+                    value={
+                      <span className="font-semibold text-xs px-2.5 py-0.5 rounded bg-gold/15 text-gold-darker border border-gold/30">
+                        {studentInfo.batch}
+                      </span>
+                    }
+                  />
+                )}
                 {studentInfo.section && (
-                  <DetailRow 
-                    label="Section" 
+                  <DetailRow
+                    label="Section"
                     value={
                       <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded bg-neutral-900 text-white">
                         {studentInfo.section}
                       </span>
-                    } 
+                    }
                   />
                 )}
                 {studentInfo.scheduleNote && (
@@ -1091,13 +1222,13 @@ export default function AdminBookingDetail() {
                   <DetailRow label="Graduation Class Term" value={`Class of ${studentInfo.gradYear}`} />
                 )}
                 {studentInfo.honors && (
-                  <DetailRow 
-                    label="Academic Honors" 
+                  <DetailRow
+                    label="Academic Honors"
                     value={
                       <span className="font-bold text-xs bg-gold/20 text-gold-darker border border-gold/30 px-3 py-1 rounded-md uppercase tracking-wide">
                         {studentInfo.honors}
                       </span>
-                    } 
+                    }
                   />
                 )}
 
@@ -1148,13 +1279,13 @@ export default function AdminBookingDetail() {
               <div className="space-y-1">
                 <DetailRow label="Scheduled Date" value={fmt(booking.event_date)} />
                 <DetailRow label="Preferred Time Slot" value={booking.preferred_time || 'Pending'} />
-                <DetailRow 
-                  label="Shoot Location" 
+                <DetailRow
+                  label="Shoot Location"
                   value={
                     booking.location ? (
                       <div className="text-right">
                         <span>{booking.location}</span>
-                        <a 
+                        <a
                           href={`https://maps.google.com/?q=${encodeURIComponent(booking.location)}`}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -1164,36 +1295,36 @@ export default function AdminBookingDetail() {
                         </a>
                       </div>
                     ) : 'E-Kodak Studio'
-                  } 
+                  }
                 />
                 {specs.backdrop && (
-                  <DetailRow 
-                    label="Backdrop Selection" 
+                  <DetailRow
+                    label="Backdrop Selection"
                     value={
                       <span className="font-semibold text-neutral-900 flex items-center gap-2 justify-end">
                         <span className="w-3 h-3 rounded-full bg-neutral-800 inline-block shrink-0 ring-2 ring-neutral-300" />
                         {BACKDROP_LABELS[specs.backdrop] || specs.backdrop}
                       </span>
-                    } 
+                    }
                   />
                 )}
                 {specs.retouch && (
-                  <DetailRow 
-                    label="Retouching Finish" 
-                    value={RETOUCH_LABELS[specs.retouch] || specs.retouch} 
+                  <DetailRow
+                    label="Retouching Finish"
+                    value={RETOUCH_LABELS[specs.retouch] || specs.retouch}
                   />
                 )}
                 {specs.makeupPreference && (
                   <DetailRow label="Grooming & Makeup Style" value={specs.makeupPreference} />
                 )}
                 {specs.photographerNotes && (
-                  <DetailRow 
-                    label="Photographer Guidance" 
+                  <DetailRow
+                    label="Photographer Guidance"
                     value={
                       <span className="italic text-neutral-800 bg-amber-50/80 px-3 py-2 rounded-xl border border-amber-200/70 block text-left font-body">
                         "{specs.photographerNotes}"
                       </span>
-                    } 
+                    }
                   />
                 )}
               </div>
@@ -1323,11 +1454,10 @@ export default function AdminBookingDetail() {
                         return (
                           <span
                             key={s.id}
-                            className={`text-xs px-2.5 py-1 rounded-lg border font-medium inline-flex items-center gap-1.5 ${
-                              isDone
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : 'bg-white text-neutral-500 border-neutral-200'
-                            }`}
+                            className={`text-xs px-2.5 py-1 rounded-lg border font-medium inline-flex items-center gap-1.5 ${isDone
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : 'bg-white text-neutral-500 border-neutral-200'
+                              }`}
                           >
                             <i className={`bi ${isDone ? 'bi-check-circle-fill text-emerald-600' : 'bi-circle text-neutral-300'}`}></i>
                             <span>{s.name}</span>
@@ -1353,11 +1483,10 @@ export default function AdminBookingDetail() {
                       <button
                         type="button"
                         onClick={() => setActivePhotoSetFilter('ALL')}
-                        className={`text-xs px-2.5 py-1 rounded-md transition-all font-body ${
-                          activePhotoSetFilter === 'ALL'
-                            ? 'bg-primary text-white font-semibold'
-                            : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                        }`}
+                        className={`text-xs px-2.5 py-1 rounded-md transition-all font-body ${activePhotoSetFilter === 'ALL'
+                          ? 'bg-primary text-white font-semibold'
+                          : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                          }`}
                       >
                         All Sets ({photoOutputs.length})
                       </button>
@@ -1368,11 +1497,10 @@ export default function AdminBookingDetail() {
                             key={s}
                             type="button"
                             onClick={() => setActivePhotoSetFilter(s)}
-                            className={`text-xs px-2.5 py-1 rounded-md transition-all font-body ${
-                              activePhotoSetFilter === s
-                                ? 'bg-primary text-white font-semibold'
-                                : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                            }`}
+                            className={`text-xs px-2.5 py-1 rounded-md transition-all font-body ${activePhotoSetFilter === s
+                              ? 'bg-primary text-white font-semibold'
+                              : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                              }`}
                           >
                             {s} ({count})
                           </button>
@@ -1470,35 +1598,31 @@ export default function AdminBookingDetail() {
             <div className="space-y-5">
               {/* Departmental Pipeline Stages */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className={`p-3.5 rounded-xl border text-sm font-body ${
-                  ['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'EDITING', 'PRINTING', 'READY', 'COMPLETED'].includes(status)
-                    ? 'bg-blue-50 border-blue-200 text-blue-900 font-bold'
-                    : 'bg-neutral-50 border-neutral-200 text-neutral-400'
-                }`}>
+                <div className={`p-3.5 rounded-xl border text-sm font-body ${['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'EDITING', 'PRINTING', 'READY', 'COMPLETED'].includes(status)
+                  ? 'bg-blue-50 border-blue-200 text-blue-900 font-bold'
+                  : 'bg-neutral-50 border-neutral-200 text-neutral-400'
+                  }`}>
                   <span className="block text-[10px] uppercase font-bold text-blue-600 mb-0.5">Stage 1</span>
                   Front Desk Intake
                 </div>
-                <div className={`p-3.5 rounded-xl border text-sm font-body ${
-                  booking.payment_status === 'PAID' || booking.payment_status === 'PARTIAL'
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-bold'
-                    : 'bg-neutral-50 border-neutral-200 text-neutral-400'
-                }`}>
+                <div className={`p-3.5 rounded-xl border text-sm font-body ${booking.payment_status === 'PAID' || booking.payment_status === 'PARTIAL'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-bold'
+                  : 'bg-neutral-50 border-neutral-200 text-neutral-400'
+                  }`}>
                   <span className="block text-[10px] uppercase font-bold text-emerald-600 mb-0.5">Stage 2</span>
                   Finance Cleared
                 </div>
-                <div className={`p-3.5 rounded-xl border text-sm font-body ${
-                  ['CAPTURE', 'EDITING', 'PRINTING', 'READY', 'COMPLETED'].includes(status)
-                    ? 'bg-purple-50 border-purple-200 text-purple-900 font-bold'
-                    : 'bg-neutral-50 border-neutral-200 text-neutral-400'
-                }`}>
+                <div className={`p-3.5 rounded-xl border text-sm font-body ${['CAPTURE', 'EDITING', 'PRINTING', 'READY', 'COMPLETED'].includes(status)
+                  ? 'bg-purple-50 border-purple-200 text-purple-900 font-bold'
+                  : 'bg-neutral-50 border-neutral-200 text-neutral-400'
+                  }`}>
                   <span className="block text-[10px] uppercase font-bold text-purple-600 mb-0.5">Stage 3</span>
                   Creative Bay
                 </div>
-                <div className={`p-3.5 rounded-xl border text-sm font-body ${
-                  ['READY', 'COMPLETED'].includes(status)
-                    ? 'bg-gold/15 border-gold/40 text-gold-darker font-bold'
-                    : 'bg-neutral-50 border-neutral-200 text-neutral-400'
-                }`}>
+                <div className={`p-3.5 rounded-xl border text-sm font-body ${['READY', 'COMPLETED'].includes(status)
+                  ? 'bg-gold/15 border-gold/40 text-gold-darker font-bold'
+                  : 'bg-neutral-50 border-neutral-200 text-neutral-400'
+                  }`}>
                   <span className="block text-[10px] uppercase font-bold text-gold-dark mb-0.5">Stage 4</span>
                   Print & Release
                 </div>
@@ -1711,10 +1835,10 @@ export default function AdminBookingDetail() {
               <div className="space-y-4 font-body">
                 <div className="flex items-center gap-3.5 p-3.5 bg-neutral-50 rounded-2xl border border-neutral-100">
                   {phProfile.avatar_url ? (
-                    <img 
-                      src={phProfile.avatar_url} 
-                      alt={phProfile.first_name} 
-                      className="w-14 h-14 rounded-2xl object-cover ring-2 ring-gold/30 shrink-0" 
+                    <img
+                      src={phProfile.avatar_url}
+                      alt={phProfile.first_name}
+                      className="w-14 h-14 rounded-2xl object-cover ring-2 ring-gold/30 shrink-0"
                     />
                   ) : (
                     <div className="w-14 h-14 rounded-2xl bg-neutral-900 text-gold flex items-center justify-center font-heading font-bold text-base ring-2 ring-gold/20 shrink-0">
@@ -1785,40 +1909,39 @@ export default function AdminBookingDetail() {
               subtitle="Output claiming method, courier delivery address, and gate instructions"
             >
               <div className="space-y-1">
-                <DetailRow 
-                  label="Fulfillment Method" 
+                <DetailRow
+                  label="Fulfillment Method"
                   value={
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
-                      specs.fulfillment_mode === 'STUDIO_DELIVERY'
-                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    }`}>
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${specs.fulfillment_mode === 'STUDIO_DELIVERY'
+                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      }`}>
                       <Truck size={14} />
-                      {specs.fulfillment_mode === 'STUDIO_DELIVERY' 
-                        ? 'Direct Delivery (Courier Dispatch)' 
+                      {specs.fulfillment_mode === 'STUDIO_DELIVERY'
+                        ? 'Direct Delivery (Courier Dispatch)'
                         : 'In-Person Studio Counter Claim'}
                     </span>
-                  } 
+                  }
                 />
-                <DetailRow 
-                  label="Recipient Contact" 
-                  value={specs.courier_recipient_name || `${customer?.first_name} ${customer?.last_name}`} 
+                <DetailRow
+                  label="Recipient Contact"
+                  value={specs.courier_recipient_name || `${customer?.first_name} ${customer?.last_name}`}
                 />
-                <DetailRow 
-                  label="Recipient Phone" 
-                  value={specs.courier_phone || customer?.phone} 
+                <DetailRow
+                  label="Recipient Phone"
+                  value={specs.courier_phone || customer?.phone}
                 />
                 {specs.shipping_address && (
                   <DetailRow label="Delivery Address" value={specs.shipping_address} />
                 )}
                 {specs.delivery_instructions && (
-                  <DetailRow 
-                    label="Gate / Dispatch Notes" 
+                  <DetailRow
+                    label="Gate / Dispatch Notes"
                     value={
                       <span className="text-neutral-800 bg-neutral-50 p-2.5 rounded-xl border border-neutral-200 block text-left font-body text-xs">
                         {specs.delivery_instructions}
                       </span>
-                    } 
+                    }
                   />
                 )}
               </div>
@@ -1833,8 +1956,8 @@ export default function AdminBookingDetail() {
               subtitle="Model release authorization, digital terms signature audit trail"
             >
               <div className="space-y-1">
-                <DetailRow 
-                  label="Model Release Consent" 
+                <DetailRow
+                  label="Model Release Consent"
                   value={
                     specs.agreedModelRelease ? (
                       <span className="text-emerald-700 font-bold flex items-center gap-1.5 justify-end">
@@ -1845,22 +1968,22 @@ export default function AdminBookingDetail() {
                         <XCircle size={14} /> Restricted / Private
                       </span>
                     )
-                  } 
+                  }
                 />
                 {specs.termsSignatureHash && (
-                  <DetailRow 
-                    label="Signature Hash" 
+                  <DetailRow
+                    label="Signature Hash"
                     value={
                       <span className="font-mono font-bold text-xs bg-neutral-100 text-neutral-800 px-2.5 py-1 rounded-md border border-neutral-200">
                         {specs.termsSignatureHash}
                       </span>
-                    } 
+                    }
                   />
                 )}
                 {specs.termsSignedTimestamp && (
-                  <DetailRow 
-                    label="Signed Timestamp (PHT)" 
-                    value={fmtDateTime(specs.termsSignedTimestamp)} 
+                  <DetailRow
+                    label="Signed Timestamp (PHT)"
+                    value={fmtDateTime(specs.termsSignedTimestamp)}
                   />
                 )}
               </div>
@@ -2081,13 +2204,12 @@ export default function AdminBookingDetail() {
                 return (
                   <div
                     key={candidate.id}
-                    className={`p-4 rounded-xl border transition-all text-left ${
-                      isCurrentlyAssigned
-                        ? 'border-gold bg-gold/5'
-                        : candidate.hasConflict
+                    className={`p-4 rounded-xl border transition-all text-left ${isCurrentlyAssigned
+                      ? 'border-gold bg-gold/5'
+                      : candidate.hasConflict
                         ? 'border-red-200 bg-red-50/30'
                         : 'border-neutral-200 hover:border-gold/60 bg-white hover:bg-neutral-50/50'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3.5">
@@ -2149,13 +2271,12 @@ export default function AdminBookingDetail() {
                         type="button"
                         onClick={() => handleSelectCandidate(candidate)}
                         disabled={isCurrentlyAssigned || isPending}
-                        className={`text-xs font-bold px-4 py-2 rounded-lg transition-all cursor-pointer ${
-                          isCurrentlyAssigned || isPending
-                            ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
-                            : candidate.hasConflict
+                        className={`text-xs font-bold px-4 py-2 rounded-lg transition-all cursor-pointer ${isCurrentlyAssigned || isPending
+                          ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+                          : candidate.hasConflict
                             ? 'bg-amber-100 hover:bg-amber-200 text-amber-800'
                             : 'btn-primary'
-                        }`}
+                          }`}
                       >
                         {isCurrentlyAssigned ? 'Currently Assigned' : candidate.hasConflict ? 'Assign Despite Warning' : 'Select'}
                       </button>
@@ -2253,6 +2374,59 @@ export default function AdminBookingDetail() {
           </div>
         </div>
       )}
+
+      {/* ── SOFT DELETE (MOVE TO TRASH) MODAL ────────────────────────────────── */}
+      <Modal
+        isOpen={softDeleteModalOpen}
+        onClose={() => !deleting && setSoftDeleteModalOpen(false)}
+        title={`Move Booking #${booking?.booking_number} to Trash`}
+        size="md"
+      >
+        <div className="space-y-4 font-body text-sm">
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3.5 text-amber-900">
+            <Archive size={22} className="text-amber-700 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold block text-sm sm:text-base">Move Order to Trash Cycle</span>
+              <p className="mt-1 leading-relaxed text-xs sm:text-sm text-neutral-600">
+                This booking will be cancelled and removed from active studio records and the customer's portal. The customer will receive an immediate in-app notification. You can restore this order at any time from the Trash Cycle.
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-neutral-800 mb-1.5">
+              Reason for Cancellation / Removal
+            </label>
+            <input
+              type="text"
+              value={deleteReason}
+              onChange={e => setDeleteReason(e.target.value)}
+              placeholder="e.g. Customer cancelled / schedule conflict / duplicate entry"
+              className="w-full px-4 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:ring-2 focus:ring-gold outline-none font-medium"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-100">
+            <button
+              type="button"
+              onClick={() => setSoftDeleteModalOpen(false)}
+              disabled={deleting}
+              className="btn-outline text-xs sm:text-sm px-4 py-2 font-semibold cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSoftDeleteBooking}
+              disabled={deleting}
+              className="px-5 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-gold font-bold text-xs sm:text-sm flex items-center gap-2 border border-gold/40 shadow-xs disabled:opacity-50 transition-colors cursor-pointer"
+            >
+              {deleting ? <Loader2 size={15} className="animate-spin text-gold" /> : <Archive size={15} />}
+              Move to Trash
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* ── DELETE BOOKING MODAL ────────────────────────────────────────────── */}
       <Modal

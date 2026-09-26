@@ -7,21 +7,24 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
 
-function decodeQRPayload(token) {
-  try {
-    const parsed = JSON.parse(token);
-    if (
-      parsed.v === 1 &&
-      parsed.typ === "booking" &&
-      typeof parsed.bid === "string" &&
-      typeof parsed.iat === "number"
-    ) {
-      return parsed;
-    }
-    return null;
-  } catch {
-    return null;
+function decodeQRPayload(token: string) {
+  if (!token) return null;
+  const decodedStr = decodeURIComponent(token).trim();
+  if (decodedStr.startsWith("http://") || decodedStr.startsWith("https://")) {
+    try {
+      const u = new URL(decodedStr);
+      const bid = u.searchParams.get("token") || u.searchParams.get("id") || u.searchParams.get("bid");
+      if (bid) return { v: 1, bid, typ: "booking", iat: Math.floor(Date.now() / 1000) };
+    } catch {}
   }
+  try {
+    const parsed = JSON.parse(decodedStr);
+    if (parsed.bid) return parsed;
+  } catch {}
+  if (decodedStr.length >= 4) {
+    return { v: 1, bid: decodedStr, typ: "booking", iat: Math.floor(Date.now() / 1000) };
+  }
+  return null;
 }
 
 serve(async (req) => {
@@ -87,6 +90,9 @@ serve(async (req) => {
         notes,
         qr_code_path,
         confirmed_at,
+        is_deleted,
+        deleted_at,
+        deletion_reason,
         service:services(name, category, cover_image),
         customer:profiles!bookings_customer_id_fkey(first_name, last_name, phone),
         photographer:photographer_profiles!bookings_photographer_id_fkey(
@@ -95,14 +101,28 @@ serve(async (req) => {
           profile:profiles(first_name, last_name, phone)
         )
       `)
-      .eq("booking_token", payload.bid)
-      .single();
+      .or(`booking_token.eq.${payload.bid},booking_number.eq.${payload.bid}`)
+      .maybeSingle();
 
     if (bookingError || !booking) {
       return new Response(JSON.stringify({ error: "Booking not found" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    if (booking.is_deleted) {
+      return new Response(
+        JSON.stringify({
+          error: "This booking order has been cancelled or removed by studio administration.",
+          is_deleted: true,
+          booking_number: booking.booking_number,
+        }),
+        {
+          status: 410,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     // Get delivery info if exists

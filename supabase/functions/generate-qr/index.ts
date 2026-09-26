@@ -67,7 +67,7 @@ serve(async (req) => {
     // Verify user has access to this booking (staff/admin or owner)
     const { data: booking, error: bookingError } = await supabase
       .from("bookings")
-      .select("id, customer_id, booking_token, qr_code_path")
+      .select("id, customer_id, booking_token, qr_code_path, is_deleted, booking_number")
       .eq("id", bookingId)
       .single();
 
@@ -76,6 +76,20 @@ serve(async (req) => {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    if (booking.is_deleted) {
+      return new Response(
+        JSON.stringify({
+          error: "This booking order has been cancelled or removed by studio administration.",
+          is_deleted: true,
+          booking_number: booking.booking_number,
+        }),
+        {
+          status: 410,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     // Check permissions

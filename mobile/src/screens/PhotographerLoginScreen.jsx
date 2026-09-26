@@ -9,6 +9,7 @@
  */
 
 import React, { useState } from 'react';
+import { useTheme } from '../context/ThemeContext';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   StatusBar, KeyboardAvoidingView, Platform, Alert,
@@ -23,6 +24,8 @@ import GoldButton from '../components/GoldButton';
 import { Colors, Gradients, Typography, Spacing, Radius, Shadow } from '../theme';
 
 export default function PhotographerLoginScreen({ navigation }) {
+  const { isDark, colors, gradients } = useTheme();
+  const styles = getStyles(colors);
   const [email, setEmail]         = useState('');
   const [password, setPassword]   = useState('');
   const [showPass, setShowPass]   = useState(false);
@@ -58,7 +61,7 @@ export default function PhotographerLoginScreen({ navigation }) {
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.bg.base} />
 
       <LinearGradient
         colors={Gradients.darkStudio}
@@ -77,11 +80,11 @@ export default function PhotographerLoginScreen({ navigation }) {
 
       {/* Top back button */}
       <TouchableOpacity
-        onPress={() => navigation.goBack()}
+        onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main'))}
         style={styles.backBtn}
         activeOpacity={0.7}
       >
-        <ArrowLeft size={20} color={Colors.text.primary} />
+        <ArrowLeft size={20} color={colors.text.primary} />
       </TouchableOpacity>
 
       <KeyboardAvoidingView
@@ -98,7 +101,7 @@ export default function PhotographerLoginScreen({ navigation }) {
               style={styles.logoGradientRing}
             >
               <View style={styles.logoInner}>
-                <Aperture size={36} color={Colors.gold.light} strokeWidth={1.5} />
+                <Aperture size={36} color={colors.gold.light} strokeWidth={1.5} />
               </View>
             </LinearGradient>
           </View>
@@ -115,11 +118,11 @@ export default function PhotographerLoginScreen({ navigation }) {
 
           {/* Email Field */}
           <View style={styles.inputWrapper}>
-            <Mail size={16} color={Colors.gold.light} style={styles.inputIcon} />
+            <Mail size={16} color={colors.gold.light} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               placeholder="Studio email address"
-              placeholderTextColor={Colors.neutral[600]}
+              placeholderTextColor={colors.neutral[600]}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -131,11 +134,11 @@ export default function PhotographerLoginScreen({ navigation }) {
 
           {/* Password Field */}
           <View style={styles.inputWrapper}>
-            <Lock size={16} color={Colors.gold.light} style={styles.inputIcon} />
+            <Lock size={16} color={colors.gold.light} style={styles.inputIcon} />
             <TextInput
               style={[styles.input, { flex: 1 }]}
               placeholder="Password"
-              placeholderTextColor={Colors.neutral[600]}
+              placeholderTextColor={colors.neutral[600]}
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPass}
@@ -144,9 +147,9 @@ export default function PhotographerLoginScreen({ navigation }) {
             />
             <TouchableOpacity onPress={() => setShowPass(!showPass)} style={styles.eyeBtn}>
               {showPass ? (
-                <EyeOff size={16} color={Colors.neutral[400]} />
+                <EyeOff size={16} color={colors.neutral[400]} />
               ) : (
-                <Eye size={16} color={Colors.neutral[400]} />
+                <Eye size={16} color={colors.neutral[400]} />
               )}
             </TouchableOpacity>
           </View>
@@ -164,13 +167,23 @@ export default function PhotographerLoginScreen({ navigation }) {
         <Text style={styles.footerNote}>
           Authorized access only. Contact studio management for credentials.
         </Text>
+
+        <TouchableOpacity
+          onPress={() => {
+            navigation.navigate('Main');
+          }}
+          style={styles.switchHubBtn}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.switchHubText}>← Return to Studio Client Hub</Text>
+        </TouchableOpacity>
       </KeyboardAvoidingView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Colors.bg.base },
+const getStyles = (colors) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg.base },
   ambientOverlay: {
     position: 'absolute',
     top: 0,
@@ -187,9 +200,9 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.bg.card,
+    backgroundColor: colors.bg.card,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: colors.gold.border,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
@@ -225,21 +238,21 @@ const styles = StyleSheet.create({
     width: 73,
     height: 73,
     borderRadius: 36.5,
-    backgroundColor: Colors.bg.surface,
+    backgroundColor: colors.bg.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
   brandName: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size['2xl'],
-    color: Colors.text.primary,
+    color: colors.text.primary,
     letterSpacing: 2,
     marginBottom: 4,
   },
   brandRole: {
     fontFamily: Typography.fontBodySemi,
     fontSize: Typography.size.xs,
-    color: Colors.gold.light,
+    color: colors.gold.light,
     letterSpacing: 2,
     textTransform: 'uppercase',
   },
@@ -253,12 +266,12 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.xl,
-    color: Colors.text.primary,
+    color: colors.text.primary,
   },
   cardSub: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     lineHeight: 18,
     marginTop: -Spacing[2],
   },
@@ -266,9 +279,9 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.bg.input,
+    backgroundColor: colors.bg.input,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: colors.gold.border,
     borderRadius: Radius.md,
     paddingHorizontal: Spacing[4],
     height: 52,
@@ -280,7 +293,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.sm,
-    color: Colors.text.primary,
+    color: colors.text.primary,
   },
   eyeBtn: {
     padding: Spacing[1],
@@ -293,10 +306,20 @@ const styles = StyleSheet.create({
   footerNote: {
     fontFamily: Typography.fontBody,
     fontSize: 11,
-    color: Colors.neutral[600],
+    color: colors.neutral[600],
     textAlign: 'center',
     marginTop: Spacing[8],
     maxWidth: 260,
     lineHeight: 17,
+  },
+  switchHubBtn: {
+    marginTop: Spacing[4],
+    paddingVertical: Spacing[2],
+    paddingHorizontal: Spacing[4],
+  },
+  switchHubText: {
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: Typography.size.sm,
+    color: colors.gold.light,
   },
 });

@@ -20,12 +20,15 @@ import {
 import GlassCard from '../components/GlassCard';
 import StatusBadge from '../components/StatusBadge';
 import GoldButton from '../components/GoldButton';
+import { useTheme } from '../context/ThemeContext';
 import {
   getCustomerProfile, getSavedBookings,
 } from '../services/storageService';
-import { Colors, Gradients, Typography, Spacing, Radius, Shadow } from '../theme';
+import { Typography, Spacing, Radius, Shadow } from '../theme';
 
 export default function ProfileScreen({ navigation }) {
+  const { isDark, colors, gradients } = useTheme();
+  const styles = getStyles(colors);
   const [profile, setProfile]         = useState(null);
   const [savedBookings, setSavedBookings] = useState([]);
   const [refreshing, setRefreshing]   = useState(false);
@@ -56,35 +59,57 @@ export default function ProfileScreen({ navigation }) {
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0C0A08' : '#FAF8F5'} />
+
+      {/* Full-Screen Atmospheric Atelier Luxury Gradients */}
+      <LinearGradient
+        colors={
+          isDark
+            ? ['#0C0A08', '#16120E', '#0E0C09', '#1A140E', '#090806']
+            : ['#FAF8F5', '#F5EFE6', '#EDE4D4', '#F7F3EB', '#FAF7F2']
+        }
+        locations={[0, 0.22, 0.50, 0.78, 1]}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <LinearGradient
+        colors={
+          isDark
+            ? ['rgba(212, 175, 55, 0.08)', 'transparent', 'rgba(212, 175, 55, 0.04)', 'transparent']
+            : ['rgba(212, 175, 55, 0.12)', 'transparent', 'rgba(212, 175, 55, 0.06)', 'transparent']
+        }
+        start={{ x: 0.1, y: 0 }}
+        end={{ x: 0.9, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
 
       {/* ── Editorial Header ── */}
       <LinearGradient
-        colors={Gradients.darkStudio}
+        colors={gradients.darkStudio}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
-        style={styles.header}
+        style={[styles.header, { borderBottomColor: colors.gold.border }]}
       >
         <View style={styles.headerTop}>
-          <View style={styles.headerIconRing}>
-            <User size={20} color={Colors.gold.light} />
+          <View style={[styles.headerIconRing, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
+            <User size={20} color={colors.gold.light} />
           </View>
           <View>
-            <Text style={styles.headerTitle}>Client Profile</Text>
-            <Text style={styles.headerSub}>Session details & order dossier</Text>
+            <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Client Profile</Text>
+            <Text style={[styles.headerSub, { color: colors.text.secondary }]}>Session details & order dossier</Text>
           </View>
         </View>
       </LinearGradient>
 
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: 110 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={Colors.gold.DEFAULT}
-            colors={[Colors.gold.DEFAULT]}
+            tintColor={colors.gold.DEFAULT}
+            colors={[colors.gold.DEFAULT]}
           />
         }
       >
@@ -93,13 +118,13 @@ export default function ProfileScreen({ navigation }) {
           <View style={styles.avatarRow}>
             <View style={styles.avatarOuterRing}>
               <LinearGradient
-                colors={Gradients.gold}
+                colors={gradients.gold}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.avatarGradient}
               >
-                <View style={styles.avatarInner}>
-                  <Text style={styles.avatarInitials}>
+                <View style={[styles.avatarInner, { backgroundColor: colors.bg.surface }]}>
+                  <Text style={[styles.avatarInitials, { color: colors.gold.DEFAULT }]}>
                     {clientName.charAt(0).toUpperCase()}
                   </Text>
                 </View>
@@ -108,30 +133,30 @@ export default function ProfileScreen({ navigation }) {
 
             <View style={{ flex: 1 }}>
               <View style={styles.vipTagRow}>
-                <View style={styles.vipBadge}>
-                  <ShieldCheck size={11} color={Colors.gold.light} />
-                  <Text style={styles.vipText}>VERIFIED CLIENT</Text>
+                <View style={[styles.vipBadge, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
+                  <ShieldCheck size={11} color={colors.gold.light} />
+                  <Text style={[styles.vipText, { color: colors.gold.light }]}>VERIFIED CLIENT</Text>
                 </View>
               </View>
-              <Text style={styles.clientNameText} numberOfLines={1}>{clientName}</Text>
-              <Text style={styles.clientSubtitle}>E-Kodak Studio Client</Text>
+              <Text style={[styles.clientNameText, { color: colors.text.primary }]} numberOfLines={1}>{clientName}</Text>
+              <Text style={[styles.clientSubtitle, { color: colors.text.secondary }]}>E-Kodak Studio Client</Text>
             </View>
           </View>
 
           {/* Contact Details */}
           {(profile?.email || profile?.phone) ? (
             <View style={styles.contactBlock}>
-              <View style={styles.divider} />
+              <View style={[styles.divider, { backgroundColor: colors.gold.border }]} />
               {profile?.email ? (
                 <View style={styles.contactRow}>
-                  <Mail size={13} color={Colors.gold.dim} />
-                  <Text style={styles.contactText}>{profile.email}</Text>
+                  <Mail size={13} color={colors.gold.light} />
+                  <Text style={[styles.contactText, { color: colors.text.secondary }]}>{profile.email}</Text>
                 </View>
               ) : null}
               {profile?.phone ? (
                 <View style={styles.contactRow}>
-                  <Phone size={13} color={Colors.gold.dim} />
-                  <Text style={styles.contactText}>{profile.phone}</Text>
+                  <Phone size={13} color={colors.gold.light} />
+                  <Text style={[styles.contactText, { color: colors.text.secondary }]}>{profile.phone}</Text>
                 </View>
               ) : null}
             </View>
@@ -140,20 +165,20 @@ export default function ProfileScreen({ navigation }) {
           {/* Activity Statistics */}
           <View style={styles.statsRow}>
             <View style={styles.statBox}>
-              <Text style={styles.statNum}>{savedBookings.length}</Text>
-              <Text style={styles.statLabel}>Saved Passes</Text>
+              <Text style={[styles.statNum, { color: colors.gold.DEFAULT }]}>{savedBookings.length}</Text>
+              <Text style={[styles.statLabel, { color: colors.text.muted }]}>Saved Passes</Text>
             </View>
-            <View style={styles.statDivider} />
+            <View style={[styles.statDivider, { backgroundColor: colors.gold.border }]} />
             <View style={styles.statBox}>
-              <Text style={styles.statNum}>
+              <Text style={[styles.statNum, { color: colors.gold.DEFAULT }]}>
                 {savedBookings.filter((b) => b.status === 'READY' || b.status === 'COMPLETED').length}
               </Text>
-              <Text style={styles.statLabel}>Outputs Ready</Text>
+              <Text style={[styles.statLabel, { color: colors.text.muted }]}>Outputs Ready</Text>
             </View>
-            <View style={styles.statDivider} />
+            <View style={[styles.statDivider, { backgroundColor: colors.gold.border }]} />
             <View style={styles.statBox}>
-              <Text style={styles.statNum}>Cebu</Text>
-              <Text style={styles.statLabel}>Studio Bay</Text>
+              <Text style={[styles.statNum, { color: colors.gold.DEFAULT }]}>Cebu</Text>
+              <Text style={[styles.statLabel, { color: colors.text.muted }]}>Studio Bay</Text>
             </View>
           </View>
         </GlassCard>
@@ -162,7 +187,7 @@ export default function ProfileScreen({ navigation }) {
         {hasProfile ? (
           <View style={styles.sectionBlock}>
             <View style={styles.sectionHeader}>
-              <Camera size={14} color={Colors.gold.DEFAULT} />
+              <Camera size={14} color={colors.gold.DEFAULT} />
               <Text style={styles.sectionLabel}>LATEST STUDIO ORDER</Text>
             </View>
 
@@ -186,7 +211,7 @@ export default function ProfileScreen({ navigation }) {
 
               <View style={styles.orderMetaGrid}>
                 <View style={styles.orderMetaItem}>
-                  <Calendar size={13} color={Colors.gold.light} />
+                  <Calendar size={13} color={colors.gold.light} />
                   <Text style={styles.orderMetaText}>
                     {profile?.lastSessionDate ? new Date(profile.lastSessionDate).toLocaleDateString('en-US', {
                       weekday: 'short', month: 'short', day: 'numeric',
@@ -194,7 +219,7 @@ export default function ProfileScreen({ navigation }) {
                   </Text>
                 </View>
                 <View style={styles.orderMetaItem}>
-                  <Clock size={13} color={Colors.gold.light} />
+                  <Clock size={13} color={colors.gold.light} />
                   <Text style={styles.orderMetaText}>
                     {profile?.lastSessionTime || 'Studio Hours'}
                   </Text>
@@ -231,7 +256,7 @@ export default function ProfileScreen({ navigation }) {
           <View style={styles.sectionBlock}>
             <GlassCard highlight style={styles.emptyPromptCard}>
               <View style={styles.promptIconWrap}>
-                <QrCode size={36} color={Colors.gold.DEFAULT} strokeWidth={1.25} />
+                <QrCode size={36} color={colors.gold.DEFAULT} strokeWidth={1.25} />
               </View>
               <Text style={styles.promptTitle}>No Studio Pass Scanned Yet</Text>
               <Text style={styles.promptBody}>
@@ -253,7 +278,7 @@ export default function ProfileScreen({ navigation }) {
         {savedBookings.length > 0 && (
           <View style={styles.sectionBlock}>
             <View style={styles.sectionHeader}>
-              <Sparkles size={14} color={Colors.gold.DEFAULT} />
+              <Sparkles size={14} color={colors.gold.DEFAULT} />
               <Text style={styles.sectionLabel}>ALL LINKED PASSES ({savedBookings.length})</Text>
             </View>
 
@@ -269,7 +294,7 @@ export default function ProfileScreen({ navigation }) {
                     <Text style={styles.miniPassService}>{b.serviceName || 'Session'}</Text>
                   </View>
                   <StatusBadge status={b.status} size="sm" />
-                  <ChevronRight size={16} color={Colors.gold.light} style={{ marginLeft: 8 }} />
+                  <ChevronRight size={16} color={colors.gold.light} style={{ marginLeft: 8 }} />
                 </GlassCard>
               </TouchableOpacity>
             ))}
@@ -282,8 +307,8 @@ export default function ProfileScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Colors.bg.base },
+const getStyles = (colors) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg.base },
   content: { padding: Spacing[4], gap: Spacing[5] },
 
   header: {
@@ -291,7 +316,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing[4],
     paddingHorizontal: Spacing[5],
     borderBottomWidth: 1,
-    borderBottomColor: Colors.gold.border,
+    borderBottomColor: colors.gold.border,
   },
   headerTop: {
     flexDirection: 'row',
@@ -302,21 +327,21 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: colors.gold.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.xl,
-    color: Colors.text.primary,
+    color: colors.text.primary,
   },
   headerSub: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
   },
 
   // Profile Card
@@ -346,14 +371,14 @@ const styles = StyleSheet.create({
     width: 62,
     height: 62,
     borderRadius: 31,
-    backgroundColor: Colors.bg.surface,
+    backgroundColor: colors.bg.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarInitials: {
     fontFamily: Typography.fontHeading,
     fontSize: 26,
-    color: Colors.gold.light,
+    color: colors.gold.light,
   },
   vipTagRow: {
     marginBottom: 4,
@@ -362,9 +387,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
     borderWidth: 0.8,
-    borderColor: Colors.gold.borderLight,
+    borderColor: colors.gold.borderLight,
     borderRadius: Radius.full,
     paddingVertical: 2,
     paddingHorizontal: 8,
@@ -373,18 +398,18 @@ const styles = StyleSheet.create({
   vipText: {
     fontFamily: Typography.fontBodySemi,
     fontSize: 9,
-    color: Colors.gold.light,
+    color: colors.gold.light,
     letterSpacing: 1,
   },
   clientNameText: {
     fontFamily: Typography.fontHeadingSemi,
     fontSize: Typography.size.lg,
-    color: Colors.text.primary,
+    color: colors.text.primary,
   },
   clientSubtitle: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     marginTop: 1,
   },
 
@@ -400,12 +425,12 @@ const styles = StyleSheet.create({
   contactText: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
   },
 
   divider: {
     height: 1,
-    backgroundColor: Colors.gold.border,
+    backgroundColor: colors.gold.border,
     marginVertical: Spacing[3],
   },
 
@@ -415,7 +440,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: Spacing[4],
     borderTopWidth: 1,
-    borderTopColor: Colors.gold.border,
+    borderTopColor: colors.gold.border,
     marginTop: Spacing[3],
   },
   statBox: {
@@ -424,12 +449,12 @@ const styles = StyleSheet.create({
   statNum: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.lg,
-    color: Colors.gold.light,
+    color: colors.gold.light,
   },
   statLabel: {
     fontFamily: Typography.fontBody,
     fontSize: 10,
-    color: Colors.text.muted,
+    color: colors.text.muted,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginTop: 2,
@@ -437,7 +462,7 @@ const styles = StyleSheet.create({
   statDivider: {
     width: 1,
     height: 24,
-    backgroundColor: Colors.gold.border,
+    backgroundColor: colors.gold.border,
   },
 
   // Sections
@@ -452,7 +477,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontFamily: Typography.fontBodySemi,
     fontSize: 10.5,
-    color: Colors.gold.light,
+    color: colors.gold.light,
     letterSpacing: 1.5,
     textTransform: 'uppercase',
   },
@@ -469,12 +494,12 @@ const styles = StyleSheet.create({
   orderNumber: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.base,
-    color: Colors.text.primary,
+    color: colors.text.primary,
   },
   orderService: {
     fontFamily: Typography.fontHeadingItalic,
     fontSize: Typography.size.xs,
-    color: Colors.gold.light,
+    color: colors.gold.light,
     marginTop: 2,
   },
   orderMetaGrid: {
@@ -489,7 +514,7 @@ const styles = StyleSheet.create({
   orderMetaText: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
   },
 
   // Empty Prompt
@@ -502,9 +527,9 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: colors.gold.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing[3],
@@ -513,14 +538,14 @@ const styles = StyleSheet.create({
   promptTitle: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.base,
-    color: Colors.text.primary,
+    color: colors.text.primary,
     marginBottom: 4,
     textAlign: 'center',
   },
   promptBody: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     textAlign: 'center',
     lineHeight: 18,
     paddingHorizontal: Spacing[2],
@@ -536,11 +561,11 @@ const styles = StyleSheet.create({
   miniPassNum: {
     fontFamily: Typography.fontHeadingSemi,
     fontSize: Typography.size.sm,
-    color: Colors.text.primary,
+    color: colors.text.primary,
   },
   miniPassService: {
     fontFamily: Typography.fontBody,
     fontSize: 11,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
   },
 });

@@ -37,6 +37,7 @@ supabase/.branches
 # Temporary scratch and query files
 scratch/
 test-query.js
+word/
 
 # Operating System files
 Thumbs.db
@@ -45,3 +46,4 @@ desktop.ini
 
 # Android native skeleton (Expo mobile/ is active app)
 EkodakAndroid/
+

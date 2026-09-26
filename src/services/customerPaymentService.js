@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { createTransferLog } from './workstationService';
 
 /**
  * Service to handle customer payment operations, invoice tracking, and downpayment/full payments.
@@ -54,11 +55,12 @@ export const customerPaymentService = {
           )
         `)
         .eq('customer_id', customerId)
+        .or('is_deleted.is.null,is_deleted.eq.false')
         .order('created_at', { ascending: false });
 
       if (bookingsError) throw bookingsError;
 
-      const bookingList = rawBookings || [];
+      const bookingList = (rawBookings || []).filter(b => !b.is_deleted);
       const bookingIds = bookingList.map((b) => b.id);
 
       // 2. Fetch all recorded payments for these bookings
@@ -287,6 +289,31 @@ export const customerPaymentService = {
             .eq('id', bookingId);
         } catch (_) {
           // Handled by trigger
+        }
+      }
+
+      // Notify Finance & Admin via Workstation Transfer
+      if (authUserId) {
+        try {
+          await createTransferLog({
+            bookingId,
+            senderId: authUserId,
+            senderRole: 'system',
+            targetRole: 'finance',
+            transferType: 'PAYMENT_VERIFICATION',
+            priority: isFullyPaid ? 'NORMAL' : 'LOW',
+            title: `Payment Recorded: ₱${payAmount.toLocaleString()}`,
+            message: `Payment of ₱${payAmount.toLocaleString()} submitted via ${dbPaymentMethod} (Ref: ${refNum}) for pass #${booking.booking_number}.`,
+            payload: {
+              payment_id: paymentRecord?.id,
+              amount: payAmount,
+              reference_number: refNum,
+              method: dbPaymentMethod,
+              is_fully_paid: isFullyPaid,
+            },
+          });
+        } catch (logErr) {
+          console.warn('Non-critical transfer log warning:', logErr);
         }
       }
 

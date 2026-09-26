@@ -22,7 +22,8 @@ import { fetchBookingByToken } from '../services/bookingService';
 import GlassCard from '../components/GlassCard';
 import StatusBadge from '../components/StatusBadge';
 import GoldButton from '../components/GoldButton';
-import { Colors, Gradients, Typography, Spacing, Radius, Shadow } from '../theme';
+import { useTheme } from '../context/ThemeContext';
+import { Typography, Spacing, Radius, Shadow } from '../theme';
 
 function formatDate(str) {
   if (!str) return '';
@@ -31,7 +32,9 @@ function formatDate(str) {
   } catch { return str; }
 }
 
-function BookingPassCard({ item, onPress, onDelete }) {
+function BookingPassCard({ item, onPress, onDelete, colors, gradients }) {
+  const styles = getStyles(colors);
+  
   const handleDelete = async () => {
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -44,7 +47,7 @@ function BookingPassCard({ item, onPress, onDelete }) {
       <GlassCard highlight style={styles.card}>
         {/* Metallic Gold Left Indicator Spine */}
         <LinearGradient
-          colors={Gradients.gold}
+          colors={gradients.gold}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={styles.cardSpine}
@@ -53,33 +56,35 @@ function BookingPassCard({ item, onPress, onDelete }) {
         <View style={styles.cardContent}>
           <View style={styles.cardTop}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.bookingNum}>#{item.bookingNumber || item.token?.slice(0, 8)}</Text>
-              {item.clientName ? <Text style={styles.clientName}>{item.clientName}</Text> : null}
-              {item.serviceName ? <Text style={styles.serviceName}>{item.serviceName}</Text> : null}
+              <Text style={[styles.bookingNum, { color: colors.gold.DEFAULT }]}>
+                #{item.bookingNumber || item.token?.slice(0, 8)}
+              </Text>
+              {item.clientName ? <Text style={[styles.clientName, { color: colors.text.primary }]}>{item.clientName}</Text> : null}
+              {item.serviceName ? <Text style={[styles.serviceName, { color: colors.text.secondary }]}>{item.serviceName}</Text> : null}
             </View>
             <View style={{ alignItems: 'flex-end', gap: 6 }}>
               <StatusBadge status={item.status} size="sm" />
               {item.sessionDate && (
                 <View style={styles.sessionDateTag}>
-                  <Calendar size={11} color={Colors.text.muted} />
-                  <Text style={styles.sessionDateText}>{formatDate(item.sessionDate)}</Text>
+                  <Calendar size={11} color={colors.text.muted} />
+                  <Text style={[styles.sessionDateText, { color: colors.text.muted }]}>{formatDate(item.sessionDate)}</Text>
                 </View>
               )}
             </View>
           </View>
 
-          <View style={styles.cardDivider} />
+          <View style={[styles.cardDivider, { backgroundColor: colors.gold.border }]} />
 
           <View style={styles.cardFooter}>
-            <Text style={styles.savedAt}>
+            <Text style={[styles.savedAt, { color: colors.text.muted }]}>
               Added to device {formatDate(item.savedAt)}
             </Text>
             <View style={styles.cardActions}>
               <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Trash2 size={15} color={Colors.neutral[500]} />
+                <Trash2 size={15} color={colors.text.muted} />
               </TouchableOpacity>
-              <View style={styles.chevronPill}>
-                <ChevronRight size={14} color={Colors.gold.light} />
+              <View style={[styles.chevronPill, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
+                <ChevronRight size={14} color={colors.gold.light} />
               </View>
             </View>
           </View>
@@ -90,6 +95,8 @@ function BookingPassCard({ item, onPress, onDelete }) {
 }
 
 export default function SavedBookingsScreen({ navigation }) {
+  const { isDark, colors, gradients } = useTheme();
+  const styles = getStyles(colors);
   const [bookings, setBookings] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -113,6 +120,19 @@ export default function SavedBookingsScreen({ navigation }) {
     const { data: booking } = await fetchBookingByToken(item.token);
     if (booking) {
       navigation.navigate('BookingTracker', { booking, token: item.token });
+    } else {
+      // Graceful offline fallback: allow user to inspect their saved pass even without cellular connection
+      const cachedBooking = {
+        booking_number: item.bookingNumber,
+        booking_token: item.token,
+        status: item.status || 'CONFIRMED',
+        event_date: item.sessionDate,
+        session_date: item.sessionDate,
+        service: { name: item.serviceName },
+        services: { name: item.serviceName },
+        profile: { full_name: item.clientName },
+      };
+      navigation.navigate('BookingTracker', { booking: cachedBooking, token: item.token });
     }
   };
 
@@ -123,33 +143,55 @@ export default function SavedBookingsScreen({ navigation }) {
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0C0A08' : '#FAF8F5'} />
+
+      {/* Full-Screen Atmospheric Atelier Luxury Gradients */}
+      <LinearGradient
+        colors={
+          isDark
+            ? ['#0C0A08', '#16120E', '#0E0C09', '#1A140E', '#090806']
+            : ['#FAF8F5', '#F5EFE6', '#EDE4D4', '#F7F3EB', '#FAF7F2']
+        }
+        locations={[0, 0.22, 0.50, 0.78, 1]}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <LinearGradient
+        colors={
+          isDark
+            ? ['rgba(212, 175, 55, 0.08)', 'transparent', 'rgba(212, 175, 55, 0.04)', 'transparent']
+            : ['rgba(212, 175, 55, 0.12)', 'transparent', 'rgba(212, 175, 55, 0.06)', 'transparent']
+        }
+        start={{ x: 0.1, y: 0 }}
+        end={{ x: 0.9, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
 
       {/* ── Editorial Header ── */}
       <LinearGradient
-        colors={Gradients.darkStudio}
+        colors={gradients.darkStudio}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
-        style={styles.header}
+        style={[styles.header, { borderBottomColor: colors.gold.border }]}
       >
         <View style={styles.headerTop}>
-          <View style={styles.headerIconWrapper}>
-            <BookOpen size={20} color={Colors.gold.light} />
+          <View style={[styles.headerIconWrapper, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
+            <BookOpen size={20} color={colors.gold.light} />
           </View>
           <View>
-            <Text style={styles.headerTitle}>Studio Passes</Text>
-            <Text style={styles.headerSubtitle}>Saved & tracked client sessions</Text>
+            <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Studio Passes</Text>
+            <Text style={[styles.headerSubtitle, { color: colors.text.secondary }]}>Saved & tracked client sessions</Text>
           </View>
         </View>
       </LinearGradient>
 
       {bookings.length === 0 ? (
         <View style={styles.empty}>
-          <View style={styles.emptyIconRing}>
-            <QrCode size={48} color={Colors.gold.DEFAULT} strokeWidth={1.25} />
+          <View style={[styles.emptyIconRing, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
+            <QrCode size={48} color={colors.gold.DEFAULT} strokeWidth={1.25} />
           </View>
-          <Text style={styles.emptyTitle}>No Studio Passes Saved</Text>
-          <Text style={styles.emptyBody}>
+          <Text style={[styles.emptyTitle, { color: colors.text.primary }]}>No Studio Passes Saved</Text>
+          <Text style={[styles.emptyBody, { color: colors.text.secondary }]}>
             Scan the QR code from your booking receipt or online account to track your photoshoot session live.
           </Text>
           <GoldButton
@@ -169,15 +211,17 @@ export default function SavedBookingsScreen({ navigation }) {
               item={item}
               onPress={() => openBooking(item)}
               onDelete={() => deleteBooking(item.token)}
+              colors={colors}
+              gradients={gradients}
             />
           )}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: 110 }]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={Colors.gold.DEFAULT}
-              colors={[Colors.gold.DEFAULT]}
+              tintColor={colors.gold.DEFAULT}
+              colors={[colors.gold.DEFAULT]}
             />
           }
           ListHeaderComponent={
@@ -197,15 +241,15 @@ export default function SavedBookingsScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Colors.bg.base },
+const getStyles = (colors) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg.base },
 
   header: {
     paddingTop: 54,
     paddingBottom: Spacing[5],
     paddingHorizontal: Spacing[5],
     borderBottomWidth: 1,
-    borderBottomColor: Colors.gold.border,
+    borderBottomColor: colors.gold.border,
   },
   headerTop: {
     flexDirection: 'row',
@@ -216,21 +260,21 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: Radius.sm,
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: colors.gold.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.xl,
-    color: Colors.text.primary,
+    color: colors.text.primary,
   },
   headerSubtitle: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
   },
 
   list: {
@@ -259,18 +303,18 @@ const styles = StyleSheet.create({
   bookingNum: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.lg,
-    color: Colors.text.primary,
+    color: colors.text.primary,
   },
   clientName: {
     fontFamily: Typography.fontBodyMedium,
     fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     marginTop: 2,
   },
   serviceName: {
     fontFamily: Typography.fontHeadingItalic,
     fontSize: Typography.size.xs,
-    color: Colors.gold.light,
+    color: colors.gold.light,
     marginTop: 1,
   },
   sessionDateTag: {
@@ -281,11 +325,11 @@ const styles = StyleSheet.create({
   sessionDateText: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.text.muted,
+    color: colors.text.muted,
   },
   cardDivider: {
     height: 1,
-    backgroundColor: Colors.gold.border,
+    backgroundColor: colors.gold.border,
     marginVertical: Spacing[3],
   },
   cardFooter: {
@@ -296,7 +340,7 @@ const styles = StyleSheet.create({
   savedAt: {
     fontFamily: Typography.fontBody,
     fontSize: 11,
-    color: Colors.neutral[500],
+    color: colors.neutral[500],
   },
   cardActions: {
     flexDirection: 'row',
@@ -310,7 +354,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -326,9 +370,9 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 44,
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: colors.gold.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing[5],
@@ -337,13 +381,13 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.xl,
-    color: Colors.text.primary,
+    color: colors.text.primary,
     marginBottom: Spacing[2],
   },
   emptyBody: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     textAlign: 'center',
     lineHeight: 22,
   },

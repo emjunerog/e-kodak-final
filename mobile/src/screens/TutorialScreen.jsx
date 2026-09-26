@@ -2,13 +2,15 @@
  * TutorialScreen.jsx
  * Luxury Onboarding Tour & Role Selection for E-Kodak Photography Studio.
  * Features:
- * - 4 Editorial onboarding tour slides
+ * - 4 Editorial onboarding tour slides with swipe gesture support
+ * - Dynamic pagination indicators with smooth transitions
  * - Final step: Role selection (Studio Client vs Studio Staff / Photographer)
  * - If Client: Lands directly on customer Home dashboard with guided scan banner
  * - If Photographer: Lands directly on Photographer Login portal
  */
 
 import React, { useState, useRef } from 'react';
+import { useTheme } from '../context/ThemeContext';
 import {
   View, Text, StyleSheet, Dimensions, Animated,
   FlatList, TouchableOpacity, StatusBar,
@@ -17,7 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import {
   QrCode, Activity, Bell, Camera, ChevronRight, Check,
-  User, Lock, Sparkles, ArrowRight,
+  User, Lock, Sparkles, ArrowRight, BookOpen,
 } from 'lucide-react-native';
 
 import GlassCard from '../components/GlassCard';
@@ -43,7 +45,7 @@ const SLIDES = [
     iconColor: Colors.gold.light,
     badge: 'STUDIO QR PASS',
     headline: 'Instant Access with\nYour Studio Pass.',
-    body: 'Scan the QR pass issued with your booking confirmation to securely link your photoshoot session to this device.',
+    body: 'Scan the QR code printed on your session receipt or web booking to link your photoshoot milestones directly to this device.',
     gradient: ['#1C1813', '#120F0B', '#0D0B09'],
   },
   {
@@ -51,25 +53,28 @@ const SLIDES = [
     icon: Activity,
     iconColor: Colors.status.ready,
     badge: 'REAL-TIME TRACKING',
-    headline: 'Track Every Phase\nFrom Shoot to Delivery.',
-    body: 'Follow your portrait session through scheduling, studio lighting, professional color grading, proofing, and packaging.',
+    headline: 'Follow Every Phase\nFrom Shoot to Delivery.',
+    body: 'Monitor studio bay lighting, raw photo capture, master color grading, client proof approvals, and luxury print packaging in real time.',
     gradient: ['#141A16', '#0E1210', '#0D0B09'],
   },
   {
-    id: 'notify',
-    icon: Bell,
+    id: 'portfolio',
+    icon: Sparkles,
     iconColor: '#A78BFA',
-    badge: 'STUDIO ALERTS',
-    headline: 'Stay Informed\nat Every Critical Step.',
-    body: 'Receive instant notifications when your session date approaches, photographer is assigned, and proofs are ready.',
+    badge: 'STUDIO SHOWCASE',
+    headline: 'Curated Portfolios\n& Prep Guides.',
+    body: 'Explore live portfolios synced directly with our studio bays, check transparent package rates, and get wardrobe advice before your session.',
     gradient: ['#1A141C', '#120E14', '#0D0B09'],
   },
 ];
 
 function TourSlide({ item, animValue }) {
+  const { colors } = useTheme();
+  const styles = getStyles(colors);
+  
   const IconComponent = item.icon;
-  const scale = animValue.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] });
-  const opacity = animValue.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+  const scale = animValue.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] });
+  const opacity = animValue.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] });
 
   return (
     <LinearGradient colors={item.gradient} style={styles.slide}>
@@ -92,6 +97,9 @@ function TourSlide({ item, animValue }) {
 }
 
 export default function TutorialScreen({ onComplete }) {
+  const { isDark, colors, gradients } = useTheme();
+  const styles = getStyles(colors);
+  
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showRoleSelection, setShowRoleSelection] = useState(false);
 
@@ -99,11 +107,23 @@ export default function TutorialScreen({ onComplete }) {
   const animValues = useRef(SLIDES.map((_, i) => new Animated.Value(i === 0 ? 1 : 0))).current;
 
   const goToSlide = (index) => {
+    if (index < 0 || index >= SLIDES.length) return;
     try { Haptics.selectionAsync(); } catch {}
     listRef.current?.scrollToIndex({ index, animated: true });
-    Animated.timing(animValues[currentIndex], { toValue: 0, duration: 180, useNativeDriver: true }).start();
-    Animated.timing(animValues[index], { toValue: 1, duration: 320, useNativeDriver: true }).start();
+    Animated.timing(animValues[currentIndex], { toValue: 0, duration: 180, useNativeDriver: false }).start();
+    Animated.timing(animValues[index], { toValue: 1, duration: 320, useNativeDriver: false }).start();
     setCurrentIndex(index);
+  };
+
+  const handleMomentumScrollEnd = (event) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / width);
+    if (index !== currentIndex && index >= 0 && index < SLIDES.length) {
+      try { Haptics.selectionAsync(); } catch {}
+      Animated.timing(animValues[currentIndex], { toValue: 0, duration: 180, useNativeDriver: false }).start();
+      Animated.timing(animValues[index], { toValue: 1, duration: 320, useNativeDriver: false }).start();
+      setCurrentIndex(index);
+    }
   };
 
   const handleNext = () => {
@@ -126,7 +146,7 @@ export default function TutorialScreen({ onComplete }) {
   if (showRoleSelection) {
     return (
       <View style={styles.roleContainer}>
-        <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
+        <StatusBar barStyle="light-content" backgroundColor={colors.bg.base} />
         <LinearGradient
           colors={Gradients.darkStudio}
           style={StyleSheet.absoluteFill}
@@ -135,11 +155,11 @@ export default function TutorialScreen({ onComplete }) {
         <View style={styles.roleContent}>
           <View style={styles.roleHeaderGroup}>
             <View style={styles.roleIconEmblem}>
-              <Sparkles size={28} color={Colors.gold.light} />
+              <Sparkles size={28} color={colors.gold.light} />
             </View>
             <Text style={styles.roleTitle}>Select Your Experience</Text>
             <Text style={styles.roleSubtitle}>
-              Personalize your E-Kodak Studio companion application.
+              Please choose how you will be using the E-Kodak Studio companion application:
             </Text>
           </View>
 
@@ -153,18 +173,18 @@ export default function TutorialScreen({ onComplete }) {
               <GlassCard glow highlight style={styles.roleCard}>
                 <View style={styles.roleCardInner}>
                   <View style={styles.roleIconBox}>
-                    <User size={26} color={Colors.gold.light} />
+                    <User size={26} color={colors.gold.light} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={styles.tagBadge}>
-                      <Text style={styles.tagBadgeText}>RECOMMENDED</Text>
+                      <Text style={styles.tagBadgeText}>CLIENT HUB · RECOMMENDED</Text>
                     </View>
                     <Text style={styles.roleCardTitle}>I am a Studio Client</Text>
                     <Text style={styles.roleCardDesc}>
-                      Track your photoshoot milestones, view proofs, and monitor print pickup and delivery.
+                      Track your photoshoot milestones, view proofs, check studio rates, and monitor print pickup and delivery.
                     </Text>
                   </View>
-                  <ArrowRight size={18} color={Colors.gold.light} />
+                  <ArrowRight size={18} color={colors.gold.light} />
                 </View>
               </GlassCard>
             </TouchableOpacity>
@@ -178,19 +198,30 @@ export default function TutorialScreen({ onComplete }) {
               <GlassCard highlight style={styles.roleCard}>
                 <View style={styles.roleCardInner}>
                   <View style={[styles.roleIconBox, styles.staffIconBox]}>
-                    <Lock size={24} color={Colors.neutral[400]} />
+                    <Lock size={24} color={colors.neutral[400]} />
                   </View>
                   <View style={{ flex: 1 }}>
+                    <View style={[styles.tagBadge, styles.staffBadge]}>
+                      <Text style={[styles.tagBadgeText, styles.staffBadgeText]}>STAFF & MANAGEMENT</Text>
+                    </View>
                     <Text style={styles.roleCardTitle}>I am Studio Staff</Text>
                     <Text style={styles.roleCardDesc}>
-                      Sign in to your photographer portal to manage assigned shoots and update session status.
+                      Sign in to your photographer portal to manage assigned shoots, update session milestones, and view schedule.
                     </Text>
                   </View>
-                  <ChevronRight size={18} color={Colors.neutral[500]} />
+                  <ChevronRight size={18} color={colors.neutral[500]} />
                 </View>
               </GlassCard>
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity
+            onPress={() => setShowRoleSelection(false)}
+            style={styles.reviewTourBtn}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.reviewTourText}>← Review Introduction Tour</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -199,7 +230,7 @@ export default function TutorialScreen({ onComplete }) {
   // ── Tour Slides View ───────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.bg.base} />
 
       <FlatList
         ref={listRef}
@@ -210,7 +241,8 @@ export default function TutorialScreen({ onComplete }) {
         )}
         horizontal
         pagingEnabled
-        scrollEnabled={false}
+        scrollEnabled={true}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
         showsHorizontalScrollIndicator={false}
         style={{ flex: 1 }}
       />
@@ -264,88 +296,86 @@ export default function TutorialScreen({ onComplete }) {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg.base },
-  slide: { width, minHeight: height * 0.72, paddingTop: 64 },
-  slideContent: {
+  slide: {
+    width,
     flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: Spacing[8],
-    paddingTop: Spacing[10],
-  },
-
-  iconRing: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    borderWidth: 1.5,
-    alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing[6],
+    alignItems: 'center',
+    paddingHorizontal: Spacing[7],
+  },
+  slideContent: {
+    alignItems: 'center',
+    maxWidth: 360,
+  },
+  iconRing: {
+    width: 104,
+    height: 104,
+    borderRadius: Radius.full,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing[5],
   },
   iconInner: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    alignItems: 'center',
+    width: 82,
+    height: 82,
+    borderRadius: Radius.full,
     justifyContent: 'center',
+    alignItems: 'center',
   },
-
   badge: {
-    paddingVertical: 4,
-    paddingHorizontal: Spacing[4],
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: Radius.full,
     borderWidth: 1,
-    marginBottom: Spacing[5],
+    marginBottom: Spacing[4],
   },
   badgeText: {
     fontFamily: Typography.fontBodySemi,
     fontSize: Typography.size.xs,
-    letterSpacing: 1.5,
+    letterSpacing: 1.2,
   },
-
   headline: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size['2xl'],
     color: Colors.text.primary,
     textAlign: 'center',
     lineHeight: 34,
-    marginBottom: Spacing[4],
+    marginBottom: Spacing[3],
   },
   body: {
     fontFamily: Typography.fontBody,
-    fontSize: Typography.size.base,
+    fontSize: Typography.size.sm,
     color: Colors.text.secondary,
     textAlign: 'center',
-    lineHeight: 24,
-    paddingHorizontal: Spacing[2],
+    lineHeight: 22,
   },
 
-  // Bottom Controls
+  // Controls
   controls: {
     paddingHorizontal: Spacing[6],
-    paddingBottom: Spacing[10],
-    gap: Spacing[5],
+    paddingBottom: Spacing[8],
+    paddingTop: Spacing[4],
   },
   dots: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: Spacing[5],
   },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.neutral[800],
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
   },
   dotActive: {
-    width: 28,
-    height: 8,
-    borderRadius: 4,
+    width: 24,
     backgroundColor: Colors.gold.DEFAULT,
   },
-
   navRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -353,14 +383,7 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     paddingVertical: Spacing[3],
-    paddingHorizontal: Spacing[5],
-    borderRadius: Radius.md,
-    backgroundColor: Colors.bg.card,
-    borderWidth: 1,
-    borderColor: Colors.gold.border,
-    minHeight: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: Spacing[4],
   },
   backText: {
     fontFamily: Typography.fontBodyMedium,
@@ -370,49 +393,51 @@ const styles = StyleSheet.create({
   nextBtn: {
     flex: 1,
   },
-
   skipBtn: {
     alignItems: 'center',
     paddingVertical: Spacing[2],
+    marginTop: Spacing[2],
   },
   skipText: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.neutral[500],
-    letterSpacing: 0.5,
+    color: Colors.text.muted,
   },
 
-  // ── Role Selection Styles ───────────────────────────────────
+  // Role Selection View
   roleContainer: {
     flex: 1,
     backgroundColor: Colors.bg.base,
     justifyContent: 'center',
-    paddingHorizontal: Spacing[6],
   },
   roleContent: {
-    gap: Spacing[6],
+    flex: 1,
+    paddingHorizontal: Spacing[5],
+    justifyContent: 'center',
+    paddingTop: 40,
+    paddingBottom: 40,
   },
   roleHeaderGroup: {
     alignItems: 'center',
-    gap: 4,
+    marginBottom: Spacing[6],
   },
   roleIconEmblem: {
     width: 60,
     height: 60,
-    borderRadius: 30,
+    borderRadius: Radius.full,
     backgroundColor: Colors.gold.bg,
     borderWidth: 1,
     borderColor: Colors.gold.border,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing[3],
-    ...Shadow.goldSoft,
+    marginBottom: Spacing[4],
   },
   roleTitle: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size['2xl'],
     color: Colors.text.primary,
     textAlign: 'center',
+    marginBottom: Spacing[2],
   },
   roleSubtitle: {
     fontFamily: Typography.fontBody,
@@ -420,63 +445,80 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     textAlign: 'center',
     lineHeight: 20,
-    paddingHorizontal: Spacing[2],
+    maxWidth: 320,
   },
   roleCardsGroup: {
     gap: Spacing[4],
-    marginTop: Spacing[2],
   },
   roleBtnWrapper: {
     width: '100%',
   },
   roleCard: {
-    padding: Spacing[5],
+    padding: Spacing[4],
+    borderRadius: Radius.xl,
   },
   roleCardInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing[4],
+    gap: Spacing[3],
   },
   roleIconBox: {
-    width: 52,
-    height: 52,
-    borderRadius: Radius.md,
+    width: 50,
+    height: 50,
+    borderRadius: Radius.lg,
     backgroundColor: Colors.gold.bg,
     borderWidth: 1,
-    borderColor: Colors.gold.borderLight,
+    borderColor: Colors.gold.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   staffIconBox: {
-    backgroundColor: Colors.bg.surface,
-    borderColor: Colors.neutral[700],
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   tagBadge: {
-    backgroundColor: Colors.gold.bg,
-    borderWidth: 0.8,
-    borderColor: Colors.gold.borderLight,
-    borderRadius: Radius.full,
-    paddingVertical: 1.5,
-    paddingHorizontal: 7,
     alignSelf: 'flex-start',
+    backgroundColor: 'rgba(212, 168, 83, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: Colors.gold.border,
     marginBottom: 4,
+  },
+  staffBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   tagBadgeText: {
     fontFamily: Typography.fontBodySemi,
-    fontSize: 8.5,
+    fontSize: 9,
     color: Colors.gold.light,
-    letterSpacing: 1,
+    letterSpacing: 0.6,
+  },
+  staffBadgeText: {
+    color: Colors.neutral[400],
   },
   roleCardTitle: {
     fontFamily: Typography.fontHeadingSemi,
     fontSize: Typography.size.base,
     color: Colors.text.primary,
-    marginBottom: 2,
+    marginBottom: 3,
   },
   roleCardDesc: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
     color: Colors.text.secondary,
     lineHeight: 17,
+  },
+  reviewTourBtn: {
+    alignItems: 'center',
+    marginTop: Spacing[6],
+    paddingVertical: 10,
+  },
+  reviewTourText: {
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: Typography.size.sm,
+    color: Colors.gold.light,
   },
 });

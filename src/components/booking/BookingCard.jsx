@@ -98,8 +98,8 @@ export default function BookingCard({ booking }) {
   }, [status]);
 
   // Academic batch tag text
-  const academicTag = student_details?.section 
-    ? `Batch ${student_details.section}${student_details.course ? ` · ${student_details.course}` : ''}`
+  const academicTag = (student_details?.batch || student_details?.section)
+    ? `${student_details.batch ? `${student_details.batch}` : ''}${student_details.batch && student_details.section ? ' · ' : ''}${student_details.section ? `Sec ${student_details.section}` : ''}${student_details.course ? ` · ${student_details.course}` : ''}`
     : student_details?.school || null;
 
   // Downpayment & balance calculation

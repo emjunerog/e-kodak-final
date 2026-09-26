@@ -804,7 +804,8 @@ export async function unassignPhotographer({
  * softDeleteBooking
  * -----------------
  * Soft-deletes a booking by setting is_deleted=true, deleted_at=now(),
- * and recording deletion details and activity log without destroying database relationships.
+ * status='CANCELLED', and recording deletion details, status history,
+ * customer notification, and activity log without destroying database relationships.
  */
 export async function softDeleteBooking({
   bookingId,
@@ -815,25 +816,83 @@ export async function softDeleteBooking({
   if (!isSupabaseConfigured) return { success: true, error: null };
 
   try {
+    // 1. Fetch full snapshot of the booking first so we have customer_id and details
+    const { data: existingBooking } = await supabase
+      .from('bookings')
+      .select('id, booking_number, customer_id, total_amount, service:services(name), customer:profiles!bookings_customer_id_fkey(first_name, last_name, email)')
+      .eq('id', bookingId)
+      .maybeSingle();
+
+    // 2. Clear payments associated with this booking
+    try {
+      await supabase
+        .from('payments')
+        .delete()
+        .eq('booking_id', bookingId);
+    } catch (payDelErr) {
+      console.warn('Could not delete booking payments on soft delete:', payDelErr);
+    }
+
+    // 3. Update booking record: mark deleted and clear payment balances
     const { data: booking, error: updateErr } = await supabase
       .from('bookings')
       .update({
         is_deleted: true,
+        status: 'CANCELLED',
+        payment_status: 'UNPAID',
+        down_payment_amount: 0,
+        down_payment_confirmed: false,
+        remaining_balance: existingBooking?.total_amount || 0,
         deleted_at: new Date().toISOString(),
         deleted_by: deletedById,
         deletion_reason: reason,
+        updated_at: new Date().toISOString(),
       })
       .eq('id', bookingId)
-      .select('id, booking_number')
+      .select('id, booking_number, customer_id')
       .single();
 
     if (updateErr) throw updateErr;
+
+    const bNumber = booking?.booking_number || existingBooking?.booking_number || 'N/A';
+    const cId = booking?.customer_id || existingBooking?.customer_id;
+    const sName = existingBooking?.service?.name || 'Studio Session';
+
+    // 3. Insert customer notification so the customer is formally informed their order was removed
+    if (cId) {
+      try {
+        await supabase.from('notifications').insert([{
+          user_id: cId,
+          booking_id: bookingId,
+          title: `Booking #${bNumber} Removed`,
+          message: `Your booking order #${bNumber} (${sName}) has been cancelled and removed from active studio records. Reason: "${reason || 'Cancelled by studio administration'}".`,
+          notification_type: 'BOOKING_CANCELLED',
+          is_read: false,
+          created_at: new Date().toISOString(),
+        }]);
+      } catch (notifErr) {
+        console.warn('Could not insert customer deletion notification:', notifErr);
+      }
+    }
+
+    // 4. Record in status history for audit trail
+    try {
+      await supabase.from('booking_status_history').insert([{
+        booking_id: bookingId,
+        status: 'CANCELLED',
+        remarks: `Moved to Trash: "${reason}". Performed by ${deletedByName}.`,
+        changed_by: deletedById,
+      }]);
+    } catch (histErr) {
+      console.warn('Could not insert status history for deletion:', histErr);
+    }
 
     const logEntry = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `log_${Date.now()}`,
       action: 'BOOKING_SOFT_DELETED',
       booking_id: bookingId,
-      booking_number: booking?.booking_number || 'N/A',
+      booking_number: bNumber,
+      client_name: existingBooking?.customer ? `${existingBooking.customer.first_name || ''} ${existingBooking.customer.last_name || ''}`.trim() : 'Client',
       deleted_by_name: deletedByName,
       reason: reason,
       deleted_at: new Date().toISOString(),
@@ -845,7 +904,7 @@ export async function softDeleteBooking({
       localStorage.setItem('ekodak_admin_activity_logs', JSON.stringify(existingLogs.slice(0, 200)));
     } catch {}
 
-    // Persist to database admin_activity_logs
+    // 5. Persist to database admin_activity_logs
     try {
       await supabase.from('admin_activity_logs').insert([{
         admin_id: deletedById || null,
@@ -854,8 +913,8 @@ export async function softDeleteBooking({
         action_type: 'BOOKING_SOFT_DELETED',
         entity_type: 'booking',
         entity_id: bookingId,
-        entity_label: booking?.booking_number || 'Booking',
-        description: `Moved ${booking?.booking_number || 'booking'} to Trash. Reason: "${reason || 'Administrative cleanup'}"`,
+        entity_label: bNumber,
+        description: `Moved booking #${bNumber} to Trash. Reason: "${reason || 'Administrative cleanup'}"`,
         details: { reason, booking_id: bookingId },
         created_at: new Date().toISOString(),
       }]);
@@ -863,7 +922,7 @@ export async function softDeleteBooking({
       console.warn('Could not write soft delete to admin_activity_logs DB:', dbErr);
     }
 
-    return { success: true, data: booking, logEntry, error: null };
+    return { success: true, data: booking || existingBooking, logEntry, error: null };
   } catch (err) {
     console.error('softDeleteBooking error:', err);
     return { success: false, error: err };
@@ -874,7 +933,7 @@ export async function softDeleteBooking({
  * restoreBooking
  * --------------
  * Recovers a soft-deleted booking, clearing is_deleted flag and
- * restoring it to active queue.
+ * restoring it to active queue, updating status history and notifying customer.
  */
 export async function restoreBooking({
   bookingId,
@@ -888,21 +947,61 @@ export async function restoreBooking({
       .from('bookings')
       .update({
         is_deleted: false,
+        status: 'CONFIRMED',
         deleted_at: null,
         deleted_by: null,
         deletion_reason: null,
+        updated_at: new Date().toISOString(),
       })
       .eq('id', bookingId)
-      .select('id, booking_number')
+      .select(`
+        id,
+        booking_number,
+        customer_id,
+        service:services(name),
+        customer:profiles!bookings_customer_id_fkey(first_name, last_name, email)
+      `)
       .single();
 
     if (updateErr) throw updateErr;
+
+    const bNumber = booking?.booking_number || 'N/A';
+    const sName = booking?.service?.name || 'Studio Session';
+
+    // Notify customer that booking has been restored
+    if (booking?.customer_id) {
+      try {
+        await supabase.from('notifications').insert([{
+          user_id: booking.customer_id,
+          booking_id: bookingId,
+          title: `Booking #${bNumber} Restored`,
+          message: `Your booking order #${bNumber} (${sName}) has been restored to active studio records by administration.`,
+          notification_type: 'BOOKING_CONFIRMED',
+          is_read: false,
+          created_at: new Date().toISOString(),
+        }]);
+      } catch (notifErr) {
+        console.warn('Could not insert customer restore notification:', notifErr);
+      }
+    }
+
+    // Record in status history
+    try {
+      await supabase.from('booking_status_history').insert([{
+        booking_id: bookingId,
+        status: 'CONFIRMED',
+        remarks: `Restored from Trash to active queue by ${restoredByName}.`,
+        changed_by: restoredById,
+      }]);
+    } catch (histErr) {
+      console.warn('Could not insert status history for restore:', histErr);
+    }
 
     const logEntry = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `log_${Date.now()}`,
       action: 'BOOKING_RESTORED',
       booking_id: bookingId,
-      booking_number: booking?.booking_number || 'N/A',
+      booking_number: bNumber,
       restored_by_name: restoredByName,
       restored_at: new Date().toISOString(),
     };
@@ -922,8 +1021,8 @@ export async function restoreBooking({
         action_type: 'BOOKING_RESTORED',
         entity_type: 'booking',
         entity_id: bookingId,
-        entity_label: booking?.booking_number || 'Booking',
-        description: `Recovered ${booking?.booking_number || 'booking'} from Trash back to active queue.`,
+        entity_label: bNumber,
+        description: `Recovered #${bNumber} from Trash back to active queue.`,
         details: { booking_id: bookingId },
         created_at: new Date().toISOString(),
       }]);
@@ -968,7 +1067,7 @@ export async function deleteBookingPermanently({
         created_at,
         customer_id,
         service:services(name),
-        customer:profiles!bookings_customer_id_fkey(first_name, last_name)
+        customer:profiles!bookings_customer_id_fkey(first_name, last_name, email)
       `)
       .eq('id', bookingId)
       .maybeSingle();
@@ -979,7 +1078,7 @@ export async function deleteBookingPermanently({
 
     const logEntry = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `log_${Date.now()}`,
-      action: 'BOOKING_DELETED',
+      action: 'BOOKING_PURGED',
       booking_id: bookingId,
       booking_number: booking?.booking_number || 'N/A',
       client_name: booking?.customer ? `${booking.customer.first_name || ''} ${booking.customer.last_name || ''}`.trim() : 'Guest',
@@ -1012,7 +1111,7 @@ export async function deleteBookingPermanently({
         entity_type: 'booking',
         entity_id: bookingId,
         entity_label: booking?.booking_number || 'Booking',
-        description: `Permanently purged ${booking?.booking_number || 'booking'} and all linked records. Reason: "${reason}"`,
+        description: `Permanently purged #${booking?.booking_number || 'booking'} and all linked records. Reason: "${reason}"`,
         details: logEntry,
         created_at: new Date().toISOString()
       }]);
@@ -1020,7 +1119,25 @@ export async function deleteBookingPermanently({
       console.warn('admin_activity_logs DB write error:', e);
     }
 
-    // 2. Cascade delete child dependencies to avoid foreign key violation
+    // 2. Notify customer if not already notified and decouple notifications from booking_id
+    // to prevent FK constraint errors while preserving customer's notification history
+    if (booking?.customer_id) {
+      try {
+        await supabase.from('notifications').insert([{
+          user_id: booking.customer_id,
+          booking_id: null,
+          title: `Booking #${booking?.booking_number || 'N/A'} Cleared`,
+          message: `Your booking order #${booking?.booking_number || 'N/A'} (${booking?.service?.name || 'Studio Session'}) has been permanently cleared from studio records. Reason: "${reason || 'Administrative cleanup'}".`,
+          notification_type: 'BOOKING_DELETED',
+          is_read: false,
+          created_at: new Date().toISOString(),
+        }]);
+      } catch (nErr) {
+        console.warn('Could not insert permanent deletion customer notice:', nErr);
+      }
+    }
+
+    // Cascade delete child dependencies to avoid foreign key violation
     await Promise.allSettled([
       supabase.from('booking_addons').delete().eq('booking_id', bookingId),
       supabase.from('booking_status_history').delete().eq('booking_id', bookingId),
@@ -1028,7 +1145,8 @@ export async function deleteBookingPermanently({
       supabase.from('booking_deliveries').delete().eq('booking_id', bookingId),
       supabase.from('payments').delete().eq('booking_id', bookingId),
       supabase.from('photo_outputs').delete().eq('booking_id', bookingId),
-      supabase.from('notifications').delete().eq('booking_id', bookingId),
+      supabase.from('workstation_transfers').delete().eq('booking_id', bookingId),
+      supabase.from('notifications').update({ booking_id: null }).eq('booking_id', bookingId),
     ]);
 
     // 3. Delete the booking record itself
@@ -1043,6 +1161,72 @@ export async function deleteBookingPermanently({
   } catch (err) {
     console.error('deleteBookingPermanently error:', err);
     return { success: false, error: err };
+  }
+}
+
+/**
+ * emptyTrash
+ * ----------
+ * Permanently removes all soft-deleted bookings from the database in bulk,
+ * cascading child dependencies and recording a single bulk purge audit log.
+ */
+export async function emptyTrash({ deletedById = null, deletedByName = 'Staff/Admin' } = {}) {
+  if (!isSupabaseConfigured) return { success: true, count: 0, error: null };
+
+  try {
+    const { data: deletedList, error: fetchErr } = await supabase
+      .from('bookings')
+      .select('id, booking_number')
+      .eq('is_deleted', true);
+
+    if (fetchErr) throw fetchErr;
+    if (!deletedList || deletedList.length === 0) {
+      return { success: true, count: 0, message: 'Trash is already empty.', error: null };
+    }
+
+    const ids = deletedList.map(b => b.id);
+
+    // Cascade delete child records while unlinking notifications so customers keep their records
+    await Promise.allSettled([
+      supabase.from('booking_addons').delete().in('booking_id', ids),
+      supabase.from('booking_status_history').delete().in('booking_id', ids),
+      supabase.from('qr_scan_logs').delete().in('booking_id', ids),
+      supabase.from('booking_deliveries').delete().in('booking_id', ids),
+      supabase.from('payments').delete().in('booking_id', ids),
+      supabase.from('photo_outputs').delete().in('booking_id', ids),
+      supabase.from('workstation_transfers').delete().in('booking_id', ids),
+      supabase.from('notifications').update({ booking_id: null }).in('booking_id', ids),
+    ]);
+
+    // Delete booking records
+    const { error: delErr } = await supabase
+      .from('bookings')
+      .delete()
+      .in('id', ids);
+
+    if (delErr) throw delErr;
+
+    // Log bulk purge to admin activity logs
+    try {
+      await supabase.from('admin_activity_logs').insert([{
+        admin_id: deletedById || null,
+        admin_name: deletedByName,
+        admin_role: 'admin',
+        action_type: 'TRASH_EMPTIED',
+        entity_type: 'booking',
+        entity_label: `${ids.length} Bookings`,
+        description: `Permanently purged ${ids.length} record(s) from the Trash Cycle.`,
+        details: { count: ids.length, booking_numbers: deletedList.map(b => b.booking_number) },
+        created_at: new Date().toISOString()
+      }]);
+    } catch (logErr) {
+      console.warn('Could not record bulk purge to admin_activity_logs:', logErr);
+    }
+
+    return { success: true, count: ids.length, error: null };
+  } catch (err) {
+    console.error('emptyTrash error:', err);
+    return { success: false, count: 0, error: err };
   }
 }
 

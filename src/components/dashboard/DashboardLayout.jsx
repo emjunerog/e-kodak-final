@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet, Navigate, useNavigate } from 'react-router-dom';
+import { Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import ScheduleProgressSidebar from './ScheduleProgressSidebar';
@@ -14,6 +14,8 @@ import { Bell, X, Sparkles, Camera, CreditCard, Calendar, CheckCircle } from 'lu
 export default function DashboardLayout() {
   const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isBookingPage = location.pathname.startsWith('/dashboard/book');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
@@ -100,22 +102,40 @@ export default function DashboardLayout() {
   }
 
   return (
-    <div className="min-h-screen dashboard-gradient-bg flex flex-col font-body">
-      {/* Mobile Sidebar Backdrop Overlay */}
+    <div className={`min-h-screen ${isBookingPage ? 'booking-gradient-bg text-neutral-100' : 'dashboard-gradient-bg'} flex flex-col font-body relative overflow-x-hidden transition-colors duration-500`}>
+      {/* Moving Ambient Gradient Lighting on the major background */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
+        {isBookingPage ? (
+          <>
+            <div className="absolute -top-40 left-1/4 w-[850px] h-[850px] rounded-full bg-gradient-to-b from-gold/25 via-amber-500/10 to-transparent blur-[140px] animate-float-slow-1" />
+            <div className="absolute top-1/3 -right-40 w-[800px] h-[800px] rounded-full bg-gradient-to-bl from-amber-600/15 via-gold/10 to-transparent blur-[150px] animate-float-slow-2" />
+            <div className="absolute -bottom-40 -left-40 w-[900px] h-[900px] rounded-full bg-gradient-to-tr from-[#121c2d]/70 via-gold/10 to-transparent blur-[160px] animate-float-slow-1" />
+          </>
+        ) : (
+          <>
+            <div className="absolute -top-40 -left-40 w-[650px] h-[650px] rounded-full bg-gradient-to-br from-amber-200/40 via-gold/25 to-transparent blur-[120px] animate-float-slow-1" />
+            <div className="absolute top-1/4 -right-40 w-[750px] h-[750px] rounded-full bg-gradient-to-bl from-gold/30 via-amber-300/20 to-transparent blur-[140px] animate-float-slow-2" />
+            <div className="absolute -bottom-40 left-1/4 w-[700px] h-[700px] rounded-full bg-gradient-to-tr from-amber-100/50 via-gold/20 to-transparent blur-[130px] animate-float-slow-1" />
+          </>
+        )}
+      </div>
+
+      {/* Sidebar Backdrop Overlay (for mobile, or on desktop when booking and sidebar is revealed) */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 bg-neutral-950/60 backdrop-blur-xs z-40 lg:hidden transition-opacity"
+          className={`fixed inset-0 bg-neutral-950/60 backdrop-blur-xs z-40 transition-opacity ${isBookingPage ? 'block' : 'lg:hidden'}`}
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Permanently Fixed Sidebar (stays fixed on screen while content scrolls) */}
+      {/* Permanently Fixed Sidebar (hidden by default when booking a session, reveals on toggle) */}
       <aside 
         className={`
-          fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-neutral-200 shadow-sm
+          fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-neutral-200 shadow-2xl
           transform transition-transform duration-300 ease-in-out flex flex-col h-screen
-          lg:translate-x-0
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+          ${isBookingPage 
+            ? (sidebarOpen ? 'translate-x-0' : '-translate-x-full') 
+            : (sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0')}
         `}
       >
         <Sidebar 
@@ -132,8 +152,8 @@ export default function DashboardLayout() {
         bookings={bookings}
       />
 
-      {/* Main Content Column — offset by sidebar width on desktop (lg:pl-64) */}
-      <div className="flex-1 flex flex-col min-w-0 lg:pl-64">
+      {/* Main Content Column — offset by sidebar width on desktop (lg:pl-64), full-width on booking */}
+      <div className={`flex-1 flex flex-col min-w-0 ${isBookingPage ? 'lg:pl-0' : 'lg:pl-64'}`}>
         {/* Sticky Header — remains pinned at top of viewport when scrolling */}
         <Header 
           onMenuClick={() => setSidebarOpen(true)} 

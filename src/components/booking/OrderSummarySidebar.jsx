@@ -306,14 +306,26 @@ export default function OrderSummarySidebar({
                           <span className="font-medium text-primary text-right max-w-[170px] truncate">{studentDetails.course}</span>
                         </div>
                       )}
+                      {studentDetails.batch && (
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-neutral-400">Graduating Batch:</span>
+                          <span className="font-semibold text-neutral-800">{studentDetails.batch}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-[11px]">
-                        <span className="text-neutral-400">Section / Batch:</span>
+                        <span className="text-neutral-400">Class Section:</span>
                         <span className="font-bold text-gold bg-gold/10 px-1.5 py-0.5 rounded">{studentDetails.section || 'Unassigned'}</span>
                       </div>
                       {studentDetails.student_id && (
                         <div className="flex justify-between text-[11px]">
                           <span className="text-neutral-400">Student ID:</span>
                           <span className="font-body text-primary">{studentDetails.student_id}</span>
+                        </div>
+                      )}
+                      {studentDetails.motto && (
+                        <div className="flex justify-between text-[11px] pt-0.5">
+                          <span className="text-neutral-400">Yearbook Motto:</span>
+                          <span className="font-medium italic text-neutral-700 text-right max-w-[170px] truncate" title={studentDetails.motto}>"{studentDetails.motto}"</span>
                         </div>
                       )}
                     </>

@@ -201,8 +201,8 @@ export default function AdminDashboard() {
     }
 
     setStats(statsRes.data);
-    setRecent(recentRes.data || []);
-    setPending(pendingRes.data || []);
+    setRecent((recentRes.data || []).filter(b => !b.is_deleted));
+    setPending((pendingRes.data || []).filter(b => !b.is_deleted));
     setLoadingStats(false);
     setLoadingTables(false);
     setIsRefreshing(false);

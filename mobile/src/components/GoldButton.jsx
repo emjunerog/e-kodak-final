@@ -14,7 +14,8 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { Colors, Gradients, Typography, Radius, Spacing, Shadow } from '../theme';
+import { useTheme } from '../context/ThemeContext';
+import { Typography, Radius, Spacing, Shadow } from '../theme';
 
 export default function GoldButton({
   children,
@@ -27,6 +28,8 @@ export default function GoldButton({
   style,
   textStyle: customTextStyle,
 }) {
+  const { isDark, colors, gradients } = useTheme();
+  const styles = getStyles(colors);
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () => {
@@ -62,14 +65,14 @@ export default function GoldButton({
   const isGhost   = variant === 'ghost';
 
   const iconColor = isPrimary
-    ? Colors.text.onGold
-    : Colors.gold.light;
+    ? (isDark ? '#1A1714' : '#FFFFFF')
+    : colors.gold.light;
 
   const textColor = isPrimary
-    ? Colors.text.onGold
+    ? (isDark ? '#1A1714' : '#FFFFFF')
     : isOutline
-    ? Colors.gold.light
-    : Colors.gold.DEFAULT;
+    ? (isDark ? colors.gold.light : colors.gold.DEFAULT)
+    : colors.gold.DEFAULT;
 
   return (
     <Animated.View style={[{ transform: [{ scale: scaleAnim }] }, style]}>
@@ -81,14 +84,20 @@ export default function GoldButton({
         style={[
           styles.base,
           styles[`size_${size}`],
-          isOutline && styles.variant_outline,
-          isGhost && styles.variant_ghost,
+          isOutline && {
+            backgroundColor: isDark ? 'rgba(201, 169, 110, 0.05)' : 'rgba(184, 134, 11, 0.04)',
+            borderWidth: 1.2,
+            borderColor: colors.gold.borderLight,
+          },
+          isGhost && {
+            backgroundColor: colors.gold.bg,
+          },
           disabled && styles.disabled,
         ]}
       >
         {isPrimary && !disabled && (
           <LinearGradient
-            colors={Gradients.gold}
+            colors={gradients.gold}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={[StyleSheet.absoluteFill, styles.gradientBg]}
@@ -128,7 +137,7 @@ export default function GoldButton({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors) => StyleSheet.create({
   base: {
     borderRadius: Radius.md,
     alignItems: 'center',
@@ -153,10 +162,10 @@ const styles = StyleSheet.create({
   variant_outline: {
     backgroundColor: 'rgba(201, 169, 110, 0.05)',
     borderWidth: 1.2,
-    borderColor: Colors.gold.borderLight,
+    borderColor: colors.gold.borderLight,
   },
   variant_ghost: {
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
   },
 
   // Sizes

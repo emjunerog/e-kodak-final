@@ -2,10 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Menu, Bell, Search, Camera, Sparkles, User, Settings, 
   LogOut, ChevronDown, Award, ShieldCheck, HelpCircle,
-  CalendarDays
+  CalendarDays, LayoutDashboard
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import LiveClock from './LiveClock';
 
 export default function Header({ 
@@ -17,6 +17,8 @@ export default function Header({
 }) {
   const { profile, user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isBookingPage = location.pathname.startsWith('/dashboard/book');
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -58,15 +60,17 @@ export default function Header({
 
   return (
     <header className="h-16 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30 shadow-xs transition-colors">
-
-      {/* Left: Mobile menu + greeting */}
-      <div className="flex items-center gap-4">
+      {/* Left: Dashboard reveal icon button + greeting */}
+      <div className="flex items-center gap-3 sm:gap-4">
+        {/* Icon button to reveal dashboard / mobile menu */}
         <button
+          type="button"
           onClick={onMenuClick}
-          className="lg:hidden p-2 -ml-2 text-neutral-600 dark:text-neutral-300 hover:text-primary dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors"
-          aria-label="Open menu"
+          className={`${isBookingPage ? 'flex' : 'lg:hidden flex'} items-center justify-center p-2 rounded-xl text-neutral-600 dark:text-neutral-300 hover:text-primary dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors border border-transparent hover:border-neutral-200 dark:hover:border-neutral-700 cursor-pointer`}
+          aria-label={isBookingPage ? "Reveal dashboard" : "Open menu"}
+          title={isBookingPage ? "Reveal dashboard" : "Open menu"}
         >
-          <Menu size={20} />
+          {isBookingPage ? <LayoutDashboard size={20} className="text-gold" /> : <Menu size={20} />}
         </button>
 
         <div className="hidden sm:block">
@@ -89,12 +93,14 @@ export default function Header({
       {/* Right: Quick Book + Bell + Profile Menu Dropdown */}
       <div className="flex items-center gap-2.5 sm:gap-3">
         {/* Quick Book Button */}
-        <Link
-          to="/dashboard/book"
-          className="btn-primary py-1.5 px-3 text-xs hidden lg:inline-flex items-center gap-1.5 shadow-xs"
-        >
-          <Camera size={14} /> Book Session
-        </Link>
+        {!isBookingPage && (
+          <Link
+            to="/dashboard/book"
+            className="btn-primary py-1.5 px-3 text-xs hidden lg:inline-flex items-center gap-1.5 shadow-xs"
+          >
+            <Camera size={14} /> Book Session
+          </Link>
+        )}
 
         {/* Schedule & Progress Drawer Trigger */}
         <button

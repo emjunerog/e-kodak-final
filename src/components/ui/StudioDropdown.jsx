@@ -98,7 +98,7 @@ export default function StudioDropdown({
   };
 
   return (
-    <div ref={dropdownRef} className={`relative inline-block ${className}`}>
+    <div ref={dropdownRef} className={`relative ${className.includes('inline') ? 'inline-block' : 'w-full block'} ${className}`}>
       {/* ── Dropdown Trigger Button ───────────────────────────────────────── */}
       <button
         type="button"
@@ -107,12 +107,12 @@ export default function StudioDropdown({
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label={ariaLabel || placeholder}
-        className={`w-full flex items-center justify-between gap-2.5 px-3.5 py-2 rounded-xl border text-sm font-body transition-all duration-150 outline-none text-left cursor-pointer select-none ${
+        className={`w-full h-11 flex items-center justify-between gap-2.5 px-3.5 rounded-xl border text-xs sm:text-sm font-body transition-all duration-150 outline-none text-left cursor-pointer select-none ${
           disabled
             ? 'opacity-50 cursor-not-allowed bg-neutral-100 dark:bg-neutral-800/50 border-neutral-200 dark:border-neutral-700 text-neutral-400'
             : isOpen
-              ? 'bg-white dark:bg-neutral-800 border-gold ring-2 ring-gold/20 shadow-xs text-primary dark:text-neutral-100'
-              : 'bg-white dark:bg-neutral-800/90 hover:bg-neutral-50/80 dark:hover:bg-neutral-800 border-neutral-300/80 dark:border-neutral-700/80 text-primary dark:text-neutral-100 hover:border-gold/50 dark:hover:border-neutral-600 shadow-2xs'
+              ? 'bg-white dark:bg-neutral-800 border-gold ring-2 ring-gold/25 shadow-xs text-primary dark:text-neutral-100'
+              : 'bg-white dark:bg-neutral-800/90 hover:bg-neutral-50/80 dark:hover:bg-neutral-800 border-neutral-300 text-primary dark:text-neutral-100 hover:border-gold/50 shadow-2xs'
         } ${triggerClassName}`}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">

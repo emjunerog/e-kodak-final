@@ -7,6 +7,7 @@
  */
 
 import React, { useEffect, useRef } from 'react';
+import { useTheme } from '../context/ThemeContext';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Check } from 'lucide-react-native';
@@ -15,7 +16,9 @@ import {
   Typography, Spacing, Radius, Shadow,
 } from '../theme';
 
-function PulseCircle({ active, isDone }) {
+function PulseCircle({ active, isDone, styles }) {
+  const { colors } = useTheme();
+  const s = styles || getStyles(colors);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const opacityAnim = useRef(new Animated.Value(0.6)).current;
 
@@ -39,25 +42,25 @@ function PulseCircle({ active, isDone }) {
 
   if (isDone) {
     return (
-      <View style={styles.circleWrapper}>
+      <View style={s.circleWrapper}>
         <LinearGradient
           colors={Gradients.gold}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={styles.circleDone}
+          style={s.circleDone}
         >
-          <Check size={12} color={Colors.text.onGold} strokeWidth={3} />
+          <Check size={12} color={colors.text.onGold} strokeWidth={3} />
         </LinearGradient>
       </View>
     );
   }
 
   return (
-    <View style={styles.circleWrapper}>
+    <View style={s.circleWrapper}>
       {active && (
         <Animated.View
           style={[
-            styles.pulseHalo,
+            s.pulseHalo,
             {
               transform: [{ scale: pulseAnim }],
               opacity: opacityAnim,
@@ -65,14 +68,16 @@ function PulseCircle({ active, isDone }) {
           ]}
         />
       )}
-      <View style={[styles.circle, active && styles.circleActive]}>
-        <View style={[styles.circleDot, active && styles.circleDotActive]} />
+      <View style={[s.circle, active && s.circleActive]}>
+        <View style={[s.circleDot, active && s.circleDotActive]} />
       </View>
     </View>
   );
 }
 
 export default function MilestoneStepper({ status }) {
+  const { isDark, colors, gradients } = useTheme();
+  const styles = getStyles(colors);
   const meta = STATUS_META[String(status || 'PENDING').toUpperCase()] || STATUS_META.PENDING;
   const currentStep = meta?.step ?? 0;
 
@@ -87,7 +92,7 @@ export default function MilestoneStepper({ status }) {
           <View key={index} style={styles.stepRow}>
             {/* ── Left: Node + Connector Line ── */}
             <View style={styles.leftCol}>
-              <PulseCircle active={isActive} isDone={isDone} />
+              <PulseCircle active={isActive} isDone={isDone} styles={styles} />
               {index < MILESTONE_STEPS.length - 1 && (
                 <View style={styles.connectorTrack}>
                   {isDone ? (
@@ -140,7 +145,7 @@ export default function MilestoneStepper({ status }) {
 
 const CIRCLE_SIZE = 24;
 
-const styles = StyleSheet.create({
+const getStyles = (colors) => StyleSheet.create({
   container: {
     paddingVertical: Spacing[2],
   },
@@ -165,15 +170,15 @@ const styles = StyleSheet.create({
     height: CIRCLE_SIZE,
     borderRadius: CIRCLE_SIZE / 2,
     borderWidth: 1.5,
-    borderColor: Colors.neutral[800],
+    borderColor: colors.neutral[800],
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.bg.surface,
+    backgroundColor: colors.bg.surface,
     zIndex: 1,
   },
   circleActive: {
-    borderColor: Colors.gold.DEFAULT,
-    backgroundColor: Colors.bg.cardElevated,
+    borderColor: colors.gold.DEFAULT,
+    backgroundColor: colors.bg.cardElevated,
     ...Shadow.goldSoft,
   },
   circleDone: {
@@ -189,10 +194,10 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: Colors.neutral[700],
+    backgroundColor: colors.neutral[700],
   },
   circleDotActive: {
-    backgroundColor: Colors.gold.DEFAULT,
+    backgroundColor: colors.gold.DEFAULT,
     width: 10,
     height: 10,
     borderRadius: 5,
@@ -202,7 +207,7 @@ const styles = StyleSheet.create({
     width: CIRCLE_SIZE,
     height: CIRCLE_SIZE,
     borderRadius: CIRCLE_SIZE / 2,
-    backgroundColor: Colors.gold.DEFAULT,
+    backgroundColor: colors.gold.DEFAULT,
     zIndex: 0,
   },
   connectorTrack: {
@@ -213,7 +218,7 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
   connectorFuture: {
-    backgroundColor: Colors.neutral[800],
+    backgroundColor: colors.neutral[800],
   },
 
   rightCol: {
@@ -225,7 +230,7 @@ const styles = StyleSheet.create({
   activeCard: {
     backgroundColor: 'rgba(36, 32, 26, 0.75)',
     borderWidth: 1,
-    borderColor: Colors.gold.borderLight,
+    borderColor: colors.gold.borderLight,
     borderRadius: Radius.md,
     paddingVertical: Spacing[3],
     paddingHorizontal: Spacing[4],
@@ -241,13 +246,13 @@ const styles = StyleSheet.create({
   stepLabelActive: {
     fontFamily: Typography.fontHeadingSemi,
     fontSize: Typography.size.base,
-    color: Colors.gold.light,
+    color: colors.gold.light,
     flex: 1,
   },
   currentBadge: {
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
     borderWidth: 1,
-    borderColor: Colors.gold.borderLight,
+    borderColor: colors.gold.borderLight,
     borderRadius: Radius.full,
     paddingVertical: 2,
     paddingHorizontal: 7,
@@ -256,12 +261,12 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontBodySemi,
     fontSize: 9,
     letterSpacing: 1,
-    color: Colors.gold.light,
+    color: colors.gold.light,
   },
   stepDescActive: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     lineHeight: 19,
   },
 
@@ -272,19 +277,19 @@ const styles = StyleSheet.create({
   stepLabel: {
     fontFamily: Typography.fontBodyMedium,
     fontSize: Typography.size.sm,
-    color: Colors.neutral[500],
+    color: colors.neutral[500],
   },
   stepLabelDone: {
-    color: Colors.neutral[200],
+    color: colors.neutral[200],
     fontFamily: Typography.fontBodyMedium,
   },
   stepLabelFuture: {
-    color: Colors.neutral[700],
+    color: colors.neutral[700],
   },
   stepDescDone: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.neutral[500],
+    color: colors.neutral[500],
     lineHeight: 18,
     marginTop: 2,
   },

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { 
   Camera, 
   Calendar as CalendarIcon, 
@@ -39,21 +39,36 @@ function isScheduleTBD(b) {
 
 export default function MyBookingsPage() {
   const { user, profile } = useAuth();
+  const [searchParams] = useSearchParams();
 
   const [bookings, setBookings] = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState("");
-  const [filter,   setFilter]   = useState("All");
+  const [filter,   setFilter]   = useState(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && FILTER_TABS.some(t => t.toLowerCase() === tabParam.toLowerCase())) {
+      return FILTER_TABS.find(t => t.toLowerCase() === tabParam.toLowerCase());
+    }
+    return "All";
+  });
   const [sort,     setSort]     = useState("newest");
   const [searchQuery, setSearchQuery] = useState("");
   const [showSort, setShowSort] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState("all");
 
   useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && FILTER_TABS.some(t => t.toLowerCase() === tabParam.toLowerCase())) {
+      const matched = FILTER_TABS.find(t => t.toLowerCase() === tabParam.toLowerCase());
+      if (matched) setFilter(matched);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     if (!user) return;
     getCustomerBookings(user.id).then(({ data, error }) => {
       if (error) setError(error.message);
-      else       setBookings(data || []);
+      else       setBookings((data || []).filter(b => !b.is_deleted));
       setLoading(false);
     });
   }, [user]);

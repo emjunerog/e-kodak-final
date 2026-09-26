@@ -9,6 +9,7 @@
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
+import { useTheme } from '../context/ThemeContext';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   StatusBar, RefreshControl, ScrollView,
@@ -50,6 +51,8 @@ function getDatesForWeek() {
 // ── Date Strip ─────────────────────────────────────────────────────────────
 
 function DateStrip({ dates, selected, onSelect, countMap }) {
+  const { colors } = useTheme();
+  const styles = getStyles(colors);
   return (
     <ScrollView
       horizontal
@@ -109,13 +112,15 @@ function DateStrip({ dates, selected, onSelect, countMap }) {
 // ── Shoot Card ──────────────────────────────────────────────────────────────
 
 function ShootCard({ booking, onPress }) {
+  const { colors, gradients } = useTheme();
+  const styles = getStyles(colors);
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
       <GlassCard highlight style={styles.shootCard}>
         {/* Top row: time + status */}
         <View style={styles.shootTop}>
           <View style={styles.timeBlock}>
-            <Clock size={13} color={Colors.gold.light} />
+            <Clock size={13} color={colors.gold.light} />
             <Text style={styles.timeText}>
               {formatTime(booking.session_time) || 'Schedule Pending'}
             </Text>
@@ -134,21 +139,21 @@ function ShootCard({ booking, onPress }) {
         {/* Client */}
         {booking.profile?.full_name && (
           <View style={styles.infoRow}>
-            <User size={13} color={Colors.gold.dim} />
+            <User size={13} color={colors.gold.dim} />
             <Text style={styles.infoText}>{booking.profile.full_name}</Text>
           </View>
         )}
 
         {booking.profile?.phone && (
           <View style={styles.infoRow}>
-            <Phone size={13} color={Colors.gold.dim} />
+            <Phone size={13} color={colors.gold.dim} />
             <Text style={styles.infoText}>{booking.profile.phone}</Text>
           </View>
         )}
 
         {/* Location */}
         <View style={styles.infoRow}>
-          <MapPin size={13} color={Colors.gold.dim} />
+          <MapPin size={13} color={colors.gold.dim} />
           <Text style={styles.infoText}>
             {booking.location_type === 'STUDIO'
               ? 'E-Kodak Main Studio Bay'
@@ -170,7 +175,7 @@ function ShootCard({ booking, onPress }) {
         <View style={styles.shootFooter}>
           <Text style={styles.viewDetails}>Track Session Details</Text>
           <View style={styles.chevronPill}>
-            <ChevronRight size={13} color={Colors.gold.light} />
+            <ChevronRight size={13} color={colors.gold.light} />
           </View>
         </View>
       </GlassCard>
@@ -181,6 +186,8 @@ function ShootCard({ booking, onPress }) {
 // ── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function PhotographerScheduleScreen({ navigation, route }) {
+  const { isDark, colors, gradients } = useTheme();
+  const styles = getStyles(colors);
   const { photographerId, photographerName } = route.params || {};
 
   const [allBookings, setAllBookings]   = useState([]);
@@ -214,7 +221,7 @@ export default function PhotographerScheduleScreen({ navigation, route }) {
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.bg.base} />
 
       {/* ── Editorial Header ── */}
       <LinearGradient
@@ -228,7 +235,7 @@ export default function PhotographerScheduleScreen({ navigation, route }) {
           style={styles.backBtn}
           activeOpacity={0.7}
         >
-          <ArrowLeft size={18} color={Colors.text.primary} />
+          <ArrowLeft size={18} color={colors.text.primary} />
         </TouchableOpacity>
         <View style={styles.headerTitleGroup}>
           <Text style={styles.headerTitle}>Studio Schedule</Text>
@@ -256,7 +263,7 @@ export default function PhotographerScheduleScreen({ navigation, route }) {
             onPress={() => {
               navigation.navigate('BookingTracker', {
                 booking: item,
-                token: item.booking_token,
+                token: item.booking_token || item.booking_number || item.id,
               });
             }}
           />
@@ -267,15 +274,15 @@ export default function PhotographerScheduleScreen({ navigation, route }) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={Colors.gold.DEFAULT}
-            colors={[Colors.gold.DEFAULT]}
+            tintColor={colors.gold.DEFAULT}
+            colors={[colors.gold.DEFAULT]}
           />
         }
         ListEmptyComponent={
           !loading && (
             <View style={styles.empty}>
               <View style={styles.emptyIconRing}>
-                <Camera size={44} color={Colors.gold.DEFAULT} strokeWidth={1.25} />
+                <Camera size={44} color={colors.gold.DEFAULT} strokeWidth={1.25} />
               </View>
               <Text style={styles.emptyTitle}>No Shoots Scheduled</Text>
               <Text style={styles.emptyBody}>
@@ -289,8 +296,8 @@ export default function PhotographerScheduleScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Colors.bg.base },
+const getStyles = (colors) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg.base },
 
   header: {
     flexDirection: 'row',
@@ -300,15 +307,15 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing[4],
     paddingHorizontal: Spacing[5],
     borderBottomWidth: 1,
-    borderBottomColor: Colors.gold.border,
+    borderBottomColor: colors.gold.border,
   },
   backBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Colors.bg.card,
+    backgroundColor: colors.bg.card,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: colors.gold.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -316,12 +323,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.xl,
-    color: Colors.text.primary,
+    color: colors.text.primary,
   },
   headerSub: {
     fontFamily: Typography.fontBodyMedium,
     fontSize: Typography.size.xs,
-    color: Colors.gold.light,
+    color: colors.gold.light,
     letterSpacing: 0.5,
   },
 
@@ -347,37 +354,37 @@ const styles = StyleSheet.create({
     ...Shadow.goldSoft,
   },
   dateChipInactive: {
-    backgroundColor: Colors.bg.card,
+    backgroundColor: colors.bg.card,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: colors.gold.border,
     borderRadius: Radius.md,
   },
   dayLabel: {
     fontFamily: Typography.fontBodyMedium,
     fontSize: 11,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     textTransform: 'uppercase',
   },
   dayLabelActive: {
     fontFamily: Typography.fontBodySemi,
     fontSize: 11,
-    color: Colors.text.onGold,
+    color: colors.text.onGold,
     textTransform: 'uppercase',
   },
   dateLabel: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.lg,
-    color: Colors.text.primary,
+    color: colors.text.primary,
     marginVertical: 2,
   },
   dateLabelActive: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.lg,
-    color: Colors.text.onGold,
+    color: colors.text.onGold,
     marginVertical: 2,
   },
   countBadge: {
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
     borderRadius: 9,
     paddingHorizontal: 6,
     paddingVertical: 1,
@@ -391,12 +398,12 @@ const styles = StyleSheet.create({
   countText: {
     fontFamily: Typography.fontBodySemi,
     fontSize: 10,
-    color: Colors.gold.light,
+    color: colors.gold.light,
   },
   countTextActive: {
     fontFamily: Typography.fontBodySemi,
     fontSize: 10,
-    color: Colors.text.onGold,
+    color: colors.text.onGold,
   },
 
   list: {
@@ -418,33 +425,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: colors.gold.border,
   },
   timeText: {
     fontFamily: Typography.fontBodySemi,
     fontSize: Typography.size.xs,
-    color: Colors.gold.light,
+    color: colors.gold.light,
   },
   shootDivider: {
     height: 1,
-    backgroundColor: Colors.gold.border,
+    backgroundColor: colors.gold.border,
     marginVertical: Spacing[3],
   },
   shootNum: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.lg,
-    color: Colors.text.primary,
+    color: colors.text.primary,
     marginBottom: 2,
   },
   shootService: {
     fontFamily: Typography.fontHeadingItalic,
     fontSize: Typography.size.sm,
-    color: Colors.gold.light,
+    color: colors.gold.light,
     marginBottom: Spacing[3],
   },
   infoRow: {
@@ -456,7 +463,7 @@ const styles = StyleSheet.create({
   infoText: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
   },
   addonsRow: {
     flexDirection: 'row',
@@ -465,9 +472,9 @@ const styles = StyleSheet.create({
     marginTop: Spacing[2],
   },
   addonChip: {
-    backgroundColor: Colors.bg.surface,
+    backgroundColor: colors.bg.surface,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: colors.gold.border,
     borderRadius: Radius.sm,
     paddingVertical: 2,
     paddingHorizontal: 7,
@@ -475,7 +482,7 @@ const styles = StyleSheet.create({
   addonText: {
     fontFamily: Typography.fontBody,
     fontSize: 11,
-    color: Colors.gold.light,
+    color: colors.gold.light,
   },
   shootFooter: {
     flexDirection: 'row',
@@ -484,19 +491,19 @@ const styles = StyleSheet.create({
     marginTop: Spacing[3],
     paddingTop: Spacing[2],
     borderTopWidth: 1,
-    borderTopColor: Colors.gold.border,
+    borderTopColor: colors.gold.border,
   },
   viewDetails: {
     fontFamily: Typography.fontBodyMedium,
     fontSize: Typography.size.xs,
-    color: Colors.gold.light,
+    color: colors.gold.light,
     letterSpacing: 0.5,
   },
   chevronPill: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -512,9 +519,9 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: colors.gold.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing[4],
@@ -522,13 +529,13 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.lg,
-    color: Colors.text.primary,
+    color: colors.text.primary,
     marginBottom: Spacing[2],
   },
   emptyBody: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     textAlign: 'center',
     lineHeight: 20,
   },

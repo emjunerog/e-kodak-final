@@ -63,12 +63,15 @@ export async function getAssignedBookings(photographerId = null) {
       `)
       .order('event_date', { ascending: true });
 
+    query = query.or('is_deleted.is.null,is_deleted.eq.false');
+
     if (photographerId) {
       query = query.eq('photographer_id', photographerId);
     }
 
     const { data, error } = await query;
-    return { data: data || [], error };
+    const activeBookings = (data || []).filter(b => !b.is_deleted);
+    return { data: activeBookings, error };
   } catch (err) {
     console.error('getAssignedBookings error:', err);
     return { data: [], error: err };
@@ -196,7 +199,7 @@ export async function acceptAssignment({
     const { data: updatedBooking, error: updateError } = await supabase
       .from('bookings')
       .update({
-        status: 'CONFIRMED',
+        status: 'PHOTOGRAPHER_ASSIGNED',
         updated_at: new Date().toISOString(),
       })
       .eq('id', bookingId)
@@ -210,8 +213,8 @@ export async function acceptAssignment({
     // Log in history
     await supabase.from('booking_status_history').insert({
       booking_id: bookingId,
-      status: 'CONFIRMED',
-      remarks: `Assignment accepted and confirmed by ${photographerName}. Session locked in.`,
+      status: 'PHOTOGRAPHER_ASSIGNED',
+      remarks: `Assignment accepted and locked in by ${photographerName}. Session is confirmed with assigned photographer.`,
       changed_by: photographerId,
     });
 
@@ -224,7 +227,7 @@ export async function acceptAssignment({
       transferType: 'ORDER_HANDOFF',
       priority: 'NORMAL',
       title: `Assignment Accepted: #${bNum}`,
-      message: `${photographerName} has accepted the shoot assignment for booking #${bNum}. Session is confirmed.`,
+      message: `${photographerName} has accepted the shoot assignment for booking #${bNum}. Session is locked in.`,
       payload: {
         booking_number: bNum,
         action: 'ASSIGNMENT_ACCEPTED',
@@ -242,7 +245,7 @@ export async function acceptAssignment({
  * declineAssignment
  * -----------------
  * Workflow Step 4: Photographer declines assignment with reason.
- * Reverts booking to PENDING and notifies Admin for reassignment.
+ * Reverts booking to CONFIRMED (unassigned) and notifies Admin for reassignment.
  */
 export async function declineAssignment({
   bookingId,
@@ -257,7 +260,7 @@ export async function declineAssignment({
       .from('bookings')
       .update({
         photographer_id: null,
-        status: 'PENDING',
+        status: 'CONFIRMED',
         updated_at: new Date().toISOString(),
       })
       .eq('id', bookingId)
@@ -271,8 +274,8 @@ export async function declineAssignment({
     // Log decline in status history
     await supabase.from('booking_status_history').insert({
       booking_id: bookingId,
-      status: 'PENDING',
-      remarks: `Assignment declined by ${photographerName}. Reason: "${reason}". Returned to pending queue for admin reassignment.`,
+      status: 'CONFIRMED',
+      remarks: `Assignment declined by ${photographerName}. Reason: "${reason}". Returned to confirmed queue for admin reassignment.`,
       changed_by: photographerId,
     });
 
@@ -731,22 +734,36 @@ export async function uploadPhotoOutput(file, bookingId, setName = 'Main Set') {
       .select()
       .single();
 
-    if (error) {
-      // Fallback try with minimal fields if table constraint differs
-      console.warn('First insert attempt warning:', error);
-      const fallback = await supabase
-        .from('photo_outputs')
-        .insert([{
-          booking_id: bookingId,
-          file_path: publicUrl,
-          file_name: taggedName,
-        }])
-        .select()
-        .single();
-      return fallback;
+    const resultData = data || fallback;
+
+    // Notify Staff / Print Lab via Workstation Hub
+    if (resultData) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await createTransferLog({
+            bookingId,
+            senderId: user.id,
+            senderRole: 'photographer',
+            targetRole: 'staff',
+            transferType: 'OUTPUT_SUBMISSION',
+            priority: 'NORMAL',
+            title: `Photo Output Uploaded: ${safeName}`,
+            message: `New photo output "${taggedName}" submitted. Ready for print lab processing.`,
+            payload: {
+              photo_output_id: resultData.id,
+              file_name: taggedName,
+              set_name: setName,
+              file_url: publicUrl,
+            },
+          });
+        }
+      } catch (logErr) {
+        console.warn('Non-critical transfer log warning:', logErr);
+      }
     }
 
-    return { data, error };
+    return { data: resultData, error: null };
   } catch (err) {
     console.error('uploadPhotoOutput error:', err);
     return { data: null, error: err };
@@ -1094,6 +1111,7 @@ function parseStudentDetailsFromNotes(notes) {
     school: block.match(/•\s*School:\s*([^\n\r]+)/i)?.[1]?.trim(),
     campus: block.match(/•\s*Campus\s*(?:\/\s*Address)?:\s*([^\n\r]+)/i)?.[1]?.trim(),
     degree: block.match(/•\s*(?:Degree|Program|Strand|Course)(?:\s*\/\s*(?:Program|Strand|Course))?:\s*([^\n\r]+)/i)?.[1]?.trim(),
+    batch: block.match(/•\s*Batch:\s*([^\n\r]+)/i)?.[1]?.trim(),
     section: block.match(/•\s*Section\s*(?:\/\s*Batch)?:\s*([^\n\r]+)/i)?.[1]?.trim(),
     studentId: block.match(/•\s*Student\s*ID:\s*([^\n\r]+)/i)?.[1]?.trim(),
     scheduleNote: block.match(/•\s*Schedule\s*Note:\s*([^\n\r]+)/i)?.[1]?.trim(),
@@ -1123,6 +1141,7 @@ export function parseBookingBrief(booking) {
     school: studentData?.school || studioSpecs.university || null,
     campus: studentData?.campus || studioSpecs.campus || null,
     degree: studentData?.degree || studioSpecs.degree || null,
+    batch: studentData?.batch || booking?.student_details?.batch || null,
     section: studentData?.section || null,
     studentId: studentData?.studentId || null,
     type: studentData?.type || null,

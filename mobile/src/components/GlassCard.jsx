@@ -6,9 +6,10 @@
  */
 
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Colors, Gradients, Radius, Shadow } from '../theme';
+import { useTheme } from '../context/ThemeContext';
+import { Radius, Shadow } from '../theme';
 
 export default function GlassCard({
   children,
@@ -18,32 +19,44 @@ export default function GlassCard({
   highlight = true,
   borderGold = false,
 }) {
-  const cardBorder = borderGold ? Colors.gold.borderLight : Colors.gold.border;
+  const { isDark, colors, gradients } = useTheme();
+  const cardBorder = borderGold ? colors.gold.borderLight : colors.gold.border;
 
   return (
     <View
       style={[
         styles.container,
-        { borderColor: cardBorder },
-        glow && styles.glow,
+        {
+          borderColor: cardBorder,
+          shadowColor: isDark ? '#000000' : '#A89270',
+          shadowOpacity: isDark ? 0.45 : 0.12,
+        },
+        glow && {
+          shadowColor: colors.gold.DEFAULT,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: isDark ? 0.35 : 0.22,
+          shadowRadius: 20,
+          elevation: Platform.OS === 'android' ? 4 : 16,
+          borderColor: colors.gold.borderLight,
+        },
         style,
       ]}
     >
       {gradient ? (
         <LinearGradient
-          colors={Gradients.glassCard}
+          colors={gradients.glassCard}
           start={{ x: 0, y: 0 }}
           end={{ x: 0.8, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
       ) : (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: Colors.bg.card }]} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg.card }]} />
       )}
 
       {/* Top Specular Edge Highlight */}
       {highlight && (
         <LinearGradient
-          colors={Gradients.glassHighlight}
+          colors={gradients.glassHighlight}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.specularHighlight}
@@ -62,15 +75,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
     ...Shadow.card,
+    elevation: Platform.OS === 'android' ? 3 : 14,
   },
-  glow: {
-    shadowColor: Colors.gold.DEFAULT,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 24,
-    elevation: 16,
-    borderColor: Colors.gold.borderLight,
-  },
+
   specularHighlight: {
     position: 'absolute',
     top: 0,

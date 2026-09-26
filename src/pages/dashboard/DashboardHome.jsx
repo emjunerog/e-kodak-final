@@ -56,7 +56,7 @@ export default function DashboardHome() {
           getCustomerUnifiedNotifications(user.id)
         ]);
         if (isMounted) {
-          setBookings(bRes?.data || []);
+          setBookings((bRes?.data || []).filter(b => !b.is_deleted));
           setNotifications(nRes?.data || []);
         }
       } catch (err) {

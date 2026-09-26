@@ -72,7 +72,7 @@ export async function createBooking(bookingData, referenceFiles = []) {
 
     if (bookingData.student_details) {
       const s = bookingData.student_details;
-      const studentBlock = `[STUDENT & YEARBOOK DETAILS]\n• School: ${sanitizeText(s.school || 'N/A', 150)}\n• Campus / Address: ${sanitizeText(s.school_address || 'N/A', 200)}\n• Degree / Program: ${sanitizeText(s.course || 'N/A', 150)}\n• Section / Batch: ${sanitizeText(s.section || 'N/A', 100)}\n• Student ID: ${sanitizeText(s.student_id || 'N/A', 100)}`;
+      const studentBlock = `[STUDENT & YEARBOOK DETAILS]\n• School: ${sanitizeText(s.school || 'N/A', 150)}\n• Campus / Address: ${sanitizeText(s.school_address || 'N/A', 200)}\n• Degree / Program: ${sanitizeText(s.course || 'N/A', 150)}\n• Batch: ${sanitizeText(s.batch || 'N/A', 100)}\n• Section: ${sanitizeText(s.section || 'N/A', 100)}\n• Student ID: ${sanitizeText(s.student_id || 'N/A', 100)}`;
       consolidatedNotes = consolidatedNotes ? `${studentBlock}\n\n${consolidatedNotes}` : studentBlock;
     }
 
@@ -85,6 +85,7 @@ export async function createBooking(bookingData, referenceFiles = []) {
     }
 
     // 3. Build payload using strictly existing columns on the bookings table
+    //    Always generate a booking_token so the QR code is always scannable.
     const cleanInsertPayload = {
       customer_id: bookingData.customer_id,
       service_id: bookingData.service_id,
@@ -96,7 +97,10 @@ export async function createBooking(bookingData, referenceFiles = []) {
       total_amount: bookingData.total_amount || 0,
       down_payment_amount: bookingData.down_payment_amount || 0,
       remaining_balance: Math.max(0, (parseFloat(bookingData.total_amount) || 0) - (parseFloat(bookingData.down_payment_amount) || 0)),
+      status: 'PENDING',
+      payment_status: 'UNPAID',
       reference_images: uploadedPaths,
+      booking_token: crypto.randomUUID(),
     };
 
     // 4. Insert into existing bookings table
@@ -108,7 +112,14 @@ export async function createBooking(bookingData, referenceFiles = []) {
 
     if (error) throw error;
 
-    // Background QR code storage attempt (non-blocking)
+    // Patch token if the DB somehow didn't persist it
+    if (data && data.id && !data.booking_token) {
+      const patchToken = crypto.randomUUID();
+      await supabase.from('bookings').update({ booking_token: patchToken }).eq('id', data.id);
+      data.booking_token = patchToken;
+    }
+
+    // Background QR code storage (non-blocking)
     if (data && data.id && data.booking_token) {
       generateAndStoreQRCode(data.id, data.booking_token).catch(qrErr => {
         console.warn("[QR] Background cloud storage upload skipped:", qrErr.message);
@@ -125,7 +136,7 @@ export async function createBooking(bookingData, referenceFiles = []) {
 // ── Metadata Parsers for Notes fallback ───────────────────────────────────────
 export function parseStudentDetailsFromNotes(notes) {
   if (!notes || typeof notes !== 'string') return null;
-  const match = notes.match(/\[STUDENT & YEARBOOK DETAILS\]([\s\S]*?)(?=\n\n\[|$)/);
+  const match = notes.match(/\[STUDENT (?:& YEARBOOK )?DETAILS\]([\s\S]*?)(?=\n\n\[|$)/i);
   if (!match) return null;
   const block = match[1];
   const education_type = block.match(/• Type:\s*(.*)/i)?.[1]?.trim() || '';
@@ -133,11 +144,12 @@ export function parseStudentDetailsFromNotes(notes) {
   const school = block.match(/• School:\s*(.*)/i)?.[1]?.trim() || '';
   const school_address = block.match(/• Campus \/ Address:\s*(.*)/i)?.[1]?.trim() || '';
   const course = block.match(/• Degree \/ (?:Program|Strand):\s*(.*)/i)?.[1]?.trim() || '';
-  const section = block.match(/• Section \/ Batch:\s*(.*)/i)?.[1]?.trim() || '';
+  const batch = block.match(/• Batch:\s*(.*)/i)?.[1]?.trim() || '';
+  const section = block.match(/• Section(?:\s*\/ Batch)?:\s*(.*)/i)?.[1]?.trim() || '';
   const student_id = block.match(/• Student ID:\s*(.*)/i)?.[1]?.trim() || '';
-  const schedule_note = block.match(/• Schedule Note:\s*(.*)/i)?.[1]?.trim() || '';
-  if (!school && !section && !student_id) return null;
-  return { education_type, booking_mode, school, school_address, course, section, student_id, schedule_note };
+  const schedule_note = block.match(/• (?:Schedule )?Note:\s*(.*)/i)?.[1]?.trim() || '';
+  if (!school && !section && !student_id && !batch) return null;
+  return { education_type, booking_mode, school, school_address, course, batch, section, student_id, schedule_note };
 }
 
 export function parseAddOnsFromNotes(notes) {
@@ -166,7 +178,7 @@ export async function getCustomerBookings(customerId) {
 
   try {
     let bookings = [];
-    // Try clean join with services and photographer
+    // Try clean join with services and photographer (filtering out soft-deleted bookings)
     const { data, error } = await supabase
       .from('bookings')
       .select(`
@@ -179,6 +191,7 @@ export async function getCustomerBookings(customerId) {
         )
       `)
       .eq('customer_id', customerId)
+      .or('is_deleted.is.null,is_deleted.eq.false')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -191,6 +204,7 @@ export async function getCustomerBookings(customerId) {
           service:services(id, name, category, cover_image)
         `)
         .eq('customer_id', customerId)
+        .or('is_deleted.is.null,is_deleted.eq.false')
         .order('created_at', { ascending: false });
 
       if (fallback.error) {
@@ -199,6 +213,7 @@ export async function getCustomerBookings(customerId) {
           .from('bookings')
           .select('*')
           .eq('customer_id', customerId)
+          .or('is_deleted.is.null,is_deleted.eq.false')
           .order('created_at', { ascending: false });
 
         if (rawFallback.error) throw rawFallback.error;
@@ -211,6 +226,8 @@ export async function getCustomerBookings(customerId) {
     }
 
     if (Array.isArray(bookings)) {
+      // Ensure zero deleted bookings leak into customer records
+      bookings = bookings.filter(b => !b.is_deleted);
       bookings.forEach(b => {
         if (!b.selected_add_ons || b.selected_add_ons.length === 0) {
           b.selected_add_ons = parseAddOnsFromNotes(b.notes);

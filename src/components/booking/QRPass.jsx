@@ -1,8 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { QRCodeSVG } from '../../lib/qr.tsx';
-import { getQRCodePublicUrl } from '../../services/qrService';
+import { getQRCodePublicUrl, generateAndStoreQRCode } from '../../services/qrService';
+import { supabase } from '../../lib/supabase';
 import { Download, ExternalLink, QrCode, X, Check, Printer } from 'lucide-react';
+
 
 /**
  * @param {Object} props
@@ -28,15 +30,48 @@ export default function QRPass({
   const qrRef = useRef(null);
 
   const effectiveBookingNumber = bookingNumber || booking?.booking_number || '';
-  const effectiveToken =
+
+  // Prefer explicit prop → DB token → booking number → booking id
+  const rawToken =
     bookingToken ||
-    booking?.qr_code_token ||
     booking?.booking_token ||
+    booking?.qr_code_token ||
     booking?.token ||
-    effectiveBookingNumber ||
-    booking?.id ||
     '';
+
+  const [liveToken, setLiveToken] = useState(rawToken || effectiveBookingNumber || booking?.id || '');
   const effectivePath = qrCodePath || booking?.qr_code_path || booking?.qr_code_url || null;
+
+  // Auto-backfill: if this booking has no booking_token, generate one and save it.
+  // This silently fixes every existing booking the first time its QR is viewed.
+  useEffect(() => {
+    const bookingId = booking?.id;
+    if (!bookingId || rawToken) return; // already has a token
+
+    const backfill = async () => {
+      try {
+        const newToken = crypto.randomUUID();
+        const { error } = await supabase
+          .from('bookings')
+          .update({ booking_token: newToken })
+          .eq('id', bookingId)
+          .is('booking_token', null); // only patch if still null
+
+        if (!error) {
+          setLiveToken(newToken);
+          // Also regenerate the stored QR image
+          generateAndStoreQRCode(bookingId, newToken).catch(() => {});
+        }
+      } catch {
+        // Non-critical — QR still renders using booking id as fallback
+      }
+    };
+
+    backfill();
+  }, [booking?.id]);
+
+  const effectiveToken = liveToken;
+
 
   const handleDownload = async () => {
     try {

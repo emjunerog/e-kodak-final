@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { NavLink, Link, useNavigate } from 'react-router-dom';
 import {
@@ -21,9 +21,12 @@ import {
   UserCheck,
   Edit3,
   Layers,
+  CheckCircle2,
+  Trash2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 
 // ── Reusable Nav Link ─────────────────────────────────────────────────────────
 function SidebarLink({ item, onClose }) {
@@ -47,8 +50,12 @@ function SidebarLink({ item, onClose }) {
           />
           <span className="flex-1 truncate">{item.name}</span>
           {item.badge && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-              isActive ? 'bg-gold/25 text-gold' : 'bg-neutral-100 text-neutral-500'
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold transition-colors ${
+              isActive 
+                ? 'bg-gold/25 text-gold' 
+                : item.badgeVariant === 'danger'
+                  ? 'bg-rose-100 text-rose-700 border border-rose-200/60'
+                  : 'bg-neutral-100 text-neutral-500'
             }`}>
               {item.badge}
             </span>
@@ -124,7 +131,7 @@ export default function AdminSidebar({ onClose, onOpenProfile }) {
     coreNav = [
       { name: 'Dashboard',         path: '/admin',             icon: LayoutDashboard, exact: true },
       { name: 'Workstation Hub',   path: '/admin/workstation', icon: ArrowRightLeft   },
-      { name: 'Bookings',          path: '/admin/bookings',    icon: CalendarDays     },
+      { name: 'Active Bookings',   path: '/admin/bookings',    icon: CalendarDays     },
       { name: 'Photo Outputs',     path: '/admin/photos',      icon: ImageIcon        },
       { name: 'Payments & Ledger', path: '/admin/payments',    icon: CreditCard       },
       { name: 'Customers',         path: '/admin/customers',   icon: Users            },
@@ -154,7 +161,7 @@ export default function AdminSidebar({ onClose, onOpenProfile }) {
       { name: 'Finance Overview',  path: '/admin',             icon: LayoutDashboard, exact: true },
       { name: 'Workstation Hub',   path: '/admin/workstation', icon: ArrowRightLeft   },
       { name: 'Payments & Ledger', path: '/admin/payments',    icon: CreditCard       },
-      { name: 'Order Balances',    path: '/admin/bookings',    icon: CalendarDays     },
+      { name: 'Active Bookings',   path: '/admin/bookings',    icon: CalendarDays     },
       { name: 'Customer Accounts', path: '/admin/customers',   icon: Users            },
     ];
     teamNav = [
@@ -168,7 +175,7 @@ export default function AdminSidebar({ onClose, onOpenProfile }) {
     coreNav = [
       { name: 'Desk Overview',     path: '/admin',             icon: LayoutDashboard, exact: true },
       { name: 'Workstation Hub',   path: '/admin/workstation', icon: ArrowRightLeft   },
-      { name: 'Bookings & Intake', path: '/admin/bookings',    icon: CalendarDays     },
+      { name: 'Active Bookings',   path: '/admin/bookings',    icon: CalendarDays     },
       { name: 'Photo Outputs',     path: '/admin/photos',      icon: ImageIcon        },
       { name: 'Payments & Ledger', path: '/admin/payments',    icon: CreditCard       },
       { name: 'Customers',         path: '/admin/customers',   icon: Users            },

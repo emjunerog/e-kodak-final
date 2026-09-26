@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { generateQRDataURL, createQRBookingPayload } from '../lib/qr';
+import { generateQRDataURL, createQRBookingPayload, extractTokenFromInput } from '../lib/qr';
 
 export async function generateAndStoreQRCode(bookingId, bookingToken) {
   if (!isSupabaseConfigured) {
@@ -202,45 +202,57 @@ export async function verifyQRPassScan({
   }
 
   try {
-    // Extract raw token if passed as JSON string payload
-    let lookupToken = bookingToken;
-    try {
-      if (typeof bookingToken === 'string' && bookingToken.trim().startsWith('{')) {
-        const parsed = JSON.parse(bookingToken.trim());
-        if (parsed.bid) lookupToken = parsed.bid;
-      }
-    } catch {
-      // not JSON, use raw token
+    // Extract token whether scanned as URL, JSON payload, or raw string
+    const lookupToken = extractTokenFromInput(String(bookingToken).trim());
+    if (!lookupToken) {
+      return { success: false, message: 'Could not read a valid pass token from this QR code.', booking: null };
     }
 
     // 1. Look up booking by unique secure token or booking number
-    let query = supabase
-      .from('bookings')
-      .select(`
-        id,
-        booking_number,
-        status,
-        payment_status,
-        booking_token,
-        event_date,
-        preferred_time,
-        total_amount,
-        remaining_balance,
-        customer_id,
-        customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, phone, email),
-        service:services!bookings_service_id_fkey(id, name, base_price)
-      `);
+    let booking = null;
+    try {
+      const { data: rpcBooking, error: rpcErr } = await supabase.rpc('get_booking_by_pass_token', {
+        lookup_token: lookupToken
+      });
+      if (rpcBooking && !rpcErr) {
+        booking = rpcBooking;
+      }
+    } catch {}
 
-    // Check if UUID or booking number
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lookupToken);
-    if (isUuid) {
-      query = query.or(`booking_token.eq.${lookupToken},id.eq.${lookupToken}`);
-    } else {
-      query = query.or(`booking_number.ilike.%${lookupToken}%`);
+    if (!booking) {
+      let query = supabase
+        .from('bookings')
+        .select(`
+          id,
+          booking_number,
+          status,
+          payment_status,
+          booking_token,
+          event_date,
+          preferred_time,
+          total_amount,
+          remaining_balance,
+          customer_id,
+          is_deleted,
+          deleted_at,
+          deletion_reason,
+          customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, phone, email),
+          service:services!bookings_service_id_fkey(id, name, base_price)
+        `);
+
+      // Check if UUID or booking number
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lookupToken);
+      if (isUuid) {
+        query = query.or(`booking_token.eq.${lookupToken},id.eq.${lookupToken}`);
+      } else {
+        query = query.or(`booking_number.ilike.%${lookupToken}%,booking_token.eq.${lookupToken}`);
+      }
+
+      const { data: bookingList, error: fetchError } = await query.limit(1);
+      if (!fetchError && bookingList?.[0]) {
+        booking = bookingList[0];
+      }
     }
-
-    const { data: bookingList, error: fetchError } = await query.limit(1);
-    const booking = bookingList?.[0];
 
     if (fetchError || !booking) {
       // Log failed attempt
@@ -253,6 +265,24 @@ export async function verifyQRPassScan({
         scanResult: 'INVALID',
       });
       return { success: false, message: 'Invalid or unrecognized QR pass.', booking: null };
+    }
+
+    // Guard against deleted bookings
+    if (booking.is_deleted) {
+      await logQRScan({
+        bookingId: booking.id,
+        scannedBy,
+        scanType,
+        userAgent,
+        ipAddress,
+        scanResult: 'DELETED_PASS',
+      });
+      return {
+        success: false,
+        message: 'This booking order has been cancelled or removed by studio administration.',
+        booking: null,
+        is_deleted: true,
+      };
     }
 
     // 2. Anti-replay check: detect rapid duplicate scans within 5 seconds

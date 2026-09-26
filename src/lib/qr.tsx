@@ -1,4 +1,4 @@
-import { QRCodeSVG as QRCode } from 'qrcode.react';
+import { QRCodeSVG as BaseQRCodeSVG, QRCodeCanvas as BaseQRCodeCanvas } from 'qrcode.react';
 
 export interface QRBookingPayload {
   v: number;
@@ -23,9 +23,34 @@ export function encodeQRBookingPayload(payload: QRBookingPayload): string {
   return JSON.stringify(payload);
 }
 
-export function decodeQRBookingPayload(token: string): QRBookingPayload | null {
+export function extractTokenFromInput(rawInput: string): string {
+  if (!rawInput) return '';
+  const trimmed = rawInput.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const url = new URL(trimmed);
+      const token = url.searchParams.get('token') || url.searchParams.get('id') || url.searchParams.get('bid');
+      if (token) return decodeURIComponent(token);
+    } catch {
+      // not a valid URL, fallback
+    }
+  }
   try {
-    const parsed = JSON.parse(token);
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed.bid === 'string') {
+      return parsed.bid;
+    }
+  } catch {
+    // not JSON, fallback
+  }
+  return trimmed;
+}
+
+export function decodeQRBookingPayload(token: string): QRBookingPayload | null {
+  if (!token) return null;
+  const raw = token.trim();
+  try {
+    const parsed = JSON.parse(raw);
     if (
       parsed.v === QR_PAYLOAD_VERSION &&
       parsed.typ === 'booking' &&
@@ -34,10 +59,20 @@ export function decodeQRBookingPayload(token: string): QRBookingPayload | null {
     ) {
       return parsed as QRBookingPayload;
     }
-    return null;
   } catch {
-    return null;
+    // Check if URL or raw token
   }
+
+  const extracted = extractTokenFromInput(raw);
+  if (extracted && extracted.length >= 4) {
+    return {
+      v: QR_PAYLOAD_VERSION,
+      bid: extracted,
+      typ: 'booking',
+      iat: Math.floor(Date.now() / 1000),
+    };
+  }
+  return null;
 }
 
 export function createQRBookingPayload(bookingToken: string): QRBookingPayload {
@@ -52,13 +87,18 @@ export function createQRBookingPayload(bookingToken: string): QRBookingPayload {
 }
 
 export function generateQRDataURL(bookingToken: string): string {
-  const payload = createQRBookingPayload(bookingToken);
-  return encodeQRBookingPayload(payload);
+  // Return the canonical Public Pass URL with the unique booking token.
+  // This allows any mobile phone camera, staff scanner, or companion app to scan the QR code
+  // and immediately view the live, auto-updated booking pass from the database.
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}/pass?token=${encodeURIComponent(bookingToken)}`;
+  }
+  return `/pass?token=${encodeURIComponent(bookingToken)}`;
 }
 
 export function validateBookingQRToken(token: string): { valid: boolean; bookingToken?: string; error?: string } {
   const payload = decodeQRBookingPayload(token);
-  if (!payload) {
+  if (!payload || !payload.bid) {
     return { valid: false, error: 'Invalid QR code format' };
   }
   const now = Math.floor(Date.now() / 1000);
@@ -82,14 +122,13 @@ export function QRCodeSVG({
 }: { bookingToken: string } & QRGenerationOptions) {
   const data = generateQRDataURL(bookingToken);
   return (
-    <QRCode
+    <BaseQRCodeSVG
       value={data}
       size={options.size ?? defaultQRStyle.size}
       level={options.level ?? defaultQRStyle.level}
       includeMargin={options.includeMargin ?? defaultQRStyle.includeMargin}
       fgColor={options.foregroundColor ?? defaultQRStyle.foregroundColor}
       bgColor={options.backgroundColor ?? defaultQRStyle.backgroundColor}
-      renderAs="svg"
     />
   );
 }
@@ -100,14 +139,13 @@ export function QRCodeCanvas({
 }: { bookingToken: string } & QRGenerationOptions) {
   const data = generateQRDataURL(bookingToken);
   return (
-    <QRCode
+    <BaseQRCodeCanvas
       value={data}
       size={options.size ?? defaultQRStyle.size}
       level={options.level ?? defaultQRStyle.level}
       includeMargin={options.includeMargin ?? defaultQRStyle.includeMargin}
       fgColor={options.foregroundColor ?? defaultQRStyle.foregroundColor}
       bgColor={options.backgroundColor ?? defaultQRStyle.backgroundColor}
-      renderAs="canvas"
     />
   );
 }

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { UploadCloud, X, Eye, Maximize2 } from 'lucide-react';
 
-export default function ReferenceImageUploader({ files, setFiles, maxFiles = 3, maxSizeMB = 5 }) {
+export default function ReferenceImageUploader({ files, setFiles, maxFiles = 3, maxSizeMB = 3 }) {
   const fileInputRef = useRef(null);
   const [error, setError] = useState("");
   const [previewModalUrl, setPreviewModalUrl] = useState(null);
@@ -81,43 +81,109 @@ export default function ReferenceImageUploader({ files, setFiles, maxFiles = 3, 
     };
   }, [previewModalUrl]);
 
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (files.length < maxFiles) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    setError("");
+
+    if (!e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+    const droppedFiles = Array.from(e.dataTransfer.files);
+
+    if (files.length + droppedFiles.length > maxFiles) {
+      setError(`You can only upload up to ${maxFiles} reference images.`);
+      return;
+    }
+
+    const validFiles = [];
+    for (const file of droppedFiles) {
+      if (!file.type.startsWith('image/')) {
+        setError(`"${file.name}" is not an image file.`);
+        return;
+      }
+      if (file.size > maxSizeMB * 1024 * 1024) {
+        setError(`"${file.name}" exceeds the ${maxSizeMB}MB limit.`);
+        return;
+      }
+      validFiles.push(file);
+    }
+
+    setFiles([...files, ...validFiles]);
+  };
+
   return (
     <div className="space-y-4">
       {/* Upload Area */}
-      <div 
-        className="border-2 border-dashed border-neutral-200 hover:border-gold/60 rounded-2xl p-5 flex flex-col items-center justify-center bg-neutral-50/70 hover:bg-neutral-50 transition-all cursor-pointer group"
-        onClick={() => fileInputRef.current?.click()}
-      >
-        <div className="w-11 h-11 rounded-full bg-gold/10 group-hover:bg-gold/20 flex items-center justify-center mb-2 transition-colors">
-          <UploadCloud size={22} className="text-gold" />
+      {files.length < maxFiles ? (
+        <div 
+          className={`border-2 border-dashed rounded-2xl p-6 sm:p-7 flex flex-col items-center justify-center transition-all cursor-pointer group text-center ${
+            isDragging
+              ? "border-gold bg-amber-500/10 ring-2 ring-gold/40 scale-[0.99]"
+              : "border-neutral-300 hover:border-gold/70 bg-gradient-to-b from-neutral-50/90 to-white hover:bg-amber-50/15"
+          }`}
+          onClick={() => fileInputRef.current?.click()}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400/20 via-gold/15 to-amber-500/10 border border-gold/30 group-hover:border-gold/60 group-hover:scale-105 flex items-center justify-center mb-2.5 transition-all shadow-2xs">
+            <UploadCloud size={24} className="text-amber-800" />
+          </div>
+          <p className="font-heading text-sm text-neutral-900 font-bold">
+            Drag &amp; drop or click to upload visual peg images
+          </p>
+          <p className="font-body text-neutral-500 text-xs mt-1 max-w-sm">
+            Attach sample poses, lighting styles, or backdrop concepts (Max {maxFiles} images, up to {maxSizeMB}MB each)
+          </p>
+          <div className="mt-3.5 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-neutral-900 group-hover:bg-neutral-800 text-white text-xs font-semibold shadow-xs transition-colors">
+            <UploadCloud size={13} className="text-gold" />
+            <span>Select Photos</span>
+          </div>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileChange} 
+            multiple 
+            accept="image/jpeg, image/png, image/webp" 
+            className="hidden" 
+          />
         </div>
-        <p className="font-heading text-sm text-primary font-semibold">Click to upload visual peg images</p>
-        <p className="font-body text-neutral-400 text-xs text-center max-w-xs mt-0.5">
-          JPEG, PNG, WEBP (Max {maxFiles} files, {maxSizeMB}MB each)
-        </p>
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          onChange={handleFileChange} 
-          multiple 
-          accept="image/jpeg, image/png, image/webp" 
-          className="hidden" 
-        />
-      </div>
+      ) : (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-gold/40 text-center flex items-center justify-center gap-2 text-xs font-semibold text-neutral-900">
+          <UploadCloud size={16} className="text-amber-800" />
+          <span>Maximum reference photo limit reached ({maxFiles}/{maxFiles}). Remove an image below to upload a different one.</span>
+        </div>
+      )}
 
       {error && (
-        <p className="text-red-500 text-xs font-body font-medium bg-red-50 border border-red-200 p-2.5 rounded-xl">{error}</p>
+        <p className="text-red-700 text-xs font-body font-semibold bg-red-50 border border-red-200 p-3 rounded-xl flex items-center gap-2">
+          <span>{error}</span>
+        </p>
       )}
 
       {/* File Previews with real thumbnail and Click-to-View */}
       {files.length > 0 && (
-        <div className="grid sm:grid-cols-3 gap-3">
+        <div className="grid sm:grid-cols-3 gap-3.5 pt-1">
           {files.map((file, idx) => {
             const url = objectUrls[idx];
             return (
-              <div key={idx} className="relative group rounded-xl overflow-hidden border border-neutral-200 bg-white shadow-sm flex flex-col">
+              <div key={idx} className="relative group rounded-2xl overflow-hidden border border-neutral-200 bg-white shadow-2xs hover:shadow-warm-xs transition-all flex flex-col justify-between">
                 <div 
-                  className="h-28 w-full bg-neutral-100 relative cursor-pointer overflow-hidden"
+                  className="h-32 w-full bg-neutral-100 relative cursor-pointer overflow-hidden"
                   onClick={() => openLightbox(url, file.name)}
                   title="Click to view full photo"
                 >
@@ -132,16 +198,16 @@ export default function ReferenceImageUploader({ files, setFiles, maxFiles = 3, 
                       Loading...
                     </div>
                   )}
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1 text-white font-medium text-xs">
-                    <Maximize2 size={14} /> View
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white font-medium text-xs">
+                    <Maximize2 size={14} /> Enlarge
                   </div>
                 </div>
 
-                <div className="p-2.5 flex items-center justify-between gap-2">
+                <div className="p-3 flex items-center justify-between gap-2 border-t border-neutral-100 bg-white">
                   <div className="min-w-0">
-                    <p className="font-body text-xs font-semibold text-primary truncate">{file.name}</p>
-                    <p className="font-body text-[10px] text-neutral-400">
-                      {(file.size / 1024 / 1024).toFixed(2)} MB • Click to enlarge
+                    <p className="font-body text-xs font-bold text-primary truncate">{file.name}</p>
+                    <p className="font-body text-[10px] text-neutral-500 font-medium mt-0.5">
+                      {(file.size / 1024 / 1024).toFixed(2)} MB · Ready for bay
                     </p>
                   </div>
                   <button
@@ -150,7 +216,7 @@ export default function ReferenceImageUploader({ files, setFiles, maxFiles = 3, 
                     className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
                     title="Remove image"
                   >
-                    <X size={14} />
+                    <X size={15} />
                   </button>
                 </div>
               </div>

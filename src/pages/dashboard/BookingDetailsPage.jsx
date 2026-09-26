@@ -109,18 +109,21 @@ export default function BookingDetailsPage() {
     const typeMatch = booking.notes?.match(/• Type:\s*(.*)/i);
     const strandMatch = booking.notes?.match(/• Degree \/ (?:Strand|Program):\s*(.*)/i);
     const campusMatch = booking.notes?.match(/• Campus \/ Address:\s*(.*)/i);
+    const batchMatch = booking.notes?.match(/• Batch:\s*(.*)/i);
 
     const school = existing.school || parsed.school || "";
+    const batch = existing.batch || parsed.batch || batchMatch?.[1]?.trim() || "";
     const section = existing.section || parsed.section || "";
     const student_id = existing.student_id || parsed.student_id || "";
     const course = existing.course || parsed.course || strandMatch?.[1]?.trim() || "";
     const school_address = existing.school_address || parsed.school_address || campusMatch?.[1]?.trim() || "";
     const education_type = existing.education_type || parsed.education_type || typeMatch?.[1]?.trim() || "";
 
-    if (!school && !section && !student_id && !course) return null;
+    if (!school && !section && !student_id && !course && !batch) return null;
 
     return {
       school,
+      batch,
       section,
       student_id,
       course,
@@ -185,6 +188,42 @@ export default function BookingDetailsPage() {
         <h1 className="text-2xl font-heading text-primary dark:text-white mb-2">Booking Not Found</h1>
         <p className="font-body text-neutral-500 max-w-md mb-6">{error || "The session record could not be located."}</p>
         <Link to="/dashboard/bookings" className="btn-primary">Back to My Bookings</Link>
+      </div>
+    );
+  }
+
+  if (booking.is_deleted) {
+    return (
+      <div className="h-full min-h-[60vh] flex flex-col items-center justify-center text-center p-8 max-w-lg mx-auto">
+        <div className="w-16 h-16 rounded-2xl bg-rose-50 text-rose-500 dark:bg-rose-950/40 dark:text-rose-400 flex items-center justify-center mb-4 shadow-sm">
+          <AlertCircle size={32} />
+        </div>
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300 mb-3">
+          Order Removed / Cancelled
+        </div>
+        <h1 className="text-2xl font-heading text-primary dark:text-white font-bold mb-2">
+          Order #{booking.booking_number || 'N/A'} Has Been Removed
+        </h1>
+        <p className="font-body text-neutral-600 dark:text-neutral-300 text-sm mb-4 leading-relaxed">
+          This booking order has been cancelled and removed from active studio records by studio administration.
+        </p>
+        {booking.deletion_reason && (
+          <div className="w-full bg-neutral-50 dark:bg-neutral-800/80 border border-neutral-200 dark:border-neutral-700 rounded-xl p-3.5 text-xs text-neutral-600 dark:text-neutral-300 mb-6 text-left">
+            <span className="font-bold text-neutral-800 dark:text-neutral-200 block mb-1">Reason provided:</span>
+            <span>"{booking.deletion_reason}"</span>
+          </div>
+        )}
+        <p className="font-body text-neutral-400 text-xs mb-6">
+          If you have questions regarding this cancellation or have already submitted a downpayment, please visit or contact our studio reception desk with your booking reference.
+        </p>
+        <div className="flex items-center gap-3">
+          <Link to="/dashboard/bookings" className="btn-primary text-xs">
+            Return to My Bookings
+          </Link>
+          <Link to="/dashboard/notifications" className="btn-outline text-xs">
+            View Notifications
+          </Link>
+        </div>
       </div>
     );
   }
@@ -449,11 +488,18 @@ export default function BookingDetailsPage() {
                       <GraduationCap size={18} />
                       <span>Academic & Yearbook Batching Details</span>
                     </div>
-                    {studentDossier.section && (
-                      <span className="text-[10px] font-body font-bold uppercase tracking-wider bg-gold text-primary px-2.5 py-0.5 rounded-md">
-                        Batch {studentDossier.section}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {studentDossier.batch && (
+                        <span className="text-[10px] font-body font-bold uppercase tracking-wider bg-gold text-primary px-2.5 py-0.5 rounded-md">
+                          {studentDossier.batch}
+                        </span>
+                      )}
+                      {studentDossier.section && (
+                        <span className="text-[10px] font-body font-bold uppercase tracking-wider bg-neutral-900 text-white px-2.5 py-0.5 rounded-md">
+                          Section {studentDossier.section}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-body">
@@ -473,16 +519,16 @@ export default function BookingDetailsPage() {
                     </div>
 
                     <div className="bg-white/80 dark:bg-neutral-800/80 p-2.5 rounded-xl border border-gold/20">
-                      <span className="text-neutral-400 text-[10px] uppercase block">Student ID Number</span>
+                      <span className="text-neutral-400 text-[10px] uppercase block">Batch &amp; Section</span>
                       <span className="font-bold text-gold truncate block mt-0.5 font-body">
-                        {studentDossier.student_id || "—"}
+                        {studentDossier.batch ? `${studentDossier.batch} · ` : ''}{studentDossier.section ? `Sec ${studentDossier.section}` : '—'}
                       </span>
                     </div>
 
                     <div className="bg-white/80 dark:bg-neutral-800/80 p-2.5 rounded-xl border border-gold/20">
-                      <span className="text-neutral-400 text-[10px] uppercase block">Campus / Department</span>
-                      <span className="font-medium text-neutral-600 dark:text-neutral-300 truncate block mt-0.5">
-                        {studentDossier.school_address || "Main Campus"}
+                      <span className="text-neutral-400 text-[10px] uppercase block">Student ID Number</span>
+                      <span className="font-bold text-primary dark:text-neutral-200 truncate block mt-0.5 font-body">
+                        {studentDossier.student_id || "—"}
                       </span>
                     </div>
                   </div>

@@ -15,11 +15,21 @@ export async function getDashboardStats() {
   }
 
   try {
-    const { data, error } = await supabase
-      .from('bookings')
-      .select('status, payment_status');
+    const [activeRes, deletedRes] = await Promise.all([
+      supabase
+        .from('bookings')
+        .select('status, payment_status, is_deleted')
+        .or('is_deleted.is.null,is_deleted.eq.false'),
+      supabase
+        .from('bookings')
+        .select('id', { count: 'exact', head: true })
+        .eq('is_deleted', true)
+    ]);
 
-    if (error) throw error;
+    if (activeRes.error) throw activeRes.error;
+
+    // Filter out any leaked soft-deleted records
+    const data = (activeRes.data || []).filter(b => !b.is_deleted);
 
     const counts = {
       total: data.length,
@@ -36,6 +46,7 @@ export async function getDashboardStats() {
       active_jobs: 0,
       unpaid_partial: 0,
       cleared_bookings: 0,
+      deleted: deletedRes.count || 0,
     };
 
     data.forEach(({ status, payment_status }) => {
@@ -78,6 +89,7 @@ export async function getDashboardStats() {
  * getRecentBookings
  * -----------------
  * Returns the latest bookings with joined service and customer profiles.
+ * Excludes soft-deleted bookings.
  * @param {number} limit — number of rows (default 50)
  */
 export async function getRecentBookings(limit = 50) {
@@ -105,15 +117,18 @@ export async function getRecentBookings(limit = 50) {
         down_payment_amount,
         remaining_balance,
         down_payment_confirmed,
+        is_deleted,
         created_at,
         service:services(id, name, base_price, category),
         customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, email, phone)
       `)
+      .or('is_deleted.is.null,is_deleted.eq.false')
       .order('created_at', { ascending: false })
       .limit(limit);
 
     if (error) throw error;
-    return { data, error: null };
+    const filtered = (data || []).filter(b => !b.is_deleted);
+    return { data: filtered, error: null };
   } catch (error) {
     console.error('getRecentBookings error:', error);
     return { data: null, error };
@@ -123,7 +138,8 @@ export async function getRecentBookings(limit = 50) {
 /**
  * getPendingBookings
  * ------------------
- * Returns only PENDING bookings for the action-required section.
+ * Returns only active PENDING bookings for the action-required section.
+ * Excludes soft-deleted bookings.
  */
 export async function getPendingBookings(limit = 5) {
   if (!isSupabaseConfigured) {
@@ -139,15 +155,18 @@ export async function getPendingBookings(limit = 5) {
         status,
         payment_status,
         event_date,
+        is_deleted,
         service:services(name),
         customer:profiles!bookings_customer_id_fkey(first_name, last_name)
       `)
       .eq('status', 'PENDING')
+      .or('is_deleted.is.null,is_deleted.eq.false')
       .order('created_at', { ascending: true })
       .limit(limit);
 
     if (error) throw error;
-    return { data, error: null };
+    const filtered = (data || []).filter(b => !b.is_deleted);
+    return { data: filtered, error: null };
   } catch (error) {
     console.error('getPendingBookings error:', error);
     return { data: null, error };
@@ -168,7 +187,7 @@ export async function getCustomers({ page = 1, pageSize = 20, search = '' } = {}
       .from('profiles')
       .select(`
         id, first_name, last_name, middle_name, phone, address, avatar_url, is_active, created_at, updated_at, role, badges, bio, studio_specs,
-        bookings(id, booking_number, status, payment_status, total_amount, event_date, created_at)
+        bookings(id, booking_number, status, payment_status, total_amount, event_date, is_deleted, created_at)
       `, { count: 'exact' })
       .eq('role', 'customer')
       .order('created_at', { ascending: false })
@@ -178,7 +197,11 @@ export async function getCustomers({ page = 1, pageSize = 20, search = '' } = {}
     }
     const { data, error, count } = await query;
     if (error) throw error;
-    return { data, count, error: null };
+    const cleaned = (data || []).map(cust => ({
+      ...cust,
+      bookings: (cust.bookings || []).filter(b => !b.is_deleted)
+    }));
+    return { data: cleaned, count, error: null };
   } catch (error) {
     console.error('getCustomers error:', error);
     return { data: null, count: 0, error };
@@ -189,6 +212,7 @@ export async function getCustomers({ page = 1, pageSize = 20, search = '' } = {}
  * getCustomerDetail
  * -----------------
  * Returns a single customer profile with their booking summary.
+ * Excludes soft-deleted bookings.
  */
 export async function getCustomerDetail(id) {
   if (!isSupabaseConfigured) return { data: null, error: null };
@@ -197,11 +221,14 @@ export async function getCustomerDetail(id) {
       .from('profiles')
       .select(`
         id, first_name, last_name, middle_name, phone, address, avatar_url, is_active, created_at, role, badges, bio, studio_specs,
-        bookings(id, booking_number, status, payment_status, event_date, created_at, total_amount, service:services(name))
+        bookings(id, booking_number, status, payment_status, event_date, is_deleted, created_at, total_amount, service:services(name))
       `)
       .eq('id', id)
       .single();
     if (error) throw error;
+    if (data) {
+      data.bookings = (data.bookings || []).filter(b => !b.is_deleted);
+    }
     return { data, error: null };
   } catch (error) {
     console.error('getCustomerDetail error:', error);
@@ -410,15 +437,17 @@ export async function getPhotographerBookings(photographerId) {
     const { data, error } = await supabase
       .from('bookings')
       .select(`
-        id, booking_number, event_date, preferred_time, status, location,
+        id, booking_number, event_date, preferred_time, status, location, is_deleted,
         service:services(name),
         customer:profiles!bookings_customer_id_fkey(first_name, last_name, phone)
       `)
       .eq('photographer_id', photographerId)
+      .or('is_deleted.is.null,is_deleted.eq.false')
       .order('event_date', { ascending: true });
 
     if (error) throw error;
-    return { data: data || [], error: null };
+    const filtered = (data || []).filter(b => !b.is_deleted);
+    return { data: filtered, error: null };
   } catch (error) {
     console.error('getPhotographerBookings error:', error);
     return { data: [], error };
@@ -440,7 +469,7 @@ export async function getPayments({ page = 1, pageSize = 20, search = '' } = {})
       .from('payments')
       .select(`
         id, amount, payment_type, payment_method, reference_number, payment_date, notes, created_at,
-        booking:bookings(id, booking_number, customer_id, total_amount, remaining_balance, payment_status,
+        booking:bookings(id, booking_number, customer_id, total_amount, remaining_balance, payment_status, is_deleted,
           customer:profiles!bookings_customer_id_fkey(first_name, last_name, phone)
         ),
         recorder:profiles!payments_recorded_by_fkey(first_name, last_name)
@@ -449,7 +478,9 @@ export async function getPayments({ page = 1, pageSize = 20, search = '' } = {})
       .range(from, to);
     const { data, error, count } = await query;
     if (error) throw error;
-    return { data, count, error: null };
+    // Exclude payments belonging to deleted bookings
+    const filtered = (data || []).filter(p => !p.booking || !p.booking.is_deleted);
+    return { data: filtered, count: filtered.length, error: null };
   } catch (error) {
     console.error('getPayments error:', error);
     return { data: null, count: 0, error };
@@ -483,7 +514,7 @@ export async function getPaymentStats() {
   }
   try {
     const [paymentsRes, bookingsRes] = await Promise.all([
-      supabase.from('payments').select('amount, payment_type, payment_method'),
+      supabase.from('payments').select('amount, payment_type, payment_method, booking:bookings(id, is_deleted)'),
       supabase.from('bookings').select('total_amount, remaining_balance, payment_status, is_deleted').or('is_deleted.is.null,is_deleted.eq.false')
     ]);
 
@@ -503,8 +534,10 @@ export async function getPaymentStats() {
     };
 
     if (paymentsRes.data) {
-      stats.count = paymentsRes.data.length;
-      paymentsRes.data.forEach(({ amount, payment_type, payment_method }) => {
+      // Exclude payments belonging to deleted bookings
+      const activePayments = paymentsRes.data.filter(p => !p.booking || !p.booking.is_deleted);
+      stats.count = activePayments.length;
+      activePayments.forEach(({ amount, payment_type, payment_method }) => {
         const a = Number(amount) || 0;
         stats.total += a;
         if (payment_type === 'DOWN_PAYMENT') stats.down += a;

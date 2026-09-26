@@ -31,7 +31,9 @@ import GlassCard from '../components/GlassCard';
 import StatusBadge from '../components/StatusBadge';
 import MilestoneStepper from '../components/MilestoneStepper';
 import GoldButton from '../components/GoldButton';
-import { Colors, Gradients, Typography, Spacing, Radius, Shadow } from '../theme';
+import StudioMascotKit from '../components/StudioMascotKit';
+import { useTheme } from '../context/ThemeContext';
+import { Typography, Spacing, Radius, Shadow } from '../theme';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -55,35 +57,36 @@ function formatTime(timeStr) {
 
 // ── Delivery Panel ───────────────────────────────────────────────────────────
 
-function DeliveryPanel({ deliveries }) {
+function DeliveryPanel({ deliveries, colors, styles }) {
   if (!deliveries?.length) return null;
+  const s = styles || getStyles(colors);
 
   return (
-    <GlassCard highlight style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <View style={styles.sectionHeaderLeft}>
-          <Package size={16} color={Colors.gold.DEFAULT} />
-          <Text style={styles.sectionTitle}>Print Output & Delivery</Text>
+    <GlassCard highlight style={s.section}>
+      <View style={s.sectionHeader}>
+        <View style={s.sectionHeaderLeft}>
+          <Package size={16} color={colors.gold.DEFAULT} />
+          <Text style={[s.sectionTitle, { color: colors.text.primary }]}>Print Output & Delivery</Text>
         </View>
       </View>
       {deliveries.map((d) => (
-        <View key={d.id} style={styles.deliveryRow}>
-          <View style={styles.deliveryTop}>
-            <Text style={styles.deliveryType}>{d.delivery_type?.replace('_', ' ')}</Text>
+        <View key={d.id} style={s.deliveryRow}>
+          <View style={s.deliveryTop}>
+            <Text style={[s.deliveryType, { color: colors.text.primary }]}>{d.delivery_type?.replace('_', ' ')}</Text>
             <Text
               style={[
-                styles.deliveryStatus,
-                { color: d.status === 'DELIVERED' ? Colors.status.ready : Colors.gold.light },
+                s.deliveryStatus,
+                { color: d.status === 'DELIVERED' ? '#10B981' : colors.gold.light },
               ]}
             >
               {d.status}
             </Text>
           </View>
           {d.tracking_number && (
-            <Text style={styles.tracking}>Tracking No: {d.tracking_number}</Text>
+            <Text style={[s.tracking, { color: colors.text.secondary }]}>Tracking No: {d.tracking_number}</Text>
           )}
           {d.digital_access_expires_at && (
-            <Text style={styles.digitalExpiry}>
+            <Text style={[s.digitalExpiry, { color: colors.text.muted }]}>
               Digital gallery access expires: {formatDate(d.digital_access_expires_at)}
             </Text>
           )}
@@ -95,15 +98,16 @@ function DeliveryPanel({ deliveries }) {
 
 // ── Info Row Sub-component ───────────────────────────────────────────────────
 
-function InfoRow({ icon: Icon, label, value, highlight = false }) {
+function InfoRow({ icon: Icon, label, value, highlight = false, colors, styles }) {
+  const s = styles || getStyles(colors);
   return (
-    <View style={styles.infoRow}>
-      <View style={styles.infoIconWrapper}>
-        <Icon size={14} color={Colors.gold.light} />
+    <View style={s.infoRow}>
+      <View style={[s.infoIconWrapper, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
+        <Icon size={14} color={colors.gold.light} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={[styles.infoValue, highlight && styles.infoValueHighlight]}>
+        <Text style={[s.infoLabel, { color: colors.text.secondary }]}>{label}</Text>
+        <Text style={[s.infoValue, { color: colors.text.primary }, highlight && { color: colors.gold.DEFAULT }]}>
           {value}
         </Text>
       </View>
@@ -114,85 +118,103 @@ function InfoRow({ icon: Icon, label, value, highlight = false }) {
 // ── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function BookingTrackerScreen({ route, navigation }) {
-  const { booking: initialBooking, token } = route.params;
-  const [booking, setBooking]         = useState(initialBooking);
+  const { isDark, colors, gradients } = useTheme();
+  const styles = getStyles(colors);
+  const { booking: initialBooking, token: rawToken } = route.params || {};
+  const effectiveToken = rawToken || initialBooking?.booking_token || initialBooking?.booking_number || initialBooking?.id || '';
+
+  const [booking, setBooking]         = useState(initialBooking || {});
   const [refreshing, setRefreshing]   = useState(false);
   const [isSaved, setIsSaved]         = useState(false);
   const [stepperOpen, setStepperOpen] = useState(true);
+  const [mascotAlert, setMascotAlert] = useState(null);
 
   // Luminous emerald pulse for live indicator
   const livePulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     checkIfSaved();
-    saveCustomerProfileFromBooking(booking);
-    const unsubscribe = subscribeToBookingUpdates(booking.id, (updated) => {
-      try {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch {}
-      setBooking((prev) => ({ ...prev, ...updated }));
-    });
+    if (booking?.id) {
+      saveCustomerProfileFromBooking(booking);
+      const unsubscribe = subscribeToBookingUpdates(booking.id, (updated) => {
+        try {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch {}
+        setBooking((prev) => ({ ...prev, ...updated }));
+      });
 
-    const anim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(livePulse, { toValue: 0.35, duration: 800, useNativeDriver: true }),
-        Animated.timing(livePulse, { toValue: 1, duration: 800, useNativeDriver: true }),
-      ])
-    );
-    anim.start();
+      const anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(livePulse, { toValue: 0.35, duration: 800, useNativeDriver: true }),
+          Animated.timing(livePulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ])
+      );
+      anim.start();
 
-    return () => {
-      unsubscribe();
-      anim.stop();
-    };
-  }, [booking.id]);
+      return () => {
+        unsubscribe();
+        anim.stop();
+      };
+    }
+  }, [booking?.id, effectiveToken]);
 
   const checkIfSaved = async () => {
+    if (!effectiveToken) return;
     const saved = await getSavedBookings();
-    setIsSaved(saved.some((b) => b.token === token));
+    setIsSaved(saved.some((b) => b.token === effectiveToken || (initialBooking?.booking_number && b.bookingNumber === initialBooking.booking_number)));
   };
 
   const onRefresh = useCallback(async () => {
+    if (!effectiveToken) return;
     setRefreshing(true);
-    const { data } = await fetchBookingByToken(token);
+    const { data } = await fetchBookingByToken(effectiveToken);
     if (data) setBooking(data);
     setRefreshing(false);
-  }, [token]);
+  }, [effectiveToken]);
 
   const toggleSave = async () => {
+    if (!effectiveToken) return;
     try {
       await Haptics.selectionAsync();
     } catch {}
     if (isSaved) {
-      await removeSavedBooking(token);
+      await removeSavedBooking(effectiveToken);
       setIsSaved(false);
+      setMascotAlert({
+        pose: 'inspect',
+        message: 'Pass removed from your saved list.',
+      });
     } else {
-      await saveBookingToken(token, booking);
+      await saveBookingToken(effectiveToken, booking);
       setIsSaved(true);
+      setMascotAlert({
+        pose: 'celebrate',
+        message: 'Pass saved! You can now access it anytime.',
+      });
     }
   };
 
   return (
-    <View style={styles.screen}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
+    <View style={[styles.screen, { backgroundColor: colors.bg.base }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.bg.base} />
 
       {/* ── Editorial Header ── */}
       <LinearGradient
-        colors={Gradients.darkStudio}
+        colors={gradients.darkStudio}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
-        style={styles.header}
+        style={[styles.header, { borderBottomColor: colors.gold.border }]}
       >
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={styles.backBtn}
+          style={[styles.backBtn, { backgroundColor: colors.bg.card, borderColor: colors.gold.border }]}
           activeOpacity={0.7}
         >
-          <ArrowLeft size={20} color={Colors.text.primary} />
+          <ArrowLeft size={20} color={colors.text.primary} />
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
+          <Text style={[styles.headerTitle, { color: colors.text.primary }]} numberOfLines={1}>
             Pass #{booking.booking_number}
           </Text>
           {/* Live Studio Sync Pill */}
@@ -204,49 +226,67 @@ export default function BookingTrackerScreen({ route, navigation }) {
 
         <TouchableOpacity
           onPress={toggleSave}
-          style={styles.actionBtn}
+          style={[styles.actionBtn, { backgroundColor: colors.bg.card, borderColor: colors.gold.border }]}
           activeOpacity={0.7}
         >
           {isSaved ? (
-            <BookmarkCheck size={20} color={Colors.gold.DEFAULT} />
+            <BookmarkCheck size={20} color={colors.gold.DEFAULT} />
           ) : (
-            <Bookmark size={20} color={Colors.neutral[400]} />
+            <Bookmark size={20} color={colors.text.muted} />
           )}
         </TouchableOpacity>
       </LinearGradient>
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 110 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={Colors.gold.DEFAULT}
-            colors={[Colors.gold.DEFAULT]}
+            tintColor={colors.gold.DEFAULT}
+            colors={[colors.gold.DEFAULT]}
           />
         }
       >
+        {/* Mascot Alert Overlay */}
+        {mascotAlert && (
+          <View style={styles.mascotAlertOverlay}>
+            <StudioMascotKit
+              pose={mascotAlert.pose}
+              size={120}
+              speechText={mascotAlert.message}
+              interactive={false}
+            />
+            <TouchableOpacity
+              style={[styles.mascotAlertCloseBtn, { borderColor: colors.gold.border }]}
+              onPress={() => setMascotAlert(null)}
+            >
+              <Text style={[styles.mascotAlertCloseText, { color: colors.gold.DEFAULT }]}>Dismiss</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* ── Session Dossier Card ── */}
         <GlassCard glow highlight style={styles.heroCard}>
           <View style={styles.heroTop}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.heroLabel}>CURRENT SESSION PHASE</Text>
+              <Text style={[styles.heroLabel, { color: colors.text.secondary }]}>CURRENT SESSION PHASE</Text>
               <StatusBadge status={booking.status} size="md" style={{ marginTop: 6 }} />
             </View>
-            <View style={styles.qrBadge}>
-              <QrCode size={26} color={Colors.gold.light} strokeWidth={1.5} />
+            <View style={[styles.qrBadge, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
+              <QrCode size={26} color={colors.gold.light} strokeWidth={1.5} />
             </View>
           </View>
 
-          <View style={styles.cardDivider} />
+          <View style={[styles.cardDivider, { backgroundColor: colors.gold.border }]} />
 
           {/* Session Service Title */}
           {booking.services?.name && (
             <View style={styles.serviceHeader}>
-              <Text style={styles.serviceSubtitle}>SESSION PACKAGE</Text>
-              <Text style={styles.serviceTitle}>{booking.services.name}</Text>
+              <Text style={[styles.serviceSubtitle, { color: colors.gold.DEFAULT }]}>SESSION PACKAGE</Text>
+              <Text style={[styles.serviceTitle, { color: colors.text.primary }]}>{booking.services.name}</Text>
             </View>
           )}
 
@@ -257,6 +297,7 @@ export default function BookingTrackerScreen({ route, navigation }) {
               label="Session Schedule"
               value={`${formatDate(booking.session_date)}${booking.session_time ? ` · ${formatTime(booking.session_time)}` : ''}`}
               highlight
+              colors={colors}
             />
 
             <InfoRow
@@ -267,6 +308,7 @@ export default function BookingTrackerScreen({ route, navigation }) {
                   ? 'E-Kodak Main Studio · Cebu'
                   : booking.location_address || 'On-site / Outdoor'
               }
+              colors={colors}
             />
 
             {booking.photographer?.full_name && (
@@ -274,6 +316,7 @@ export default function BookingTrackerScreen({ route, navigation }) {
                 icon={Camera}
                 label="Lead Photographer"
                 value={booking.photographer.full_name}
+                colors={colors}
               />
             )}
           </View>
@@ -287,14 +330,14 @@ export default function BookingTrackerScreen({ route, navigation }) {
             activeOpacity={0.7}
           >
             <View style={styles.sectionHeaderLeft}>
-              <RefreshCw size={15} color={Colors.gold.DEFAULT} />
-              <Text style={styles.sectionTitle}>Studio Progress Timeline</Text>
+              <RefreshCw size={15} color={colors.gold.DEFAULT} />
+              <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Studio Progress Timeline</Text>
             </View>
-            <View style={styles.chevronPill}>
+            <View style={[styles.chevronPill, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
               {stepperOpen ? (
-                <ChevronUp size={14} color={Colors.gold.light} />
+                <ChevronUp size={14} color={colors.gold.light} />
               ) : (
-                <ChevronDown size={14} color={Colors.gold.light} />
+                <ChevronDown size={14} color={colors.gold.light} />
               )}
             </View>
           </TouchableOpacity>
@@ -305,26 +348,26 @@ export default function BookingTrackerScreen({ route, navigation }) {
         </GlassCard>
 
         {/* ── Delivery & Prints Panel ── */}
-        <DeliveryPanel deliveries={booking.booking_deliveries} />
+        <DeliveryPanel deliveries={booking.booking_deliveries} colors={colors} />
 
         {/* ── Client Details Card ── */}
         {booking.profile && (
           <GlassCard highlight style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionHeaderLeft}>
-                <User size={15} color={Colors.gold.DEFAULT} />
-                <Text style={styles.sectionTitle}>Client Information</Text>
+                <User size={15} color={colors.gold.DEFAULT} />
+                <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Client Information</Text>
               </View>
             </View>
-            <Text style={styles.clientName}>{booking.profile.full_name}</Text>
+            <Text style={[styles.clientName, { color: colors.text.primary }]}>{booking.profile.full_name}</Text>
             {booking.profile.phone && (
               <View style={styles.clientRow}>
-                <Phone size={13} color={Colors.gold.dim} />
-                <Text style={styles.clientDetail}>{booking.profile.phone}</Text>
+                <Phone size={13} color={colors.gold.light} />
+                <Text style={[styles.clientDetail, { color: colors.text.secondary }]}>{booking.profile.phone}</Text>
               </View>
             )}
             {booking.profile.email && (
-              <Text style={styles.clientDetailMuted}>{booking.profile.email}</Text>
+              <Text style={[styles.clientDetailMuted, { color: colors.text.muted }]}>{booking.profile.email}</Text>
             )}
           </GlassCard>
         )}
@@ -345,8 +388,8 @@ export default function BookingTrackerScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Colors.bg.base },
+const getStyles = (colors) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg.base },
 
   header: {
     flexDirection: 'row',
@@ -355,15 +398,15 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing[4],
     paddingHorizontal: Spacing[4],
     borderBottomWidth: 1,
-    borderBottomColor: Colors.gold.border,
+    borderBottomColor: colors.gold.border,
   },
   backBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: Colors.bg.card,
+    backgroundColor: colors.bg.card,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: colors.gold.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -374,7 +417,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.lg,
-    color: Colors.text.primary,
+    color: colors.text.primary,
   },
   liveRow: {
     flexDirection: 'row',
@@ -386,21 +429,21 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: Colors.status.ready,
+    backgroundColor: colors.status.ready,
   },
   liveText: {
     fontFamily: Typography.fontBodySemi,
     fontSize: 9.5,
-    color: Colors.status.ready,
+    color: colors.status.ready,
     letterSpacing: 1,
   },
   actionBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: Colors.bg.card,
+    backgroundColor: colors.bg.card,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: colors.gold.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -423,22 +466,22 @@ const styles = StyleSheet.create({
   heroLabel: {
     fontFamily: Typography.fontBodySemi,
     fontSize: Typography.size.xs,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     letterSpacing: 1.2,
   },
   qrBadge: {
     width: 48,
     height: 48,
     borderRadius: Radius.md,
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
     borderWidth: 1,
-    borderColor: Colors.gold.borderLight,
+    borderColor: colors.gold.borderLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cardDivider: {
     height: 1,
-    backgroundColor: Colors.gold.border,
+    backgroundColor: colors.gold.border,
     marginVertical: Spacing[4],
   },
 
@@ -448,14 +491,14 @@ const styles = StyleSheet.create({
   serviceSubtitle: {
     fontFamily: Typography.fontBody,
     fontSize: 10,
-    color: Colors.gold.light,
+    color: colors.gold.light,
     letterSpacing: 1.5,
     marginBottom: 2,
   },
   serviceTitle: {
     fontFamily: Typography.fontHeading,
     fontSize: Typography.size.xl,
-    color: Colors.text.primary,
+    color: colors.text.primary,
   },
 
   infoGrid: {
@@ -470,9 +513,9 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 8,
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
     borderWidth: 1,
-    borderColor: Colors.gold.border,
+    borderColor: colors.gold.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 1,
@@ -480,7 +523,7 @@ const styles = StyleSheet.create({
   infoLabel: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.text.muted,
+    color: colors.text.muted,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 1,
@@ -488,11 +531,11 @@ const styles = StyleSheet.create({
   infoValue: {
     fontFamily: Typography.fontBodyMedium,
     fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
     lineHeight: 20,
   },
   infoValueHighlight: {
-    color: Colors.text.primary,
+    color: colors.text.primary,
     fontFamily: Typography.fontBodySemi,
   },
 
@@ -514,13 +557,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: Typography.fontHeadingSemi,
     fontSize: Typography.size.base,
-    color: Colors.text.primary,
+    color: colors.text.primary,
   },
   chevronPill: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: Colors.gold.bg,
+    backgroundColor: colors.gold.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -528,7 +571,7 @@ const styles = StyleSheet.create({
   // Delivery Rows
   deliveryRow: {
     borderTopWidth: 1,
-    borderTopColor: Colors.gold.border,
+    borderTopColor: colors.gold.border,
     paddingTop: Spacing[3],
     marginTop: Spacing[2],
     gap: 3,
@@ -541,7 +584,7 @@ const styles = StyleSheet.create({
   deliveryType: {
     fontFamily: Typography.fontHeadingSemi,
     fontSize: Typography.size.sm,
-    color: Colors.gold.light,
+    color: colors.gold.light,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -552,19 +595,19 @@ const styles = StyleSheet.create({
   tracking: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
   },
   digitalExpiry: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.neutral[500],
+    color: colors.neutral[500],
   },
 
   // Client Details
   clientName: {
     fontFamily: Typography.fontHeadingSemi,
     fontSize: Typography.size.base,
-    color: Colors.text.primary,
+    color: colors.text.primary,
     marginBottom: 4,
   },
   clientRow: {
@@ -576,15 +619,33 @@ const styles = StyleSheet.create({
   clientDetail: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.sm,
-    color: Colors.text.secondary,
+    color: colors.text.secondary,
   },
   clientDetailMuted: {
     fontFamily: Typography.fontBody,
     fontSize: Typography.size.xs,
-    color: Colors.neutral[500],
+    color: colors.neutral[500],
   },
 
   scanAnotherBtn: {
     marginTop: Spacing[2],
+  },
+  mascotAlertOverlay: {
+    padding: Spacing[4],
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing[4],
+  },
+  mascotAlertCloseBtn: {
+    marginTop: Spacing[4],
+    paddingVertical: 8,
+    paddingHorizontal: Spacing[4],
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    backgroundColor: 'rgba(212, 175, 55, 0.1)',
+  },
+  mascotAlertCloseText: {
+    fontFamily: Typography.fontBodySemi,
+    fontSize: Typography.size.sm,
   },
 });

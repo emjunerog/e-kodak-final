@@ -63,6 +63,8 @@ const TYPE_META = {
   PAYMENT_RECEIVED:    { icon: CreditCard,    color: 'text-blue-600',    bg: 'bg-blue-50',    badge: 'Verified' },
   // Gallery / proofs ready
   gallery_ready:       { icon: Camera,        color: 'text-emerald-600', bg: 'bg-emerald-50', badge: 'Gallery Ready' },
+  BOOKING_CANCELLED:   { icon: AlertCircle,   color: 'text-rose-600',    bg: 'bg-rose-50',    badge: 'Cancelled' },
+  BOOKING_DELETED:     { icon: AlertCircle,   color: 'text-rose-600',    bg: 'bg-rose-50',    badge: 'Removed' },
   default:             { icon: Bell,          color: 'text-neutral-500', bg: 'bg-neutral-100', badge: 'Notice' },
 };
 
@@ -220,7 +222,7 @@ export default function NotificationsPage() {
           {[
             { id: 'ALL',      label: 'All Notices',  count: notifications.length },
             { id: 'UNREAD',   label: 'Unread',       count: totalUnread },
-            { id: 'BOOKINGS', label: 'Bookings',     count: notifications.filter(n => n.category === 'BOOKINGS' || n.notification_type?.startsWith('booking') || n.notification_type === 'BOOKING_CONFIRMED').length },
+            { id: 'BOOKINGS', label: 'Bookings',     count: notifications.filter(n => n.category === 'BOOKINGS' || n.notification_type?.startsWith('booking') || n.notification_type === 'BOOKING_CONFIRMED' || n.notification_type === 'BOOKING_CANCELLED' || n.notification_type === 'BOOKING_DELETED').length },
             { id: 'PAYMENTS', label: 'Payments',     count: notifications.filter(n => n.category === 'PAYMENTS' || n.notification_type === 'payment_recorded' || n.notification_type === 'PAYMENT_RECEIVED').length },
             { id: 'GALLERY',  label: 'Gallery',      count: notifications.filter(n => n.category === 'GALLERY' || n.notification_type === 'gallery_ready' || n.notification_type === 'ORDER_READY').length },
             { id: 'STUDIO',   label: 'Studio Ops',   count: notifications.filter(n => n.category === 'STUDIO' || n.notification_type === 'BROADCAST' || n.category === 'BROADCASTS').length },
@@ -390,15 +392,23 @@ export default function NotificationsPage() {
                             </div>
 
                             <div className="flex items-center gap-2">
-                              {notif.booking_id && (
+                              {notif.booking_id ? (
                                 <Link
                                   to={`/dashboard/bookings/${notif.booking_id}`}
                                   className="btn-outline py-1 px-3 text-xs flex items-center gap-1.5"
                                 >
-                                  <span>View Session</span>
+                                  <span>{['BOOKING_CANCELLED', 'BOOKING_DELETED'].includes(notif.notification_type) ? 'View Status Notice' : 'View Session'}</span>
                                   <ExternalLink size={12} />
                                 </Link>
-                              )}
+                              ) : ['BOOKING_CANCELLED', 'BOOKING_DELETED'].includes(notif.notification_type) ? (
+                                <Link
+                                  to="/dashboard/bookings"
+                                  className="btn-outline py-1 px-3 text-xs flex items-center gap-1.5"
+                                >
+                                  <span>My Bookings</span>
+                                  <ExternalLink size={12} />
+                                </Link>
+                              ) : null}
 
                               {!notif.is_read && (
                                 <button

@@ -28,6 +28,9 @@ import {
   Package,
   XCircle,
   FileText,
+  RotateCcw,
+  Trash2,
+  Edit3,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { updateBookingStatus } from '../../services/bookingAdminService';
@@ -168,6 +171,9 @@ export default function BookingQuickInspector({
   isOpen,
   onClose,
   onStatusUpdated,
+  onRestore,
+  onEdit,
+  onDelete,
 }) {
   const { profile } = useAuth();
   const [selectedStatus, setSelectedStatus] = useState(booking?.status || 'PENDING');
@@ -326,6 +332,36 @@ export default function BookingQuickInspector({
         {/* ── Scrollable Inspector Content ───────────────────────────────── */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 scrollbar-thin">
           
+          {/* Deleted state recovery notice */}
+          {booking.is_deleted && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                  <Trash2 size={16} />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-xs font-bold text-rose-900 leading-tight">Order Held in Trash Cycle</h4>
+                  <p className="text-[11px] text-rose-700 truncate">
+                    {booking.deletion_reason ? `Reason: ${booking.deletion_reason}` : 'Moved to trash by administrator'}
+                  </p>
+                </div>
+              </div>
+              {onRestore && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onRestore(booking);
+                    onClose();
+                  }}
+                  className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-gold text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-xs shrink-0 cursor-pointer border border-gold/30"
+                >
+                  <RotateCcw size={13} />
+                  <span>Recover</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {/* ── 2. Current Operational State & Direct Status Change ──────── */}
           <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3 shadow-2xs">
             <div className="flex items-center justify-between pb-2.5 border-b border-neutral-100">
@@ -737,13 +773,27 @@ export default function BookingQuickInspector({
               Direct Quick Actions
             </h4>
             <div className="grid grid-cols-2 gap-2.5">
-              <Link
-                to={`/admin/bookings/${booking.id}`}
-                className="p-3 rounded-xl border border-neutral-200 hover:border-gold hover:bg-white transition-all text-xs font-semibold text-primary flex items-center justify-between shadow-2xs"
-              >
-                <span>Full Record Page</span>
-                <ExternalLink size={13} className="text-gold" />
-              </Link>
+              {!booking.is_deleted ? (
+                <Link
+                  to={`/admin/bookings/${booking.id}`}
+                  className="p-3 rounded-xl border border-neutral-200 hover:border-gold hover:bg-white transition-all text-xs font-semibold text-primary flex items-center justify-between shadow-2xs"
+                >
+                  <span>Full Record Page</span>
+                  <ExternalLink size={13} className="text-gold" />
+                </Link>
+              ) : onRestore ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onRestore(booking);
+                    onClose();
+                  }}
+                  className="p-3 rounded-xl border border-gold/40 bg-neutral-900 text-gold hover:bg-neutral-800 transition-all text-xs font-semibold flex items-center justify-between shadow-2xs cursor-pointer"
+                >
+                  <span>Recover Order</span>
+                  <RotateCcw size={13} />
+                </button>
+              ) : null}
 
               <Link
                 to={`/admin/payments`}
@@ -752,6 +802,34 @@ export default function BookingQuickInspector({
                 <span>Record Payment</span>
                 <CreditCard size={13} className="text-gold" />
               </Link>
+
+              {onEdit && !booking.is_deleted && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onEdit(booking);
+                  }}
+                  className="p-3 rounded-xl border border-neutral-200 hover:border-gold hover:bg-white transition-all text-xs font-semibold text-primary flex items-center justify-between shadow-2xs cursor-pointer"
+                >
+                  <span>Edit Details</span>
+                  <Edit3 size={13} className="text-gold" />
+                </button>
+              )}
+
+              {onDelete && !booking.is_deleted && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onDelete(booking);
+                  }}
+                  className="p-3 rounded-xl border border-rose-200 hover:border-rose-400 hover:bg-rose-50/50 hover:text-rose-700 transition-all text-xs font-semibold text-rose-600 flex items-center justify-between shadow-2xs cursor-pointer"
+                >
+                  <span>Move to Trash</span>
+                  <Trash2 size={13} className="text-rose-500" />
+                </button>
+              )}
 
               <Link
                 to="/admin/photographers"

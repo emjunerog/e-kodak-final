@@ -31,7 +31,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useSearchParams, Link, useNavigate } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Search, RefreshCw, ChevronLeft, ChevronRight,
@@ -53,6 +53,7 @@ import {
   softDeleteBooking,
   restoreBooking,
   deleteBookingPermanently,
+  emptyTrash,
   adminCreateBooking,
   adminUpdateBooking,
   ALL_BOOKING_STATUSES,
@@ -215,10 +216,24 @@ function buildStructuredNotes({ school, campus, degree, section, studentId, toga
 
 const PAGE_SIZE = 15;
 
-export default function AdminBookings() {
+export default function AdminBookings({ initialSection }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const initialSearchParam = searchParams.get('search') || '';
+
+  const resolveTabFromLocation = useCallback(() => {
+    if (initialSection) return initialSection;
+    if (location.pathname.endsWith('/trash')) return 'DELETED';
+    if (location.pathname.endsWith('/done-orders')) return 'COMPLETED';
+    const tabParam = searchParams.get('tab')?.toUpperCase();
+    if (tabParam && ['ALL', 'PENDING', 'CONFIRMED', 'PRODUCTION', 'READY', 'COMPLETED', 'UNPAID', 'DELETED'].includes(tabParam)) {
+      return tabParam;
+    }
+    return 'ALL';
+  }, [initialSection, location.pathname, searchParams]);
+
+  const initialTab = resolveTabFromLocation();
 
   const { profile } = useAuth();
 
@@ -237,11 +252,21 @@ export default function AdminBookings() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState(initialSearchParam);
   const [liveSearch, setLiveSearch] = useState(initialSearchParam);
-  const [statusFilter, setStatus] = useState('');
-  const [paymentFilter, setPayment] = useState('');
+  const [statusFilter, setStatus] = useState(() => {
+    if (initialTab === 'PENDING') return 'PENDING';
+    if (initialTab === 'CONFIRMED') return 'CONFIRMED';
+    if (initialTab === 'PRODUCTION') return 'CAPTURE';
+    if (initialTab === 'READY') return 'READY';
+    if (initialTab === 'COMPLETED') return 'COMPLETED';
+    return '';
+  });
+  const [paymentFilter, setPayment] = useState(() => {
+    if (initialTab === 'UNPAID') return 'UNPAID';
+    return '';
+  });
   const [sortBy, setSortBy] = useState('created_at');
   const [sortAsc, setSortAsc] = useState(false);
-  const [activeNavTab, setActiveNavTab] = useState('ALL');
+  const [activeNavTab, setActiveNavTab] = useState(initialTab);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
 
   // Counts for tabs & KPI cards
@@ -264,6 +289,8 @@ export default function AdminBookings() {
   const [bookingToPermanentlyPurge, setBookingToPermanentlyPurge] = useState(null);
   const [deleteReason, setDeleteReason] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isEmptyTrashModalOpen, setIsEmptyTrashModalOpen] = useState(false);
+  const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [actionNotice, setActionNotice] = useState(null);
   const [copiedRef, setCopiedRef] = useState(null);
@@ -577,7 +604,7 @@ export default function AdminBookings() {
   };
 
   // ── Quick Sub-Navigation Filter Handler ───────────────────────────────────
-  const handleNavTabClick = (tabKey) => {
+  const handleNavTabClick = useCallback((tabKey) => {
     setActiveNavTab(tabKey);
     setPage(1);
     switch (tabKey) {
@@ -617,7 +644,17 @@ export default function AdminBookings() {
         setStatus('');
         setPayment('');
     }
-  };
+  }, []);
+
+  // Sync active tab whenever location, initialSection, or search query params change
+  const prevTabRef = useRef(initialTab);
+  useEffect(() => {
+    const targetTab = resolveTabFromLocation();
+    if (targetTab !== prevTabRef.current) {
+      prevTabRef.current = targetTab;
+      handleNavTabClick(targetTab);
+    }
+  }, [location.pathname, initialSection, searchParams, resolveTabFromLocation, handleNavTabClick]);
 
   // ── Export CSV Handler ────────────────────────────────────────────────────
   const handleExportCSV = () => {
@@ -934,6 +971,7 @@ export default function AdminBookings() {
       setDeleteReason('');
       fetchBookings();
       fetchCounts();
+      window.dispatchEvent(new CustomEvent('trash-updated'));
     }
   };
 
@@ -955,6 +993,7 @@ export default function AdminBookings() {
       showToast(`Booking #${b.booking_number} recovered & restored to active queue!`);
       fetchBookings();
       fetchCounts();
+      window.dispatchEvent(new CustomEvent('trash-updated'));
     }
   };
 
@@ -981,6 +1020,32 @@ export default function AdminBookings() {
       setBookingToPermanentlyPurge(null);
       fetchBookings();
       fetchCounts();
+      window.dispatchEvent(new CustomEvent('trash-updated'));
+    }
+  };
+
+  // ── EMPTY ENTIRE TRASH CRUD ──────────────────────────────────────────────
+  const handleEmptyTrash = async () => {
+    setIsEmptyingTrash(true);
+    const deletedByName = profile?.first_name
+      ? `${profile.first_name} ${profile.last_name || ''}`.trim()
+      : 'Admin Staff';
+
+    const { success, count, error: err } = await emptyTrash({
+      deletedById: profile?.id,
+      deletedByName,
+    });
+
+    setIsEmptyingTrash(false);
+    setIsEmptyTrashModalOpen(false);
+
+    if (!success) {
+      showToast('Failed to empty trash: ' + (err?.message || 'Database error'), 'error');
+    } else {
+      showToast(`Trash cleared: ${count} record(s) permanently erased.`);
+      fetchBookings();
+      fetchCounts();
+      window.dispatchEvent(new CustomEvent('trash-updated'));
     }
   };
 
@@ -1178,45 +1243,139 @@ export default function AdminBookings() {
         ]}
       />
 
-      {/* ── 2. KPI Overview Metric Strip (Only in Active views) ──────── */}
-      {!isDeletedTab && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {[
-            { label: 'Total in DB', val: counts.total, key: 'ALL', icon: CalendarDays, color: 'text-primary' },
-            { label: 'Pending', val: counts.pending, key: 'PENDING', icon: Clock, color: 'text-gold-dark' },
-            { label: 'Confirmed', val: counts.confirmed, key: 'CONFIRMED', icon: CheckCircle2, color: 'text-primary' },
-            { label: 'In Studio', val: counts.inBay, key: 'PRODUCTION', icon: Camera, color: 'text-primary' },
-            { label: 'Ready for Pickup', val: counts.ready, key: 'READY', icon: Package, color: 'text-gold-dark' },
-            { label: 'Pending Payment', val: counts.unpaid, key: 'UNPAID', icon: AlertCircle, color: 'text-gold-dark' },
-          ].map((kpi, idx) => (
-            <motion.button
-              key={idx}
-              type="button"
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => handleNavTabClick(kpi.key)}
-              className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none bg-white hover:border-gold/60 hover:shadow-sm ${
-                activeNavTab === kpi.key
-                  ? 'border-gold ring-2 ring-gold/20 bg-gold/5'
-                  : 'border-neutral-200/90 shadow-xs'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-                  {kpi.label}
-                </span>
-                <kpi.icon size={16} className={kpi.color} />
-              </div>
-              <p className={`text-2xl sm:text-3xl font-heading font-bold ${kpi.color}`}>
-                <AnimatedCounter value={kpi.val} />
-              </p>
-            </motion.button>
-          ))}
+      {/* ── 2. KPI Overview Metric Strip (5 Primary Queues) ──────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+        {[
+          { label: 'Active orders', val: counts.total, key: 'ALL', icon: CalendarDays, color: 'text-primary' },
+          { label: 'Pending', val: counts.pending, key: 'PENDING', icon: Clock, color: 'text-gold-dark' },
+          { label: 'Ready', val: counts.ready, key: 'READY', icon: Package, color: 'text-gold-dark' },
+          { label: 'Completed', val: counts.completed, key: 'COMPLETED', icon: CheckCircle, color: 'text-emerald-700' },
+          { label: 'Trash Cycle', val: counts.deleted, key: 'DELETED', icon: Trash2, color: 'text-rose-600' },
+        ].map((kpi, idx) => (
+          <motion.button
+            key={idx}
+            type="button"
+            whileHover={{ y: -2 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => handleNavTabClick(kpi.key)}
+            className={`p-3 sm:p-4 rounded-2xl border text-left transition-all cursor-pointer select-none bg-white hover:border-gold/60 hover:shadow-xs ${
+              activeNavTab === kpi.key
+                ? 'border-gold ring-2 ring-gold/20 bg-gold/5 shadow-xs'
+                : 'border-neutral-200/90 shadow-2xs'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 truncate">
+                {kpi.label}
+              </span>
+              <kpi.icon size={14} className={kpi.color} />
+            </div>
+            <p className={`text-xl sm:text-2xl font-heading font-bold ${kpi.color}`}>
+              <AnimatedCounter value={kpi.val} />
+            </p>
+          </motion.button>
+        ))}
+      </div>
+
+      {/* ── 2.2. Sectional Records Navigation Bar ──────────────────────── */}
+      <div className="bg-white rounded-2xl border border-neutral-200/90 p-2 sm:p-2.5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Section 1: Active orders */}
+          <button
+            type="button"
+            onClick={() => {
+              navigate('/admin/bookings');
+              handleNavTabClick('ALL');
+            }}
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
+              activeNavTab !== 'COMPLETED' && activeNavTab !== 'DELETED'
+                ? 'bg-neutral-900 text-white shadow-xs'
+                : 'text-neutral-600 hover:text-primary hover:bg-neutral-100'
+            }`}
+          >
+            <CalendarDays size={14} className={activeNavTab !== 'COMPLETED' && activeNavTab !== 'DELETED' ? 'text-gold' : 'text-neutral-400'} />
+            <span>Active orders</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeNavTab !== 'COMPLETED' && activeNavTab !== 'DELETED'
+                ? 'bg-neutral-800 text-gold border border-gold/30'
+                : 'bg-neutral-200 text-neutral-700'
+            }`}>
+              {counts.total}
+            </span>
+          </button>
+
+          {/* Section 2: Completed */}
+          <button
+            type="button"
+            onClick={() => {
+              navigate('/admin/done-orders');
+              handleNavTabClick('COMPLETED');
+            }}
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
+              activeNavTab === 'COMPLETED'
+                ? 'bg-emerald-900 text-white shadow-xs'
+                : 'text-neutral-600 hover:text-emerald-700 hover:bg-emerald-50'
+            }`}
+          >
+            <CheckCircle2 size={14} className={activeNavTab === 'COMPLETED' ? 'text-emerald-300' : 'text-emerald-600'} />
+            <span>Completed</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeNavTab === 'COMPLETED'
+                ? 'bg-emerald-800 text-emerald-200 border border-emerald-400/40'
+                : 'bg-emerald-100 text-emerald-800'
+            }`}>
+              {counts.completed}
+            </span>
+          </button>
+
+          {/* Section 3: Trash Cycle Management */}
+          <button
+            type="button"
+            onClick={() => {
+              navigate('/admin/trash');
+              handleNavTabClick('DELETED');
+            }}
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
+              activeNavTab === 'DELETED'
+                ? 'bg-rose-900 text-white shadow-xs'
+                : 'text-neutral-600 hover:text-rose-700 hover:bg-rose-50'
+            }`}
+          >
+            <Trash2 size={14} className={activeNavTab === 'DELETED' ? 'text-rose-300' : 'text-rose-600'} />
+            <span>Trash Cycle</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeNavTab === 'DELETED'
+                ? 'bg-rose-800 text-rose-200 border border-rose-400/40'
+                : 'bg-rose-100 text-rose-800'
+            }`}>
+              {counts.deleted}
+            </span>
+          </button>
         </div>
-      )}
+
+
+
+        {/* Trash Actions when in Trash tab */}
+        {activeNavTab === 'DELETED' && (
+          <div className="flex items-center gap-2">
+            {counts.deleted > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsEmptyTrashModalOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Trash2 size={13} />
+                <span>Empty Entire Trash</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+
 
       {/* ── 2.5. School Pictorial Batch Scheduling Alert & Action Banner ── */}
-      {pendingSchoolCount > 0 && !isDeletedTab && (
+      {pendingSchoolCount > 0 && !isDeletedTab && activeNavTab !== 'COMPLETED' && (
         <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in shadow-xs">
           <div className="flex items-center gap-3.5">
             <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-900 flex items-center justify-center shrink-0 border border-amber-500/30">
@@ -1262,24 +1421,11 @@ export default function AdminBookings() {
       )}
 
       {/* ── 3. Search & Filter Toolbar ────────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-neutral-200/90 p-4 sm:p-5 shadow-xs space-y-3.5">
+      <div className="bg-white rounded-2xl border border-neutral-200/90 p-4 sm:p-5 shadow-xs">
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
           
-          {/* Booking Queue Dropdown (Replaces horizontal tab strip) */}
-          <div className="sm:col-span-3">
-            <CustomDropdown
-              value={activeNavTab}
-              onChange={handleNavTabClick}
-              options={queueDropdownOptions}
-              placeholder="Booking Queue"
-              icon={Layers}
-              className="w-full"
-              popoverWidth="w-64"
-            />
-          </div>
-
           {/* Search Bar with Quick QR Scanner Trigger */}
-          <div className="sm:col-span-3 relative">
+          <div className="sm:col-span-6 relative">
             <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
             <input
               type="text"
@@ -1311,7 +1457,7 @@ export default function AdminBookings() {
           </div>
 
           {/* Status Dropdown */}
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-3">
             <CustomDropdown
               value={statusFilter}
               onChange={val => { setStatus(val); setPage(1); }}
@@ -1323,7 +1469,7 @@ export default function AdminBookings() {
           </div>
 
           {/* Payment Dropdown */}
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-3">
             <CustomDropdown
               value={paymentFilter}
               onChange={val => { setPayment(val); setPage(1); }}
@@ -1334,57 +1480,7 @@ export default function AdminBookings() {
             />
           </div>
 
-          {/* Sort Dropdown */}
-          <div className="sm:col-span-2">
-            <CustomDropdown
-              value={sortBy}
-              onChange={val => { setSortBy(val); setPage(1); }}
-              options={sortDropdownOptions}
-              placeholder="Sort By"
-              className="w-full"
-              popoverWidth="w-52"
-            />
-          </div>
-
         </div>
-
-        {/* Active Filter Chips */}
-        {(statusFilter || paymentFilter || search || activeNavTab !== 'ALL') && (
-          <div className="flex items-center gap-2 pt-2.5 border-t border-neutral-100 flex-wrap text-xs">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Active Filters:</span>
-            {activeNavTab !== 'ALL' && (
-              <span className="inline-flex items-center gap-1 bg-primary text-white text-xs font-semibold px-2.5 py-0.5 rounded-full">
-                Queue: {queueDropdownOptions.find(q => q.value === activeNavTab)?.label || activeNavTab}
-                <X size={11} className="cursor-pointer" onClick={() => handleNavTabClick('ALL')} />
-              </span>
-            )}
-            {statusFilter && (
-              <span className="inline-flex items-center gap-1 bg-gold/10 text-gold-dark text-xs font-semibold px-2.5 py-0.5 rounded-full border border-gold/25">
-                Status: {statusFilter}
-                <X size={11} className="cursor-pointer" onClick={() => { setStatus(''); setPage(1); }} />
-              </span>
-            )}
-            {paymentFilter && (
-              <span className="inline-flex items-center gap-1 bg-neutral-100 text-neutral-700 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-neutral-200">
-                Payment: {paymentFilter}
-                <X size={11} className="cursor-pointer" onClick={() => { setPayment(''); setPage(1); }} />
-              </span>
-            )}
-            {search && (
-              <span className="inline-flex items-center gap-1 bg-neutral-100 text-neutral-700 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-neutral-200">
-                "{search}"
-                <X size={11} className="cursor-pointer" onClick={() => { setSearch(''); setLiveSearch(''); setPage(1); }} />
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="text-xs text-neutral-400 hover:text-primary underline ml-auto cursor-pointer"
-            >
-              Reset Filters
-            </button>
-          </div>
-        )}
       </div>
 
       {/* ── 5. Main Bookings Table (Active vs Deleted) ──────────────────── */}
@@ -1408,33 +1504,20 @@ export default function AdminBookings() {
                   </div>
                 </th>
                 <th className="px-5 sm:px-6 py-3.5 sm:py-4">Status</th>
-                <th className="px-5 sm:px-6 py-3.5 sm:py-4">Payment</th>
-                {isDeletedTab ? (
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4 hidden xl:table-cell">Deleted At & Reason</th>
-                ) : (
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4 hidden xl:table-cell">Photographer</th>
-                )}
-                <th className="px-5 sm:px-6 py-3.5 sm:py-4 hidden sm:table-cell">
-                  <div className="flex items-center gap-1.5 cursor-pointer select-none" onClick={() => { setSortBy('created_at'); setSortAsc(!sortAsc); }}>
-                    <span>Created</span>
-                    <ArrowUpDown size={12} className="text-neutral-400" />
-                  </div>
-                </th>
-                <th className="px-5 sm:px-6 py-3.5 sm:py-4 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
               {loading ? (
                 [...Array(5)].map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    <td colSpan={9} className="px-5 sm:px-6 py-5">
+                    <td colSpan={5} className="px-5 sm:px-6 py-5">
                       <div className="h-6 bg-neutral-100 rounded-lg w-full" />
                     </td>
                   </tr>
                 ))
               ) : bookings.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-16 text-center">
+                  <td colSpan={5} className="py-16 text-center">
                     {isDeletedTab ? (
                       <>
                         <Trash2 size={34} className="mx-auto text-neutral-300 mb-2.5" />
@@ -1453,28 +1536,30 @@ export default function AdminBookings() {
               ) : (
                 bookings.map((b) => {
                   const cust = b.customer;
-                  const ph = b.photographer?.profile;
                   const sizeBadge = getCustomerSize(cust, b);
 
                   return (
                     <tr
                       key={b.id}
-                      onClick={() => navigate(`/admin/bookings/${b.id}`)}
-                      title="Click directly to open full record page"
+                      onClick={() => setInspectingBooking(b)}
+                      title="Click to view details"
                       className={`transition-colors ${isDeletedTab ? 'bg-neutral-50/40 hover:bg-neutral-100/50' : 'hover:bg-gold/8'} cursor-pointer group`}
                     >
                       {/* Booking # & ID */}
                       <td className="px-5 sm:px-6 py-4 sm:py-4.5">
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5">
-                            <Link
-                              to={`/admin/bookings/${b.id}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="font-mono text-xs sm:text-sm font-bold text-gold hover:text-primary hover:underline transition-colors"
-                              title="Go to full record page"
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setInspectingBooking(b);
+                              }}
+                              className="font-mono text-xs sm:text-sm font-bold text-gold hover:text-primary hover:underline transition-colors text-left cursor-pointer"
+                              title="Inspect booking details"
                             >
                               {b.booking_number}
-                            </Link>
+                            </button>
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1501,14 +1586,17 @@ export default function AdminBookings() {
                       <td className="px-5 sm:px-6 py-4 sm:py-4.5">
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <Link
-                              to={`/admin/bookings/${b.id}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="font-semibold text-neutral-900 text-sm sm:text-base hover:text-gold transition-colors"
-                              title="Go to customer full record page"
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setInspectingBooking(b);
+                              }}
+                              className="font-semibold text-neutral-900 text-sm sm:text-base hover:text-gold transition-colors text-left cursor-pointer"
+                              title="Inspect customer details"
                             >
                               {cust ? `${cust.first_name} ${cust.last_name}` : '—'}
-                            </Link>
+                            </button>
                             {sizeBadge && (
                               <span className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 border border-neutral-200">
                                 {sizeBadge}
@@ -1565,7 +1653,7 @@ export default function AdminBookings() {
                         </div>
                       </td>
 
-                      {/* Status Column (Lifecycle only, no redundant payment badge) */}
+                      {/* Status Column */}
                       <td className="px-5 sm:px-6 py-4 sm:py-4.5">
                         <BookingLifecycleBadge
                           status={b.status}
@@ -1574,119 +1662,7 @@ export default function AdminBookings() {
                         />
                       </td>
 
-                      {/* Payment Column */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5">
-                        <BookingLifecycleBadge
-                          paymentStatus={b.payment_status}
-                          showStatus={false}
-                          showPayment={true}
-                        />
-                      </td>
 
-                      {/* Photographer or Deletion Details */}
-                      {isDeletedTab ? (
-                        <td className="px-5 sm:px-6 py-4 sm:py-4.5 hidden xl:table-cell text-xs">
-                          <div className="space-y-0.5">
-                            <p className="text-neutral-700 font-medium text-xs">
-                              {fmtDate(b.deleted_at)}
-                            </p>
-                            <p className="text-neutral-400 text-[11px] italic truncate max-w-[180px]">
-                              {b.deletion_reason || 'Archived'}
-                            </p>
-                          </div>
-                        </td>
-                      ) : (
-                        <td className="px-5 sm:px-6 py-4 sm:py-4.5 hidden xl:table-cell text-xs sm:text-sm">
-                          {ph ? (
-                            <div className="flex items-center gap-1.5">
-                              <Camera size={13} className="text-gold-dark shrink-0" />
-                              <span className="font-medium text-neutral-800 truncate max-w-[140px]">
-                                {ph.first_name} {ph.last_name}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-neutral-400 italic">Unassigned</span>
-                          )}
-                        </td>
-                      )}
-
-                      {/* Created */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 hidden sm:table-cell text-xs sm:text-sm text-neutral-400">
-                        {fmtDate(b.created_at)}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                        {isDeletedTab ? (
-                          <div className="inline-flex items-center gap-1.5 justify-end">
-                            {/* View Button */}
-                            <Link
-                              to={`/admin/bookings/${b.id}`}
-                              className="h-8 px-2.5 bg-white hover:bg-neutral-50 text-neutral-700 hover:text-primary border border-neutral-200 rounded-xl text-xs font-semibold transition-all shadow-2xs inline-flex items-center gap-1.5"
-                              title="Open full record page"
-                            >
-                              <span>View</span>
-                              <ExternalLink size={12} className="text-neutral-400" />
-                            </Link>
-
-                            {/* Recover / Restore Button */}
-                            <button
-                              type="button"
-                              onClick={() => handleRestoreBooking(b)}
-                              className="h-8 px-2.5 bg-neutral-900 hover:bg-neutral-800 text-gold text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-2xs border border-gold/30 transition-all cursor-pointer"
-                              title="Recover booking back to active queue"
-                            >
-                              <RotateCcw size={13} />
-                              <span>Recover</span>
-                            </button>
-
-                            {/* Permanently Delete Purge Button */}
-                            <button
-                              type="button"
-                              onClick={() => setBookingToPermanentlyPurge(b)}
-                              className="w-8 h-8 rounded-xl flex items-center justify-center text-neutral-400 hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
-                              title="Permanently Delete (Purge)"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="inline-flex items-center gap-1.5 justify-end">
-                            {/* View Full Record Button */}
-                            <Link
-                              to={`/admin/bookings/${b.id}`}
-                              className="h-8 px-2.5 bg-white hover:bg-neutral-50 text-neutral-700 hover:text-primary border border-neutral-200 rounded-xl text-xs font-semibold transition-all shadow-2xs inline-flex items-center gap-1.5 group/btn"
-                              title="Open full customer booking record page"
-                            >
-                              <span>View</span>
-                              <ExternalLink size={12} className="text-gold group-hover/btn:translate-x-0.5 transition-transform" />
-                            </Link>
-
-                            {/* Edit Details */}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditModal(b)}
-                              className="w-8 h-8 rounded-xl flex items-center justify-center text-neutral-400 hover:text-primary hover:bg-neutral-100 transition-colors cursor-pointer"
-                              title="Edit Details"
-                            >
-                              <Edit3 size={15} />
-                            </button>
-
-                            {/* Soft Delete (Move to Trash) */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setBookingToDelete(b);
-                                setDeleteReason('');
-                              }}
-                              className="w-8 h-8 rounded-xl flex items-center justify-center text-neutral-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                              title="Move to Trash"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-                        )}
-                      </td>
                     </tr>
                   );
                 })
@@ -2523,31 +2499,31 @@ export default function AdminBookings() {
               <div>
                 <h3 className="font-heading text-lg font-bold text-primary">Move Booking to Trash</h3>
                 <p className="text-xs text-neutral-500 font-body mt-1">
-                  Booking <strong className="text-primary font-bold">#{bookingToDelete.booking_number}</strong> ({bookingToDelete.customer?.first_name || 'Client'}) will be moved to the <strong className="text-primary">Deleted</strong> tab.
+                  Booking <strong className="text-primary font-bold">#{bookingToDelete.booking_number}</strong> ({bookingToDelete.customer?.first_name || 'Client'}) will be cancelled and moved to the <strong className="text-rose-600 font-semibold">Trash Cycle</strong>.
                 </p>
               </div>
             </div>
 
             <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-xs text-neutral-700 space-y-1 font-body">
               <p className="font-bold flex items-center gap-1.5 text-primary">
-                <RotateCcw size={13} className="text-gold-dark" /> Reversible Soft Deletion:
+                <Bell size={13} className="text-gold-dark" /> Customer Notification & Trash Cycle:
               </p>
               <ul className="list-disc list-inside text-[11px] text-neutral-600 space-y-0.5 ml-1">
-                <li>Booking will disappear from active operational views</li>
-                <li>Preserves booking record and ID completely</li>
-                <li>Can be restored back to active queue anytime from Deleted tab</li>
+                <li>Booking will be cleared from active records and customer dashboard</li>
+                <li>Customer will receive an immediate notification that their order was removed</li>
+                <li>Order can be reviewed, restored, or permanently cleared out anytime from the Trash Cycle</li>
               </ul>
             </div>
 
             <div>
               <label className="block text-xs font-bold text-primary mb-1">
-                Reason for Archiving (Optional)
+                Reason for Removal / Cancellation (Optional)
               </label>
               <input
                 type="text"
                 value={deleteReason}
                 onChange={e => setDeleteReason(e.target.value)}
-                placeholder="e.g. Client cancelled, duplicate entry, schedule changed"
+                placeholder="e.g. Client requested cancellation, duplicate order, schedule expired"
                 className="w-full px-3.5 py-2 text-xs font-body border border-neutral-200 rounded-xl outline-none focus:border-gold"
               />
             </div>
@@ -2599,21 +2575,21 @@ export default function AdminBookings() {
                 <ShieldAlert size={20} />
               </div>
               <div>
-                <h3 className="font-heading text-lg font-bold text-primary">Permanently Purge Record</h3>
+                <h3 className="font-heading text-lg font-bold text-primary">Permanently Clear Out Order</h3>
                 <p className="text-xs text-neutral-500 font-body mt-1">
-                  This will permanently delete booking <strong className="text-primary font-bold">#{bookingToPermanentlyPurge.booking_number}</strong> from all database tables. This action cannot be undone.
+                  This will permanently delete booking <strong className="text-primary font-bold">#{bookingToPermanentlyPurge.booking_number}</strong> directly from the database. This action cannot be undone.
                 </p>
               </div>
             </div>
 
             <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-xs text-neutral-700 space-y-1 font-body">
               <p className="font-bold flex items-center gap-1.5 text-primary">
-                <AlertCircle size={13} className="text-neutral-500" /> Irreversible Purge:
+                <AlertCircle size={13} className="text-neutral-500" /> Irreversible Database Wipe:
               </p>
               <ul className="list-disc list-inside text-[11px] text-neutral-600 space-y-0.5 ml-1">
-                <li>Permanently removes booking and ID from Supabase</li>
-                <li>Cascades dependent logs, outputs, and status history</li>
-                <li>Records deletion metadata in system activity logs</li>
+                <li>Permanently removes booking and ID from Supabase tables</li>
+                <li>Cascades dependent payments, logs, outputs, and status history</li>
+                <li>Records deletion audit in system activity logs</li>
               </ul>
             </div>
 
@@ -2635,12 +2611,77 @@ export default function AdminBookings() {
                 {isDeleting ? (
                   <>
                     <RefreshCw size={13} className="animate-spin text-gold" />
-                    Purging...
+                    Clearing Out...
                   </>
                 ) : (
                   <>
                     <Trash2 size={13} />
-                    Permanently Purge
+                    Directly Clear Out
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 9.1. Empty Entire Trash Confirmation Modal ───────────────── */}
+      {isEmptyTrashModalOpen && (
+        <div 
+          className="fixed inset-0 z-50 bg-neutral-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => !isEmptyingTrash && setIsEmptyTrashModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-neutral-200"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 border border-rose-200">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 className="font-heading text-lg font-bold text-primary">Empty Entire Trash Cycle</h3>
+                <p className="text-xs text-neutral-500 font-body mt-1">
+                  Are you sure you want to permanently delete all <strong className="text-rose-600 font-bold">{counts.deleted} orders</strong> currently in the trash cycle?
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-xs text-neutral-700 space-y-1 font-body">
+              <p className="font-bold flex items-center gap-1.5 text-rose-700">
+                <AlertCircle size={13} /> Irreversible Bulk Purge:
+              </p>
+              <ul className="list-disc list-inside text-[11px] text-neutral-600 space-y-0.5 ml-1">
+                <li>All {counts.deleted} soft-deleted records will be wiped directly from the database</li>
+                <li>Associated payments, outputs, deliveries, and scans will be cleaned up</li>
+                <li>This action CANNOT be undone</li>
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-neutral-100">
+              <button
+                type="button"
+                disabled={isEmptyingTrash}
+                onClick={() => setIsEmptyTrashModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl border border-neutral-200 text-neutral-600 hover:bg-neutral-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isEmptyingTrash}
+                onClick={handleEmptyTrash}
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                {isEmptyingTrash ? (
+                  <>
+                    <RefreshCw size={13} className="animate-spin" />
+                    Emptying Trash...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={13} />
+                    Permanently Empty Trash
                   </>
                 )}
               </button>
@@ -3106,6 +3147,12 @@ export default function AdminBookings() {
         onStatusUpdated={() => {
           fetchBookings();
           fetchCounts();
+        }}
+        onRestore={(b) => handleRestoreBooking(b)}
+        onEdit={(b) => handleOpenEditModal(b)}
+        onDelete={(b) => {
+          setBookingToDelete(b);
+          setDeleteReason('');
         }}
       />
 

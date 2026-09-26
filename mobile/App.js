@@ -29,46 +29,73 @@ import {
 
 import AppNavigator from './src/navigation/AppNavigator';
 import TutorialScreen from './src/screens/TutorialScreen';
-import { Colors, Typography } from './src/theme';
+import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+import { Typography } from './src/theme';
 
 // Keep splash visible until fonts and storage are ready
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-// ── Navigation Theme ──────────────────────────────────────────────────────────
+function AppContent({ showTutorial, setShowTutorial, initialRoute, setInitialRoute }) {
+  const { isDark, colors } = useTheme();
 
-const APP_THEME = {
-  ...DefaultTheme,
-  dark: true,
-  colors: {
-    ...DefaultTheme.colors,
-    primary:      Colors.gold.DEFAULT,
-    background:   Colors.bg.base,
-    card:         Colors.bg.surface,
-    text:         Colors.text.primary,
-    border:       Colors.gold.border,
-    notification: Colors.gold.DEFAULT,
-  },
-  fonts: {
-    regular: {
-      fontFamily: Typography.fontBody,
-      fontWeight: '400',
+  const appNavTheme = {
+    ...DefaultTheme,
+    dark: isDark,
+    colors: {
+      ...DefaultTheme.colors,
+      primary:      colors.gold.DEFAULT,
+      background:   colors.bg.base,
+      card:         colors.bg.surface,
+      text:         colors.text.primary,
+      border:       colors.gold.border,
+      notification: colors.gold.DEFAULT,
     },
-    medium: {
-      fontFamily: Typography.fontBodyMedium,
-      fontWeight: '500',
+    fonts: {
+      regular: {
+        fontFamily: Typography.fontBody,
+        fontWeight: '400',
+      },
+      medium: {
+        fontFamily: Typography.fontBodyMedium,
+        fontWeight: '500',
+      },
+      bold: {
+        fontFamily: Typography.fontHeadingSemi,
+        fontWeight: '600',
+      },
+      heavy: {
+        fontFamily: Typography.fontHeading,
+        fontWeight: '700',
+      },
     },
-    bold: {
-      fontFamily: Typography.fontHeadingSemi,
-      fontWeight: '600',
-    },
-    heavy: {
-      fontFamily: Typography.fontHeading,
-      fontWeight: '700',
-    },
-  },
-};
+  };
 
-// ── App ────────────────────────────────────────────────────────────────────────
+  return (
+    <>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.bg.base}
+      />
+      {showTutorial ? (
+        <TutorialScreen
+          onComplete={async (role) => {
+            await AsyncStorage.setItem('ekodak:tutorial_done', '1');
+            if (role === 'photographer') {
+              setInitialRoute('PhotographerLogin');
+            } else {
+              setInitialRoute('Main');
+            }
+            setShowTutorial(false);
+          }}
+        />
+      ) : (
+        <NavigationContainer theme={appNavTheme}>
+          <AppNavigator initialRouteName={initialRoute} />
+        </NavigationContainer>
+      )}
+    </>
+  );
+}
 
 export default function App() {
   const [appReady, setAppReady]         = useState(false);
@@ -90,7 +117,14 @@ export default function App() {
     async function prepare() {
       try {
         const hasSeenTutorial = await AsyncStorage.getItem('ekodak:tutorial_done');
-        setShowTutorial(!hasSeenTutorial);
+        const savedRole = await AsyncStorage.getItem('ekodak:user_role');
+        
+        if (!hasSeenTutorial || !savedRole) {
+          setShowTutorial(true);
+        } else {
+          setShowTutorial(false);
+          setInitialRoute(savedRole === 'photographer' ? 'PhotographerLogin' : 'Main');
+        }
       } catch {
         setShowTutorial(false);
       } finally {
@@ -98,46 +132,39 @@ export default function App() {
       }
     }
     prepare();
+
+    // Safety fallback: Never allow splash screen to hang indefinitely
+    const fallbackTimer = setTimeout(() => {
+      SplashScreen.hideAsync().catch(() => {});
+    }, 2000);
+
+    return () => clearTimeout(fallbackTimer);
   }, []);
 
   const isReady = (fontsLoaded || fontError) && appReady;
 
-  const onLayoutRootView = useCallback(async () => {
+  // Immediately hide splash screen once ready
+  useEffect(() => {
     if (isReady) {
-      try {
-        await SplashScreen.hideAsync();
-      } catch {}
+      SplashScreen.hideAsync().catch(() => {});
     }
   }, [isReady]);
 
-  if (!isReady) return null;
-
-  if (showTutorial) {
-    return (
-      <SafeAreaProvider>
-        <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
-        <TutorialScreen
-          onComplete={async (role) => {
-            await AsyncStorage.setItem('ekodak:tutorial_done', '1');
-            if (role === 'photographer') {
-              setInitialRoute('PhotographerLogin');
-            } else {
-              setInitialRoute('Main');
-            }
-            setShowTutorial(false);
-          }}
-        />
-      </SafeAreaProvider>
-    );
+  if (!isReady) {
+    return null;
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }} onLayout={onLayoutRootView}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StatusBar barStyle="light-content" backgroundColor={Colors.bg.base} />
-        <NavigationContainer theme={APP_THEME}>
-          <AppNavigator initialRouteName={initialRoute} />
-        </NavigationContainer>
+        <ThemeProvider>
+          <AppContent
+            showTutorial={showTutorial}
+            setShowTutorial={setShowTutorial}
+            initialRoute={initialRoute}
+            setInitialRoute={setInitialRoute}
+          />
+        </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

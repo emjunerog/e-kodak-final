@@ -138,7 +138,7 @@ export function generateSystematicNotifications(bookings = [], user = null) {
           booking: { id: b.id, booking_number: bNumber },
           notification_type: 'payment_required',
           title: `Reservation Downpayment Pending: #${bNumber}`,
-          message: `A 50% reservation downpayment of ₱${downRequired.toLocaleString()} is required for ${sName} to lock in your studio bay and photographer schedule.`,
+          message: `Your photoshoot slot is reserved! Please settle your 50% downpayment of ₱${downRequired.toLocaleString()} within 2 to 12 hours via Billing & Payments to confirm your schedule.`,
           created_at: b.created_at || new Date().toISOString(),
           is_read: readIds.includes(payDueId),
           category: 'PAYMENTS',

@@ -16,7 +16,8 @@
 // Colors: primary (#1a1a1a), gold (#c9a96e), neutral
 // Tier mapping: primary = active/in-progress, gold = attention/pending, neutral = complete/idle
 const STATUS_META = {
-  PENDING:              { tier: 'gold',   badge: 'bg-gold/10 text-gold-dark border-gold/30',    label: 'Pending Review' },
+  PENDING:              { tier: 'gold',   badge: 'bg-gold/10 text-gold-dark border-gold/30',    label: 'Slot Reserved' },
+  RESERVED:             { tier: 'gold',   badge: 'bg-amber-500/15 text-amber-900 border-amber-500/30', label: 'Slot Reserved' },
   CONFIRMED:            { tier: 'primary', badge: 'bg-primary/10 text-primary border-primary/30',  label: 'Confirmed' },
   PHOTOGRAPHER_ASSIGNED:{ tier: 'primary', badge: 'bg-primary/10 text-primary border-primary/30',  label: 'Photographer Assigned' },
   CAPTURE:              { tier: 'gold',   badge: 'bg-gold/10 text-gold-dark border-gold/30',      label: 'In Studio Bay' },
