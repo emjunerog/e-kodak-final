@@ -14,6 +14,26 @@
 - **Role-Based Access Control**: Granular Row Level Security (RLS) in PostgreSQL protecting client profiles, bookings, photographer schedules, and administrative logs.
 - **Automated Notifications**: Supabase Edge Functions with SMTP / email dispatch for booking confirmations, reminders, and status updates.
 
+### 📅 Photographer Scheduling — Feature Roadmap
+
+**A. Smart scheduling calendar**
+- ✅ Show each date's status: available, off-duty, partial, fully booked (3+ shoots), or conflict.
+- ✅ Display scheduled photo sessions directly inside each date.
+- ✅ Click a date to see session times, package/tier, venue, customer, and team coverage.
+- ✅ Labeled color indicators in the legend + full status tooltips on every cell.
+
+**B. AI scheduling assistant**
+- ✅ Reads existing bookings, conflicts, workload, and team availability for context.
+- ✅ Recommends valid time slots (AI reschedule modal with match scores).
+- ✅ Explains why a date or time is unsuitable (conflict reasons, off-duty, out-of-hours).
+- ✅ Requests confirmation before applying any reschedule.
+
+**C. Schedule overview and workload**
+- ✅ Assigned shoots, remaining bookable days, busiest/overloaded day, venue usage, and open-teammate count.
+- ✅ Detected conflicts and unresolved availability surfaced in the stats bar.
+- ✅ Post-AI summary confirms the final schedule after recommendations are applied.
+- ⬜ Per-photographer overload and studio-bay tracking (needs a `studio_bays` table + booking bay assignment — none exist in the schema yet).
+
 ---
 
 ## 🛠️ Tech Stack

@@ -72,7 +72,6 @@ export const AuthProvider = ({ children }) => {
             first_name: authUser?.user_metadata?.first_name || '',
             last_name: authUser?.user_metadata?.last_name || '',
             role: authUser?.user_metadata?.role || 'customer',
-            badges: [],
             studio_specs: {},
             created_at: new Date().toISOString()
           };

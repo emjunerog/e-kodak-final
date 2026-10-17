@@ -6,7 +6,12 @@ import {
   CalendarDays, 
   CalendarClock, 
   Layers, 
-  Upload 
+  Upload,
+  Search,
+  X,
+  CheckCircle2,
+  Clock,
+  RefreshCw
 } from 'lucide-react';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import { 
@@ -28,6 +33,7 @@ export default function PhotographerUploads() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [searchQueue, setSearchQueue] = useState('');
 
   const [outputs, setOutputs] = useState([]);
   const [loadingOutputs, setLoadingOutputs] = useState(false);
@@ -230,6 +236,18 @@ export default function PhotographerUploads() {
     return requiredSets.filter(s => s.id === selectedSetFilter || s.name === selectedSetFilter);
   }, [requiredSets, selectedSetFilter]);
 
+  const filteredBookings = useMemo(() => {
+    if (!searchQueue.trim()) return bookings;
+    const q = searchQueue.toLowerCase();
+    return bookings.filter(b => 
+      b.booking_number?.toLowerCase().includes(q) ||
+      b.customer?.first_name?.toLowerCase().includes(q) ||
+      b.customer?.last_name?.toLowerCase().includes(q) ||
+      b.service?.name?.toLowerCase().includes(q) ||
+      b.tier_name?.toLowerCase().includes(q)
+    );
+  }, [bookings, searchQueue]);
+
   const displayName = profile?.first_name
     ? `${profile.first_name}`
     : user?.email?.split('@')[0] || 'Photographer';
@@ -239,7 +257,7 @@ export default function PhotographerUploads() {
     : `${bookings.length} assigned shoot${bookings.length !== 1 ? 's' : ''} · ${selectedBooking ? `#${selectedBooking.booking_number}` : 'No session selected'}`;
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-7xl mx-auto">
+    <div className="w-full pb-16 animate-fade-in font-body">
       {toast && <Toast type={toast.type} message={toast.message} onDismiss={() => setToast(null)} />}
 
       {/* Hidden File Input Trigger */}
@@ -293,397 +311,496 @@ export default function PhotographerUploads() {
         ]}
       />
 
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* Left Column: Assigned Bookings List */}
-        <div className="w-full lg:w-1/3 space-y-3">
-          <div className="flex items-center justify-between px-1">
-            <p className="text-xs font-bold text-neutral-500 uppercase tracking-wider font-body flex items-center gap-1.5">
-              <i className="bi bi-calendar2-check text-gold"></i>
-              Assigned Shoots ({bookings.length})
-            </p>
-          </div>
+      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
 
-          {loading ? (
-            <div className="py-16 text-center glass-card rounded-2xl bg-white border border-neutral-200">
-              <i className="bi bi-arrow-repeat animate-spin text-2xl text-gold mx-auto mb-2 block"></i>
-              <p className="text-xs text-neutral-500 font-body">Loading assigned bookings…</p>
-            </div>
-          ) : bookings.length === 0 ? (
-            <div className="p-8 text-center glass-card rounded-2xl bg-white border border-dashed border-neutral-200">
-              <i className="bi bi-camera text-3xl text-neutral-300 mb-2 block"></i>
-              <p className="text-xs text-neutral-500 font-body font-medium">No assigned shoots found.</p>
-            </div>
-          ) : (
-            <div className="space-y-2.5 max-h-[640px] overflow-y-auto pr-1">
-              {bookings.map(booking => {
-                const isSelected = selectedBooking?.id === booking.id;
-                const bSets = getRequiredSetsForBooking(booking);
-                return (
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+        {/* ── Left Column: Assigned Bookings Station Box ─────────────────────── */}
+        <div className="lg:col-span-4 xl:col-span-4 flex flex-col">
+          <div className="rounded-3xl bg-white border border-neutral-200/90 shadow-xs overflow-hidden flex flex-col h-full min-h-[580px]">
+            {/* Station Header */}
+            <div className="p-4 sm:p-5 border-b border-neutral-100 bg-neutral-50/50 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-heading text-base font-bold text-neutral-900 leading-tight">
+                    Assigned Shoots
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-white text-neutral-700 border border-neutral-200/90 shadow-2xs">
+                    {bookings.length}
+                  </span>
+                </div>
+                {selectedBooking && (
                   <button
-                    key={booking.id}
-                    onClick={() => handleSelectBooking(booking)}
-                    className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer select-none ${
-                      isSelected
-                        ? 'bg-primary text-white border-primary shadow-md'
-                        : 'bg-white border-neutral-200/90 hover:border-gold/60 text-primary shadow-2xs'
-                    }`}
+                    type="button"
+                    onClick={() => setSelectedBooking(null)}
+                    className="text-[11px] font-bold text-gold hover:text-gold-dark transition-colors cursor-pointer"
                   >
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <span className="font-body text-xs font-bold text-gold flex items-center gap-1">
-                        <i className="bi bi-hash"></i>
-                        {booking.booking_number}
-                      </span>
-                      <span className={`text-[11px] font-body ${isSelected ? 'text-white/70' : 'text-neutral-400'}`}>
-                        <i className="bi bi-calendar3 me-1"></i>
-                        {booking.event_date || 'Date TBD'}
-                      </span>
-                    </div>
-
-                    <p className={`font-heading text-base font-bold truncate ${isSelected ? 'text-white' : 'text-primary'}`}>
-                      {booking.service?.name || 'Photoshoot'}
-                    </p>
-
-                    <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-white/10">
-                      <p className={`text-xs font-body truncate ${isSelected ? 'text-white/80' : 'text-neutral-600'}`}>
-                        <i className="bi bi-person me-1"></i>
-                        {booking.customer?.first_name} {booking.customer?.last_name}
-                      </p>
-
-                      <div className="flex items-center gap-1.5">
-                        {booking.tier_name && (
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                            isSelected ? 'bg-gold/20 text-gold border border-gold/40' : 'bg-neutral-100 text-neutral-800'
-                          }`}>
-                            {booking.tier_name}
-                          </span>
-                        )}
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                          isSelected 
-                            ? 'bg-white/20 text-white' 
-                            : booking.status === 'EDITING'
-                              ? 'bg-amber-100 text-amber-800'
-                              : ['PRINTING', 'READY'].includes(booking.status)
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-neutral-100 text-neutral-700'
-                        }`}>
-                          {booking.status === 'EDITING' ? 'Under Review' : booking.status || 'Active'}
-                        </span>
-                      </div>
-                    </div>
+                    Clear selection
                   </button>
-                );
-              })}
+                )}
+              </div>
+
+              {/* Quick Queue Filter Input */}
+              {bookings.length > 0 && (
+                <div className="relative w-full">
+                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+                  <input
+                    type="text"
+                    placeholder="Search assigned queue…"
+                    value={searchQueue}
+                    onChange={(e) => setSearchQueue(e.target.value)}
+                    className="w-full pl-8 pr-7 py-1.5 bg-white border border-neutral-200/90 rounded-xl text-xs font-body focus:ring-2 focus:ring-gold/20 focus:border-gold outline-none transition-all shadow-2xs"
+                  />
+                  {searchQueue && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQueue('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 p-0.5"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Station Body */}
+            <div className="flex-1 flex flex-col p-4 sm:p-5 overflow-hidden">
+              {loading ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-gold/10 flex items-center justify-center text-gold mb-3 animate-spin">
+                    <RefreshCw size={20} />
+                  </div>
+                  <p className="text-xs text-neutral-500 font-body">Loading assigned bookings…</p>
+                </div>
+              ) : bookings.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center max-w-xs mx-auto">
+                  <div className="w-14 h-14 rounded-2xl bg-gold/10 ring-6 ring-gold/5 flex items-center justify-center text-gold mb-3.5 shadow-2xs">
+                    <Camera size={26} />
+                  </div>
+                  <h4 className="font-heading text-base font-bold text-neutral-900">
+                    No Assigned Shoots
+                  </h4>
+                  <p className="text-xs text-neutral-500 mt-1.5 leading-relaxed font-body">
+                    There are currently no photoshoot orders assigned to your bay. New bookings will appear here once scheduled.
+                  </p>
+                </div>
+              ) : filteredBookings.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+                  <p className="text-xs text-neutral-500 font-body">No shoots matched "{searchQueue}"</p>
+                  <button
+                    type="button"
+                    onClick={() => setSearchQueue('')}
+                    className="mt-2 text-xs font-bold text-gold hover:text-gold-dark cursor-pointer"
+                  >
+                    Clear search
+                  </button>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+                  {filteredBookings.map(booking => {
+                    const isSelected = selectedBooking?.id === booking.id;
+                    return (
+                      <button
+                        key={booking.id}
+                        type="button"
+                        onClick={() => handleSelectBooking(booking)}
+                        className={`w-full text-left p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer select-none ${
+                          isSelected
+                            ? 'bg-neutral-900 text-white border-neutral-900 shadow-sm ring-2 ring-gold/25'
+                            : 'bg-white border-neutral-200/90 hover:border-gold/60 text-neutral-900 shadow-2xs hover:bg-neutral-50/50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <span className="font-body text-xs font-bold text-gold flex items-center gap-1 font-mono">
+                            #{booking.booking_number}
+                          </span>
+                          <span className={`text-[11px] font-body flex items-center gap-1 ${isSelected ? 'text-neutral-300' : 'text-neutral-400'}`}>
+                            <CalendarDays size={11} />
+                            {booking.event_date || 'Date TBD'}
+                          </span>
+                        </div>
+
+                        <p className={`font-heading text-sm sm:text-base font-bold truncate ${isSelected ? 'text-white' : 'text-neutral-900'}`}>
+                          {booking.service?.name || 'Photoshoot Session'}
+                        </p>
+
+                        <div className={`flex items-center justify-between gap-2 mt-2 pt-2 border-t ${isSelected ? 'border-white/10' : 'border-neutral-100'}`}>
+                          <p className={`text-xs font-body truncate ${isSelected ? 'text-neutral-300' : 'text-neutral-600'}`}>
+                            {booking.customer?.first_name} {booking.customer?.last_name}
+                          </p>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {booking.tier_name && (
+                              <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+                                isSelected ? 'bg-gold/20 text-gold border border-gold/40' : 'bg-neutral-100 text-neutral-800'
+                              }`}>
+                                {booking.tier_name}
+                              </span>
+                            )}
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+                              isSelected 
+                                ? 'bg-white/20 text-white' 
+                                : booking.status === 'EDITING'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : ['PRINTING', 'READY'].includes(booking.status)
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-neutral-100 text-neutral-700'
+                            }`}>
+                              {booking.status === 'EDITING' ? 'Under Review' : booking.status || 'Active'}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Right Column: Order Sets & Single Photo Slot Uploads */}
-        <div className="w-full lg:w-2/3">
-          {!selectedBooking ? (
-            <div className="glass-card rounded-2xl bg-white border border-dashed border-neutral-200 p-16 text-center flex flex-col items-center justify-center min-h-[440px]">
-              <i className="bi bi-camera text-4xl text-neutral-300 mb-3 block"></i>
-              <h3 className="font-heading text-lg font-bold text-primary">No booking selected</h3>
-              <p className="text-xs text-neutral-400 font-body max-w-sm mt-1">
-                Select an assigned shoot from the left column to view order set requirements and upload photo samples.
-              </p>
-            </div>
-          ) : (
-            <div className="glass-card rounded-2xl bg-white border border-neutral-200/90 p-6 sm:p-7 shadow-xs space-y-6">
-              {/* Order Info & Status Strip */}
-              <div className="pb-5 border-b border-neutral-100 space-y-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
+        {/* ── Right Column: Output & Upload Workstation Box ───────────────────── */}
+        <div className="lg:col-span-8 xl:col-span-8 flex flex-col">
+          <div className="rounded-3xl bg-white border border-neutral-200/90 shadow-xs overflow-hidden flex flex-col h-full min-h-[580px]">
+            {!selectedBooking ? (
+              <>
+                {/* Integrated Header */}
+                <div className="p-4 sm:p-5 border-b border-neutral-100 bg-neutral-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-heading text-base font-bold text-neutral-900 leading-tight">
+                      Output Workstation
+                    </h3>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white text-neutral-600 border border-neutral-200 shadow-2xs">
+                      Awaiting Selection
+                    </span>
+                  </div>
+                </div>
+
+                {/* Equal-Height Balanced Empty State */}
+                <div className="flex-1 flex flex-col items-center justify-center p-8 sm:p-16 text-center max-w-md mx-auto">
+                  <div className="w-16 h-16 rounded-3xl bg-gold/10 ring-8 ring-gold/5 flex items-center justify-center text-gold mb-4 shadow-2xs">
+                    <Layers size={28} />
+                  </div>
+                  <h4 className="font-heading text-lg font-bold text-neutral-900">
+                    {bookings.length === 0 ? 'No Active Photoshoot Sessions' : 'No Booking Selected'}
+                  </h4>
+                  <p className="text-xs sm:text-sm text-neutral-500 mt-2 leading-relaxed font-body">
+                    {bookings.length === 0
+                      ? 'When photoshoot orders are assigned to your bay by studio administration, select a shoot from the left column to view order set requirements and upload photo samples.'
+                      : 'Select an assigned shoot from the left column to view order set requirements, upload photo sample looks, and submit completed sets to Admin.'}
+                  </p>
+                  {bookings.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectBooking(bookings[0])}
+                      className="mt-5 px-4 py-2.5 rounded-xl bg-neutral-900 hover:bg-black text-gold text-xs font-bold transition-all shadow-xs cursor-pointer inline-flex items-center gap-2"
+                    >
+                      <Camera size={14} />
+                      <span>Select First Shoot (#{bookings[0].booking_number})</span>
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Integrated Session Header */}
+                <div className="p-4 sm:p-5 border-b border-neutral-100 bg-neutral-50/50 flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-body text-xs font-bold text-gold bg-gold/10 px-2.5 py-1 rounded-md border border-gold/20">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-body text-xs font-bold text-gold bg-gold/10 px-2.5 py-1 rounded-lg border border-gold/20 font-mono">
                         #{selectedBooking.booking_number}
                       </span>
                       {selectedBooking.tier_name && (
-                        <span className="text-xs font-bold text-primary bg-neutral-100 px-2.5 py-1 rounded-md border border-neutral-200">
-                          <i className="bi bi-bag-check me-1 text-gold"></i>
+                        <span className="text-xs font-bold text-neutral-800 bg-white px-2.5 py-1 rounded-lg border border-neutral-200">
                           {selectedBooking.tier_name}
                         </span>
                       )}
+                      <h3 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 ml-1">
+                        {selectedBooking.service?.name || 'Photoshoot Session'}
+                      </h3>
                     </div>
-                    <h2 className="font-heading text-2xl text-primary font-bold mt-1.5">
-                      {selectedBooking.service?.name}
-                    </h2>
-                    <p className="text-xs text-neutral-500 font-body mt-1 flex items-center gap-3">
-                      <span><i className="bi bi-person me-1"></i> Client: <strong>{selectedBooking.customer?.first_name} {selectedBooking.customer?.last_name}</strong></span>
-                      <span>·</span>
-                      <span><i className="bi bi-calendar3 me-1"></i> Shoot Date: <strong>{selectedBooking.event_date || 'TBD'}</strong></span>
+                    <p className="text-xs text-neutral-500 font-body mt-1.5 flex items-center gap-3 flex-wrap">
+                      <span>Client: <strong className="text-neutral-800">{selectedBooking.customer?.first_name} {selectedBooking.customer?.last_name}</strong></span>
+                      <span>•</span>
+                      <span>Shoot Date: <strong className="text-neutral-800">{selectedBooking.event_date || 'TBD'}</strong></span>
                     </p>
                   </div>
 
-                  {/* Workflow Review Badge */}
+                  {/* Review Status Badge */}
                   <div>
                     {selectedBooking.status === 'EDITING' ? (
-                      <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 font-body">
-                        <i className="bi bi-clock-history text-amber-600"></i>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                        <Clock size={13} className="text-amber-600" />
                         Awaiting Admin Review
                       </span>
                     ) : ['PRINTING', 'READY', 'COMPLETED'].includes(selectedBooking.status) ? (
-                      <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 font-body">
-                        <i className="bi bi-check-circle-fill text-emerald-600"></i>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        <CheckCircle2 size={13} className="text-emerald-600" />
                         Admin Confirmed
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-neutral-100 text-neutral-700 border border-neutral-200 font-body">
-                        <i className="bi bi-camera text-neutral-500"></i>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white text-neutral-700 border border-neutral-200">
+                        <Camera size={13} className="text-gold" />
                         Studio Capture Stage
                       </span>
                     )}
                   </div>
                 </div>
 
-                {/* Sets Progress & Submit to Admin */}
-                <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-body">
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-neutral-700 flex items-center gap-1.5">
-                        <i className="bi bi-layers text-gold"></i>
-                        Sets Progress
-                      </span>
-                      <span className="font-bold text-neutral-900">
-                        {completedSetsCount} of {requiredSets.length} Completed
-                      </span>
-                    </div>
-                    <div className="w-full bg-neutral-200 rounded-full h-2 overflow-hidden">
-                      <div 
-                        className={`h-2 rounded-full transition-all duration-500 ${
-                          allRequiredSetsCompleted ? 'bg-emerald-600' : 'bg-gold'
-                        }`}
-                        style={{ width: `${requiredSets.length > 0 ? (completedSetsCount / requiredSets.length) * 100 : 0}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleSubmitToAdmin}
-                    disabled={submittingToAdmin || outputs.length === 0}
-                    className={`px-5 py-2.5 rounded-xl font-body text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer shrink-0 ${
-                      allRequiredSetsCompleted
-                        ? 'bg-gold hover:bg-gold-dark text-neutral-950 ring-2 ring-gold/40'
-                        : 'bg-neutral-900 hover:bg-neutral-800 text-white disabled:opacity-40'
-                    }`}
-                  >
-                    {submittingToAdmin ? (
-                      <i className="bi bi-arrow-repeat animate-spin"></i>
-                    ) : (
-                      <i className="bi bi-send-check text-sm"></i>
-                    )}
-                    <span>Submit to Admin</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Set Filtering & Add Extra Set Bar */}
-              <div className="flex items-center justify-between gap-3 flex-wrap font-body">
-                {/* Custom Styled Set Dropdown Filter */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1">
-                    <i className="bi bi-funnel text-gold"></i>
-                    View Set:
-                  </label>
-                  <select
-                    value={selectedSetFilter}
-                    onChange={(e) => setSelectedSetFilter(e.target.value)}
-                    className="px-3.5 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs sm:text-sm font-semibold text-neutral-800 focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold cursor-pointer"
-                  >
-                    <option value="ALL">All Sets ({requiredSets.length})</option>
-                    {requiredSets.map(s => {
-                      const isDone = !!setPhotoMap[s.name];
-                      return (
-                        <option key={s.id} value={s.id}>
-                          {isDone ? '✓ ' : '○ '} {s.name}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-
-                {/* Add Extra Set Trigger */}
-                <button
-                  type="button"
-                  onClick={() => setShowAddCustomSet(!showAddCustomSet)}
-                  className="px-3.5 py-2 text-xs font-semibold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-xl transition-all inline-flex items-center gap-1.5 cursor-pointer font-body"
-                >
-                  <i className="bi bi-plus-circle text-gold"></i>
-                  <span>Add Additional Set</span>
-                </button>
-              </div>
-
-              {/* Custom Set Creator Form */}
-              {showAddCustomSet && (
-                <form onSubmit={handleAddCustomSet} className="p-4 rounded-xl bg-neutral-50 border border-neutral-200 space-y-3 font-body">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-neutral-700">Add Extra Photo Set for this Order</span>
-                    <button 
-                      type="button" 
-                      onClick={() => setShowAddCustomSet(false)}
-                      className="text-xs text-neutral-400 hover:text-neutral-700"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      required
-                      value={newCustomSetName}
-                      onChange={(e) => setNewCustomSetName(e.target.value)}
-                      placeholder="e.g. Set 4: Creative Milestone, Full-Body Studio..."
-                      className="flex-1 px-3.5 py-2 bg-white border border-neutral-300 rounded-lg text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold"
-                    />
-                    <button
-                      type="submit"
-                      className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-neutral-800 transition-all cursor-pointer"
-                    >
-                      Add Set
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {/* Set Upload Slots Grid */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-wider font-body">
-                    Required Sets
-                  </h3>
-                </div>
-
-                {loadingOutputs ? (
-                  <div className="py-16 text-center">
-                    <i className="bi bi-arrow-repeat animate-spin text-2xl text-gold mx-auto mb-2 block"></i>
-                    <p className="text-xs text-neutral-400 font-body">Loading slots…</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {displayedSets.map((s, index) => {
-                      const photo = setPhotoMap[s.name];
-                      const isCompleted = !!photo;
-
-                      return (
-                        <div
-                          key={s.id || index}
-                          className={`rounded-2xl border p-4 sm:p-5 flex flex-col justify-between transition-all ${
-                            isCompleted
-                              ? 'bg-white border-emerald-200/90 shadow-2xs ring-1 ring-emerald-500/10'
-                              : 'bg-neutral-50/70 border-dashed border-neutral-300 hover:border-gold/60'
+                {/* Workstation Body */}
+                <div className="p-5 sm:p-7 flex-1 space-y-6 overflow-y-auto">
+                  {/* Sets Progress & Submit to Admin */}
+                  <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-body">
+                    <div className="flex-1 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-neutral-700 flex items-center gap-1.5">
+                          <i className="bi bi-layers text-gold"></i>
+                          Sets Progress
+                        </span>
+                        <span className="font-bold text-neutral-900">
+                          {completedSetsCount} of {requiredSets.length} Completed
+                        </span>
+                      </div>
+                      <div className="w-full bg-neutral-200 rounded-full h-2 overflow-hidden">
+                        <div 
+                          className={`h-2 rounded-full transition-all duration-500 ${
+                            allRequiredSetsCompleted ? 'bg-emerald-600' : 'bg-gold'
                           }`}
+                          style={{ width: `${requiredSets.length > 0 ? (completedSetsCount / requiredSets.length) * 100 : 0}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleSubmitToAdmin}
+                      disabled={submittingToAdmin || outputs.length === 0}
+                      className={`px-5 py-2.5 rounded-xl font-body text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer shrink-0 ${
+                        allRequiredSetsCompleted
+                          ? 'bg-gold hover:bg-gold-dark text-neutral-950 ring-2 ring-gold/40'
+                          : 'bg-neutral-900 hover:bg-neutral-800 text-white disabled:opacity-40'
+                      }`}
+                    >
+                      {submittingToAdmin ? (
+                        <i className="bi bi-arrow-repeat animate-spin"></i>
+                      ) : (
+                        <i className="bi bi-send-check text-sm"></i>
+                      )}
+                      <span>Submit to Admin</span>
+                    </button>
+                  </div>
+
+                  {/* Set Filtering & Add Extra Set Bar */}
+                  <div className="flex items-center justify-between gap-3 flex-wrap font-body">
+                    {/* Custom Styled Set Dropdown Filter */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1">
+                        <i className="bi bi-funnel text-gold"></i>
+                        View Set:
+                      </label>
+                      <select
+                        value={selectedSetFilter}
+                        onChange={(e) => setSelectedSetFilter(e.target.value)}
+                        className="px-3.5 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs sm:text-sm font-semibold text-neutral-800 focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold cursor-pointer"
+                      >
+                        <option value="ALL">All Sets ({requiredSets.length})</option>
+                        {requiredSets.map(s => {
+                          const isDone = !!setPhotoMap[s.name];
+                          return (
+                            <option key={s.id} value={s.id}>
+                              {isDone ? '✓ ' : '○ '} {s.name}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+
+                    {/* Add Extra Set Trigger */}
+                    <button
+                      type="button"
+                      onClick={() => setShowAddCustomSet(!showAddCustomSet)}
+                      className="px-3.5 py-2 text-xs font-semibold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-xl transition-all inline-flex items-center gap-1.5 cursor-pointer font-body"
+                    >
+                      <i className="bi bi-plus-circle text-gold"></i>
+                      <span>Add Additional Set</span>
+                    </button>
+                  </div>
+
+                  {/* Custom Set Creator Form */}
+                  {showAddCustomSet && (
+                    <form onSubmit={handleAddCustomSet} className="p-4 rounded-xl bg-neutral-50 border border-neutral-200 space-y-3 font-body">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-neutral-700">Add Extra Photo Set for this Order</span>
+                        <button 
+                          type="button" 
+                          onClick={() => setShowAddCustomSet(false)}
+                          className="text-xs text-neutral-400 hover:text-neutral-700 cursor-pointer"
                         >
-                          {/* Set Card Header */}
-                          <div>
-                            <div className="flex items-center justify-between gap-2 mb-2">
-                              <span className="text-xs font-bold text-primary truncate">
-                                <i className={`bi ${s.icon || 'bi-camera'} text-gold me-1.5`}></i>
-                                {s.name}
-                              </span>
-                              {isCompleted ? (
-                                <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 shrink-0">
-                                  <i className="bi bi-check-circle-fill text-emerald-600"></i> Uploaded
-                                </span>
-                              ) : (
-                                <span className="bg-neutral-100 text-neutral-600 border border-neutral-200 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">
-                                  Pending
-                                </span>
-                              )}
-                            </div>
+                          Cancel
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          required
+                          value={newCustomSetName}
+                          onChange={(e) => setNewCustomSetName(e.target.value)}
+                          placeholder="e.g. Set 4: Creative Milestone, Full-Body Studio..."
+                          className="flex-1 px-3.5 py-2 bg-white border border-neutral-300 rounded-lg text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold"
+                        />
+                        <button
+                          type="submit"
+                          className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-neutral-800 transition-all cursor-pointer"
+                        >
+                          Add Set
+                        </button>
+                      </div>
+                    </form>
+                  )}
 
-                            <p className="text-xs text-neutral-500 font-body line-clamp-2 min-h-[32px]">
-                              {s.description || 'Studio shoot look'}
-                            </p>
-                          </div>
+                  {/* Set Upload Slots Grid */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-wider font-body">
+                        Required Sets
+                      </h3>
+                    </div>
 
-                          {/* Center: Photo Preview or Empty Dropzone */}
-                          <div className="my-4">
-                            {isCompleted ? (
-                              <div className="group relative rounded-xl overflow-hidden border border-neutral-200 bg-neutral-100 aspect-[4/3] shadow-xs">
-                                <img
-                                  src={photo.file_url || photo.file_path}
-                                  alt={photo.file_name}
-                                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                                  onError={(e) => {
-                                    e.target.src = 'https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=400&q=80';
-                                  }}
-                                />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-end text-white">
-                                  <p className="text-xs font-semibold truncate">
-                                    {getCleanFileName(photo.file_name) || photo.file_name}
-                                  </p>
-                                  <div className="flex items-center gap-2 mt-2">
+                    {loadingOutputs ? (
+                      <div className="py-16 text-center">
+                        <i className="bi bi-arrow-repeat animate-spin text-2xl text-gold mx-auto mb-2 block"></i>
+                        <p className="text-xs text-neutral-400 font-body">Loading slots…</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+                        {displayedSets.map((s, index) => {
+                          const photo = setPhotoMap[s.name];
+                          const isCompleted = !!photo;
+
+                          return (
+                            <div
+                              key={s.id || index}
+                              className={`rounded-2xl border p-4 sm:p-5 flex flex-col justify-between transition-all ${
+                                isCompleted
+                                  ? 'bg-white border-emerald-200/90 shadow-2xs ring-1 ring-emerald-500/10'
+                                  : 'bg-neutral-50/70 border-dashed border-neutral-300 hover:border-gold/60'
+                              }`}
+                            >
+                              {/* Set Card Header */}
+                              <div>
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                  <span className="text-xs font-bold text-primary truncate">
+                                    <i className={`bi ${s.icon || 'bi-camera'} text-gold me-1.5`}></i>
+                                    {s.name}
+                                  </span>
+                                  {isCompleted ? (
+                                    <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 shrink-0">
+                                      <i className="bi bi-check-circle-fill text-emerald-600"></i> Uploaded
+                                    </span>
+                                  ) : (
+                                    <span className="bg-neutral-100 text-neutral-600 border border-neutral-200 text-xs font-bold px-2 py-0.5 rounded-full shrink-0">
+                                      Pending
+                                    </span>
+                                  )}
+                                </div>
+
+                                <p className="text-xs text-neutral-500 font-body line-clamp-2 min-h-[32px]">
+                                  {s.description || 'Studio shoot look'}
+                                </p>
+                              </div>
+
+                              {/* Center: Photo Preview or Empty Dropzone */}
+                              <div className="my-4">
+                                {isCompleted ? (
+                                  <div className="group relative rounded-xl overflow-hidden border border-neutral-200 bg-neutral-100 aspect-[4/3] shadow-xs">
+                                    <img
+                                      src={photo.file_url || photo.file_path}
+                                      alt={photo.file_name}
+                                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                      onError={(e) => {
+                                        e.target.src = 'https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=400&q=80';
+                                      }}
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-end text-white">
+                                      <p className="text-xs font-semibold truncate">
+                                        {getCleanFileName(photo.file_name) || photo.file_name}
+                                      </p>
+                                      <div className="flex items-center gap-2 mt-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => setPreviewPhoto(photo)}
+                                          className="text-xs bg-white/20 hover:bg-white/40 px-2 py-1 rounded text-white inline-flex items-center gap-1 cursor-pointer"
+                                        >
+                                          <i className="bi bi-eye"></i> View Full
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div 
+                                    onClick={() => handleTriggerUpload(s)}
+                                    className="border border-dashed border-neutral-300 rounded-xl p-6 text-center hover:bg-white/80 transition-all cursor-pointer aspect-[4/3] flex flex-col items-center justify-center group"
+                                  >
+                                    <div className="w-10 h-10 rounded-full bg-gold/10 group-hover:bg-gold/20 text-gold flex items-center justify-center mb-2 transition-colors">
+                                      <i className="bi bi-cloud-arrow-up text-lg"></i>
+                                    </div>
+                                    <span className="text-xs font-bold text-neutral-700 block">
+                                      Upload Photo
+                                    </span>
+                                    <span className="text-xs text-neutral-400 mt-0.5 block">
+                                      JPG, PNG, or WEBP
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Footer Actions */}
+                              <div className="pt-2 border-t border-neutral-100 flex items-center justify-between gap-2">
+                                {isCompleted ? (
+                                  <>
                                     <button
                                       type="button"
-                                      onClick={() => setPreviewPhoto(photo)}
-                                      className="text-xs bg-white/20 hover:bg-white/40 px-2 py-1 rounded text-white inline-flex items-center gap-1"
+                                      disabled={uploading}
+                                      onClick={() => handleTriggerUpload(s)}
+                                      className="text-xs font-semibold text-neutral-700 hover:text-primary transition-colors inline-flex items-center gap-1 cursor-pointer font-body"
+                                      title="Replace photo"
                                     >
-                                      <i className="bi bi-eye"></i> View Full
+                                      <i className="bi bi-arrow-repeat text-gold"></i> Replace
                                     </button>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : (
-                              <div 
-                                onClick={() => handleTriggerUpload(s)}
-                                className="border border-dashed border-neutral-300 rounded-xl p-6 text-center hover:bg-white/80 transition-all cursor-pointer aspect-[4/3] flex flex-col items-center justify-center group"
-                              >
-                                <div className="w-10 h-10 rounded-full bg-gold/10 group-hover:bg-gold/20 text-gold flex items-center justify-center mb-2 transition-colors">
-                                  <i className="bi bi-cloud-arrow-up text-lg"></i>
-                                </div>
-                                <span className="text-xs font-bold text-neutral-700 block">
-                                  Upload Photo
-                                </span>
-                                <span className="text-[10px] text-neutral-400 mt-0.5 block">
-                                  JPG, PNG, or WEBP
-                                </span>
-                              </div>
-                            )}
-                          </div>
 
-                          {/* Footer Actions */}
-                          <div className="pt-2 border-t border-neutral-100 flex items-center justify-between gap-2">
-                            {isCompleted ? (
-                              <>
-                                <button
-                                  type="button"
-                                  disabled={uploading}
-                                  onClick={() => handleTriggerUpload(s)}
-                                  className="text-xs font-semibold text-neutral-700 hover:text-primary transition-colors inline-flex items-center gap-1 cursor-pointer font-body"
-                                  title="Replace photo"
-                                >
-                                  <i className="bi bi-arrow-repeat text-gold"></i> Replace
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => setDeleteConfirmTarget(photo)}
-                                  className="text-xs font-semibold text-red-600 hover:text-red-700 transition-colors inline-flex items-center gap-1 cursor-pointer font-body"
-                                  title="Remove photo"
-                                >
-                                  <i className="bi bi-trash3"></i> Remove
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled={uploading}
-                                onClick={() => handleTriggerUpload(s)}
-                                className="w-full py-2 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold rounded-xl transition-all inline-flex items-center justify-center gap-1.5 cursor-pointer font-body"
-                              >
-                                <i className="bi bi-cloud-arrow-up text-gold"></i> Upload Photo
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeleteConfirmTarget(photo)}
+                                      className="text-xs font-semibold text-red-600 hover:text-red-700 transition-colors inline-flex items-center gap-1 cursor-pointer font-body"
+                                      title="Remove photo"
+                                    >
+                                      <i className="bi bi-trash3"></i> Remove
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={uploading}
+                                    onClick={() => handleTriggerUpload(s)}
+                                    className="w-full py-2 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold rounded-xl transition-all inline-flex items-center justify-center gap-1.5 cursor-pointer font-body"
+                                  >
+                                    <i className="bi bi-cloud-arrow-up text-gold"></i> Upload Photo
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
-          )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
+      </div>
       </div>
 
       {/* ── PHOTO FULL PREVIEW LIGHTBOX MODAL ─────────────────────────────── */}

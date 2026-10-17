@@ -23,6 +23,8 @@ import {
 } from 'lucide-react-native';
 
 import GlassCard from '../components/GlassCard';
+import GlassBackground from '../components/GlassBackground';
+import PremiumIcon from '../components/PremiumIcon';
 import GoldButton from '../components/GoldButton';
 import { setUserRole } from '../services/storageService';
 import { Colors, Gradients, Typography, Spacing, Radius, Shadow } from '../theme';
@@ -110,8 +112,8 @@ export default function TutorialScreen({ onComplete }) {
     if (index < 0 || index >= SLIDES.length) return;
     try { Haptics.selectionAsync(); } catch {}
     listRef.current?.scrollToIndex({ index, animated: true });
-    Animated.timing(animValues[currentIndex], { toValue: 0, duration: 180, useNativeDriver: false }).start();
-    Animated.timing(animValues[index], { toValue: 1, duration: 320, useNativeDriver: false }).start();
+    Animated.timing(animValues[currentIndex], { toValue: 0, duration: 180, useNativeDriver: true }).start();
+    Animated.timing(animValues[index], { toValue: 1, duration: 320, useNativeDriver: true }).start();
     setCurrentIndex(index);
   };
 
@@ -120,8 +122,8 @@ export default function TutorialScreen({ onComplete }) {
     const index = Math.round(offsetX / width);
     if (index !== currentIndex && index >= 0 && index < SLIDES.length) {
       try { Haptics.selectionAsync(); } catch {}
-      Animated.timing(animValues[currentIndex], { toValue: 0, duration: 180, useNativeDriver: false }).start();
-      Animated.timing(animValues[index], { toValue: 1, duration: 320, useNativeDriver: false }).start();
+      Animated.timing(animValues[currentIndex], { toValue: 0, duration: 180, useNativeDriver: true }).start();
+      Animated.timing(animValues[index], { toValue: 1, duration: 320, useNativeDriver: true }).start();
       setCurrentIndex(index);
     }
   };
@@ -147,16 +149,12 @@ export default function TutorialScreen({ onComplete }) {
     return (
       <View style={styles.roleContainer}>
         <StatusBar barStyle="light-content" backgroundColor={colors.bg.base} />
-        <LinearGradient
-          colors={Gradients.darkStudio}
-          style={StyleSheet.absoluteFill}
-        />
+        {/* Ambient glass backdrop (theme-aware) */}
+        <GlassBackground />
 
         <View style={styles.roleContent}>
           <View style={styles.roleHeaderGroup}>
-            <View style={styles.roleIconEmblem}>
-              <Sparkles size={28} color={colors.gold.light} />
-            </View>
+            <PremiumIcon icon={Sparkles} size={28} box={60} tone="gold" glow />
             <Text style={styles.roleTitle}>Select Your Experience</Text>
             <Text style={styles.roleSubtitle}>
               Please choose how you will be using the E-Kodak Studio companion application:
@@ -172,9 +170,7 @@ export default function TutorialScreen({ onComplete }) {
             >
               <GlassCard glow highlight style={styles.roleCard}>
                 <View style={styles.roleCardInner}>
-                  <View style={styles.roleIconBox}>
-                    <User size={26} color={colors.gold.light} />
-                  </View>
+                  <PremiumIcon icon={User} size={26} box={52} tone="gold" glow />
                   <View style={{ flex: 1 }}>
                     <View style={styles.tagBadge}>
                       <Text style={styles.tagBadgeText}>CLIENT HUB · RECOMMENDED</Text>
@@ -197,9 +193,7 @@ export default function TutorialScreen({ onComplete }) {
             >
               <GlassCard highlight style={styles.roleCard}>
                 <View style={styles.roleCardInner}>
-                  <View style={[styles.roleIconBox, styles.staffIconBox]}>
-                    <Lock size={24} color={colors.neutral[400]} />
-                  </View>
+                  <PremiumIcon icon={Lock} size={24} box={52} tone="glass" />
                   <View style={{ flex: 1 }}>
                     <View style={[styles.tagBadge, styles.staffBadge]}>
                       <Text style={[styles.tagBadgeText, styles.staffBadgeText]}>STAFF & MANAGEMENT</Text>
@@ -317,6 +311,12 @@ const getStyles = (colors) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing[5],
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 6,
   },
   iconInner: {
     width: 82,
@@ -324,6 +324,8 @@ const getStyles = (colors) => StyleSheet.create({
     borderRadius: Radius.full,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.14)',
   },
   badge: {
     paddingHorizontal: 12,

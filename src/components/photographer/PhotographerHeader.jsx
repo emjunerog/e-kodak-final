@@ -3,7 +3,6 @@ import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../../context/AuthContext';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { getPhotographerProfileData, toggleGeneralAvailability } from '../../services/photographerService';
 import PhotographerNotificationDropdown from './PhotographerNotificationDropdown';
 
 const LABELS = {
@@ -11,7 +10,9 @@ const LABELS = {
   bookings:     'My Assigned Shoots',
   availability: 'Availability Schedule',
   uploads:      'Upload Photos',
-  settings:     'Studio Settings',
+  'activity-logs': 'Activity Logs',
+  settings:     'Station Settings',
+  profile:      'Photographer Profile',
 };
 
 function Breadcrumb() {
@@ -20,13 +21,15 @@ function Breadcrumb() {
 
   return (
     <nav aria-label="Breadcrumb" className="hidden sm:flex items-center gap-2 text-xs text-neutral-500 font-body">
-      <Link to="/photographer" className="hover:text-primary transition-colors font-medium flex items-center gap-1.5">
-        <i className="bi bi-camera text-gold"></i>
-        <span>Studio Bay</span>
+      <Link to="/photographer" className="hover:text-primary dark:hover:text-gold transition-colors font-medium flex items-center gap-1.5">
+        <div className="w-5 h-5 rounded-md bg-neutral-950 flex items-center justify-center p-0.5 border border-neutral-800 shrink-0">
+          <img src="/logo-mark.png" alt="E-Kodak" className="w-full h-full object-contain" />
+        </div>
+        <span>Studio Portal</span>
       </Link>
       {segments.slice(1).map((seg, i) => (
         <React.Fragment key={seg}>
-          <i className="bi bi-chevron-right text-[10px] text-neutral-300"></i>
+          <i className="bi bi-chevron-right text-xs text-neutral-300"></i>
           <span className={i === segments.length - 2 ? 'text-primary font-bold' : 'text-neutral-500'}>
             {LABELS[seg] || seg}
           </span>
@@ -36,24 +39,12 @@ function Breadcrumb() {
   );
 }
 
-export default function PhotographerHeader({ onMenuClick }) {
+export default function PhotographerHeader({ onMenuClick, isSidebarCollapsed, onToggleSidebar }) {
   const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
 
-  const [isAvailable, setIsAvailable] = useState(true);
-  const [updating, setUpdating] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef(null);
-
-  useEffect(() => {
-    if (user?.id) {
-      getPhotographerProfileData(user.id).then(({ data }) => {
-        if (data) {
-          setIsAvailable(data.is_available ?? true);
-        }
-      });
-    }
-  }, [user?.id]);
 
   // Click outside to close dropdown
   useEffect(() => {
@@ -65,17 +56,6 @@ export default function PhotographerHeader({ onMenuClick }) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const handleToggle = async () => {
-    if (!user?.id || updating) return;
-    const nextVal = !isAvailable;
-    setUpdating(true);
-    const { error } = await toggleGeneralAvailability(user.id, nextVal);
-    if (!error) {
-      setIsAvailable(nextVal);
-    }
-    setUpdating(false);
-  };
 
   const handleLogout = async () => {
     setProfileMenuOpen(false);
@@ -89,64 +69,48 @@ export default function PhotographerHeader({ onMenuClick }) {
     : user?.email?.split('@')[0] || 'Studio Photographer';
 
   return (
-    <header className="h-16 bg-white/95 backdrop-blur-md border-b border-neutral-200/80 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30 flex-shrink-0 font-body">
+    <header className="h-16 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md border-b border-neutral-200/80 dark:border-neutral-800 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30 flex-shrink-0 font-body transition-colors">
       
       {/* Left: Mobile menu button + Breadcrumb */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5 sm:gap-3">
+        {/* Mobile menu drawer trigger */}
         <motion.button
           type="button"
           whileTap={{ scale: 0.95 }}
           onClick={onMenuClick}
-          className="lg:hidden p-2 rounded-xl text-neutral-500 hover:text-primary hover:bg-neutral-100 transition-colors cursor-pointer"
+          className="lg:hidden p-2 rounded-xl text-neutral-500 hover:text-primary dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
           aria-label="Open sidebar"
         >
           <i className="bi bi-list text-xl"></i>
         </motion.button>
+
+        <Link
+          to="/photographer"
+          className="flex sm:hidden items-center gap-2 text-primary dark:text-neutral-100 hover:text-gold transition-colors group shrink-0"
+        >
+          <div className="w-7 h-7 rounded-lg bg-neutral-950 flex items-center justify-center p-1 shadow-xs border border-neutral-800 shrink-0">
+            <img src="/logo-mark.png" alt="E-Kodak" className="w-full h-full object-contain" />
+          </div>
+          <span className="font-heading text-sm font-bold tracking-wide">E-KODAK</span>
+        </Link>
+
         <Breadcrumb />
       </div>
 
-      {/* Right: Availability Toggle + Notifications + User Menu */}
+      {/* Right: Notifications + User Menu */}
       <div className="flex items-center gap-2.5">
-        
-        {/* Availability Quick Toggle */}
-        <motion.button
-          type="button"
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={handleToggle}
-          disabled={updating}
-          title="Click to toggle shoot availability"
-          className={`h-9 flex items-center gap-2 px-3.5 rounded-full text-xs font-semibold transition-all border outline-none cursor-pointer shadow-xs ${
-            isAvailable
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-              : 'bg-neutral-100 text-neutral-600 border-neutral-300 hover:bg-neutral-200'
-          }`}
-        >
-          {updating ? (
-            <i className="bi bi-arrow-repeat animate-spin text-neutral-500"></i>
-          ) : (
-            <span className={`w-2 h-2 rounded-full ${isAvailable ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-400'}`} />
-          )}
-          <span className="hidden sm:inline">
-            {isAvailable ? 'Available for Shoots' : 'Off Duty / Busy'}
-          </span>
-          <span className="sm:hidden">
-            {isAvailable ? 'Available' : 'Busy'}
-          </span>
-        </motion.button>
-
         {/* Live Notification Dropdown */}
         <PhotographerNotificationDropdown />
 
         {/* Interactive Photographer Profile Dropdown */}
-        <div className="relative pl-1 border-l border-neutral-200" ref={profileMenuRef}>
+        <div className="relative pl-1 border-l border-neutral-200 dark:border-neutral-800" ref={profileMenuRef}>
           <motion.button
             type="button"
             whileTap={{ scale: 0.96 }}
             onClick={() => setProfileMenuOpen(!profileMenuOpen)}
             aria-expanded={profileMenuOpen}
             aria-label="Open photographer menu"
-            className="flex items-center gap-2 p-1 rounded-full hover:bg-neutral-100 transition-all outline-none cursor-pointer group"
+            className="flex items-center gap-2 p-1 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-all outline-none cursor-pointer group"
           >
             <div className="w-8 h-8 rounded-full bg-gold/15 ring-1 ring-gold/30 flex items-center justify-center text-xs font-bold text-gold overflow-hidden flex-shrink-0 group-hover:scale-105 transition-transform">
               {profile?.avatar_url ? (
@@ -155,11 +119,11 @@ export default function PhotographerHeader({ onMenuClick }) {
                 initial
               )}
             </div>
-            <span className="text-xs font-bold text-neutral-900 hidden sm:block max-w-[130px] truncate">
+            <span className="text-xs font-bold text-neutral-900 dark:text-neutral-100 hidden sm:block max-w-[130px] truncate">
               {displayName}
             </span>
             <i
-              className={`bi bi-chevron-down text-[11px] text-neutral-400 group-hover:text-primary transition-transform duration-200 hidden sm:block ${
+              className={`bi bi-chevron-down text-[11px] text-neutral-400 group-hover:text-primary dark:group-hover:text-white transition-transform duration-200 hidden sm:block ${
                 profileMenuOpen ? 'rotate-180' : ''
               }`}
             />
@@ -173,11 +137,11 @@ export default function PhotographerHeader({ onMenuClick }) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -6, scale: 0.97 }}
                 transition={{ duration: 0.15, ease: 'easeOut' }}
-                className="absolute right-0 top-full mt-2 w-64 bg-white/95 backdrop-blur-md rounded-2xl border border-neutral-200/90 shadow-xl overflow-hidden z-50 p-1.5 font-body"
+                className="absolute right-0 top-full mt-2 w-64 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xl overflow-hidden z-50 p-1.5 font-body"
               >
                 
                 {/* User Identity Card */}
-                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100 mb-1">
+                <div className="p-3 bg-neutral-50 dark:bg-neutral-800/80 rounded-xl border border-neutral-100 dark:border-neutral-700/60 mb-1">
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-xl bg-gold/15 ring-1 ring-gold/30 flex items-center justify-center text-gold font-heading font-bold overflow-hidden flex-shrink-0 shadow-xs">
                       {profile?.avatar_url ? (
@@ -187,7 +151,7 @@ export default function PhotographerHeader({ onMenuClick }) {
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-neutral-900 truncate">
+                      <p className="text-xs font-bold text-neutral-900 dark:text-neutral-100 truncate">
                         {displayName}
                       </p>
                       <p className="text-[11px] text-neutral-400 truncate">
@@ -200,18 +164,27 @@ export default function PhotographerHeader({ onMenuClick }) {
                 {/* Navigation Links */}
                 <div className="space-y-0.5">
                   <Link
-                    to="/photographer/settings"
+                    to="/photographer/profile"
                     onClick={() => setProfileMenuOpen(false)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 rounded-xl transition-colors text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors text-left"
                   >
                     <i className="bi bi-person text-gold text-sm"></i>
-                    <span>Profile &amp; Settings</span>
+                    <span>Photographer Profile</span>
+                  </Link>
+
+                  <Link
+                    to="/photographer/settings"
+                    onClick={() => setProfileMenuOpen(false)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors text-left"
+                  >
+                    <i className="bi bi-sliders text-neutral-400 text-sm"></i>
+                    <span>Station Settings</span>
                   </Link>
 
                   <Link
                     to="/photographer/bookings"
                     onClick={() => setProfileMenuOpen(false)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 rounded-xl transition-colors text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors text-left"
                   >
                     <i className="bi bi-calendar2-check text-neutral-400 text-sm"></i>
                     <span>My Assigned Shoots</span>
@@ -220,7 +193,7 @@ export default function PhotographerHeader({ onMenuClick }) {
                   <Link
                     to="/photographer/availability"
                     onClick={() => setProfileMenuOpen(false)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 rounded-xl transition-colors text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors text-left"
                   >
                     <i className="bi bi-calendar-week text-neutral-400 text-sm"></i>
                     <span>Availability Schedule</span>
@@ -229,7 +202,7 @@ export default function PhotographerHeader({ onMenuClick }) {
                   <Link
                     to="/photographer/uploads"
                     onClick={() => setProfileMenuOpen(false)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 rounded-xl transition-colors text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors text-left"
                   >
                     <i className="bi bi-cloud-arrow-up text-neutral-400 text-sm"></i>
                     <span>Upload Deliverables</span>
@@ -237,11 +210,11 @@ export default function PhotographerHeader({ onMenuClick }) {
                 </div>
 
                 {/* Sign Out */}
-                <div className="border-t border-neutral-100 mt-1 pt-1">
+                <div className="border-t border-neutral-100 dark:border-neutral-800 mt-1 pt-1">
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors text-left cursor-pointer"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors text-left cursor-pointer"
                   >
                     <i className="bi bi-box-arrow-right text-sm text-rose-500"></i>
                     <span>Sign Out</span>
@@ -260,4 +233,6 @@ export default function PhotographerHeader({ onMenuClick }) {
 
 PhotographerHeader.propTypes = {
   onMenuClick: PropTypes.func.isRequired,
+  isSidebarCollapsed: PropTypes.bool,
+  onToggleSidebar: PropTypes.func,
 };

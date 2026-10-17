@@ -1,2189 +1,1168 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { 
-  User, Mail, Phone, MapPin, Camera, Loader2, Save, Calendar, 
-  Edit2, Award, ShieldCheck, FileText, CheckCircle, Clock,
-  Sparkles, GraduationCap, ExternalLink, QrCode, Heart, Check,
-  AlertCircle, ChevronRight, ChevronDown, Lock, Printer, Download, Eye,
-  Building, BookOpen, Scissors, Palette, UserCheck, X, Info, ArrowUpRight,
-  Truck, Package, Layers
+import {
+    User, Mail, Phone, MapPin, Camera, Loader2, Save,
+    ShieldCheck, CheckCircle, Clock,
+    Sparkles, GraduationCap, Check, Lock, Download,
+    Building, ArrowUpRight, Truck,
+    CheckCircle2, ChevronRight, X, Calendar,
+    BadgeCheck, Fingerprint, Zap, Star, Image as ImageIcon, Database
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getCustomerBookings } from '../../services/bookingService';
 import { recordCustomerAction } from '../../services/customerAuditService';
-import { CEBU_UNIVERSITIES } from '../../lib/cebuAcademicData';
-import { OFFICIAL_STUDIO_BADGES, hasBadge, getBadgeAwardedDate } from '../../data/studioBadgesData';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import Toast from '../../components/ui/Toast';
 import StudioDropdown from '../../components/ui/StudioDropdown';
 
-// Hood Disciplines for Academic Graduations
-const HOOD_DISCIPLINES = [
-  { id: 'it_cs', label: 'Information Technology & Computing (Maroon / Gold)', color: 'bg-rose-900 text-rose-100' },
-  { id: 'eng', label: 'Engineering & Technology (Orange)', color: 'bg-orange-800 text-orange-100' },
-  { id: 'educ', label: 'Education & Pedagogy (Light Blue)', color: 'bg-sky-800 text-sky-100' },
-  { id: 'bus', label: 'Business Administration & Commerce (Yellow)', color: 'bg-amber-800 text-amber-100' },
-  { id: 'cas', label: 'Arts & Sciences (White / Ivory)', color: 'bg-neutral-800 text-neutral-100' },
-  { id: 'nursing', label: 'Nursing & Allied Health (Green)', color: 'bg-emerald-800 text-emerald-100' },
-  { id: 'crim', label: 'Criminology & Public Safety (Dark Blue)', color: 'bg-blue-900 text-blue-100' },
-  { id: 'arch', label: 'Architecture & Design (Lilac / Purple)', color: 'bg-purple-900 text-purple-100' },
-];
-
-const TOGA_SIZES = ['XS (4\'11" - 5\'1")', 'S (5\'2" - 5\'4")', 'M (5\'5" - 5\'7")', 'L (5\'8" - 5\'10")', 'XL (5\'11" - 6\'1")', 'XXL (6\'2"+)'];
-
 const GRAD_YEAR_OPTIONS = [
-  { value: '2026', label: 'Batch 2026' },
-  { value: '2027', label: 'Batch 2027' },
-  { value: '2025', label: 'Batch 2025 (Alumni)' },
+    { value: '2026', label: 'Batch 2026 (Graduating)' },
+    { value: '2027', label: 'Batch 2027' },
+    { value: '2028', label: 'Batch 2028' },
+    { value: '2025', label: 'Batch 2025 (Alumni)' },
 ];
 
 const HONORS_OPTIONS = [
-  { value: 'Cum Laude Candidate', label: 'Cum Laude' },
-  { value: 'Magna Cum Laude Candidate', label: 'Magna Cum Laude' },
-  { value: 'Summa Cum Laude Candidate', label: 'Summa Cum Laude' },
-  { value: 'Academic Distinction', label: "Dean's Lister" },
-  { value: 'Regular Candidate', label: 'Regular' },
+    { value: 'Regular Candidate', label: 'Regular Candidate' },
+    { value: 'Cum Laude Candidate', label: 'Cum Laude Candidate' },
+    { value: 'Magna Cum Laude Candidate', label: 'Magna Cum Laude Candidate' },
+    { value: 'Summa Cum Laude Candidate', label: 'Summa Cum Laude Candidate' },
+    { value: 'Academic Distinction', label: "Dean's Lister / Distinction" },
+    { value: 'With Highest Honors', label: 'With Highest Honors (SHS)' },
+    { value: 'With High Honors', label: 'With High Honors (SHS)' },
+    { value: 'With Honors', label: 'With Honors (SHS)' },
 ];
 
-const BACKDROP_PREFERENCES = [
-  { id: 'classic_grey', label: 'Classic Studio Grey', desc: 'Timeless neutral backdrop with directional key light' },
-  { id: 'warm_gold', label: 'Editorial Warm Gold', desc: 'Warm ambient glow accentuating natural skin tones' },
-  { id: 'pure_white', label: 'High-Key Pure White', desc: 'Crisp, contemporary academic portrait styling' },
-  { id: 'dark_slate', label: 'Dramatic Obsidian Slate', desc: 'High-contrast fine art lighting with rim definition' },
+const TABS = [
+    { id: 'personal', label: 'Personal', desc: 'Identity & contact', icon: User },
+    { id: 'academic', label: 'Academic', desc: 'School & records', icon: GraduationCap },
+    { id: 'delivery', label: 'Delivery', desc: 'Prints & parcels', icon: Truck },
+    { id: 'security', label: 'Security', desc: 'Policies & access', icon: Lock },
 ];
 
-const RETOUCH_PREFERENCES = [
-  { id: 'natural_texture', label: 'Natural Pores & Skin Texture', desc: 'Authentic lighting correction preserving natural skin depth' },
-  { id: 'editorial_glamour', label: 'High-End Studio Polish', desc: 'Complete photographic polish, contour enhancement & hair cleanup' },
-  { id: 'minimal_polish', label: 'Subtle Blemish Removal', desc: 'Gentle spot cleanup without altering facial features' },
-];
+const inputCls = "w-full pl-10 pr-3.5 py-3 bg-white dark:bg-[#17181f] border border-neutral-200 dark:border-white/10 rounded-2xl focus:ring-4 focus:ring-gold/20 focus:border-gold/60 outline-none font-body text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.04)]";
+const bareInputCls = "w-full px-4 py-3 bg-white dark:bg-[#17181f] border border-neutral-200 dark:border-white/10 rounded-2xl focus:ring-4 focus:ring-gold/20 focus:border-gold/60 outline-none font-body text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.04)]";
+const labelCls = "block text-[11px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-[0.12em] mb-1.5";
+const hintCls = "text-[11px] text-neutral-400 font-body mt-1.5 block leading-relaxed";
 
-const BADGE_ICONS = {
-  GraduationCap,
-  Scissors,
-  ShieldCheck,
-  Camera,
-  CheckCircle,
-  Award,
-  Printer,
-};
+function Field({ label, hint, icon: Icon, children }) {
+    return (
+        <div className="group">
+            <label className={labelCls}>{label}</label>
+            <div className="relative">
+                {Icon && (
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 group-focus-within:text-gold transition-colors pointer-events-none">
+                        <Icon size={15} />
+                    </span>
+                )}
+                {children}
+            </div>
+            {hint && <span className={hintCls}>{hint}</span>}
+        </div>
+    );
+}
 
-const DEFAULT_CUSTOM_SPECS = {
-  university: 'Cebu Technological University (CTU)',
-  campus: 'CTU - Main Campus',
-  degree: 'Bachelor of Science in Information Technology',
-  gradYear: '2026',
-  honors: 'Cum Laude Candidate',
-  togaSize: 'M (5\'5" - 5\'7")',
-  hoodDiscipline: 'it_cs',
-  innerAttireSize: 'M (Medium)',
-  backdrop: 'warm_gold',
-  retouch: 'natural_texture',
-  makeupPreference: 'Natural Matte Fresh',
-  photographerNotes: 'Prefers 45-degree angle profile shot and soft rim lighting on toga.',
-  emergencyContactName: '',
-  emergencyContactPhone: '',
-  agreedSessionConduct: true,
-  agreedModelRelease: true,
-  agreedProofingStorage: true,
-  agreedPaymentPolicy: true,
-  termsSignedTimestamp: '2026-09-01T10:00:00.000Z',
-  termsSignatureHash: 'EK-SIG-99428-2026'
-};
+function SectionHead({ step, title, desc, icon: Icon }) {
+    return (
+        <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-gold via-[#d9bc7f] to-gold-dark text-[#1a1714] flex items-center justify-center shadow-lg shadow-gold/30 shrink-0">
+                <Icon size={17} strokeWidth={2.4} />
+            </div>
+            <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-gold-dark dark:text-gold">Step {step}</p>
+                <h3 className="font-heading text-[17px] font-bold text-neutral-900 dark:text-white leading-tight">{title}</h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 font-body mt-0.5 leading-relaxed">{desc}</p>
+            </div>
+        </div>
+    );
+}
 
 export default function ProfilePage() {
-  const { user, profile, updateProfile, uploadAvatar } = useAuth();
+    const { user, profile, updateProfile, uploadAvatar } = useAuth();
 
-  const [isSaving, setIsSaving] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [toast, setToast] = useState(null);
-  const [bookings, setBookings] = useState([]);
-  const [photoModalOpen, setPhotoModalOpen] = useState(false);
-  const [termsCertModalOpen, setTermsCertModalOpen] = useState(false);
-  const [selectedBadgeModal, setSelectedBadgeModal] = useState(null);
-  const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
-  const [activeNavSection, setActiveNavSection] = useState('section-personal');
-  const [breakdownDropdownOpen, setBreakdownDropdownOpen] = useState(false);
-  const [sessionSidebarOpen, setSessionSidebarOpen] = useState(false);
-  const [addressSaving, setAddressSaving] = useState(false);
-  const avatarInputRef = useRef(null);
+    // Navigation & interaction states
+    const [activeTab, setActiveTab] = useState('personal');
+    const [isSaving, setIsSaving] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const [toast, setToast] = useState(null);
+    const [bookings, setBookings] = useState([]);
+    const [photoModalOpen, setPhotoModalOpen] = useState(false);
+    const avatarInputRef = useRef(null);
 
-  // Storage key for custom studio preferences
-  const customProfileStorageKey = user ? `ekodak_user_custom_${user.id}` : 'ekodak_user_custom_guest';
+    // ── 1. Form Data: Root Account Owner Profile Fields ─────────────────────────
+    const [formData, setFormData] = useState(() => ({
+        firstName: profile?.first_name || '',
+        middleName: profile?.middle_name || '',
+        lastName: profile?.last_name || '',
+        phone: profile?.phone || '',
+        address: profile?.address || '',
+        bio: profile?.bio || '',
+    }));
 
-  // Load custom profile details: check profile.studio_specs -> localStorage -> default
-  const [customData, setCustomData] = useState(() => {
-    if (profile?.studio_specs && Object.keys(profile.studio_specs).length > 0) {
-      return { ...DEFAULT_CUSTOM_SPECS, ...profile.studio_specs };
-    }
-    try {
-      const saved = localStorage.getItem(customProfileStorageKey);
-      if (saved) return { ...DEFAULT_CUSTOM_SPECS, ...JSON.parse(saved) };
-    } catch {
-      // fallback
-    }
-    return DEFAULT_CUSTOM_SPECS;
-  });
-
-  const [formData, setFormData] = useState(() => ({
-    firstName: profile?.first_name || '',
-    lastName:  profile?.last_name  || '',
-    phone:     profile?.phone      || '',
-    address:   profile?.address    || '',
-    bio:       profile?.bio        || '',
-  }));
-
-  // Address customization state for booking deliveries
-  const [addressCustomizations, setAddressCustomizations] = useState(() => ({
-    recipientName: profile?.studio_specs?.courier_recipient_name || `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim(),
-    courierPhone: profile?.studio_specs?.courier_phone || profile?.phone || '',
-    shippingAddress: profile?.studio_specs?.shipping_address || profile?.address || '',
-    landmark: profile?.studio_specs?.delivery_instructions || '',
-    preferredCourier: profile?.studio_specs?.preferred_courier || 'studio_pickup',
-  }));
-
-  // Sync profile data when Auth profile arrives
-  useEffect(() => {
-    if (profile) {
-      setFormData(prev => ({
-        ...prev,
-        firstName: profile.first_name || prev.firstName,
-        lastName:  profile.last_name  || prev.lastName,
-        phone:     profile.phone      || prev.phone,
-        address:   profile.address    || prev.address,
-        bio:       profile.bio        || prev.bio,
-      }));
-
-      if (profile.studio_specs && Object.keys(profile.studio_specs).length > 0) {
-        setCustomData(prev => ({
-          ...prev,
-          ...profile.studio_specs,
-        }));
-        setAddressCustomizations(prev => ({
-          ...prev,
-          recipientName: profile.studio_specs.courier_recipient_name || prev.recipientName,
-          courierPhone: profile.studio_specs.courier_phone || prev.courierPhone,
-          shippingAddress: profile.studio_specs.shipping_address || prev.shippingAddress,
-          landmark: profile.studio_specs.delivery_instructions || prev.landmark,
-          preferredCourier: profile.studio_specs.preferred_courier || prev.preferredCourier,
-        }));
-      }
-    }
-  }, [profile]);
-
-  // Load customer bookings to calculate session metrics
-  useEffect(() => {
-    if (!user) return;
-    let isMounted = true;
-    getCustomerBookings(user.id).then(({ data }) => {
-      if (isMounted && data) {
-        setBookings(data);
-      }
+    // ── 2. Studio Specifications State ──────────────────────────────────────────
+    const [studioSpecs, setStudioSpecs] = useState(() => {
+        const s = profile?.studio_specs || {};
+        return {
+            university: s.university || '',
+            campus: s.campus || '',
+            degree: s.degree || '',
+            gradYear: s.gradYear || '2026',
+            honors: s.honors || 'Regular Candidate',
+            studentId: s.student_id || s.studentId || '',
+            section: s.section || '',
+            togaSize: s.togaSize || '',
+            heightCm: s.height_cm || s.heightCm || '',
+            hoodDiscipline: s.hoodDiscipline || '',
+            photographerNotes: s.photographerNotes || '',
+            emergencyContactName: s.emergencyContactName || '',
+            emergencyContactPhone: s.emergencyContactPhone || '',
+            courier_recipient_name: s.courier_recipient_name || '',
+            courier_phone: s.courier_phone || '',
+            shipping_address: s.shipping_address || '',
+            delivery_instructions: s.delivery_instructions || '',
+            preferred_courier: s.preferred_courier || s.fulfillment_mode || 'studio_pickup',
+            agreedModelRelease: s.agreedModelRelease !== undefined ? Boolean(s.agreedModelRelease) : true,
+        };
     });
-    return () => { isMounted = false; };
-  }, [user]);
 
-  // Track active section on scroll
-  useEffect(() => {
-    const handleScroll = () => {
-      const sections = [
-        'section-pass',
-        'section-badges',
-        'section-personal',
-        'section-academic',
-        'section-shoot-specs',
-        'section-terms',
-        'section-security',
-      ];
-      const scrollY = window.scrollY + 200;
-      for (let i = sections.length - 1; i >= 0; i--) {
-        const el = document.getElementById(sections[i]);
-        if (el && el.offsetTop <= scrollY) {
-          setActiveNavSection(sections[i]);
-          break;
+    // Keep state synced when Supabase profile data loads
+    useEffect(() => {
+        if (profile) {
+            setFormData(prev => ({
+                firstName: profile.first_name || prev.firstName,
+                middleName: profile.middle_name || prev.middleName,
+                lastName: profile.last_name || prev.lastName,
+                phone: profile.phone || prev.phone,
+                address: profile.address || prev.address,
+                bio: profile.bio || prev.bio,
+            }));
+
+            const s = profile.studio_specs || {};
+            setStudioSpecs(prev => ({
+                university: s.university || prev.university,
+                campus: s.campus || prev.campus,
+                degree: s.degree || prev.degree,
+                gradYear: s.gradYear || prev.gradYear || '2026',
+                honors: s.honors || prev.honors || 'Regular Candidate',
+                studentId: s.student_id || s.studentId || prev.studentId,
+                section: s.section || prev.section,
+                togaSize: s.togaSize || prev.togaSize,
+                heightCm: s.height_cm || s.heightCm || prev.heightCm,
+                hoodDiscipline: s.hoodDiscipline || prev.hoodDiscipline,
+                photographerNotes: s.photographerNotes || prev.photographerNotes,
+                emergencyContactName: s.emergencyContactName || prev.emergencyContactName,
+                emergencyContactPhone: s.emergencyContactPhone || prev.emergencyContactPhone,
+                courier_recipient_name: s.courier_recipient_name || prev.courier_recipient_name,
+                courier_phone: s.courier_phone || prev.courier_phone,
+                shipping_address: s.shipping_address || prev.shipping_address,
+                delivery_instructions: s.delivery_instructions || prev.delivery_instructions,
+                preferred_courier: s.preferred_courier || s.fulfillment_mode || prev.preferred_courier || 'studio_pickup',
+                agreedModelRelease: s.agreedModelRelease !== undefined ? Boolean(s.agreedModelRelease) : prev.agreedModelRelease,
+            }));
         }
-      }
+    }, [profile]);
+
+    // Load customer bookings to detect active session (Studio vs School)
+    useEffect(() => {
+        if (!user) return;
+        let isMounted = true;
+        getCustomerBookings(user.id).then(({ data }) => {
+            if (isMounted && data) {
+                setBookings(data);
+            }
+        });
+        return () => { isMounted = false; };
+    }, [user]);
+
+    // Handle standard form changes
+    const handleFormChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
     };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
 
-  const handleFormChange = e => {
-    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
-  };
+    // Handle studio specs changes
+    const handleSpecChange = (field, value) => {
+        setStudioSpecs(prev => ({ ...prev, [field]: value }));
+    };
 
-  const handleCustomChange = (field, value) => {
-    setCustomData(prev => {
-      const updated = { ...prev, [field]: value };
-      try {
-        localStorage.setItem(customProfileStorageKey, JSON.stringify(updated));
-      } catch (err) {
-        console.warn('Failed to save custom profile data:', err);
-      }
-      return updated;
-    });
-  };
-
-  // ── Save profile changes to Supabase & local storage ──────────────────────
-  const handleSave = async e => {
-    if (e) e.preventDefault();
-    setIsSaving(true);
-    try {
-      await updateProfile({
-        first_name: formData.firstName,
-        last_name:  formData.lastName,
-        phone:      formData.phone,
-        address:    formData.address,
-        bio:        formData.bio,
-        studio_specs: customData,
-      });
-
-      // Persist custom studio specifications locally as fallback
-      try {
-        localStorage.setItem(customProfileStorageKey, JSON.stringify(customData));
-      } catch {}
-
-      // Record customer audit event
-      if (user?.id) {
-        const changesList = [
-          formData.phone ? `Phone: ${formData.phone}` : null,
-          formData.address ? `Address: ${formData.address}` : null,
-          customData.university ? `University: ${customData.university}` : null,
-          customData.campus ? `Campus: ${customData.campus}` : null,
-          customData.degree ? `Degree: ${customData.degree}` : null,
-          customData.gradYear ? `Graduation Year: ${customData.gradYear}` : null,
-          customData.togaSize ? `Toga Size: ${customData.togaSize}` : null,
-          customData.innerAttireSize ? `Inner Attire: ${customData.innerAttireSize}` : null,
-          customData.backdrop ? `Backdrop: ${customData.backdrop}` : null,
-          customData.retouch ? `Retouching: ${customData.retouch}` : null,
-        ].filter(Boolean);
-
-        recordCustomerAction({
-          userId: user.id,
-          category: 'PROFILE_UPDATE',
-          title: 'Profile & Shoot Specifications Saved',
-          description: `Customer updated profile and academic session details (${formData.firstName} ${formData.lastName}).`,
-          changes: changesList
-        });
-      }
-
-      setToast({ type: 'success', message: 'Profile & studio specifications saved successfully!' });
-    } catch (err) {
-      console.error('Failed to save profile:', err);
-      setToast({ type: 'error', message: err.message || 'Failed to update profile.' });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // ── Save Delivery & Shipping Address Customizations ─────────────────────
-  const handleSaveAddressCustomizations = async (e) => {
-    if (e) e.preventDefault();
-    setAddressSaving(true);
-    try {
-      const updatedSpecs = {
-        ...customData,
-        courier_recipient_name: addressCustomizations.recipientName,
-        courier_phone: addressCustomizations.courierPhone,
-        shipping_address: addressCustomizations.shippingAddress,
-        delivery_instructions: addressCustomizations.landmark,
-        preferred_courier: addressCustomizations.preferredCourier,
-      };
-      setCustomData(updatedSpecs);
-
-      await updateProfile({
-        address: addressCustomizations.shippingAddress,
-        phone: addressCustomizations.courierPhone || formData.phone,
-        studio_specs: updatedSpecs,
-      });
-
-      setFormData(prev => ({
-        ...prev,
-        address: addressCustomizations.shippingAddress,
-        phone: addressCustomizations.courierPhone || prev.phone,
-      }));
-
-      try {
-        localStorage.setItem(customProfileStorageKey, JSON.stringify(updatedSpecs));
-      } catch {}
-
-      // Record customer audit event
-      if (user?.id) {
-        recordCustomerAction({
-          userId: user.id,
-          category: 'DELIVERY_UPDATE',
-          title: 'Delivery Address Customization Saved',
-          description: `Customer updated fulfillment destination to ${addressCustomizations.shippingAddress || 'Studio Claim'}.`,
-          changes: [
-            `Recipient: ${addressCustomizations.recipientName || 'Client'}`,
-            `Contact: ${addressCustomizations.courierPhone || 'Recorded Phone'}`,
-            `Address: ${addressCustomizations.shippingAddress || 'Not set'}`,
-            addressCustomizations.landmark ? `Instructions: ${addressCustomizations.landmark}` : null,
-            `Courier Mode: ${addressCustomizations.preferredCourier || 'Studio Direct Delivery'}`
-          ].filter(Boolean)
-        });
-      }
-
-      setToast({ type: 'success', message: 'Delivery address customizations saved successfully!' });
-    } catch (err) {
-      console.error('Failed to save address customizations:', err);
-      setToast({ type: 'error', message: 'Could not save delivery address customizations.' });
-    } finally {
-      setAddressSaving(false);
-    }
-  };
-
-  // Auto-save model release preference
-  const handleModelReleaseToggle = async (agreed) => {
-    handleCustomChange('agreedModelRelease', agreed);
-    const updatedSpecs = { ...customData, agreedModelRelease: agreed };
-    try {
-      await updateProfile({ studio_specs: updatedSpecs });
-
-      if (user?.id) {
-        recordCustomerAction({
-          userId: user.id,
-          category: 'TERMS_SIGN',
-          title: agreed ? 'Model Release Agreement Consented' : 'Model Release Opted-Out (Confidential)',
-          description: agreed 
-            ? 'Customer granted consent for studio portfolio & annual academic lookbook display.'
-            : 'Customer restricted portrait distribution to confidential private proofing.',
-          changes: [agreed ? 'Model Release: Consented' : 'Model Release: Private / Opted Out']
-        });
-      }
-
-      setToast({ 
-        type: 'info', 
-        message: agreed ? 'Model release consented for annual lookbook.' : 'Session set to strictly confidential.' 
-      });
-    } catch {
-      // state updated
-    }
-  };
-
-  // ── Avatar upload with resilient base64 fallback ──────────────────────────
-  const handleAvatarChange = async e => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      setToast({ type: 'error', message: 'Image must be smaller than 5 MB.' });
-      return;
-    }
-
-    setIsUploading(true);
-    try {
-      await uploadAvatar(file);
-
-      if (user?.id) {
-        recordCustomerAction({
-          userId: user.id,
-          category: 'PROFILE_UPDATE',
-          title: 'Client Profile Avatar Photo Updated',
-          description: 'Customer uploaded a new profile portrait photograph.',
-          changes: ['Avatar: New image uploaded']
-        });
-      }
-
-      setToast({ type: 'success', message: 'Profile photo updated!' });
-      setPhotoModalOpen(false);
-    } catch (err) {
-      console.warn('Supabase storage upload failed, using local Data URL fallback:', err);
-      const reader = new FileReader();
-      reader.onload = async () => {
+    // ── Save All Profile & Studio Specifications to Supabase ───────────────────
+    const handleSave = async (e) => {
+        if (e) e.preventDefault();
+        setIsSaving(true);
         try {
-          const base64Url = reader.result;
-          await updateProfile({ avatar_url: base64Url });
+            const mergedSpecs = {
+                ...(profile?.studio_specs || {}),
+                university: studioSpecs.university,
+                campus: studioSpecs.campus,
+                degree: studioSpecs.degree,
+                gradYear: studioSpecs.gradYear,
+                honors: studioSpecs.honors,
+                student_id: studioSpecs.studentId,
+                studentId: studioSpecs.studentId,
+                section: studioSpecs.section,
+                togaSize: studioSpecs.togaSize,
+                height_cm: studioSpecs.heightCm,
+                heightCm: studioSpecs.heightCm,
+                hoodDiscipline: studioSpecs.hoodDiscipline,
+                photographerNotes: studioSpecs.photographerNotes,
+                emergencyContactName: studioSpecs.emergencyContactName,
+                emergencyContactPhone: studioSpecs.emergencyContactPhone,
+                courier_recipient_name: studioSpecs.courier_recipient_name,
+                courier_phone: studioSpecs.courier_phone,
+                shipping_address: studioSpecs.shipping_address,
+                delivery_instructions: studioSpecs.delivery_instructions,
+                preferred_courier: studioSpecs.preferred_courier,
+                fulfillment_mode: studioSpecs.preferred_courier === 'studio_delivery' ? 'STUDIO_DELIVERY' : 'STUDIO_PICKUP',
+                agreedModelRelease: studioSpecs.agreedModelRelease,
+            };
 
-          if (user?.id) {
-            recordCustomerAction({
-              userId: user.id,
-              category: 'PROFILE_UPDATE',
-              title: 'Client Profile Avatar Photo Updated',
-              description: 'Customer updated account profile picture.',
-              changes: ['Avatar: New image stored locally']
+            await updateProfile({
+                first_name: formData.firstName,
+                middle_name: formData.middleName,
+                last_name: formData.lastName,
+                phone: formData.phone,
+                address: formData.address,
+                bio: formData.bio,
+                studio_specs: mergedSpecs,
             });
-          }
 
-          setToast({ type: 'success', message: 'Profile photo updated locally!' });
-          setPhotoModalOpen(false);
-        } catch {
-          setToast({ type: 'error', message: 'Could not set profile image.' });
+            // Audit log entry
+            if (user?.id) {
+                recordCustomerAction({
+                    userId: user.id,
+                    category: 'PROFILE_UPDATE',
+                    title: 'Account Owner Profile Updated',
+                    description: `Profile credentials and studio fitting records updated for ${formData.firstName} ${formData.lastName}.`,
+                    changes: [
+                        formData.phone ? `Phone: ${formData.phone}` : null,
+                        formData.address ? `Address: ${formData.address}` : null,
+                        studioSpecs.university ? `University: ${studioSpecs.university}` : null,
+                        studioSpecs.degree ? `Degree/Program: ${studioSpecs.degree}` : null,
+                        studioSpecs.section ? `Section: ${studioSpecs.section}` : null,
+                    ].filter(Boolean),
+                });
+            }
+
+            setToast({ type: 'success', message: 'Profile & studio specifications saved successfully!' });
+        } catch (err) {
+            console.error('Failed to save profile:', err);
+            setToast({ type: 'error', message: err.message || 'Failed to update profile.' });
+        } finally {
+            setIsSaving(false);
         }
-      };
-      reader.readAsDataURL(file);
-    } finally {
-      setIsUploading(false);
-    }
-  };
+    };
 
-  // Calculate Information-Rich Metrics
-  const totalBookings = bookings.length;
-  const completedShoots = bookings.filter(b => b.status === 'COMPLETED').length;
-  // Always read customer's actual latest order
-  const latestBooking = useMemo(() => {
-    if (!bookings || bookings.length === 0) return null;
-    return bookings[0];
-  }, [bookings]);
-  const upcomingBooking = latestBooking;
-  const totalInvestment = bookings.reduce((sum, b) => sum + (Number(b.total_amount) || 0), 0);
+    // ── Avatar Photo Upload ───────────────────────────────────────────────────
+    const handleAvatarChange = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
 
-  // Dropdown Option Collections
-  const universityOptions = useMemo(() => [
-    ...CEBU_UNIVERSITIES.map(u => ({
-      value: u.name,
-      label: u.name,
-      badge: u.campuses?.length > 1 ? `${u.campuses.length} Campuses` : '',
-    })),
-    { value: 'Other Partner University', label: 'Other Partner University / College' },
-  ], []);
+        if (file.size > 5 * 1024 * 1024) {
+            setToast({ type: 'error', message: 'Image must be smaller than 5 MB.' });
+            return;
+        }
 
-  const hoodDisciplineOptions = useMemo(() => 
-    HOOD_DISCIPLINES.map(d => ({
-      value: d.id,
-      label: d.label,
-      colorBadge: d.color.split(' ')[0],
-    }))
-  , []);
+        setIsUploading(true);
+        try {
+            await uploadAvatar(file);
+            if (user?.id) {
+                recordCustomerAction({
+                    userId: user.id,
+                    category: 'PROFILE_UPDATE',
+                    title: 'Client Profile Avatar Updated',
+                    description: 'Customer uploaded a new profile portrait photograph.',
+                    changes: ['Avatar: New image uploaded']
+                });
+            }
+            setToast({ type: 'success', message: 'Profile portrait updated!' });
+            setPhotoModalOpen(false);
+        } catch (err) {
+            console.warn('Storage upload fallback triggered:', err);
+            const reader = new FileReader();
+            reader.onload = async () => {
+                try {
+                    const base64Url = reader.result;
+                    await updateProfile({ avatar_url: base64Url });
+                    setToast({ type: 'success', message: 'Profile portrait updated!' });
+                    setPhotoModalOpen(false);
+                } catch {
+                    setToast({ type: 'error', message: 'Could not set profile image.' });
+                }
+            };
+            reader.readAsDataURL(file);
+        } finally {
+            setIsUploading(false);
+        }
+    };
 
-  const backdropOptions = useMemo(() => 
-    BACKDROP_PREFERENCES.map(b => ({
-      value: b.id,
-      label: b.label,
-      desc: b.desc,
-    }))
-  , []);
+    // ── Password Reset Email ──────────────────────────────────────────────────
+    const handlePasswordReset = async () => {
+        if (!user?.email) return;
+        try {
+            if (!isSupabaseConfigured) {
+                setToast({ type: 'info', message: 'Password reset link simulated in demo mode.' });
+                return;
+            }
+            const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+                redirectTo: `${window.location.origin}/reset-password`,
+            });
+            if (error) throw error;
+            setToast({ type: 'success', message: `Password reset instructions sent to ${user.email}.` });
+        } catch (err) {
+            setToast({ type: 'error', message: err.message || 'Could not send reset email.' });
+        }
+    };
 
-  const retouchOptions = useMemo(() => 
-    RETOUCH_PREFERENCES.map(r => ({
-      value: r.id,
-      label: r.label,
-      desc: r.desc,
-    }))
-  , []);
+    // ── Export Profile Data as JSON ───────────────────────────────────────────
+    const handleExportData = () => {
+        const exportPayload = {
+            account_owner: {
+                id: user?.id,
+                email: user?.email,
+                full_name: `${formData.firstName} ${formData.middleName ? formData.middleName + ' ' : ''}${formData.lastName}`.trim(),
+                first_name: formData.firstName,
+                middle_name: formData.middleName,
+                last_name: formData.lastName,
+                phone: formData.phone,
+                address: formData.address,
+                bio_motto: formData.bio,
+            },
+            academic_specs: {
+                university: studioSpecs.university,
+                campus: studioSpecs.campus,
+                degree: studioSpecs.degree,
+                graduation_year: studioSpecs.gradYear,
+                honors: studioSpecs.honors,
+                student_id: studioSpecs.studentId,
+                section: studioSpecs.section,
+                toga_size: studioSpecs.togaSize,
+                height_cm: studioSpecs.heightCm,
+                hood_discipline: studioSpecs.hoodDiscipline,
+                photographer_notes: studioSpecs.photographerNotes,
+            },
+            fulfillment_preferences: {
+                mode: studioSpecs.preferred_courier,
+                recipient_name: studioSpecs.courier_recipient_name || `${formData.firstName} ${formData.lastName}`.trim(),
+                recipient_phone: studioSpecs.courier_phone || formData.phone,
+                shipping_address: studioSpecs.shipping_address || formData.address,
+                delivery_instructions: studioSpecs.delivery_instructions,
+            },
+            exported_at: new Date().toISOString(),
+        };
 
-  // Shoot Readiness Checklist Score (0 to 100%)
-  const readinessChecks = useMemo(() => {
-    return [
-      { id: 'name', label: 'Full Legal Name Set', passed: Boolean(formData.firstName && formData.lastName) },
-      { id: 'phone', label: 'Primary Contact Phone', passed: Boolean(formData.phone) },
-      { id: 'address', label: 'Courier Shipping Address', passed: Boolean(formData.address || customData.shipping_address) },
-      { id: 'school', label: 'Academic School & Course', passed: Boolean(customData.university && customData.degree) },
-      { id: 'toga', label: 'Toga & Hood Specifications', passed: Boolean(customData.togaSize && customData.hoodDiscipline) },
-      { id: 'terms', label: 'Studio Terms Acknowledged', passed: Boolean(customData.agreedSessionConduct && customData.agreedPaymentPolicy) },
-    ];
-  }, [formData, customData]);
+        const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportPayload, null, 2));
+        const dlAnchor = document.createElement('a');
+        dlAnchor.setAttribute('href', dataStr);
+        dlAnchor.setAttribute('download', `ekodak_profile_${user?.id?.slice(0, 6) || 'client'}.json`);
+        dlAnchor.click();
+        setToast({ type: 'success', message: 'Profile data exported successfully!' });
+    };
 
-  const passedCount = readinessChecks.filter(c => c.passed).length;
-  const readinessPct = Math.round((passedCount / readinessChecks.length) * 100);
+    // ── Detect Active Booking Session & Venue (Studio vs School) ──────────────
+    const latestBooking = useMemo(() => {
+        if (!bookings || bookings.length === 0) return null;
+        return bookings[0];
+    }, [bookings]);
 
-  // Only display official studio recognitions awarded by admin
-  const customerBadges = useMemo(() => Array.isArray(profile?.badges) ? profile.badges : [], [profile?.badges]);
-  const earnedBadges = useMemo(() => {
-    return OFFICIAL_STUDIO_BADGES
-      .filter(b => hasBadge(customerBadges, b.id))
-      .map(b => ({
-        ...b,
-        isAwarded: true,
-        awardedDate: getBadgeAwardedDate(customerBadges, b.id)
-      }));
-  }, [customerBadges]);
-  const earnedBadgesCount = earnedBadges.length;
+    const detectedSessionInfo = useMemo(() => {
+        if (!latestBooking) return null;
 
-  const memberSince = user?.created_at
-    ? new Date(user.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-    : 'September 2026';
+        const notesLower = (latestBooking.notes || '').toLowerCase();
+        const locationLower = (latestBooking.location || '').toLowerCase();
+        const studentDetails = latestBooking.student_details;
 
-  const initials = `${formData.firstName?.charAt(0) || ''}${formData.lastName?.charAt(0) || ''}`.toUpperCase() || 'EK';
+        const isSchoolPictorial =
+            studentDetails?.booking_mode === 'SCHOOL_PARTNER' ||
+            notesLower.includes('school pictorial') ||
+            notesLower.includes('official school partner') ||
+            notesLower.includes('partner agreement') ||
+            locationLower.includes('school') ||
+            locationLower.includes('campus') ||
+            Boolean(studentDetails?.school);
 
-  const scrollToSection = (id) => {
-    setActiveNavSection(id);
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+        const venueName = isSchoolPictorial
+            ? (studentDetails?.school || studentDetails?.school_address || latestBooking.location || 'Partner School Campus')
+            : 'E-Kodak Studio Cebu (Camera Bay)';
 
-  const navMenuItems = [
-    { id: 'section-pass', label: 'Client Pass & Readiness', icon: QrCode, done: readinessPct >= 80 },
-    { id: 'section-badges', label: `Studio Badges (${earnedBadgesCount})`, icon: Award, done: earnedBadgesCount > 0 },
-    { id: 'section-personal', label: 'Personal & Contact Info', icon: User, done: Boolean(formData.firstName && formData.phone) },
-    { id: 'section-academic', label: 'Academic & Course Milestone', icon: GraduationCap, done: Boolean(customData.university && customData.degree) },
-    { id: 'section-shoot-specs', label: 'Shoot & Fitting Specs', icon: Palette, done: Boolean(customData.togaSize && customData.hoodDiscipline) },
-    { id: 'section-terms', label: 'Studio Terms & Agreements', icon: FileText, done: true },
-    { id: 'section-security', label: 'Account Security', icon: Lock, done: true },
-  ];
+        const sessionType = isSchoolPictorial ? 'School Campus Pictorial' : 'In-Studio Session';
+        const venueLabel = isSchoolPictorial ? 'Official School Campus Venue' : 'Cebu Studio Flagship Bay';
 
-  return (
-    <div className="max-w-6xl mx-auto space-y-8 animate-fade-in pb-28">
+        return {
+            isSchoolPictorial,
+            venueName,
+            sessionType,
+            venueLabel,
+            dateText: latestBooking.event_date
+                ? new Date(latestBooking.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : (isSchoolPictorial ? 'School Schedule (TBD)' : 'Date to be Announced'),
+            timeText: latestBooking.preferred_time ? latestBooking.preferred_time.substring(0, 5) : '',
+            tierName: latestBooking.tier_name || 'Standard Set',
+            serviceName: latestBooking.service?.name || 'Graduation Portrait Session',
+            bookingNumber: latestBooking.booking_number,
+            status: latestBooking.status || 'PENDING',
+        };
+    }, [latestBooking]);
 
-      <Toast toast={toast} onClose={() => setToast(null)} />
+    // ── Academic records sourced strictly from database (bookings + profile) ──
+    // Every school / campus / student ID / section option below comes from real
+    // database records — no hardcoded lists, no free-text inputs underneath.
+    const dbAcademicRecords = useMemo(() => {
+        const records = [];
+        (bookings || []).forEach((b) => {
+            const sd = b?.student_details || {};
+            const school = (sd.school || '').trim();
+            const campus = (sd.school_address || '').trim();
+            const studentId = String(sd.student_id || '').trim();
+            const section = String(sd.section || '').trim();
+            const course = (sd.course || '').trim();
+            const batch = (sd.batch || '').trim();
+            if (!school && !campus && !studentId && !section) return;
+            if (school === 'N/A' && campus === 'N/A' && !studentId && !section) return;
+            records.push({
+                school: school === 'N/A' ? '' : school,
+                campus: campus === 'N/A' ? '' : campus,
+                studentId: studentId === 'N/A' ? '' : studentId,
+                section: section === 'N/A' ? '' : section,
+                course,
+                batch,
+                bookingNumber: b.booking_number || '',
+                bookingId: b.id || '',
+            });
+        });
+        return records;
+    }, [bookings]);
 
-      {/* ── 1. Top Editorial Profile Hero Banner ─────────────────────────────── */}
-      <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-neutral-950 via-neutral-900 to-primary p-6 sm:p-8 shadow-xl border border-neutral-800">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-gold/10 rounded-full blur-3xl pointer-events-none" />
+    const hasDbAcademic = dbAcademicRecords.length > 0;
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          
-          {/* Avatar & Identifiers */}
-          <div className="flex items-center gap-4 sm:gap-5">
-            <div 
-              className="relative group cursor-pointer shrink-0"
-              onClick={() => setPhotoModalOpen(true)}
-              title="Click to update portrait photo"
-            >
-              <div className="w-18 h-18 sm:w-22 sm:h-22 rounded-2xl bg-gradient-to-br from-gold/30 via-gold/10 to-transparent p-1 shadow-lg">
-                <div className="w-full h-full rounded-xl bg-neutral-900 flex items-center justify-center text-gold font-heading text-2xl sm:text-3xl font-bold overflow-hidden border border-gold/40">
-                  {profile?.avatar_url ? (
-                    <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
-                  ) : (
-                    <span>{initials}</span>
-                  )}
-                </div>
-              </div>
-              <div className="absolute inset-0 bg-neutral-950/70 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-gold">
-                <Camera size={18} />
-              </div>
-            </div>
+    // University options — distinct schools from booking database records
+    const universityOptions = useMemo(() => {
+        const seen = new Map();
+        dbAcademicRecords.forEach((r) => {
+            if (!r.school || seen.has(r.school)) return;
+            seen.set(r.school, {
+                value: r.school,
+                label: r.school,
+                badge: r.bookingNumber ? `#${r.bookingNumber}` : '',
+            });
+        });
+        // Keep the currently saved profile value selectable even if no booking carries it yet
+        if (studioSpecs.university && !seen.has(studioSpecs.university)) {
+            seen.set(studioSpecs.university, {
+                value: studioSpecs.university,
+                label: studioSpecs.university,
+                badge: 'On file',
+            });
+        }
+        return [...seen.values()];
+    }, [dbAcademicRecords, studioSpecs.university]);
 
-            <div className="space-y-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-gold bg-gold/15 border border-gold/30 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                  <Sparkles size={10} /> Client Member
-                </span>
-                <span className="text-[10px] font-body text-neutral-400 bg-neutral-800 px-2 py-0.5 rounded-full border border-neutral-700">
-                  #EK-{user?.id?.slice(0, 6)?.toUpperCase() || '2026'}
-                </span>
-              </div>
+    // Campus options — distinct campus branches from booking database records,
+    // narrowed to the selected university when it matches a record
+    const campusOptions = useMemo(() => {
+        const pool = studioSpecs.university
+            ? dbAcademicRecords.filter((r) => r.school === studioSpecs.university)
+            : dbAcademicRecords;
+        const source = pool.length > 0 ? pool : dbAcademicRecords;
+        const seen = new Map();
+        source.forEach((r) => {
+            if (!r.campus || seen.has(r.campus)) return;
+            seen.set(r.campus, {
+                value: r.campus,
+                label: r.campus,
+                badge: r.bookingNumber ? `#${r.bookingNumber}` : '',
+            });
+        });
+        if (studioSpecs.campus && !seen.has(studioSpecs.campus)) {
+            seen.set(studioSpecs.campus, {
+                value: studioSpecs.campus,
+                label: studioSpecs.campus,
+                badge: 'On file',
+            });
+        }
+        return [...seen.values()];
+    }, [dbAcademicRecords, studioSpecs.university, studioSpecs.campus]);
 
-              <h1 className="text-xl sm:text-2xl font-heading text-white font-bold tracking-tight truncate">
-                {formData.firstName || 'Client'} {formData.lastName || ''}
-              </h1>
+    // Student ID options — distinct IDs from booking database records
+    const studentIdOptions = useMemo(() => {
+        const seen = new Map();
+        dbAcademicRecords.forEach((r) => {
+            if (!r.studentId || seen.has(r.studentId)) return;
+            seen.set(r.studentId, {
+                value: r.studentId,
+                label: r.studentId,
+                badge: r.bookingNumber ? `#${r.bookingNumber}` : '',
+            });
+        });
+        if (studioSpecs.studentId && !seen.has(studioSpecs.studentId)) {
+            seen.set(studioSpecs.studentId, {
+                value: studioSpecs.studentId,
+                label: studioSpecs.studentId,
+                badge: 'On file',
+            });
+        }
+        return [...seen.values()];
+    }, [dbAcademicRecords, studioSpecs.studentId]);
 
-              <p className="text-xs text-neutral-300 font-body flex items-center gap-1.5 truncate">
-                <Building size={12} className="text-gold shrink-0" />
-                <span>{customData.university} · {customData.degree}</span>
-              </p>
-            </div>
-          </div>
+    // Class section options — distinct sections from booking database records
+    const sectionOptions = useMemo(() => {
+        const seen = new Map();
+        dbAcademicRecords.forEach((r) => {
+            if (!r.section || seen.has(r.section)) return;
+            seen.set(r.section, {
+                value: r.section,
+                label: r.section,
+                badge: r.bookingNumber ? `#${r.bookingNumber}` : '',
+            });
+        });
+        if (studioSpecs.section && !seen.has(studioSpecs.section)) {
+            seen.set(studioSpecs.section, {
+                value: studioSpecs.section,
+                label: studioSpecs.section,
+                badge: 'On file',
+            });
+        }
+        return [...seen.values()];
+    }, [dbAcademicRecords, studioSpecs.section]);
 
-          {/* Readiness Meter & Quick Action */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 border-t md:border-t-0 md:border-l border-neutral-800 pt-4 md:pt-0 md:pl-6">
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs gap-3">
-                <span className="text-neutral-400 font-body">Profile Readiness</span>
-                <span className="text-gold font-bold font-body">{readinessPct}%</span>
-              </div>
-              <div className="w-36 sm:w-44 h-2 rounded-full bg-neutral-800 overflow-hidden border border-neutral-700">
-                <div 
-                  className="h-full bg-gradient-to-r from-gold-dark via-gold to-gold-light rounded-full transition-all duration-700" 
-                  style={{ width: `${readinessPct}%` }}
-                />
-              </div>
-              <p className="text-[10px] text-neutral-400 font-body">
-                {passedCount} of {readinessChecks.length} verified
-              </p>
-            </div>
+    const fullName = [formData.firstName, formData.middleName, formData.lastName].filter(Boolean).join(' ') || 'Client Member';
+    const initials = `${formData.firstName?.charAt(0) || ''}${formData.lastName?.charAt(0) || ''}`.toUpperCase() || 'EK';
 
-            <button
-              type="button"
-              onClick={() => setIsEditProfileModalOpen(true)}
-              className="btn-primary py-2 px-3.5 text-xs flex items-center gap-1.5 shadow-md shadow-gold/20 shrink-0 cursor-pointer"
-            >
-              <Edit2 size={12} /> Edit Profile
-            </button>
-          </div>
+    const memberSince = user?.created_at
+        ? new Date(user.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+        : 'Member';
 
-        </div>
-      </div>
+    // Profile completeness
+    const completeness = useMemo(() => {
+        const checks = [
+            !!formData.firstName, !!formData.lastName, !!formData.phone, !!formData.address,
+            !!studioSpecs.university, !!studioSpecs.degree, !!studioSpecs.gradYear,
+            !!studioSpecs.studentId, !!studioSpecs.section,
+            !!studioSpecs.shipping_address || studioSpecs.preferred_courier === 'studio_pickup',
+            !!profile?.avatar_url,
+        ];
+        const done = checks.filter(Boolean).length;
+        return Math.round((done / checks.length) * 100);
+    }, [formData, studioSpecs, profile]);
 
-      {/* ── 2. Metric Overview Strip (Compact & Clean) ───────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: 'Registered Sessions', value: totalBookings, icon: Camera, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-950/40' },
-          { label: 'Completed & Released', value: completedShoots, icon: CheckCircle, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-950/40' },
-          { label: 'Studio Investment', value: `₱${totalInvestment.toLocaleString()}`, icon: Award, color: 'text-gold', bg: 'bg-gold/10 dark:bg-gold/15' },
-          { label: 'Readiness Score', value: `${readinessPct}%`, icon: ShieldCheck, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-950/40' },
-        ].map((stat, i) => (
-          <div key={i} className="bg-white dark:bg-neutral-900 p-4 rounded-2xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl ${stat.bg} ${stat.color} flex items-center justify-center font-bold shrink-0`}>
-              <stat.icon size={17} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-lg font-heading font-bold text-primary dark:text-neutral-100 truncate">{stat.value}</p>
-              <p className="text-[11px] text-neutral-500 truncate">{stat.label}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+    // Copy Residential Address into Shipping Address
+    const handleCopyResidentialAddress = () => {
+        if (!formData.address) {
+            setToast({ type: 'info', message: 'No permanent address recorded yet.' });
+            return;
+        }
+        setStudioSpecs(prev => ({
+            ...prev,
+            shipping_address: formData.address,
+            courier_recipient_name: prev.courier_recipient_name || fullName,
+            courier_phone: prev.courier_phone || formData.phone,
+        }));
+        setToast({ type: 'success', message: 'Address copied to delivery destination!' });
+    };
 
-      {/* ── 3. Client Pass & Readiness Breakdown (2-Column) ─────────────────── */}
-      <section id="section-pass" className="scroll-mt-24">
-        <div className="grid lg:grid-cols-12 gap-5 items-stretch">
-          
-          {/* Left: Studio Client Pass Card (5 cols) */}
-          <div className="lg:col-span-5 bg-gradient-to-br from-neutral-950 via-neutral-900 to-[#121c2d] text-white p-5 sm:p-6 rounded-3xl border border-neutral-800 shadow-lg relative overflow-hidden flex flex-col justify-between h-full space-y-5">
-            <div className="absolute top-0 right-0 w-44 h-44 bg-gold/10 rounded-full blur-2xl pointer-events-none" />
-            
-            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Camera size={16} className="text-gold" />
-                <span className="font-heading font-bold tracking-wider text-xs">E-KODAK CLIENT PASS</span>
-              </div>
-              <span className="text-[9px] font-body bg-neutral-800 text-gold px-2 py-0.5 rounded-full font-bold border border-gold/30 uppercase">
-                ACTIVE
-              </span>
-            </div>
+    return (
+        <div className="w-full max-w-screen-2xl mx-auto space-y-5 animate-fade-in pb-24 relative">
+            <Toast toast={toast} onClose={() => setToast(null)} />
 
-            <div className="flex items-center gap-4">
-              <div 
-                onClick={() => setPhotoModalOpen(true)}
-                className="relative group cursor-pointer shrink-0"
-                title="Click to update portrait photo"
-              >
-                <div className="w-18 h-22 sm:w-20 sm:h-24 rounded-2xl bg-neutral-900 border border-gold/40 shadow-lg p-0.5 overflow-hidden ring-1 ring-gold/20">
-                  {profile?.avatar_url ? (
-                    <img 
-                      src={profile.avatar_url} 
-                      alt={`${formData.firstName || 'Client'} portrait`} 
-                      className="w-full h-full object-cover rounded-[14px]"
+            {/* ambient page glows */}
+            <div className="pointer-events-none absolute -top-10 -left-10 w-[420px] h-[420px] bg-gold/15 blur-[120px] rounded-full" />
+            <div className="pointer-events-none absolute top-40 -right-16 w-[380px] h-[380px] bg-amber-500/10 blur-[120px] rounded-full" />
+
+            {/* ═══════════ 1. CINEMATIC PROFILE HERO ═══════════ */}
+            <section className="relative rounded-[28px] overflow-hidden border border-white/10 shadow-[0_24px_80px_-20px_rgba(0,0,0,0.55)] bg-[#0b0c12]">
+                {/* cover art */}
+                <div className="absolute inset-0">
+                    <div className="absolute inset-0 bg-[radial-gradient(900px_circle_at_15%_0%,rgba(201,169,110,0.35),transparent_60%),radial-gradient(800px_circle_at_90%_20%,rgba(217,119,6,0.22),transparent_55%),radial-gradient(700px_circle_at_50%_110%,rgba(56,42,18,0.8),transparent_60%),linear-gradient(160deg,#101218_0%,#0b0c12_45%,#141019_100%)]" />
+                    {/* film grid */}
+                    <div
+                        className="absolute inset-0 opacity-[0.14]"
+                        style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.14) 1px, transparent 1px)', backgroundSize: '44px 44px', maskImage: 'radial-gradient(80% 90% at 50% 10%, black 40%, transparent 100%)' }}
                     />
-                  ) : (
-                    <div className="w-full h-full rounded-[14px] bg-neutral-950 flex flex-col items-center justify-center text-gold">
-                      <span className="font-heading font-bold text-lg">{initials}</span>
-                      <Camera size={12} className="text-gold/60 mt-1" />
+                    <div className="absolute -top-24 right-[8%] w-96 h-96 bg-gold/25 blur-[110px] rounded-full animate-float-slow-1" />
+                    <div className="absolute -bottom-32 left-[5%] w-[420px] h-[420px] bg-amber-600/20 blur-[120px] rounded-full animate-float-slow-2" />
+                    {/* aperture rings */}
+                    <div className="absolute -right-20 -top-20 w-[380px] h-[380px] rounded-full border border-gold/15" />
+                    <div className="absolute -right-12 -top-12 w-[300px] h-[300px] rounded-full border border-gold/20" />
+                    <div className="absolute -right-4 -top-4 w-[220px] h-[220px] rounded-full border border-gold/25" />
+                </div>
+
+                <div className="relative z-10 p-6 sm:p-9">
+                    {/* top bar */}
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-2 text-[11px] font-body text-white/60">
+                            <Link to="/dashboard" className="hover:text-gold transition-colors">Dashboard</Link>
+                            <ChevronRight size={12} />
+                            <span className="text-gold font-semibold">My Profile</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={handleExportData}
+                                className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/8 border border-white/15 text-white/80 text-xs font-bold backdrop-blur-md hover:bg-white/15 hover:border-gold/40 transition-all cursor-pointer"
+                            >
+                                <Download size={13} /> Export
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSave}
+                                disabled={isSaving}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-gold-light via-gold to-gold-dark text-[#1a1408] text-xs font-extrabold shadow-lg shadow-gold/30 hover:brightness-110 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60"
+                            >
+                                {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                                {isSaving ? 'Saving…' : 'Save changes'}
+                            </button>
+                        </div>
                     </div>
-                  )}
-                </div>
-                <div className="absolute inset-0 bg-neutral-950/70 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-gold">
-                  <Camera size={16} />
-                </div>
-              </div>
 
-              <div className="space-y-1 min-w-0 flex-1">
-                <p className="text-[9px] text-neutral-400 font-body uppercase tracking-widest">Client Name</p>
-                <h3 className="font-heading text-lg sm:text-xl font-bold text-white leading-tight truncate">
-                  {formData.firstName || 'Client'} {formData.lastName || ''}
-                </h3>
-                <p className="text-xs text-neutral-300 font-body truncate">{customData.university}</p>
-                <p className="text-xs text-neutral-400 font-body truncate">{customData.degree}</p>
-              </div>
-            </div>
+                    {/* identity row */}
+                    <div className="mt-7 flex flex-col lg:flex-row lg:items-end gap-7">
+                        <div className="flex items-start sm:items-center gap-5 flex-1 min-w-0">
+                            {/* avatar */}
+                            <button
+                                type="button"
+                                onClick={() => setPhotoModalOpen(true)}
+                                className="group relative shrink-0 cursor-pointer"
+                                title="Update portrait photo"
+                            >
+                                <div className="absolute -inset-2 rounded-[30px] bg-gradient-to-br from-gold/50 via-transparent to-amber-500/40 blur-xl opacity-60 group-hover:opacity-100 transition-opacity" />
+                                <div className="relative w-24 h-24 sm:w-[112px] sm:h-[112px] rounded-[26px] p-[3px] bg-gradient-to-br from-gold-light via-gold to-gold-dark shadow-2xl">
+                                    <div className="w-full h-full rounded-[23px] bg-[#15161d] flex items-center justify-center overflow-hidden text-gold font-heading text-3xl font-bold">
+                                        {profile?.avatar_url ? (
+                                            <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <span className="bg-gradient-to-br from-gold-light to-gold-dark bg-clip-text text-transparent">{initials}</span>
+                                        )}
+                                    </div>
+                                </div>
+                                <span className="absolute -bottom-1 -right-1 w-9 h-9 rounded-2xl bg-gradient-to-br from-gold-light to-gold-dark text-[#1a1408] flex items-center justify-center shadow-lg shadow-black/40 ring-4 ring-[#0b0c12] group-hover:scale-110 transition-transform">
+                                    <Camera size={15} strokeWidth={2.5} />
+                                </span>
+                                <span className="absolute top-2 -left-1 w-3.5 h-3.5 rounded-full bg-emerald-400 ring-4 ring-[#0b0c12] shadow-lg" title="Active member" />
+                            </button>
 
-            <div className="grid grid-cols-2 gap-2.5 py-2.5 text-xs font-body border-y border-neutral-800/80 bg-neutral-900/40 -mx-1 px-2.5 rounded-xl">
-              <div>
-                <span className="text-[9px] text-neutral-400 block">MEMBER ID</span>
-                <span className="font-bold text-gold">#EK-{user?.id?.slice(0, 6)?.toUpperCase() || '2026'}</span>
-              </div>
-              <div>
-                <span className="text-[9px] text-neutral-400 block">ENROLLED</span>
-                <span className="text-neutral-200">{memberSince}</span>
-              </div>
-              <div>
-                <span className="text-[9px] text-neutral-400 block">BRANCH</span>
-                <span className="text-neutral-200">Cebu Studio</span>
-              </div>
-              <div>
-                <span className="text-[9px] text-neutral-400 block">TOGA SIZE</span>
-                <span className="text-neutral-200">{customData.togaSize?.split(' ')[0] || 'Standard'}</span>
-              </div>
-            </div>
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="inline-flex items-center gap-1 text-xs font-extrabold uppercase tracking-[0.16em] text-[#1a1408] bg-gradient-to-r from-gold-light to-gold px-2.5 py-1 rounded-full shadow-md shadow-gold/25">
+                                        <Sparkles size={11} /> Account Owner
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 text-xs font-mono text-white/70 bg-white/8 border border-white/12 px-2.5 py-1 rounded-full backdrop-blur-md">
+                                        <Fingerprint size={11} className="text-gold" /> #EK-{user?.id?.slice(0, 8)?.toUpperCase() || 'CLIENT'}
+                                    </span>
+                                    <span className="hidden sm:inline-flex items-center gap-1 text-xs font-body text-emerald-300 bg-emerald-400/10 border border-emerald-300/25 px-2.5 py-1 rounded-full">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Verified client
+                                    </span>
+                                </div>
+                                <h1 className="mt-2 font-heading text-3xl sm:text-[40px] leading-[1.05] font-bold text-white tracking-tight truncate">
+                                    {fullName}
+                                </h1>
+                                <div className="mt-1.5 flex items-center gap-3 text-[13px] text-white/65 font-body flex-wrap">
+                                    <span className="inline-flex items-center gap-1.5 min-w-0">
+                                        <Building size={13} className="text-gold shrink-0" />
+                                        <span className="truncate">{studioSpecs.university ? `${studioSpecs.university}${studioSpecs.degree ? ` · ${studioSpecs.degree}` : ''}` : 'Academic institution not set yet'}</span>
+                                    </span>
+                                    <span className="hidden sm:inline text-white/25">•</span>
+                                    <span className="inline-flex items-center gap-1.5">
+                                        <Calendar size={13} className="text-gold/80" /> Joined {memberSince}
+                                    </span>
+                                </div>
+                                <div className="mt-2.5 flex items-center gap-2 text-xs text-white/60 font-body flex-wrap">
+                                    <span className="inline-flex items-center gap-1.5 bg-white/6 border border-white/10 rounded-full pl-1 pr-3 py-1 backdrop-blur-md max-w-full">
+                                        <span className="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center shrink-0"><Mail size={12} /></span>
+                                        <span className="truncate max-w-[220px]">{user?.email || 'Registered Client'}</span>
+                                    </span>
+                                    {formData.phone && (
+                                        <span className="inline-flex items-center gap-1.5 bg-white/6 border border-white/10 rounded-full pl-1 pr-3 py-1 backdrop-blur-md">
+                                            <span className="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center shrink-0"><Phone size={12} /></span>
+                                            {formData.phone}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
 
-            <div className="flex items-center justify-between text-xs text-neutral-400 border-t border-neutral-800/80 pt-2">
-              <span className="flex items-center gap-1.5 text-[11px] text-neutral-300">
-                <QrCode size={13} className="text-gold" />
-                <span>Kiosk Check-In ID</span>
-              </span>
-              <Link to="/dashboard" className="text-gold hover:text-gold-light text-[11px] font-bold inline-flex items-center gap-1">
-                <span>View Dashboard →</span>
-              </Link>
-            </div>
-          </div>
-
-          {/* Right: Client Account Information & Specifications (7 cols) */}
-          <div className="lg:col-span-7 bg-white dark:bg-neutral-900 p-5 sm:p-6 rounded-3xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs flex flex-col justify-between h-full space-y-4">
-            
-            {/* 1. Header with quick jump to personal specs */}
-            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <User size={15} className="text-gold" />
-                  <h3 className="font-heading text-sm font-bold text-primary dark:text-neutral-100">
-                    Client Account & Shoot Profile
-                  </h3>
-                </div>
-                <p className="text-xs text-neutral-500 font-body">
-                  Personal identity, delivery destination, and studio fitting record
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsEditProfileModalOpen(true)}
-                  className="px-2.5 py-1 rounded-lg bg-gold/10 hover:bg-gold/20 text-gold-dark dark:text-gold text-xs font-bold flex items-center gap-1 font-body transition-colors cursor-pointer"
-                >
-                  <Edit2 size={11} /> Edit Profile
-                </button>
-                <button
-                  type="button"
-                  onClick={() => scrollToSection('section-personal')}
-                  className="text-xs font-medium text-neutral-400 hover:text-primary dark:hover:text-neutral-200 transition-colors"
-                >
-                  Jump to Form ↓
-                </button>
-              </div>
-            </div>
-
-            {/* 2. Structured User Info Details */}
-            <div className="grid sm:grid-cols-2 gap-3 text-xs">
-              {/* Contact & Courier Endpoints */}
-              <div className="bg-neutral-50/70 dark:bg-neutral-800/40 p-3 rounded-2xl border border-neutral-200/60 dark:border-neutral-800 space-y-2">
-                <div className="flex items-center gap-1.5 text-neutral-400 font-body text-[10px] uppercase font-bold tracking-wider">
-                  <Mail size={12} className="text-gold" />
-                  <span>Contact & Dispatch</span>
-                </div>
-                <div className="space-y-1">
-                  <p className="font-semibold text-primary dark:text-neutral-100 truncate flex items-center gap-1.5">
-                    <span className="text-neutral-400 text-[11px]">Email:</span>
-                    <span className="truncate">{user?.email || 'Registered client'}</span>
-                  </p>
-                  <p className="font-semibold text-primary dark:text-neutral-100 truncate flex items-center gap-1.5">
-                    <span className="text-neutral-400 text-[11px]">Phone:</span>
-                    <span className="truncate font-body">{formData.phone || profile?.phone || 'No phone set'}</span>
-                  </p>
-                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate flex items-start gap-1 pt-0.5">
-                    <MapPin size={12} className="text-gold shrink-0 mt-0.5" />
-                    <span className="truncate">{addressCustomizations.shippingAddress || formData.address || 'No shipping address set'}</span>
-                  </p>
-                </div>
-              </div>
-
-              {/* Academic & Fitting Specifications */}
-              <div className="bg-neutral-50/70 dark:bg-neutral-800/40 p-3 rounded-2xl border border-neutral-200/60 dark:border-neutral-800 space-y-2">
-                <div className="flex items-center gap-1.5 text-neutral-400 font-body text-[10px] uppercase font-bold tracking-wider">
-                  <GraduationCap size={12} className="text-gold" />
-                  <span>Academic & Studio Specs</span>
-                </div>
-                <div className="space-y-1">
-                  <p className="font-semibold text-primary dark:text-neutral-100 truncate">
-                    {customData.university}
-                  </p>
-                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate">
-                    {customData.degree} · Batch {customData.gradYear || '2026'}
-                  </p>
-                  <p className="text-[11px] text-gold-dark dark:text-gold font-body truncate pt-0.5">
-                    Toga: {customData.togaSize?.split(' ')[0] || 'S'} · Hood: {HOOD_DISCIPLINES.find(h => h.id === customData.hoodDiscipline)?.label?.split('(')[0]?.trim() || 'IT/CS'}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* 3. Shoot Day Readiness Breakdown as a Dropdown */}
-            <div className="border border-neutral-200/80 dark:border-neutral-800 rounded-2xl overflow-hidden bg-neutral-50/50 dark:bg-neutral-800/30 transition-all">
-              <button
-                type="button"
-                onClick={() => setBreakdownDropdownOpen(prev => !prev)}
-                className="w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-neutral-100/60 dark:hover:bg-neutral-800/60 transition-colors select-none"
-              >
-                <div className="flex items-center gap-2">
-                  <ShieldCheck size={15} className="text-gold" />
-                  <span className="font-heading text-xs font-bold text-primary dark:text-neutral-100">
-                    Shoot Day Readiness Breakdown
-                  </span>
-                  <span className="text-[10px] font-body font-bold text-gold bg-gold/15 px-2 py-0.2 rounded-full border border-gold/30">
-                    {readinessPct}% Ready
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-neutral-500 font-body">
-                  <span>{breakdownDropdownOpen ? 'Collapse' : `${passedCount}/${readinessChecks.length} Verified`}</span>
-                  <ChevronDown size={14} className={`transform transition-transform duration-200 ${breakdownDropdownOpen ? 'rotate-180 text-gold' : ''}`} />
-                </div>
-              </button>
-
-              {breakdownDropdownOpen && (
-                <div className="p-3 border-t border-neutral-200/60 dark:border-neutral-800 grid sm:grid-cols-2 gap-2 bg-white dark:bg-neutral-900 animate-fade-in">
-                  {readinessChecks.map(check => (
-                    <div 
-                      key={check.id}
-                      className={`p-2 rounded-xl border flex items-center gap-2 text-xs transition-all ${
-                        check.passed 
-                          ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800 text-neutral-800 dark:text-neutral-200'
-                          : 'bg-neutral-50 dark:bg-neutral-800/40 border-neutral-200 dark:border-neutral-700 text-neutral-500'
-                      }`}
-                    >
-                      <div className={`w-4.5 h-4.5 rounded-full flex items-center justify-center shrink-0 ${
-                        check.passed ? 'bg-emerald-500 text-white' : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-400'
-                      }`}>
-                        <Check size={10} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-[11px] truncate">{check.label}</p>
-                        <span className="text-[9px] font-body text-neutral-400">
-                          {check.passed ? 'Verified' : 'Pending'}
-                        </span>
-                      </div>
+                        {/* completeness */}
+                        <div className="w-full lg:w-[300px] shrink-0 rounded-3xl bg-white/[0.06] border border-white/12 backdrop-blur-xl p-5 shadow-2xl">
+                            <div className="flex items-center justify-between">
+                                <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-gold">Profile strength</p>
+                                <p className="font-heading text-2xl font-bold text-white">{completeness}<span className="text-sm text-gold">%</span></p>
+                            </div>
+                            <div className="mt-3 h-2.5 rounded-full bg-white/10 overflow-hidden">
+                                <div
+                                    className="h-full rounded-full bg-gradient-to-r from-gold-light via-gold to-amber-500 shadow-[0_0_16px_rgba(201,169,110,0.7)] transition-all duration-700"
+                                    style={{ width: `${completeness}%` }}
+                                />
+                            </div>
+                            <p className="mt-2.5 text-[11px] leading-relaxed text-white/55 font-body">
+                                {completeness >= 90
+                                    ? 'Studio-ready. Your pass, academic & delivery records are complete.'
+                                    : completeness >= 60
+                                        ? 'Almost camera-ready — finish academic & delivery details.'
+                                        : 'Add your academic records & delivery details to unlock faster check-in.'}
+                            </p>
+                            <div className="mt-3 flex items-center gap-2">
+                                {!profile?.avatar_url && (
+                                    <button type="button" onClick={() => setPhotoModalOpen(true)} className="flex-1 text-[11px] font-bold bg-white/10 hover:bg-white/15 border border-white/15 text-white rounded-xl py-2 transition-all cursor-pointer">Add photo</button>
+                                )}
+                                {!studioSpecs.university && hasDbAcademic && (
+                                    <button type="button" onClick={() => setActiveTab('academic')} className="flex-1 text-[11px] font-bold bg-gold/15 hover:bg-gold/25 border border-gold/30 text-gold rounded-xl py-2 transition-all cursor-pointer">Sync school records</button>
+                                )}
+                            </div>
+                        </div>
                     </div>
-                  ))}
                 </div>
-              )}
-            </div>
 
-            {/* 4. Active Session Card reading latest order */}
-            {latestBooking ? (
-              <div className="p-3.5 bg-gradient-to-r from-amber-50/60 to-white dark:from-amber-950/20 dark:to-neutral-900 rounded-2xl border border-gold/30 flex items-center justify-between gap-3 shadow-xs">
-                <div className="space-y-0.5 min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[9px] font-body font-bold uppercase text-gold-dark bg-gold/20 px-2 py-0.2 rounded-full font-bold">
-                      Active Session · {latestBooking.status}
-                    </span>
-                    <span className="text-[10px] font-body text-neutral-400">
-                      #{latestBooking.booking_number}
-                    </span>
-                  </div>
-                  <h4 className="font-heading text-xs sm:text-sm font-bold text-primary dark:text-neutral-100 truncate">
-                    {latestBooking.service?.name || latestBooking.tier_name || 'Senior High Packages and sets'} {latestBooking.tier_name ? `(${latestBooking.tier_name})` : ''}
-                  </h4>
-                  <p className="text-[11px] text-neutral-500 font-body truncate flex items-center gap-2">
-                    <span>{latestBooking.event_date ? new Date(latestBooking.event_date).toLocaleDateString() : 'Date Pending'}</span>
-                    <span>•</span>
-                    <span className="text-gold truncate">{latestBooking.location?.split(',')[0] || 'Cebu Studio'}</span>
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <Link
-                    to="/dashboard/progress"
-                    className="py-1.5 px-3 rounded-xl bg-gold hover:bg-gold-light text-primary text-xs font-bold flex items-center gap-1 transition-all shadow-xs"
-                    title="Open Full Booking Progress Page"
-                  >
-                    <span>Track</span>
-                    <ArrowUpRight size={12} />
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => setSessionSidebarOpen(true)}
-                    className="btn-outline py-1.5 px-2.5 text-xs flex items-center gap-1 font-bold hover:bg-gold hover:text-primary hover:border-gold transition-all"
-                    title="Quick Preview Drawer"
-                  >
-                    <span>Preview</span>
-                  </button>
-                </div>
-              </div>
+                {/* gold base line */}
+                <div className="relative h-[3px] bg-gradient-to-r from-transparent via-gold to-transparent" />
+            </section>
+
+            {/* ═══════════ 2. SESSION SPOTLIGHT ═══════════ */}
+            {detectedSessionInfo ? (
+                <section className="relative rounded-[24px] p-[1.5px] bg-gradient-to-r from-gold/60 via-amber-400/30 to-gold/60 shadow-[0_16px_50px_-16px_rgba(201,169,110,0.45)] overflow-hidden">
+                    <div className="rounded-[22.5px] bg-gradient-to-br from-[#14141c] via-[#101018] to-[#0c0d13] p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center gap-5 relative overflow-hidden">
+                        <div className="absolute -left-16 -top-16 w-64 h-64 bg-gold/15 blur-[80px] rounded-full" />
+                        <div className="flex items-center gap-4 flex-1 min-w-0 relative">
+                            <div className="relative shrink-0">
+                                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-gold-light to-gold-dark text-[#1a1408] flex items-center justify-center shadow-lg shadow-gold/40">
+                                    {detectedSessionInfo.isSchoolPictorial ? <Building size={22} /> : <Camera size={22} />}
+                                </div>
+                                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-400 ring-4 ring-[#14141c] animate-pulse" />
+                            </div>
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="inline-flex items-center gap-1 text-xs font-extrabold uppercase tracking-wider text-[#1a1408] bg-gradient-to-r from-gold-light to-gold px-2.5 py-0.5 rounded-full">
+                                        <Zap size={10} /> {detectedSessionInfo.sessionType}
+                                    </span>
+                                    <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-300 bg-emerald-400/10 border border-emerald-300/25 px-2 py-0.5 rounded-full">{detectedSessionInfo.status}</span>
+                                    <span className="text-[11px] font-mono text-white/40">#{detectedSessionInfo.bookingNumber}</span>
+                                </div>
+                                <h3 className="mt-1.5 font-heading text-lg font-bold text-white truncate">
+                                    {detectedSessionInfo.serviceName} <span className="text-gold font-body font-bold text-sm">· {detectedSessionInfo.tierName}</span>
+                                </h3>
+                                <p className="mt-1 flex items-center gap-3 text-xs text-white/60 font-body flex-wrap">
+                                    <span className="inline-flex items-center gap-1.5"><Clock size={13} className="text-gold" /> {detectedSessionInfo.dateText}{detectedSessionInfo.timeText && ` at ${detectedSessionInfo.timeText}`}</span>
+                                    <span className="text-white/20">•</span>
+                                    <span className="inline-flex items-center gap-1.5 text-gold font-semibold"><MapPin size={13} /> {detectedSessionInfo.venueName}</span>
+                                </p>
+                            </div>
+                        </div>
+                        <Link
+                            to="/dashboard/progress"
+                            className="shrink-0 inline-flex items-center gap-1.5 px-5 py-3 rounded-2xl bg-gradient-to-r from-gold-light to-gold text-[#1a1408] text-xs font-extrabold shadow-lg shadow-gold/30 hover:brightness-110 active:scale-[0.98] transition-all"
+                        >
+                            Track session <ArrowUpRight size={14} />
+                        </Link>
+                    </div>
+                </section>
             ) : (
-              <div className="p-3 bg-neutral-50 dark:bg-neutral-800/40 rounded-2xl border border-neutral-100 dark:border-neutral-800 flex items-center justify-between text-xs text-neutral-500">
-                <span>Ready to schedule your graduation portrait session?</span>
-                <Link to="/dashboard/book" className="btn-primary py-1 px-3 text-xs shrink-0">
-                  Book Now
-                </Link>
-              </div>
+                <section className="rounded-[24px] bg-white dark:bg-[#12131a] border border-neutral-200/80 dark:border-white/10 p-5 flex flex-col sm:flex-row sm:items-center gap-4 shadow-sm overflow-hidden relative">
+                    <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-gold-light to-gold-dark" />
+                    <div className="w-12 h-12 rounded-2xl bg-gold/12 text-gold-dark dark:text-gold flex items-center justify-center shrink-0">
+                        <Camera size={20} />
+                    </div>
+                    <div className="flex-1">
+                        <p className="font-heading text-[15px] font-bold text-neutral-900 dark:text-white">No active photoshoot on record</p>
+                        <p className="text-xs text-neutral-500 font-body">Celebrate your milestone — book a studio or campus pictorial in under a minute.</p>
+                    </div>
+                    <Link to="/dashboard/book" className="shrink-0 inline-flex items-center gap-1.5 px-5 py-2.5 rounded-2xl bg-neutral-900 dark:bg-gold text-white dark:text-[#1a1408] text-xs font-extrabold hover:opacity-90 transition-all">
+                        Book pictorial <ArrowUpRight size={13} />
+                    </Link>
+                </section>
             )}
 
-          </div>
-        </div>
-      </section>
-
-      {/* ── 4. E-Kodak Earned Studio Badges & Recognitions (Only Admin-Awarded Badges) ── */}
-      <section id="section-badges" className="space-y-3 scroll-mt-24">
-        <div className="flex items-center justify-between pb-1">
-          <div className="flex items-center gap-2">
-            <Award className="text-gold" size={18} />
-            <h2 className="font-heading text-lg font-bold text-primary dark:text-neutral-100">
-              E-Kodak Earned Studio Badges & Recognitions
-            </h2>
-          </div>
-          <span className="text-xs font-body font-bold text-gold bg-gold/15 px-2.5 py-0.5 rounded-full">
-            {earnedBadges.length} Awarded
-          </span>
-        </div>
-
-        {/* Clean Showcase Grid of Badges - ONLY Display Badges Awarded by Admin */}
-        {earnedBadges.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {earnedBadges.map(badge => {
-              const Icon = BADGE_ICONS[badge.iconName] || Award;
-              return (
-                <div
-                  key={badge.id}
-                  onClick={() => setSelectedBadgeModal(badge)}
-                  className="p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between space-y-2.5 bg-white dark:bg-neutral-900 border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-gold hover:shadow-md"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-xs bg-gradient-to-br ${badge.color} text-white`}>
-                      <Icon size={17} />
+            {/* ═══════════ 3. MAIN EDITOR GRID ═══════════ */}
+            <div className="grid w-full lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[330px_minmax(0,1fr)] gap-5 xl:gap-6 items-start">
+                {/* ── left rail ── */}
+                <aside className="space-y-4 lg:sticky lg:top-4">
+                    {/* navigator */}
+                    <div className="rounded-[24px] bg-white dark:bg-[#12131a] border border-neutral-200/80 dark:border-white/10 shadow-sm p-3 overflow-hidden">
+                        <p className="px-3 pt-2 pb-1 text-xs font-extrabold uppercase tracking-[0.2em] text-neutral-400">Edit sections</p>
+                        {TABS.map(tab => {
+                            const isActive = activeTab === tab.id;
+                            const doneHint =
+                                tab.id === 'personal' ? (!!formData.firstName && !!formData.phone) :
+                                    tab.id === 'academic' ? (!!studioSpecs.university && !!studioSpecs.section) :
+                                        tab.id === 'delivery' ? (studioSpecs.preferred_courier === 'studio_pickup' || !!studioSpecs.shipping_address) :
+                                            true;
+                            return (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-left transition-all cursor-pointer ${isActive
+                                        ? 'bg-gradient-to-r from-gold/20 via-gold/10 to-transparent border border-gold/30 shadow-sm'
+                                        : 'border border-transparent hover:bg-neutral-100 dark:hover:bg-white/5'
+                                        }`}
+                                >
+                                    <span className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-all ${isActive ? 'bg-gradient-to-br from-gold-light to-gold-dark text-[#1a1408] shadow-md shadow-gold/30' : 'bg-neutral-100 dark:bg-white/8 text-neutral-500'}`}>
+                                        <tab.icon size={17} />
+                                    </span>
+                                    <span className="flex-1 min-w-0">
+                                        <span className={`block text-[13px] font-extrabold ${isActive ? 'text-neutral-900 dark:text-white' : 'text-neutral-600 dark:text-neutral-300'}`}>{tab.label}</span>
+                                        <span className="block text-[11px] text-neutral-400 truncate">{tab.desc}</span>
+                                    </span>
+                                    {doneHint
+                                        ? <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+                                        : <span className="w-2 h-2 rounded-full bg-gold animate-pulse shrink-0 mr-1" />}
+                                </button>
+                            );
+                        })}
                     </div>
-                    <span className="text-[9px] font-body font-bold uppercase tracking-wider px-1.5 py-0.2 rounded-full border text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800">
-                      Verified
-                    </span>
-                  </div>
 
-                  <div className="min-w-0">
-                    <span className="text-[9px] font-body text-neutral-400 uppercase tracking-widest block truncate">
-                      {badge.category}
-                    </span>
-                    <h3 className="font-heading text-xs font-bold truncate mt-0.5 text-primary dark:text-neutral-100">
-                      {badge.title}
-                    </h3>
-                    <p className="text-[10px] text-neutral-500 font-body truncate mt-0.5">{badge.badgeLabel}</p>
-                  </div>
-
-                  <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800/80 flex items-center justify-between text-[10px] text-neutral-400 font-body">
-                    <span>{badge.awardedDate || 'Active'}</span>
-                    <span className="text-gold font-bold">Details →</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="bg-white dark:bg-neutral-900 p-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 text-center space-y-2">
-            <div className="w-10 h-10 mx-auto rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-400 flex items-center justify-center">
-              <Award size={20} />
-            </div>
-            <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">No studio badges awarded yet.</p>
-            <p className="text-[11px] text-neutral-400 font-body max-w-sm mx-auto">
-              Badges are officially granted by studio administrators after verified session milestones and photo releases.
-            </p>
-          </div>
-        )}
-      </section>
-
-      {/* ── 5. Main Form & Specifications (2-Column Organization) ───────────── */}
-      <div className="grid lg:grid-cols-12 gap-6 items-start">
-
-        {/* LEFT COLUMN: Sticky Section Navigator & Progress (4 cols) */}
-        <div className="lg:col-span-4 xl:col-span-3 lg:sticky lg:top-20 space-y-4">
-          
-          <div className="bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 rounded-2xl p-3 shadow-xs space-y-3">
-            <div className="px-3 py-1.5 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
-              <span className="text-[10px] font-body uppercase tracking-wider text-neutral-400 font-bold">
-                Specifications Nav
-              </span>
-              <span className="text-[10px] font-body text-gold font-bold">
-                {passedCount}/{readinessChecks.length} Set
-              </span>
-            </div>
-
-            <nav className="space-y-1">
-              {navMenuItems.slice(2).map(item => {
-                const isActive = activeNavSection === item.id;
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => scrollToSection(item.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all text-left ${
-                      isActive
-                        ? 'bg-neutral-900 text-white dark:bg-gold dark:text-neutral-950 font-bold shadow-xs'
-                        : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <Icon size={14} className={isActive ? 'text-gold dark:text-neutral-950' : 'text-neutral-400'} />
-                      <span className="truncate">{item.label}</span>
-                    </div>
-                    {item.done && (
-                      <Check size={12} className={isActive ? 'text-gold dark:text-neutral-950' : 'text-emerald-500'} />
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-
-            <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800">
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={isSaving}
-                className="w-full btn-primary py-2.5 text-xs flex items-center justify-center gap-1.5 shadow-sm shadow-gold/20"
-              >
-                {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                <span>{isSaving ? 'Saving Changes...' : 'Save All Changes'}</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="p-3.5 bg-neutral-50 dark:bg-neutral-900/60 rounded-2xl border border-neutral-200/70 dark:border-neutral-800 text-xs text-neutral-500 font-body space-y-1">
-            <span className="text-[10px] font-body text-gold-dark uppercase tracking-wider font-bold block">
-              Studio Assistance
-            </span>
-            <p>
-              Fitting sizes are confirmed with our wardrobe master during on-site call-time.
-            </p>
-          </div>
-
-        </div>
-
-        {/* RIGHT COLUMN: Consolidated Specification Cards (8 cols) */}
-        <form onSubmit={handleSave} className="lg:col-span-8 xl:col-span-9 space-y-6">
-
-          {/* SECTION A: Personal & Contact Information */}
-          <div id="section-personal" className="bg-white dark:bg-neutral-900 rounded-2xl p-5 sm:p-6 border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-4 scroll-mt-24">
-            <div className="border-b border-neutral-100 dark:border-neutral-800 pb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <User size={17} className="text-gold" />
-                <h3 className="font-heading text-sm font-bold text-primary dark:text-neutral-100">
-                  Personal & Contact Information
-                </h3>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsEditProfileModalOpen(true)}
-                  className="px-2.5 py-1 text-xs font-bold text-gold hover:text-gold-dark bg-gold/10 hover:bg-gold/20 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
-                >
-                  <Edit2 size={11} />
-                  <span>Full Modal Editor</span>
-                </button>
-                <span className="text-[10px] font-body text-neutral-400 hidden sm:inline">Account Owner</span>
-              </div>
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  First Name *
-                </label>
-                <input
-                  name="firstName"
-                  value={formData.firstName}
-                  onChange={handleFormChange}
-                  className="w-full px-3.5 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none font-body text-xs"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Last Name *
-                </label>
-                <input
-                  name="lastName"
-                  value={formData.lastName}
-                  onChange={handleFormChange}
-                  className="w-full px-3.5 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none font-body text-xs"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Email Address
-                </label>
-                <input
-                  value={user?.email || ''}
-                  disabled
-                  className="w-full px-3.5 py-2 bg-neutral-100 dark:bg-neutral-800/50 border border-neutral-200 dark:border-neutral-700 rounded-xl text-neutral-400 font-body text-xs cursor-not-allowed"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Primary Mobile Phone (Philippine Mobile)
-                </label>
-                <input
-                  name="phone"
-                  value={formData.phone}
-                  onChange={handleFormChange}
-                  placeholder="+63 900 000 0000"
-                  className="w-full px-3.5 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none font-body text-xs"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Print Courier Delivery Address
-                </label>
-                <textarea
-                  name="address"
-                  rows={2}
-                  value={formData.address}
-                  onChange={handleFormChange}
-                  placeholder="House/Unit No., Street, Barangay, City/Municipality, Cebu, Postal Code..."
-                  className="w-full px-3.5 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none font-body text-xs resize-none"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Bio / Graduation Motto & Studio Note
-                </label>
-                <textarea
-                  name="bio"
-                  rows={2}
-                  value={formData.bio}
-                  onChange={handleFormChange}
-                  placeholder="Write a brief graduation motto or note for the studio..."
-                  className="w-full px-3.5 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none font-body text-xs resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Emergency Contact Name
-                </label>
-                <input
-                  value={customData.emergencyContactName}
-                  onChange={e => handleCustomChange('emergencyContactName', e.target.value)}
-                  placeholder="e.g. Maria Repunte"
-                  className="w-full px-3.5 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none font-body text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Emergency Contact Phone
-                </label>
-                <input
-                  value={customData.emergencyContactPhone}
-                  onChange={e => handleCustomChange('emergencyContactPhone', e.target.value)}
-                  placeholder="+63 900 000 0000"
-                  className="w-full px-3.5 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none font-body text-xs"
-                />
-              </div>
-            </div>
-
-            {/* Direct Section Save Action Bar */}
-            <div className="pt-3 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between gap-3">
-              <p className="text-[11px] text-neutral-400 font-body hidden sm:block">
-                All changes sync automatically to your official client pass and studio roster.
-              </p>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={isSaving}
-                className="btn-primary py-2 px-5 text-xs font-bold flex items-center gap-2 shadow-sm shadow-gold/20 ml-auto cursor-pointer"
-              >
-                {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                <span>{isSaving ? 'Saving Changes...' : 'Save Personal Details'}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* SECTION B: Academic & Course Milestone */}
-          <div id="section-academic" className="bg-white dark:bg-neutral-900 rounded-2xl p-5 sm:p-6 border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-4 scroll-mt-24">
-            <div className="border-b border-neutral-100 dark:border-neutral-800 pb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <GraduationCap size={17} className="text-gold" />
-                <h3 className="font-heading text-sm font-bold text-primary dark:text-neutral-100">
-                  Academic & Graduation Milestone
-                </h3>
-              </div>
-              <span className="text-[10px] font-body text-neutral-400">University Specs</span>
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  University / College Institution
-                </label>
-                <StudioDropdown
-                  value={customData.university}
-                  onChange={val => handleCustomChange('university', val)}
-                  options={universityOptions}
-                  searchable
-                  placeholder="Select University / Institution"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Campus Location
-                </label>
-                <input
-                  value={customData.campus}
-                  onChange={e => handleCustomChange('campus', e.target.value)}
-                  placeholder="e.g. Main Campus, Naga Extension..."
-                  className="w-full px-3.5 py-2.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none font-body text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Degree / Major Program
-                </label>
-                <input
-                  value={customData.degree}
-                  onChange={e => handleCustomChange('degree', e.target.value)}
-                  placeholder="e.g. BS in Information Technology"
-                  className="w-full px-3.5 py-2.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none font-body text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Graduation Year & Honors
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <StudioDropdown
-                    value={customData.gradYear}
-                    onChange={val => handleCustomChange('gradYear', val)}
-                    options={GRAD_YEAR_OPTIONS}
-                  />
-                  <StudioDropdown
-                    value={customData.honors}
-                    onChange={val => handleCustomChange('honors', val)}
-                    options={HONORS_OPTIONS}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* SECTION C: Shoot & Fitting Specifications */}
-          <div id="section-shoot-specs" className="bg-white dark:bg-neutral-900 rounded-2xl p-5 sm:p-6 border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-4 scroll-mt-24">
-            <div className="border-b border-neutral-100 dark:border-neutral-800 pb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Palette size={17} className="text-gold" />
-                <h3 className="font-heading text-sm font-bold text-primary dark:text-neutral-100">
-                  Custom Studio Shoot & Wardrobe Fitting
-                </h3>
-              </div>
-              <span className="text-[10px] font-body text-neutral-400">Styling & Calibration</span>
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Academic Toga Robe Size
-                </label>
-                <StudioDropdown
-                  value={customData.togaSize}
-                  onChange={val => handleCustomChange('togaSize', val)}
-                  options={TOGA_SIZES}
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Hood Discipline / Collar Velvet Color
-                </label>
-                <StudioDropdown
-                  value={customData.hoodDiscipline}
-                  onChange={val => handleCustomChange('hoodDiscipline', val)}
-                  options={hoodDisciplineOptions}
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Backdrop Ambient Lighting
-                </label>
-                <StudioDropdown
-                  value={customData.backdrop}
-                  onChange={val => handleCustomChange('backdrop', val)}
-                  options={backdropOptions}
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Digital Retouching Style
-                </label>
-                <StudioDropdown
-                  value={customData.retouch}
-                  onChange={val => handleCustomChange('retouch', val)}
-                  options={retouchOptions}
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="block text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Special Notes for Photographer & Stylist
-                </label>
-                <textarea
-                  rows={2}
-                  value={customData.photographerNotes}
-                  onChange={e => handleCustomChange('photographerNotes', e.target.value)}
-                  placeholder="e.g. Prefers profile angle, glasses anti-glare, specific smile preference..."
-                  className="w-full px-3.5 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none font-body text-xs resize-none"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* SECTION D: Client Service Terms & Model Release (High Readability) */}
-          <div id="section-terms" className="bg-white dark:bg-neutral-900 rounded-2xl p-5 sm:p-6 border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-4 scroll-mt-24">
-            <div className="border-b border-neutral-100 dark:border-neutral-800 pb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FileText size={17} className="text-gold" />
-                <h3 className="font-heading text-sm font-bold text-primary dark:text-neutral-100">
-                  Client Service Terms & Agreements
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setTermsCertModalOpen(true)}
-                className="text-[11px] font-bold text-gold hover:text-gold-dark flex items-center gap-1 font-body"
-              >
-                <span>View Certificate</span>
-                <ArrowUpRight size={12} />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {/* Clause 1: Session Conduct */}
-              <div className="p-3.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/80 dark:border-neutral-700/60 space-y-1">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-xs text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-                    <Clock size={13} className="text-gold" />
-                    <span>1. 15-Minute Call-Time & 48h Rescheduling</span>
-                  </h4>
-                  <span className="text-[10px] font-body text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.2 rounded-full border border-emerald-200 dark:border-emerald-800">
-                    Enforced
-                  </span>
-                </div>
-                <p className="text-[11px] text-neutral-500 font-body leading-relaxed">
-                  Arrive 15 minutes before camera time for toga steaming & grooming. Zero rebooking fees when rescheduled 48 hours in advance.
-                </p>
-              </div>
-
-              {/* Clause 2: Model Release Toggle */}
-              <div className="p-3.5 rounded-xl bg-purple-50/40 dark:bg-purple-950/20 border border-purple-200/70 dark:border-purple-800/60 space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <Sparkles size={14} className="text-purple-600 dark:text-purple-400 shrink-0" />
-                    <div>
-                      <h4 className="font-bold text-xs text-neutral-800 dark:text-neutral-200">
-                        2. Model Release & Lookbook Consent
-                      </h4>
-                      <p className="text-[10px] text-neutral-500">
-                        {customData.agreedModelRelease ? 'Consented for studio print lookbook' : 'Strictly confidential — private only'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleModelReleaseToggle(!customData.agreedModelRelease)}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1 ${
-                      customData.agreedModelRelease
-                        ? 'bg-purple-600 text-white shadow-xs'
-                        : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
-                    }`}
-                  >
-                    {customData.agreedModelRelease ? <Check size={11} /> : null}
-                    <span>{customData.agreedModelRelease ? 'Consented' : 'Confidential'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Clause 3: 365 Cloud Vault */}
-              <div className="p-3.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/80 dark:border-neutral-700/60 space-y-1">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-xs text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-                    <ShieldCheck size={13} className="text-gold" />
-                    <span>3. 365-Day Cloud Vault & Reproduction Rights</span>
-                  </h4>
-                  <span className="text-[10px] font-body text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.2 rounded-full border border-emerald-200 dark:border-emerald-800">
-                    Protected
-                  </span>
-                </div>
-                <p className="text-[11px] text-neutral-500 font-body leading-relaxed">
-                  High-res soft copies preserved in private cloud storage for 365 days with unencumbered personal printing license.
-                </p>
-              </div>
-
-              {/* Clause 4: Payment Policy */}
-              <div className="p-3.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/80 dark:border-neutral-700/60 space-y-1">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-xs text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-                    <Award size={13} className="text-gold" />
-                    <span>4. 50% Downpayment & Shoot-Day Settlement</span>
-                  </h4>
-                  <span className="text-[10px] font-body text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.2 rounded-full border border-emerald-200 dark:border-emerald-800">
-                    Active
-                  </span>
-                </div>
-                <p className="text-[11px] text-neutral-500 font-body leading-relaxed">
-                  50% confirms your reserved camera bay. Remaining balance cleared on shoot day before lab print dispatch.
-                </p>
-              </div>
-            </div>
-
-            {/* Electronic Signature Audit Stamp */}
-            <div className="p-3.5 rounded-xl bg-neutral-900 text-neutral-200 border border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] font-body">
-              <span className="truncate"><strong className="text-gold">Audit Signature:</strong> {customData.termsSignatureHash}</span>
-              <span className="text-emerald-400 font-bold shrink-0 flex items-center gap-1">
-                <Check size={12} /> Verified Studio Agreement
-              </span>
-            </div>
-          </div>
-
-          {/* SECTION E: Account Security & Data Export */}
-          <div id="section-security" className="bg-white dark:bg-neutral-900 rounded-2xl p-5 sm:p-6 border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-4 scroll-mt-24">
-            <div className="border-b border-neutral-100 dark:border-neutral-800 pb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Lock size={17} className="text-gold" />
-                <h3 className="font-heading text-sm font-bold text-primary dark:text-neutral-100">
-                  Account Security & Data Export
-                </h3>
-              </div>
-              <span className="text-[10px] font-body text-neutral-400">Security</span>
-            </div>
-
-            <div className="divide-y divide-neutral-100 dark:divide-neutral-800 space-y-3">
-              <div className="flex items-center justify-between pt-1">
-                <div>
-                  <h4 className="font-semibold text-xs text-primary dark:text-neutral-100">Password Recovery</h4>
-                  <p className="text-[11px] text-neutral-500 font-body mt-0.5">Send a secure reset link to your email.</p>
-                </div>
-                <button
-                  type="button"
-                  className="btn-outline py-1.5 px-3 text-xs"
-                  onClick={() => setToast({ type: 'info', message: 'Password reset link sent to your email.' })}
-                >
-                  Reset Password
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between pt-3">
-                <div>
-                  <h4 className="font-semibold text-xs text-primary dark:text-neutral-100">Export Specifications</h4>
-                  <p className="text-[11px] text-neutral-500 font-body mt-0.5">Download a JSON copy of your profile & sizing.</p>
-                </div>
-                <button
-                  type="button"
-                  className="btn-outline py-1.5 px-3 text-xs flex items-center gap-1"
-                  onClick={() => {
-                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ profile, customData }, null, 2));
-                    const dlAnchor = document.createElement('a');
-                    dlAnchor.setAttribute("href", dataStr);
-                    dlAnchor.setAttribute("download", `ekodak_profile_${user?.id?.slice(0, 6) || 'client'}.json`);
-                    dlAnchor.click();
-                    setToast({ type: 'success', message: 'Profile data exported!' });
-                  }}
-                >
-                  <Download size={12} />
-                  <span>Export JSON</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom Floating/Fixed Save Bar */}
-          <div className="sticky bottom-6 z-20 bg-neutral-950/90 backdrop-blur-md text-white p-3.5 sm:p-4 rounded-2xl border border-neutral-800 shadow-2xl flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-gold font-body uppercase tracking-wider truncate">
-                Profile Specifications
-              </p>
-              <p className="text-[11px] text-neutral-400 truncate">
-                Save modifications to your toga sizing and contact details.
-              </p>
-            </div>
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="btn-primary py-2 px-5 text-xs flex items-center gap-1.5 shadow-md shadow-gold/20 shrink-0"
-            >
-              {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-              <span>{isSaving ? 'Saving...' : 'Save Changes'}</span>
-            </button>
-          </div>
-
-        </form>
-
-      </div>
-
-      {/* ── MODAL: BADGE DETAILS POPUP ────────────────────────────────────── */}
-      {selectedBadgeModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-neutral-900 rounded-3xl p-6 max-w-sm w-full border border-neutral-200 dark:border-neutral-800 shadow-2xl space-y-4 animate-slide-up">
-            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
-              <span className="text-[10px] font-body text-neutral-400 uppercase tracking-widest font-bold">
-                {selectedBadgeModal.category}
-              </span>
-              <button onClick={() => setSelectedBadgeModal(null)} className="text-neutral-400 hover:text-primary dark:hover:text-white">
-                ✕
-              </button>
-            </div>
-
-            <div className="text-center space-y-2 py-2">
-              <div className={`w-14 h-14 mx-auto rounded-2xl flex items-center justify-center shadow-sm ${
-                selectedBadgeModal.isAwarded 
-                  ? `bg-gradient-to-br ${selectedBadgeModal.color} text-white` 
-                  : 'bg-neutral-200 dark:bg-neutral-800 text-neutral-400'
-              }`}>
-                {React.createElement(BADGE_ICONS[selectedBadgeModal.iconName] || Award, { size: 26 })}
-              </div>
-              <h3 className="font-heading text-base font-bold text-primary dark:text-neutral-100">
-                {selectedBadgeModal.title}
-              </h3>
-              <p className="text-xs font-semibold text-gold">{selectedBadgeModal.badgeLabel}</p>
-            </div>
-
-            <div className="p-3.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-100 dark:border-neutral-700/60 text-xs text-neutral-600 dark:text-neutral-300 font-body leading-relaxed space-y-2">
-              <p><strong>Milestone:</strong> {selectedBadgeModal.description}</p>
-              <p><strong>Requirement:</strong> {selectedBadgeModal.requirement}</p>
-            </div>
-
-            <div className="pt-2 flex items-center justify-between text-xs font-body">
-              <span className="text-neutral-400">Status:</span>
-              <span className={selectedBadgeModal.isAwarded ? 'text-emerald-600 font-bold' : 'text-neutral-400'}>
-                {selectedBadgeModal.isAwarded ? `Verified (${selectedBadgeModal.awardedDate || 'Active'})` : 'Pending Studio Verification'}
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setSelectedBadgeModal(null)}
-              className="w-full btn-outline py-2 text-xs"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL: FULL EDIT PROFILE MODAL ─────────────────────────────────── */}
-      {isEditProfileModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-neutral-950/80 backdrop-blur-xs animate-fade-in overflow-y-auto">
-          <div className="bg-white dark:bg-neutral-900 rounded-3xl p-6 sm:p-7 max-w-xl w-full border border-neutral-200 dark:border-neutral-800 shadow-2xl space-y-5 animate-slide-up my-8 max-h-[92vh] flex flex-col">
-            
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3.5 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold flex items-center justify-center">
-                  <User size={16} />
-                </div>
-                <div>
-                  <h3 className="font-heading text-base font-bold text-primary dark:text-neutral-100 leading-tight">
-                    Edit Profile Credentials
-                  </h3>
-                  <p className="text-[11px] text-neutral-400 font-body">
-                    Update your identity, contact details, and graduation profile
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsEditProfileModalOpen(false)}
-                className="w-7 h-7 rounded-full bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-500 hover:text-primary dark:text-neutral-300 dark:hover:text-white flex items-center justify-center transition-colors"
-                aria-label="Close"
-              >
-                <X size={15} />
-              </button>
-            </div>
-
-            {/* Scrollable Form Body */}
-            <form
-              id="edit-profile-modal-form"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                await handleSave(e);
-                setIsEditProfileModalOpen(false);
-              }}
-              className="space-y-4 overflow-y-auto pr-1 flex-1 font-body text-xs"
-            >
-              {/* Avatar Bar */}
-              <div className="flex items-center gap-3.5 p-3.5 bg-neutral-50/70 dark:bg-neutral-800/40 rounded-2xl border border-neutral-200/60 dark:border-neutral-800">
-                <div className="relative shrink-0 group cursor-pointer" onClick={() => avatarInputRef.current?.click()}>
-                  <div className="w-13 h-13 rounded-full overflow-hidden border-2 border-gold/40 shadow-xs bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center">
-                    {profile?.avatar_url ? (
-                      <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="font-heading font-bold text-sm text-gold">{initials}</span>
-                    )}
-                  </div>
-                  <div className="absolute inset-0 bg-neutral-950/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
-                    <Camera size={14} />
-                  </div>
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block">
-                    Profile Portrait
-                  </span>
-                  <p className="font-bold text-primary dark:text-neutral-100 text-xs truncate">
-                    {formData.firstName || 'Client'} {formData.lastName || ''}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => avatarInputRef.current?.click()}
-                    disabled={isUploading}
-                    className="mt-1 text-[11px] font-bold text-gold hover:text-gold-dark flex items-center gap-1 cursor-pointer"
-                  >
-                    <Camera size={11} />
-                    <span>{isUploading ? 'Uploading...' : 'Change Photo'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Personal Details */}
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10.5px] font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                    First Name *
-                  </label>
-                  <input
-                    type="text"
-                    name="firstName"
-                    value={formData.firstName}
-                    onChange={handleFormChange}
-                    required
-                    placeholder="e.g. Maria"
-                    className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10.5px] font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                    Last Name *
-                  </label>
-                  <input
-                    type="text"
-                    name="lastName"
-                    value={formData.lastName}
-                    onChange={handleFormChange}
-                    required
-                    placeholder="e.g. Santos"
-                    className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10.5px] font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                    Email (Read-Only)
-                  </label>
-                  <input
-                    type="email"
-                    value={user?.email || ''}
-                    disabled
-                    className="w-full px-3 py-2 bg-neutral-100 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700 rounded-xl text-neutral-400 text-xs cursor-not-allowed"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10.5px] font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                    Mobile Phone *
-                  </label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleFormChange}
-                    placeholder="0917 123 4567"
-                    className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none text-xs"
-                  />
-                </div>
-              </div>
-
-              {/* Delivery Address */}
-              <div>
-                <label className="block text-[10.5px] font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Courier Delivery Address
-                </label>
-                <textarea
-                  name="address"
-                  rows={2}
-                  value={formData.address}
-                  onChange={handleFormChange}
-                  placeholder="Complete shipping address for physical photo frames..."
-                  className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none text-xs resize-none"
-                />
-              </div>
-
-              {/* Bio / Motto */}
-              <div>
-                <label className="block text-[10.5px] font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                  Bio / Graduation Motto & Note
-                </label>
-                <textarea
-                  name="bio"
-                  rows={2}
-                  value={formData.bio}
-                  onChange={handleFormChange}
-                  placeholder="Personal motto or shoot preference..."
-                  className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none text-xs resize-none"
-                />
-              </div>
-
-              {/* Academic Milestone */}
-              <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 space-y-3">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-gold-dark dark:text-gold block">
-                  Academic Affiliation & Milestone
-                </span>
-
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10.5px] font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                      University / College
-                    </label>
-                    <input
-                      type="text"
-                      value={customData.university}
-                      onChange={e => handleCustomChange('university', e.target.value)}
-                      placeholder="e.g. Cebu Technological University"
-                      className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none text-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10.5px] font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                      Campus / Branch
-                    </label>
-                    <input
-                      type="text"
-                      value={customData.campus}
-                      onChange={e => handleCustomChange('campus', e.target.value)}
-                      placeholder="e.g. Main Campus"
-                      className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none text-xs"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10.5px] font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                      Degree / Course Program
-                    </label>
-                    <input
-                      type="text"
-                      value={customData.degree}
-                      onChange={e => handleCustomChange('degree', e.target.value)}
-                      placeholder="e.g. BS in Information Technology"
-                      className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none text-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10.5px] font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider mb-1">
-                      Graduation Year
-                    </label>
-                    <select
-                      value={customData.gradYear}
-                      onChange={e => handleCustomChange('gradYear', e.target.value)}
-                      className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none text-xs"
-                    >
-                      <option value="2026">Batch 2026</option>
-                      <option value="2027">Batch 2027</option>
-                      <option value="2025">Batch 2025 (Alumni)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Emergency Contact */}
-              <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 space-y-3">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block">
-                  Emergency Contact
-                </span>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    value={customData.emergencyContactName}
-                    onChange={e => handleCustomChange('emergencyContactName', e.target.value)}
-                    placeholder="Contact person name"
-                    className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none text-xs"
-                  />
-                  <input
-                    type="tel"
-                    value={customData.emergencyContactPhone}
-                    onChange={e => handleCustomChange('emergencyContactPhone', e.target.value)}
-                    placeholder="Contact mobile phone"
-                    className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-gold/30 outline-none text-xs"
-                  />
-                </div>
-              </div>
-            </form>
-
-            {/* Modal Footer Actions */}
-            <div className="pt-3 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-end gap-2.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setIsEditProfileModalOpen(false)}
-                className="btn-outline py-2 px-4 text-xs cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                form="edit-profile-modal-form"
-                disabled={isSaving}
-                className="btn-primary py-2 px-5 text-xs font-bold flex items-center gap-1.5 shadow-sm shadow-gold/20 cursor-pointer"
-              >
-                {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                <span>{isSaving ? 'Saving...' : 'Save Profile Changes'}</span>
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL: CHANGE PHOTO ───────────────────────────────────────────── */}
-      {photoModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-neutral-900 rounded-3xl p-6 max-w-md w-full border border-neutral-200 dark:border-neutral-800 shadow-2xl space-y-4 animate-slide-up">
-            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
-              <h3 className="font-heading text-base font-bold text-primary dark:text-neutral-100 flex items-center gap-2">
-                <Camera size={18} className="text-gold" />
-                <span>Update Profile Photo</span>
-              </h3>
-              <button onClick={() => setPhotoModalOpen(false)} className="text-neutral-400 hover:text-primary dark:hover:text-white">
-                ✕
-              </button>
-            </div>
-
-            <p className="text-xs text-neutral-500 font-body">
-              Upload a clear graduation portrait or photo for your E-Kodak Studio client pass.
-            </p>
-
-            <div className="space-y-3">
-              <button
-                type="button"
-                onClick={() => avatarInputRef.current?.click()}
-                disabled={isUploading}
-                className="w-full btn-primary py-3 text-xs flex items-center justify-center gap-2 shadow-sm"
-              >
-                {isUploading ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
-                <span>Select Image from Device</span>
-              </button>
-
-              <input
-                ref={avatarInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleAvatarChange}
-              />
-            </div>
-
-            <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setPhotoModalOpen(false)}
-                className="btn-outline py-1.5 px-4 text-xs"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL: TERMS & SERVICE CERTIFICATE ────────────────────────────── */}
-      {termsCertModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-neutral-950/80 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-neutral-900 rounded-3xl p-6 sm:p-7 max-w-lg w-full border border-neutral-200 dark:border-neutral-800 shadow-2xl space-y-4 animate-slide-up max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
-              <div className="flex items-center gap-2">
-                <ShieldCheck size={18} className="text-gold" />
-                <h3 className="font-heading text-base font-bold text-primary dark:text-neutral-100">Studio Agreement Certificate</h3>
-              </div>
-              <button onClick={() => setTermsCertModalOpen(false)} className="text-neutral-400 hover:text-primary dark:hover:text-white">
-                ✕
-              </button>
-            </div>
-
-            {/* Certificate Body */}
-            <div className="p-5 rounded-2xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700 text-sm space-y-3 font-body">
-              <div className="text-center pb-2.5 border-b border-neutral-200 dark:border-neutral-700">
-                <span className="font-heading text-base font-bold text-primary dark:text-neutral-100 block">E-KODAK PHOTOGRAPHY STUDIO</span>
-                <span className="text-[10px] font-body text-neutral-500 uppercase tracking-widest">Cebu City · Client Agreement Certificate</span>
-              </div>
-
-              <div className="space-y-1 font-body text-xs text-neutral-800 dark:text-neutral-200">
-                <p><strong>Client:</strong> {formData.firstName} {formData.lastName}</p>
-                <p><strong>Account ID:</strong> #EK-{user?.id?.slice(0, 6)?.toUpperCase() || '2026'}</p>
-                <p><strong>Institution:</strong> {customData.university}</p>
-                <p><strong>Degree / Major:</strong> {customData.degree}</p>
-                <p><strong>Model Release:</strong> {customData.agreedModelRelease ? 'Consented (Annual Lookbook Showcase)' : 'Restricted (Strict Private Session)'}</p>
-                <p><strong>Call-Time Protocol:</strong> 15-Minute Prior Arrival Acknowledged</p>
-                <p><strong>Cloud Storage:</strong> 365-Day Soft Copy Archival</p>
-                <p><strong>Signature Reference:</strong> {customData.termsSignatureHash}</p>
-                <p><strong>Execution Date:</strong> {new Date(customData.termsSignedTimestamp).toLocaleString()}</p>
-              </div>
-
-              <div className="pt-2.5 border-t border-neutral-200 dark:border-neutral-700 flex items-center justify-center text-xs text-emerald-800 dark:text-emerald-400 font-bold font-body">
-                ✓ VERIFIED STUDIO AGREEMENT ON RECORD
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-1">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="btn-outline py-1.5 px-3 text-xs flex items-center gap-1.5"
-              >
-                <Printer size={12} /> Print
-              </button>
-              <button
-                type="button"
-                onClick={() => setTermsCertModalOpen(false)}
-                className="btn-primary py-1.5 px-4 text-xs"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── SLIDE-OVER SIDEBAR: PACKAGES & SETS SESSION PROGRESS + ADDRESS CUSTOMIZATIONS ── */}
-      {sessionSidebarOpen && (
-        <div className="fixed inset-0 z-[100] flex justify-end animate-fade-in">
-          {/* Backdrop Overlay */}
-          <div 
-            className="fixed inset-0 bg-neutral-950/70 backdrop-blur-xs transition-opacity cursor-pointer"
-            onClick={() => setSessionSidebarOpen(false)}
-          />
-
-          {/* Slide-over Drawer Panel */}
-          <div className="relative w-full max-w-lg sm:max-w-xl bg-white dark:bg-neutral-900 h-full shadow-2xl border-l border-neutral-200 dark:border-neutral-800 flex flex-col z-10 animate-slide-left overflow-hidden">
-            
-            {/* Drawer Header */}
-            <div className="p-5 sm:p-6 border-b border-neutral-200 dark:border-neutral-800 bg-gradient-to-r from-neutral-950 via-neutral-900 to-primary text-white flex items-center justify-between gap-4">
-              <div className="space-y-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-body uppercase tracking-widest text-gold bg-gold/15 px-2.5 py-0.5 rounded-full border border-gold/30 font-bold">
-                    Packages & Sets Dispatch
-                  </span>
-                  {latestBooking?.booking_number && (
-                    <span className="text-[10px] font-body text-neutral-300">
-                      #{latestBooking.booking_number}
-                    </span>
-                  )}
-                </div>
-                <h3 className="font-heading text-lg sm:text-xl font-bold text-white truncate">
-                  {latestBooking?.service?.name || 'Senior High Packages and sets'}
-                </h3>
-                <p className="text-xs text-neutral-300 font-body flex items-center gap-2 truncate">
-                  <span>Tier: {latestBooking?.tier_name || 'Set A'}</span>
-                  <span>•</span>
-                  <span>{latestBooking?.event_date ? new Date(latestBooking.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date Pending'}</span>
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSessionSidebarOpen(false)}
-                className="w-8 h-8 rounded-full bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white flex items-center justify-center transition-colors shrink-0"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6 divide-y divide-neutral-100 dark:divide-neutral-800">
-              
-              {/* 1. Detailed Packages & Sets Session Progress */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Layers className="text-gold" size={17} />
-                    <h4 className="font-heading text-sm font-bold text-primary dark:text-neutral-100">
-                      Packages & Sets Session Progress
-                    </h4>
-                  </div>
-                  <span className="text-[10px] font-body font-bold uppercase text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
-                    Status: {latestBooking?.status || 'Active'}
-                  </span>
-                </div>
-
-                {/* Progress Steps Timeline */}
-                <div className="space-y-3 relative pl-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-neutral-200 dark:before:bg-neutral-800">
-                  {[
-                    {
-                      step: 1,
-                      title: 'Order Registration & Booking Placed',
-                      desc: `Booking #${latestBooking?.booking_number || 'BK-2026-00004'} verified in studio dispatch system.`,
-                      status: 'COMPLETED',
-                      time: latestBooking?.created_at ? new Date(latestBooking.created_at).toLocaleDateString() : 'Confirmed'
-                    },
-                    {
-                      step: 2,
-                      title: 'Attire Sizing & Wardrobe Allocation',
-                      desc: `Toga size (${customData.togaSize?.split(' ')[0] || 'S'}) and academic discipline hood allocated in wardrobe.`,
-                      status: 'COMPLETED',
-                      time: 'Verified'
-                    },
-                    {
-                      step: 3,
-                      title: 'Camera Bay Photography Session',
-                      desc: `Scheduled shoot at Cebu Studio camera bay.`,
-                      status: latestBooking?.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS',
-                      time: latestBooking?.event_date ? new Date(latestBooking.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Scheduled'
-                    },
-                    {
-                      step: 4,
-                      title: 'Digital Raw Proofing Selection',
-                      desc: 'Cloud proofing portal access for client review and final shot selections.',
-                      status: latestBooking?.status === 'COMPLETED' ? 'COMPLETED' : 'UPCOMING',
-                      time: 'Est. 3-5 days post-shoot'
-                    },
-                    {
-                      step: 5,
-                      title: 'Master Retouching & Color Grading',
-                      desc: 'Editorial facial contouring, skin polish, and academic lookbook grading.',
-                      status: 'UPCOMING',
-                      time: 'Est. 5-7 business days'
-                    },
-                    {
-                      step: 6,
-                      title: 'Archival Print & Crystal Framing',
-                      desc: 'Laboratory photographic print run and premium crystal glass framing.',
-                      status: 'UPCOMING',
-                      time: 'Est. 7-10 business days'
-                    },
-                    {
-                      step: 7,
-                      title: 'Courier Dispatch & Handover',
-                      desc: 'Protective packaging sealed and handed over to chosen delivery courier.',
-                      status: 'UPCOMING',
-                      time: 'Handover Notification'
-                    },
-                  ].map((milestone) => (
-                    <div key={milestone.step} className="relative group">
-                      {/* Node circle */}
-                      <div className={`absolute -left-6 top-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                        milestone.status === 'COMPLETED'
-                          ? 'bg-emerald-500 text-white ring-4 ring-emerald-50 dark:ring-emerald-950/40'
-                          : milestone.status === 'IN_PROGRESS'
-                            ? 'bg-gold text-primary ring-4 ring-gold/20 animate-pulse'
-                            : 'bg-neutral-200 dark:bg-neutral-800 text-neutral-400 dark:text-neutral-500'
-                      }`}>
-                        {milestone.status === 'COMPLETED' ? '✓' : milestone.step}
-                      </div>
-
-                      <div className="bg-neutral-50/70 dark:bg-neutral-800/40 p-3 rounded-xl border border-neutral-200/60 dark:border-neutral-800">
-                        <div className="flex items-center justify-between gap-2">
-                          <h5 className="font-heading text-xs font-bold text-primary dark:text-neutral-100">
-                            {milestone.title}
-                          </h5>
-                          <span className="text-[10px] font-body text-neutral-400">
-                            {milestone.time}
-                          </span>
+                    {/* account card */}
+                    <div className="rounded-[24px] overflow-hidden border border-white/10 bg-[#0e0f16] p-5 relative">
+                        <div className="absolute -top-16 -right-16 w-56 h-56 bg-gold/20 blur-[70px] rounded-full" />
+                        <div className="relative">
+                            <div className="flex items-center gap-2">
+                                <ShieldCheck size={15} className="text-gold" />
+                                <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-gold">Account owner</p>
+                            </div>
+                            <p className="mt-2 text-[12px] leading-relaxed text-white/60 font-body">
+                                This is your <strong className="text-white">master profile</strong>. Booking for someone else? Their details stay on that booking — your profile is never overwritten.
+                            </p>
+                            <button
+                                type="button"
+                                onClick={handleExportData}
+                                className="mt-4 w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/8 hover:bg-white/12 border border-white/15 text-white text-xs font-bold transition-all cursor-pointer"
+                            >
+                                <Download size={13} /> Export profile JSON
+                            </button>
                         </div>
-                        <p className="text-[11px] text-neutral-500 dark:text-neutral-400 font-body mt-0.5">
-                          {milestone.desc}
-                        </p>
-                      </div>
                     </div>
-                  ))}
-                </div>
+                </aside>
 
-                {/* Package Inclusions Quick Pill */}
-                <div className="p-3.5 bg-gold/10 dark:bg-gold/15 rounded-2xl border border-gold/30 text-xs space-y-1.5">
-                  <span className="font-heading font-bold text-gold-dark dark:text-gold block text-[11px] uppercase tracking-wider">
-                    Package Inclusions & Deliverables
-                  </span>
-                  <ul className="grid grid-cols-2 gap-1.5 text-[11px] text-neutral-700 dark:text-neutral-300 font-body">
-                    <li>• Formal Toga Portrait</li>
-                    <li>• Creative / Barong Shot</li>
-                    <li>• 8x10 Crystal Frame</li>
-                    <li>• 8R Commemorative Print</li>
-                    <li>• 12 Wallet Size Prints</li>
-                    <li>• Cloud High-Res Files</li>
-                  </ul>
-                </div>
-              </div>
-
-              {/* 2. User's Booking Addresses Customization */}
-              <div className="pt-6 space-y-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Truck className="text-gold" size={17} />
-                    <h4 className="font-heading text-sm font-bold text-primary dark:text-neutral-100">
-                      Booking Delivery & Shipping Address
-                    </h4>
-                  </div>
-                  <p className="text-xs text-neutral-500 font-body">
-                    Customize where the studio will ship your crystal graduation frames, official prints, and keepsake parcel.
-                  </p>
-                </div>
-
-                <form onSubmit={handleSaveAddressCustomizations} className="space-y-3.5">
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-body uppercase text-neutral-400 block font-bold">
-                        Recipient Full Name
-                      </label>
-                      <input
-                        type="text"
-                        value={addressCustomizations.recipientName}
-                        onChange={(e) => setAddressCustomizations(prev => ({ ...prev, recipientName: e.target.value }))}
-                        placeholder="Name of recipient"
-                        className="w-full text-xs px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:border-gold outline-none"
-                      />
+                {/* ── right editor ── */}
+                <div className="rounded-[24px] bg-white dark:bg-[#12131a] border border-neutral-200/80 dark:border-white/10 shadow-[0_20px_60px_-24px_rgba(0,0,0,0.25)] overflow-hidden min-w-0">
+                    {/* pill tab bar */}
+                    <div className="px-4 sm:px-6 pt-4 pb-3 border-b border-neutral-100 dark:border-white/8 bg-gradient-to-b from-neutral-50/80 to-transparent dark:from-white/[0.03] dark:to-transparent">
+                        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-neutral-100 dark:bg-white/5 border border-neutral-200/60 dark:border-white/10 overflow-x-auto">
+                            {TABS.map(tab => {
+                                const isActive = activeTab === tab.id;
+                                return (
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => setActiveTab(tab.id)}
+                                        className={`flex-1 min-w-[120px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${isActive
+                                            ? 'bg-[#14141b] dark:bg-gradient-to-r dark:from-gold-light dark:to-gold text-white dark:text-[#1a1408] shadow-lg'
+                                            : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-white dark:hover:bg-white/10'
+                                            }`}
+                                    >
+                                        <tab.icon size={14} />
+                                        {tab.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-body uppercase text-neutral-400 block font-bold">
-                        Courier Contact Mobile
-                      </label>
-                      <input
-                        type="tel"
-                        value={addressCustomizations.courierPhone}
-                        onChange={(e) => setAddressCustomizations(prev => ({ ...prev, courierPhone: e.target.value }))}
-                        placeholder="0917 000 0000"
-                        className="w-full text-xs px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:border-gold outline-none"
-                      />
-                    </div>
-                  </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-body uppercase text-neutral-400 block font-bold">
-                      Complete Courier Delivery Address
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={addressCustomizations.shippingAddress}
-                      onChange={(e) => setAddressCustomizations(prev => ({ ...prev, shippingAddress: e.target.value }))}
-                      placeholder="Unit / House No., Street, Barangay, City, Province, Postal Code"
-                      className="w-full text-xs px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:border-gold outline-none resize-none"
-                    />
-                  </div>
+                    <form onSubmit={handleSave} className="p-5 sm:p-8 space-y-8">
+                        {/* ── TAB 1 ── */}
+                        {activeTab === 'personal' && (
+                            <div className="space-y-7 animate-fade-in">
+                                <SectionHead step="01" title="Personal identity & contact" desc="Your legal identity as printed on the E-Kodak client pass and roster." icon={BadgeCheck} />
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-body uppercase text-neutral-400 block font-bold">
-                      Delivery Landmark / Guard Instructions
-                    </label>
-                    <input
-                      type="text"
-                      value={addressCustomizations.landmark}
-                      onChange={(e) => setAddressCustomizations(prev => ({ ...prev, landmark: e.target.value }))}
-                      placeholder="e.g. Near Gate 2, please call recipient upon arrival"
-                      className="w-full text-xs px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:border-gold outline-none"
-                    />
-                  </div>
+                                <div className="grid sm:grid-cols-3 gap-4">
+                                    <Field label="First name *">
+                                        <input name="firstName" value={formData.firstName} onChange={handleFormChange} required placeholder="e.g. Maria" className={bareInputCls} />
+                                    </Field>
+                                    <Field label="Middle name">
+                                        <input name="middleName" value={formData.middleName} onChange={handleFormChange} placeholder="Santos (optional)" className={bareInputCls} />
+                                    </Field>
+                                    <Field label="Last name *">
+                                        <input name="lastName" value={formData.lastName} onChange={handleFormChange} required placeholder="e.g. Cruz" className={bareInputCls} />
+                                    </Field>
+                                </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-body uppercase text-neutral-400 block font-bold">
-                      Fulfillment & Claiming Method
-                    </label>
-                    <select
-                      value={addressCustomizations.preferredCourier}
-                      onChange={(e) => setAddressCustomizations(prev => ({ ...prev, preferredCourier: e.target.value }))}
-                      className="w-full text-xs px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:border-gold outline-none"
-                    >
-                      <option value="studio_pickup">Studio In-Person Claiming (Claim at Cebu Studio Front Desk)</option>
-                      <option value="studio_delivery">Studio Direct Delivery (Handled directly by E-Kodak Studio Staff)</option>
-                    </select>
-                  </div>
+                                <div className="grid sm:grid-cols-2 gap-4">
+                                    <Field label="Registered email" hint="Contact support to change your login email.">
+                                        <Mail size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+                                        <input value={user?.email || ''} disabled className={`${inputCls} opacity-60 cursor-not-allowed`} />
+                                    </Field>
+                                    <Field label="Primary mobile" hint="SMS reminders, call-time confirmations & dispatch alerts." icon={Phone}>
+                                        <input name="phone" value={formData.phone} onChange={handleFormChange} placeholder="0917 123 4567" className={inputCls} />
+                                    </Field>
+                                </div>
 
-                  <button
-                    type="submit"
-                    disabled={addressSaving}
-                    className="w-full btn-primary py-2.5 px-4 text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-gold/20"
-                  >
-                    {addressSaving ? (
-                      <>
-                        <Loader2 size={13} className="animate-spin" />
-                        <span>Updating Delivery Specifications...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Save size={13} />
-                        <span>Save Address Customizations</span>
-                      </>
-                    )}
-                  </button>
-                </form>
-              </div>
+                                <div className="grid sm:grid-cols-2 gap-4">
+                                    <div className="sm:col-span-2">
+                                        <Field label="Permanent residential address" icon={MapPin}>
+                                            <textarea name="address" rows={2} value={formData.address} onChange={handleFormChange} placeholder="House/Unit No., Street, Barangay, City/Municipality, Cebu, Postal Code…" className="w-full pl-10 pr-3.5 py-3 bg-white dark:bg-[#17181f] border border-neutral-200 dark:border-white/10 rounded-2xl focus:ring-4 focus:ring-gold/20 focus:border-gold/60 outline-none font-body text-sm resize-none text-neutral-900 dark:text-white placeholder:text-neutral-400 transition-all" />
+                                        </Field>
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                        <Field label="Yearbook motto / bio note" hint="Considered for commemorative proofing or batch yearbook prints." icon={Star}>
+                                            <textarea name="bio" rows={2} value={formData.bio} onChange={handleFormChange} placeholder="e.g. 'Strive not to be a success, but rather to be of value.'" className="w-full pl-10 pr-3.5 py-3 bg-white dark:bg-[#17181f] border border-neutral-200 dark:border-white/10 rounded-2xl focus:ring-4 focus:ring-gold/20 focus:border-gold/60 outline-none font-body text-sm resize-none text-neutral-900 dark:text-white placeholder:text-neutral-400 transition-all" />
+                                        </Field>
+                                    </div>
+                                </div>
 
+                                <div className="rounded-3xl border border-dashed border-gold/40 bg-gold/[0.06] dark:bg-gold/[0.07] p-5 space-y-4">
+                                    <div className="flex items-center gap-2">
+                                        <Phone size={14} className="text-gold" />
+                                        <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-gold-dark dark:text-gold">Emergency contact on-call</p>
+                                    </div>
+                                    <div className="grid sm:grid-cols-2 gap-4">
+                                        <Field label="Contact person">
+                                            <input value={studioSpecs.emergencyContactName} onChange={e => handleSpecChange('emergencyContactName', e.target.value)} placeholder="Guardian / next of kin" className={bareInputCls} />
+                                        </Field>
+                                        <Field label="Contact mobile">
+                                            <input value={studioSpecs.emergencyContactPhone} onChange={e => handleSpecChange('emergencyContactPhone', e.target.value)} placeholder="0917 000 0000" className={bareInputCls} />
+                                        </Field>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── TAB 2 ── */}
+                        {activeTab === 'academic' && (
+                            <div className="space-y-7 animate-fade-in">
+                                <SectionHead step="02" title="Academic milestones & records" desc="Your university, campus, student ID and section — synced from your booking database records." icon={GraduationCap} />
+
+                                {!hasDbAcademic ? (
+                                    <div className="rounded-3xl border border-dashed border-gold/40 bg-gold/[0.06] dark:bg-gold/[0.07] p-6 text-center space-y-3">
+                                        <span className="mx-auto w-12 h-12 rounded-2xl bg-gradient-to-br from-gold-light to-gold-dark text-[#1a1408] flex items-center justify-center shadow-lg shadow-gold/30">
+                                            <Database size={20} />
+                                        </span>
+                                        <h4 className="font-heading text-[15px] font-bold text-neutral-900 dark:text-white">No academic records in the database yet</h4>
+                                        <p className="text-xs text-neutral-500 font-body max-w-md mx-auto leading-relaxed">
+                                            Your university, campus branch, student ID and class section are read automatically from your booking records.
+                                            Book a pictorial session and they will appear here — nothing to type by hand.
+                                        </p>
+                                        <Link to="/dashboard/book" className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-2xl bg-neutral-900 dark:bg-gold text-white dark:text-[#1a1408] text-xs font-extrabold hover:opacity-90 transition-all">
+                                            Book a session <ArrowUpRight size={13} />
+                                        </Link>
+                                    </div>
+                                ) : (
+                                    <div className="rounded-2xl bg-emerald-500/[0.07] border border-emerald-500/25 px-4 py-3 flex items-center gap-2.5 text-xs font-body text-emerald-700 dark:text-emerald-300">
+                                        <Database size={15} className="shrink-0" />
+                                        <span><strong>{dbAcademicRecords.length} record{dbAcademicRecords.length === 1 ? '' : 's'}</strong> found in your booking database — pick the values below. Each option shows its source booking.</span>
+                                    </div>
+                                )}
+
+                                <div className="grid sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className={labelCls}>University / school · from database</label>
+                                        <StudioDropdown
+                                            value={studioSpecs.university}
+                                            onChange={val => handleSpecChange('university', val)}
+                                            options={universityOptions}
+                                            searchable
+                                            placeholder={hasDbAcademic ? 'Select university from your bookings' : 'No university on record yet'}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className={labelCls}>Campus / branch · from database</label>
+                                        <StudioDropdown
+                                            value={studioSpecs.campus}
+                                            onChange={val => handleSpecChange('campus', val)}
+                                            options={campusOptions}
+                                            searchable
+                                            placeholder={hasDbAcademic ? 'Select campus branch from your bookings' : 'No campus on record yet'}
+                                        />
+                                    </div>
+                                    <Field label="Degree / strand">
+                                        <input value={studioSpecs.degree} onChange={e => handleSpecChange('degree', e.target.value)} placeholder="e.g. BS in Information Technology, STEM 12…" className={bareInputCls} />
+                                    </Field>
+                                    <div>
+                                        <label className={labelCls}>Batch year & honors</label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <StudioDropdown value={studioSpecs.gradYear} onChange={val => handleSpecChange('gradYear', val)} options={GRAD_YEAR_OPTIONS} />
+                                            <StudioDropdown value={studioSpecs.honors} onChange={val => handleSpecChange('honors', val)} options={HONORS_OPTIONS} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className={labelCls}>Student ID · from database</label>
+                                        <StudioDropdown
+                                            value={studioSpecs.studentId}
+                                            onChange={val => handleSpecChange('studentId', val)}
+                                            options={studentIdOptions}
+                                            searchable
+                                            placeholder={hasDbAcademic ? 'Select student ID from your bookings' : 'No student ID on record yet'}
+                                        />
+                                        <span className={hintCls}>Essential for campus batch sorting & proof release.</span>
+                                    </div>
+                                    <div>
+                                        <label className={labelCls}>Class section / block · from database</label>
+                                        <StudioDropdown
+                                            value={studioSpecs.section}
+                                            onChange={val => handleSpecChange('section', val)}
+                                            options={sectionOptions}
+                                            searchable
+                                            placeholder={hasDbAcademic ? 'Select section from your bookings' : 'No section on record yet'}
+                                        />
+                                        <span className={hintCls}>Aligns your slot with your class batch roster.</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── TAB 3 ── */}
+                        {activeTab === 'delivery' && (
+                            <div className="space-y-7 animate-fade-in">
+                                <div className="flex items-start justify-between gap-3 flex-wrap">
+                                    <SectionHead step="03" title="Print delivery destination" desc="Where the studio dispatches frames, prints and parcels." icon={Truck} />
+                                    <button
+                                        type="button"
+                                        onClick={handleCopyResidentialAddress}
+                                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-gold/40 text-gold-dark dark:text-gold hover:bg-gold/10 text-xs font-extrabold transition-all cursor-pointer"
+                                    >
+                                        <MapPin size={13} /> Copy home address
+                                    </button>
+                                </div>
+
+                                <div className="grid sm:grid-cols-2 gap-4">
+                                    {[
+                                        { id: 'studio_pickup', title: 'Studio pickup', desc: 'Claim framed portraits & prints at the Cebu front desk. No delivery fee.', icon: Building, tag: 'Free' },
+                                        { id: 'studio_delivery', title: 'Direct delivery', desc: 'Studio dispatch delivers to your home or campus address.', icon: Truck, tag: 'Tracked' },
+                                    ].map(opt => {
+                                        const active = studioSpecs.preferred_courier === opt.id;
+                                        return (
+                                            <button
+                                                key={opt.id}
+                                                type="button"
+                                                onClick={() => handleSpecChange('preferred_courier', opt.id)}
+                                                className={`text-left p-5 rounded-3xl border-2 transition-all cursor-pointer relative overflow-hidden group ${active
+                                                    ? 'border-gold bg-gradient-to-br from-gold/15 to-amber-500/5 shadow-lg shadow-gold/20'
+                                                    : 'border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/[0.03] hover:border-gold/40'
+                                                    }`}
+                                            >
+                                                {active && <span className="absolute top-4 right-4 w-6 h-6 rounded-full bg-gradient-to-br from-gold-light to-gold-dark text-[#1a1408] flex items-center justify-center shadow"><Check size={13} strokeWidth={3} /></span>}
+                                                <span className={`w-11 h-11 rounded-2xl flex items-center justify-center ${active ? 'bg-gradient-to-br from-gold-light to-gold-dark text-[#1a1408] shadow-md shadow-gold/30' : 'bg-neutral-200 dark:bg-white/10 text-neutral-500'}`}>
+                                                    <opt.icon size={19} />
+                                                </span>
+                                                <span className="mt-3 flex items-center gap-2">
+                                                    <span className="font-heading text-[14px] font-bold text-neutral-900 dark:text-white">{opt.title}</span>
+                                                    <span className="text-xs font-extrabold uppercase tracking-wider text-gold-dark dark:text-gold bg-gold/12 px-2 py-0.5 rounded-full">{opt.tag}</span>
+                                                </span>
+                                                <span className="mt-1 block text-[12px] text-neutral-500 leading-relaxed font-body">{opt.desc}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="grid sm:grid-cols-2 gap-4">
+                                    <Field label="Recipient name">
+                                        <input value={studioSpecs.courier_recipient_name} onChange={e => handleSpecChange('courier_recipient_name', e.target.value)} placeholder={fullName} className={bareInputCls} />
+                                    </Field>
+                                    <Field label="Courier mobile">
+                                        <input value={studioSpecs.courier_phone} onChange={e => handleSpecChange('courier_phone', e.target.value)} placeholder={formData.phone || '0917 000 0000'} className={bareInputCls} />
+                                    </Field>
+                                    <div className="sm:col-span-2">
+                                        <Field label="Complete shipping address">
+                                            <textarea rows={2} value={studioSpecs.shipping_address} onChange={e => handleSpecChange('shipping_address', e.target.value)} placeholder="Unit / House No., Street, Barangay, City, Province, Postal Code…" className="w-full px-4 py-3 bg-white dark:bg-[#17181f] border border-neutral-200 dark:border-white/10 rounded-2xl focus:ring-4 focus:ring-gold/20 focus:border-gold/60 outline-none font-body text-sm resize-none text-neutral-900 dark:text-white placeholder:text-neutral-400 transition-all" />
+                                        </Field>
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                        <Field label="Landmark & gate instructions">
+                                            <input value={studioSpecs.delivery_instructions} onChange={e => handleSpecChange('delivery_instructions', e.target.value)} placeholder="e.g. Near Barangay Hall, Gate 2, call upon arrival…" className={bareInputCls} />
+                                        </Field>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── TAB 4 ── */}
+                        {activeTab === 'security' && (
+                            <div className="space-y-7 animate-fade-in">
+                                <SectionHead step="04" title="Policies & account security" desc="Model release consent, password recovery and data export." icon={Lock} />
+
+                                <div className={`rounded-3xl border-2 p-5 flex flex-col sm:flex-row sm:items-center gap-4 transition-all ${studioSpecs.agreedModelRelease ? 'border-gold/50 bg-gradient-to-br from-gold/12 to-transparent' : 'border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-white/[0.03]'}`}>
+                                    <span className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${studioSpecs.agreedModelRelease ? 'bg-gradient-to-br from-gold-light to-gold-dark text-[#1a1408] shadow-lg shadow-gold/30' : 'bg-neutral-200 dark:bg-white/10 text-neutral-500'}`}>
+                                        <ImageIcon size={20} />
+                                    </span>
+                                    <div className="flex-1">
+                                        <h3 className="font-heading text-[14px] font-bold text-neutral-900 dark:text-white">Model release & lookbook consent</h3>
+                                        <p className="text-[12px] text-neutral-500 font-body mt-0.5 leading-relaxed">
+                                            {studioSpecs.agreedModelRelease
+                                                ? 'Consented — your portrait may appear in the studio lookbook & showcase.'
+                                                : 'Confidential — photos stay in your private proofing vault only.'}
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSpecChange('agreedModelRelease', !studioSpecs.agreedModelRelease)}
+                                        className={`relative w-16 h-9 rounded-full transition-all shrink-0 cursor-pointer ${studioSpecs.agreedModelRelease ? 'bg-gradient-to-r from-gold-light to-gold-dark shadow-md shadow-gold/30' : 'bg-neutral-300 dark:bg-white/15'}`}
+                                        aria-pressed={studioSpecs.agreedModelRelease}
+                                    >
+                                        <span className={`absolute top-1 w-7 h-7 rounded-full bg-white shadow-md transition-all ${studioSpecs.agreedModelRelease ? 'left-8' : 'left-1'}`} />
+                                    </button>
+                                </div>
+
+                                <div className="rounded-3xl border border-neutral-200 dark:border-white/10 divide-y divide-neutral-100 dark:divide-white/8 overflow-hidden">
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between p-5">
+                                        <div>
+                                            <h3 className="font-heading text-[13px] font-bold text-neutral-900 dark:text-white">Password reset & recovery</h3>
+                                            <p className="text-[11px] text-neutral-500 font-body">Reset link goes to <span className="font-semibold text-neutral-700 dark:text-neutral-200">{user?.email}</span></p>
+                                        </div>
+                                        <button type="button" onClick={handlePasswordReset} className="px-4 py-2.5 rounded-xl border border-neutral-300 dark:border-white/15 text-xs font-extrabold hover:border-gold hover:text-gold-dark dark:hover:text-gold transition-all shrink-0 cursor-pointer">
+                                            Reset password
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between p-5 bg-neutral-50/60 dark:bg-white/[0.02]">
+                                        <div>
+                                            <h3 className="font-heading text-[13px] font-bold text-neutral-900 dark:text-white">Export records (JSON)</h3>
+                                            <p className="text-[11px] text-neutral-500 font-body">Archive of measurements, contacts & academic specs.</p>
+                                        </div>
+                                        <button type="button" onClick={handleExportData} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-neutral-300 dark:border-white/15 text-xs font-extrabold hover:border-gold hover:text-gold-dark dark:hover:text-gold transition-all shrink-0 cursor-pointer">
+                                            <Download size={13} /> Export JSON
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── action bar ── */}
+                        <div className="pt-5 border-t border-neutral-100 dark:border-white/8 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                            <p className="text-[11px] text-neutral-400 font-body flex items-center gap-1.5">
+                                <CheckCircle size={13} className="text-emerald-500" /> Syncs to your official client pass & session roster
+                            </p>
+                            <button
+                                type="submit"
+                                disabled={isSaving}
+                                className="sm:ml-auto inline-flex items-center justify-center gap-2 py-3.5 px-8 rounded-2xl bg-gradient-to-r from-neutral-900 via-[#23232c] to-neutral-900 dark:from-gold-light dark:via-gold dark:to-gold-dark text-white dark:text-[#1a1408] text-sm font-extrabold shadow-xl hover:shadow-2xl hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60"
+                            >
+                                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                                {isSaving ? 'Saving specifications…' : 'Save profile changes'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
             </div>
-          </div>
-        </div>
-      )}
 
-    </div>
-  );
+            {/* ── MODAL: CHANGE PHOTO ── */}
+            {photoModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-neutral-950/75 backdrop-blur-md animate-fade-in" onClick={() => !isUploading && setPhotoModalOpen(false)}>
+                    <div className="bg-white dark:bg-[#14151c] rounded-[28px] p-6 sm:p-8 max-w-md w-full border border-neutral-200 dark:border-white/10 shadow-2xl space-y-5 animate-slide-up relative overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="absolute -top-20 -right-20 w-56 h-56 bg-gold/20 blur-[70px] rounded-full" />
+                        <div className="relative flex items-center justify-between">
+                            <h3 className="font-heading text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+                                <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-gold-light to-gold-dark text-[#1a1408] flex items-center justify-center"><Camera size={16} /></span>
+                                Update portrait
+                            </h3>
+                            <button onClick={() => setPhotoModalOpen(false)} className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-white/10 flex items-center justify-center text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer">
+                                <X size={15} />
+                            </button>
+                        </div>
+                        <div className="relative mx-auto w-32 h-32 rounded-[28px] p-[3px] bg-gradient-to-br from-gold-light via-gold to-gold-dark shadow-xl">
+                            <div className="w-full h-full rounded-[25px] bg-neutral-100 dark:bg-white/5 flex items-center justify-center overflow-hidden font-heading text-3xl font-bold text-gold">
+                                {profile?.avatar_url ? <img src={profile.avatar_url} alt="Preview" className="w-full h-full object-cover" /> : initials}
+                            </div>
+                        </div>
+                        <p className="relative text-xs text-neutral-500 font-body text-center leading-relaxed">
+                            Upload a clear portrait for your official E-Kodak client pass.<br />JPG or PNG · max 5 MB.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => avatarInputRef.current?.click()}
+                            disabled={isUploading}
+                            className="relative w-full inline-flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-gradient-to-r from-neutral-900 to-[#2a2a33] dark:from-gold-light dark:to-gold-dark text-white dark:text-[#1a1408] text-sm font-extrabold shadow-lg hover:brightness-110 transition-all cursor-pointer disabled:opacity-60"
+                        >
+                            {isUploading ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
+                            {isUploading ? 'Uploading image…' : 'Select image from device'}
+                        </button>
+                        <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 }

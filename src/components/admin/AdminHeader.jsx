@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   LogOut,
   ChevronDown,
-  QrCode
+  QrCode,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -30,10 +30,11 @@ const LABELS = {
   sms:           'SMS Logs',
   services:      'Services Catalog',
   settings:      'Settings',
-  workstation:   'Workstation Hub',
+  'activity-logs': 'Activity Logs',
   security:      'Security & Access',
   cms:           'CMS & Content',
   staff:         'Worker Active Status',
+  yearbook:      'Yearbook Studio',
 };
 
 function Breadcrumb() {
@@ -41,12 +42,12 @@ function Breadcrumb() {
   const segments = pathname.split('/').filter(Boolean);
 
   return (
-    <nav aria-label="Breadcrumb" className="hidden lg:flex items-center gap-1.5 text-xs text-neutral-500 font-body">
-      <Link to="/admin" className="hover:text-primary transition-colors font-medium">Admin</Link>
+    <nav aria-label="Breadcrumb" className="hidden lg:flex items-center gap-1.5 text-xs text-neutral-400 font-body">
+      <Link to="/admin" className="hover:text-gold text-neutral-300 transition-colors font-medium">Admin</Link>
       {segments.slice(1).map((seg, i) => (
         <React.Fragment key={seg}>
-          <ChevronRight size={13} className="text-neutral-300 flex-shrink-0" />
-          <span className={i === segments.length - 2 ? 'text-primary font-semibold' : 'text-neutral-500'}>
+          <ChevronRight size={13} className="text-neutral-600 flex-shrink-0" />
+          <span className={i === segments.length - 2 ? 'text-white font-semibold' : 'text-neutral-400'}>
             {LABELS[seg] || seg}
           </span>
         </React.Fragment>
@@ -91,19 +92,49 @@ export default function AdminHeader({ onMenuClick, onOpenProfile }) {
     : (profile?.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : 'Staff');
 
   return (
-    <header className="h-16 bg-white/95 backdrop-blur-md border-b border-neutral-200/80 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30 flex-shrink-0 font-body">
+    <header className="relative h-16 bg-gradient-to-r from-[#14100c] via-[#21180f] via-[#16151a] to-[#0f1726] border-none px-4 sm:px-6 sticky top-0 z-30 flex-shrink-0 font-body before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-gold/50 before:to-transparent">
+      {/* ── Photographic Studio Background Texture & Ambient Lights (Clipped within header bounds) ── */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div 
+          className="absolute inset-0 bg-cover bg-center opacity-10 mix-blend-luminosity transition-opacity duration-500"
+          style={{
+            backgroundImage: `url('https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=1600&q=80&auto=format&fit=crop')`,
+          }}
+        />
 
-      {/* Left: Mobile menu + breadcrumb */}
+        {/* ── Rich Radiant Multi-Stop Gradient Overlays (Seamless continuation of Hero Banner) ── */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_90%_100%_at_5%_100%,rgba(217,119,6,0.35),transparent_65%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_90%_at_35%_100%,rgba(180,83,9,0.25),transparent_65%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_75%_80%_at_95%_100%,rgba(30,58,138,0.25),transparent_60%)]" />
+
+        {/* ── Ambient Gold Orbs ── */}
+        <div className="absolute -top-12 -left-10 w-60 h-60 bg-gradient-to-br from-amber-500/25 via-gold/15 to-transparent rounded-full blur-2xl" />
+        <div className="absolute -bottom-12 -right-10 w-60 h-60 bg-gradient-to-tl from-sky-600/15 via-amber-600/10 to-transparent rounded-full blur-2xl" />
+      </div>
+
+      <div className="relative z-10 w-full h-full flex items-center justify-between">
+
+      {/* Left: Mobile menu + logo + breadcrumb */}
       <div className="flex items-center gap-3 min-w-0">
         <motion.button
           type="button"
           whileTap={{ scale: 0.95 }}
           onClick={onMenuClick}
-          className="lg:hidden p-2 -ml-2 text-neutral-600 hover:text-primary hover:bg-neutral-100 rounded-xl transition-colors flex-shrink-0"
+          className="lg:hidden p-2 -ml-2 text-neutral-300 hover:text-white hover:bg-white/[0.08] rounded-xl transition-colors flex-shrink-0"
           aria-label="Open sidebar"
         >
           <Menu size={20} />
         </motion.button>
+
+        <Link
+          to="/admin"
+          className="flex lg:hidden items-center gap-2 text-white hover:text-gold transition-colors group shrink-0"
+        >
+          <div className="w-8 h-8 rounded-xl bg-neutral-950 flex items-center justify-center p-1 shadow-xs border border-neutral-800 shrink-0">
+            <img src="/logo-mark.png" alt="E-Kodak" className="w-full h-full object-contain" />
+          </div>
+          <span className="font-heading text-sm font-bold tracking-wide">E-KODAK</span>
+        </Link>
 
         <Breadcrumb />
       </div>
@@ -126,7 +157,7 @@ export default function AdminHeader({ onMenuClick, onOpenProfile }) {
                 navigate(`/admin/bookings?search=${encodeURIComponent(e.target.value.trim())}`);
               }
             }}
-            className="pl-8 pr-3 h-9 bg-neutral-100/80 border border-neutral-200/80 rounded-full text-xs font-body focus:bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 transition-all outline-none w-44 md:w-52"
+            className="pl-8 pr-3 h-9 bg-white/[0.06] border border-white/[0.08] hover:border-white/[0.15] rounded-full text-xs font-body text-white placeholder:text-neutral-400 focus:bg-white/[0.1] focus:border-gold/50 focus:ring-2 focus:ring-gold/15 transition-all outline-none w-44 md:w-52"
           />
         </div>
 
@@ -136,7 +167,7 @@ export default function AdminHeader({ onMenuClick, onOpenProfile }) {
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.97 }}
           onClick={() => setQrScannerOpen(true)}
-          className="h-9 flex items-center gap-1.5 px-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-full text-xs font-bold transition-all shadow-xs cursor-pointer shrink-0"
+          className="h-9 flex items-center gap-1.5 px-3 bg-white/[0.08] hover:bg-white/[0.14] text-white border border-white/[0.08] rounded-full text-xs font-bold transition-all shadow-xs cursor-pointer shrink-0"
           title="Scan or Verify Customer QR Pass"
         >
           <QrCode size={13} className="text-gold" />
@@ -147,7 +178,7 @@ export default function AdminHeader({ onMenuClick, onOpenProfile }) {
         <AdminNotificationDropdown />
 
         {/* Interactive User Avatar & Profile Dropdown */}
-        <div className="relative pl-1 border-l border-neutral-200" ref={profileMenuRef}>
+        <div className="relative pl-1 border-l border-white/[0.1]" ref={profileMenuRef}>
           <motion.button
             type="button"
             whileTap={{ scale: 0.96 }}
@@ -157,7 +188,7 @@ export default function AdminHeader({ onMenuClick, onOpenProfile }) {
             className="flex items-center gap-1.5 p-0.5 rounded-full hover:ring-2 hover:ring-gold/30 transition-all outline-none cursor-pointer group"
           >
             <div 
-              className="w-8 h-8 rounded-full bg-gold/10 flex items-center justify-center text-gold font-heading font-bold overflow-hidden ring-2 ring-gold/20 flex-shrink-0 group-hover:scale-105 transition-transform"
+              className="w-8 h-8 rounded-full bg-gold/15 flex items-center justify-center text-gold font-heading font-bold overflow-hidden ring-2 ring-gold/30 flex-shrink-0 group-hover:scale-105 transition-transform"
               title={`${profile?.first_name || 'User'} (${roleLabel})`}
             >
               {profile?.avatar_url ? (
@@ -168,7 +199,7 @@ export default function AdminHeader({ onMenuClick, onOpenProfile }) {
             </div>
             <ChevronDown 
               size={12} 
-              className={`text-neutral-400 group-hover:text-primary transition-transform duration-200 hidden sm:block ${
+              className={`text-neutral-400 group-hover:text-white transition-transform duration-200 hidden sm:block ${
                 profileMenuOpen ? 'rotate-180' : ''
               }`} 
             />
@@ -203,7 +234,7 @@ export default function AdminHeader({ onMenuClick, onOpenProfile }) {
                         {user?.email || 'studio@ekodak.com'}
                       </p>
                       <div className="flex items-center gap-1.5 mt-1">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-gold/15 text-gold-dark border border-gold/30">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-gold/15 text-gold-dark border border-gold/30">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                           {roleLabel}
                         </span>
@@ -215,6 +246,7 @@ export default function AdminHeader({ onMenuClick, onOpenProfile }) {
                 {/* Menu Actions */}
                 <div className="space-y-0.5">
                   <button
+                    id="admin-header-profile-btn"
                     type="button"
                     onClick={() => {
                       setProfileMenuOpen(false);
@@ -275,6 +307,7 @@ export default function AdminHeader({ onMenuClick, onOpenProfile }) {
           </AnimatePresence>
         </div>
 
+      </div>
       </div>
 
       {/* Staff Desk QR Scanner Modal */}

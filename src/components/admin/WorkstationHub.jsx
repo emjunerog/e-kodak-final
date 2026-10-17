@@ -252,22 +252,22 @@ export default function WorkstationHub({ prefilledBooking = null, compact = fals
                     <div className="flex-1 min-w-0">
                       {/* Header tags */}
                       <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                        <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded border ${typeCfg.badge}`}>
+                        <span className={`text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded border ${typeCfg.badge}`}>
                           {typeCfg.label}
                         </span>
-                        <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded ${prioCfg.badge}`}>
+                        <span className={`text-xs uppercase tracking-wider px-2 py-0.5 rounded ${prioCfg.badge}`}>
                           {prioCfg.label}
                         </span>
                         {t.status === 'PENDING' ? (
-                          <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                          <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                             Action Required
                           </span>
                         ) : t.status === 'ACKNOWLEDGED' ? (
-                          <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                          <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                             In Progress
                           </span>
                         ) : (
-                          <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                             Resolved
                           </span>
                         )}

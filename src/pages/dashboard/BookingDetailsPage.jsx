@@ -5,11 +5,11 @@ import {
   FileImage, Info, Loader2, CheckCircle, XCircle, Camera,
   GraduationCap, ExternalLink, Building, Truck, ShieldCheck,
   Layers, ChevronRight, Download, Sparkles, CreditCard,
-  CheckCircle2, AlertCircle, School, Receipt
+  CheckCircle2, AlertCircle, School, Receipt, User
 } from "lucide-react";
 
 import { useAuth } from "../../context/AuthContext";
-import { getBookingById, getReferenceImageUrl, cancelBooking, parseStudentDetailsFromNotes } from "../../services/bookingService";
+import { getBookingById, getReferenceImageUrl, cancelBooking, parseStudentDetailsFromNotes, parseParticipantDetailsFromNotes } from "../../services/bookingService";
 import { getStatusBadge, getStatusLabel, getPaymentLabel } from "../../lib/bookingUtils";
 import QRPass from "../../components/booking/QRPass";
 import Toast from "../../components/ui/Toast";
@@ -106,11 +106,17 @@ export default function BookingDetailsPage() {
     const existing = booking.student_details || {};
     const parsed = parseStudentDetailsFromNotes(booking.notes) || {};
 
-    const typeMatch = booking.notes?.match(/• Type:\s*(.*)/i);
-    const strandMatch = booking.notes?.match(/• Degree \/ (?:Strand|Program):\s*(.*)/i);
-    const campusMatch = booking.notes?.match(/• Campus \/ Address:\s*(.*)/i);
-    const batchMatch = booking.notes?.match(/• Batch:\s*(.*)/i);
+    const nameMatch = booking.notes?.match(/•\s*Student\s*Name:\s*([^\n\r]+)/i);
+    const middleMatch = booking.notes?.match(/•\s*Middle\s*Name:\s*([^\n\r]+)/i);
+    const mottoMatch = booking.notes?.match(/•\s*Yearbook\s*Motto:\s*([^\n\r]+)/i);
+    const typeMatch = booking.notes?.match(/•\s*Type:\s*([^\n\r]+)/i);
+    const strandMatch = booking.notes?.match(/•\s*(?:Degree|Program|Strand|Course)(?:\s*(?:\/|\&)\s*(?:Program|Strand|Course))?:\s*([^\n\r]+)/i);
+    const campusMatch = booking.notes?.match(/•\s*Campus\s*(?:\/\s*Address)?:\s*([^\n\r]+)/i);
+    const batchMatch = booking.notes?.match(/•\s*Batch:\s*([^\n\r]+)/i);
 
+    const student_name = existing.student_name || parsed.student_name || nameMatch?.[1]?.trim() || "";
+    const middle_name = existing.middle_name || parsed.middle_name || middleMatch?.[1]?.trim() || "";
+    const yearbook_motto = existing.yearbook_motto || parsed.yearbook_motto || mottoMatch?.[1]?.trim() || "";
     const school = existing.school || parsed.school || "";
     const batch = existing.batch || parsed.batch || batchMatch?.[1]?.trim() || "";
     const section = existing.section || parsed.section || "";
@@ -119,9 +125,12 @@ export default function BookingDetailsPage() {
     const school_address = existing.school_address || parsed.school_address || campusMatch?.[1]?.trim() || "";
     const education_type = existing.education_type || parsed.education_type || typeMatch?.[1]?.trim() || "";
 
-    if (!school && !section && !student_id && !course && !batch) return null;
+    if (!school && !section && !student_id && !course && !batch && !student_name) return null;
 
     return {
+      student_name,
+      middle_name,
+      yearbook_motto,
       school,
       batch,
       section,
@@ -168,6 +177,12 @@ export default function BookingDetailsPage() {
     const needsDownpayment = (isUnpaid || remBalance > 0) && (!booking.down_payment_confirmed && downPaid === 0);
     const downRequired = Math.min(remBalance, Math.max(500, Math.round(totalAmount * 0.5)));
     return { totalAmount, downPaid, remBalance, needsDownpayment, downRequired };
+  }, [booking]);
+
+  // Participant & Beneficiary details
+  const participantDetails = useMemo(() => {
+    if (!booking) return null;
+    return booking.participant_details || parseParticipantDetailsFromNotes(booking.notes);
   }, [booking]);
 
   if (loading) {
@@ -236,6 +251,9 @@ export default function BookingDetailsPage() {
     (booking.notes || '').includes('School Pictorial') ||
     (booking.notes || '').includes('Official School Partner') ||
     (booking.notes || '').includes('School Partner Agreement');
+
+  const isSomeoneElse = participantDetails?.booking_for === 'someone_else';
+  const participantName = participantDetails?.full_name || studentDossier?.student_name || null;
 
   const displayDate = booking.event_date
     ? new Date(booking.event_date).toLocaleDateString("en-US", {
@@ -393,7 +411,7 @@ export default function BookingDetailsPage() {
                     <Calendar size={16} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Session Schedule</span>
+                    <span className="text-xs text-neutral-400 uppercase tracking-wider block">Session Schedule</span>
                     <p className="font-bold text-primary dark:text-white truncate mt-0.5">{displayDate}</p>
                     <span className="text-[11px] text-gold font-semibold">{displayTime}</span>
                   </div>
@@ -405,7 +423,7 @@ export default function BookingDetailsPage() {
                     <MapPin size={16} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Studio Venue</span>
+                    <span className="text-xs text-neutral-400 uppercase tracking-wider block">Studio Venue</span>
                     <p className="font-bold text-primary dark:text-white truncate mt-0.5" title={cleanLocationName}>
                       {cleanLocationName}
                     </p>
@@ -427,7 +445,7 @@ export default function BookingDetailsPage() {
                     <CreditCard size={16} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Invoiced Amount</span>
+                    <span className="text-xs text-neutral-400 uppercase tracking-wider block">Invoiced Amount</span>
                     <p className="font-bold text-primary dark:text-white truncate mt-0.5">
                       ₱{Number(booking.total_amount || 0).toLocaleString()}
                     </p>
@@ -443,7 +461,7 @@ export default function BookingDetailsPage() {
                     <Building size={16} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Handover Mode</span>
+                    <span className="text-xs text-neutral-400 uppercase tracking-wider block">Handover Mode</span>
                     <p className="font-bold text-primary dark:text-white truncate mt-0.5">
                       {fulfillmentMode === "STUDIO_DELIVERY" ? "Studio Dispatch" : "In-Person Claim"}
                     </p>
@@ -466,7 +484,7 @@ export default function BookingDetailsPage() {
                   </div>
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold uppercase text-[10px] tracking-wider text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/80 px-2 py-0.5 rounded">
+                      <span className="font-bold uppercase text-xs tracking-wider text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/80 px-2 py-0.5 rounded">
                         School Agreement Policy
                       </span>
                       <span className="font-bold text-amber-700 dark:text-amber-400 text-xs">
@@ -480,6 +498,73 @@ export default function BookingDetailsPage() {
                 </div>
               )}
 
+              {/* Recipient & Beneficiary Distinction Card */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-neutral-800/90 border border-neutral-200/80 dark:border-neutral-700 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between gap-2 border-b border-neutral-100 dark:border-neutral-700 pb-2.5">
+                  <div className="flex items-center gap-2 text-primary dark:text-gold font-heading font-bold text-sm">
+                    <User size={18} className="text-gold" />
+                    <span>Booking Recipient &amp; Account Distinction</span>
+                  </div>
+                  <span className={`text-xs font-body font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                    isSomeoneElse
+                      ? "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/30"
+                      : "bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border-emerald-500/30"
+                  }`}>
+                    {isSomeoneElse ? `Someone Else · ${participantDetails?.relationship || 'Participant'}` : "Myself (Account Owner)"}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-body">
+                  <div className="bg-neutral-50 dark:bg-neutral-900/60 p-3 rounded-xl border border-neutral-200/60 dark:border-neutral-700/60">
+                    <span className="text-neutral-400 text-xs uppercase font-bold tracking-wider block">
+                      Session Participant
+                    </span>
+                    <span className="font-bold text-primary dark:text-white truncate block mt-0.5 text-sm">
+                      {participantName || (profile ? `${profile.first_name} ${profile.last_name || ''}`.trim() : "Valued Participant")}
+                    </span>
+                    <span className="text-xs text-neutral-500 block mt-0.5">
+                      Attending session &amp; photoshoot
+                    </span>
+                  </div>
+
+                  <div className="bg-neutral-50 dark:bg-neutral-900/60 p-3 rounded-xl border border-neutral-200/60 dark:border-neutral-700/60">
+                    <span className="text-neutral-400 text-xs uppercase font-bold tracking-wider block">
+                      Account Owner / Payer
+                    </span>
+                    <span className="font-semibold text-neutral-800 dark:text-neutral-200 truncate block mt-0.5">
+                      {participantDetails?.account_owner || (profile ? `${profile.first_name} ${profile.last_name || ''}`.trim() : "Account Owner")}
+                    </span>
+                    <span className="text-xs text-neutral-500 block mt-0.5 truncate">
+                      {user?.email || "Account Profile"}
+                    </span>
+                  </div>
+
+                  <div className="bg-neutral-50 dark:bg-neutral-900/60 p-3 rounded-xl border border-neutral-200/60 dark:border-neutral-700/60">
+                    <span className="text-neutral-400 text-xs uppercase font-bold tracking-wider block">
+                      Relationship
+                    </span>
+                    <span className="font-semibold text-neutral-800 dark:text-neutral-200 truncate block mt-0.5">
+                      {isSomeoneElse ? (participantDetails?.relationship || "Beneficiary") : "Self (Account Owner)"}
+                    </span>
+                    <span className="text-xs text-neutral-500 block mt-0.5">
+                      {isSomeoneElse ? "Independent session record" : "Primary account session"}
+                    </span>
+                  </div>
+
+                  <div className="bg-neutral-50 dark:bg-neutral-900/60 p-3 rounded-xl border border-neutral-200/60 dark:border-neutral-700/60">
+                    <span className="text-neutral-400 text-xs uppercase font-bold tracking-wider block">
+                      Direct Contact
+                    </span>
+                    <span className="font-semibold text-neutral-800 dark:text-neutral-200 truncate block mt-0.5">
+                      {participantDetails?.phone || profile?.phone || "On file in account"}
+                    </span>
+                    <span className="text-xs text-neutral-500 block mt-0.5 truncate">
+                      {participantDetails?.email || user?.email || "Studio alerts active"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {/* Academic & Yearbook Dossier Card */}
               {studentDossier && (
                 <div className="p-4 sm:p-5 rounded-2xl bg-gold/5 dark:bg-gold/10 border border-gold/30 space-y-3">
@@ -490,28 +575,35 @@ export default function BookingDetailsPage() {
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {studentDossier.batch && (
-                        <span className="text-[10px] font-body font-bold uppercase tracking-wider bg-gold text-primary px-2.5 py-0.5 rounded-md">
+                        <span className="text-xs font-body font-bold uppercase tracking-wider bg-gold text-primary px-2.5 py-0.5 rounded-md">
                           {studentDossier.batch}
                         </span>
                       )}
                       {studentDossier.section && (
-                        <span className="text-[10px] font-body font-bold uppercase tracking-wider bg-neutral-900 text-white px-2.5 py-0.5 rounded-md">
+                        <span className="text-xs font-body font-bold uppercase tracking-wider bg-neutral-900 text-white px-2.5 py-0.5 rounded-md">
                           Section {studentDossier.section}
                         </span>
                       )}
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-body">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs font-body">
                     <div className="bg-white/80 dark:bg-neutral-800/80 p-2.5 rounded-xl border border-gold/20">
-                      <span className="text-neutral-400 text-[10px] uppercase block">Institution / School</span>
+                      <span className="text-neutral-400 text-xs uppercase block">Student / Graduate</span>
+                      <span className="font-bold text-primary dark:text-white truncate block mt-0.5">
+                        {studentDossier.student_name || "Valued Student"}
+                      </span>
+                    </div>
+
+                    <div className="bg-white/80 dark:bg-neutral-800/80 p-2.5 rounded-xl border border-gold/20">
+                      <span className="text-neutral-400 text-xs uppercase block">Institution / School</span>
                       <span className="font-bold text-primary dark:text-white truncate block mt-0.5">
                         {studentDossier.school || "E-Kodak Partner Campus"}
                       </span>
                     </div>
 
                     <div className="bg-white/80 dark:bg-neutral-800/80 p-2.5 rounded-xl border border-gold/20">
-                      <span className="text-neutral-400 text-[10px] uppercase block">Degree / Strand</span>
+                      <span className="text-neutral-400 text-xs uppercase block">Degree / Strand</span>
                       <span className="font-semibold text-primary dark:text-neutral-200 truncate block mt-0.5">
                         {studentDossier.course || "General Academic"}
                         {studentDossier.education_type ? ` (${studentDossier.education_type})` : ""}
@@ -519,19 +611,28 @@ export default function BookingDetailsPage() {
                     </div>
 
                     <div className="bg-white/80 dark:bg-neutral-800/80 p-2.5 rounded-xl border border-gold/20">
-                      <span className="text-neutral-400 text-[10px] uppercase block">Batch &amp; Section</span>
+                      <span className="text-neutral-400 text-xs uppercase block">Batch &amp; Section</span>
                       <span className="font-bold text-gold truncate block mt-0.5 font-body">
                         {studentDossier.batch ? `${studentDossier.batch} · ` : ''}{studentDossier.section ? `Sec ${studentDossier.section}` : '—'}
                       </span>
                     </div>
 
                     <div className="bg-white/80 dark:bg-neutral-800/80 p-2.5 rounded-xl border border-gold/20">
-                      <span className="text-neutral-400 text-[10px] uppercase block">Student ID Number</span>
+                      <span className="text-neutral-400 text-xs uppercase block">Student ID Number</span>
                       <span className="font-bold text-primary dark:text-neutral-200 truncate block mt-0.5 font-body">
                         {studentDossier.student_id || "—"}
                       </span>
                     </div>
                   </div>
+
+                  {studentDossier.yearbook_motto && (
+                    <div className="p-2.5 rounded-xl bg-white/60 dark:bg-neutral-800/60 border border-gold/20 text-xs font-body">
+                      <span className="text-neutral-400 text-xs uppercase block font-medium">Yearbook Motto</span>
+                      <p className="italic text-neutral-700 dark:text-neutral-300 mt-0.5">
+                        &quot;{studentDossier.yearbook_motto}&quot;
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -558,7 +659,7 @@ export default function BookingDetailsPage() {
                         <h4 className="font-heading text-base font-bold text-primary dark:text-white">
                           {booking.photographer.profile.first_name} {booking.photographer.profile.last_name}
                         </h4>
-                        <span className="text-[10px] font-body font-bold text-emerald-700 bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 px-2 py-0.5 rounded-md">
+                        <span className="text-xs font-body font-bold text-emerald-700 bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 px-2 py-0.5 rounded-md">
                           Bay Assigned
                         </span>
                       </div>
@@ -701,7 +802,7 @@ export default function BookingDetailsPage() {
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-body font-bold text-neutral-400">
+                      <span className="text-xs font-body font-bold text-neutral-400">
                         0{s.step}
                       </span>
                       {isCompleted ? (
@@ -717,7 +818,7 @@ export default function BookingDetailsPage() {
                     }`}>
                       {s.title}
                     </p>
-                    <p className="text-[10px] font-body text-neutral-400 truncate mt-0.5">
+                    <p className="text-xs font-body text-neutral-400 truncate mt-0.5">
                       {s.desc}
                     </p>
                   </div>
@@ -736,7 +837,7 @@ export default function BookingDetailsPage() {
             <div className="bg-primary text-white rounded-3xl p-6 shadow-warm-md text-center relative overflow-hidden border border-neutral-800">
               <div className="absolute -top-10 -right-10 w-32 h-32 bg-gold/15 rounded-full blur-2xl pointer-events-none" />
               <div className="relative z-10">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-gold text-[10px] font-bold font-body uppercase tracking-wider mb-4 border border-gold/20">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-gold text-xs font-bold font-body uppercase tracking-wider mb-4 border border-gold/20">
                   <QrCode size={12} />
                   {status === "PENDING" ? "Pre-Registration Studio Pass" : "Active Studio Gate Pass"}
                 </div>
@@ -767,15 +868,15 @@ export default function BookingDetailsPage() {
 
             <div className="space-y-3 font-body text-xs">
               <div>
-                <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Security Token</span>
+                <span className="text-xs text-neutral-400 uppercase tracking-wider block">Security Token</span>
                 <div className="mt-1 flex items-center justify-between p-2 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200/60 dark:border-neutral-700">
                   <span className="font-bold text-primary dark:text-white tracking-wider">{formattedToken}</span>
-                  <span className="text-[9px] font-bold bg-gold/15 text-gold px-2 py-0.5 rounded">AUTHENTICATED</span>
+                  <span className="text-[11px] font-bold bg-gold/15 text-gold px-2 py-0.5 rounded">AUTHENTICATED</span>
                 </div>
               </div>
 
               <div>
-                <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">Production State</span>
+                <span className="text-xs text-neutral-400 uppercase tracking-wider block">Production State</span>
                 <p className="font-body text-xs text-neutral-600 dark:text-neutral-300 mt-1 leading-relaxed">
                   {status === "PENDING" && "Your session schedule is under studio desk review. We will confirm your bay slot shortly."}
                   {status === "CONFIRMED" && "Booking confirmed! Please arrive 15 minutes prior to your shoot for wardrobe calibration."}
@@ -805,7 +906,7 @@ export default function BookingDetailsPage() {
                 <CreditCard size={18} className="text-gold" />
                 <span>Financial & Billing Status</span>
               </h3>
-              <span className={`text-[10px] font-body font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+              <span className={`text-xs font-body font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
                 financialInfo.needsDownpayment
                   ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30'
                   : booking.payment_status === 'PAID'
@@ -877,8 +978,8 @@ export default function BookingDetailsPage() {
             <div className="space-y-3 text-xs font-body">
               <div className="p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200/60 dark:border-neutral-700/60 space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-neutral-400 uppercase">Selected Mode</span>
-                  <span className="text-[10px] font-bold text-gold bg-gold/10 px-2 py-0.5 rounded">
+                  <span className="text-xs text-neutral-400 uppercase">Selected Mode</span>
+                  <span className="text-xs font-bold text-gold bg-gold/10 px-2 py-0.5 rounded">
                     {fulfillmentMode === "STUDIO_DELIVERY" ? "Direct Studio Dispatch" : "In-Person Studio Counter"}
                   </span>
                 </div>

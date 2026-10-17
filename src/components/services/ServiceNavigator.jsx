@@ -1,120 +1,175 @@
 /**
  * ServiceNavigator.jsx
  * ====================
- * Floating right-side navigator showing all visible services.
- * Highlights the currently-in-view service as user scrolls.
- * Click any item to smooth-scroll to that service section.
+ * Minimal right-side "Packages" rail for the services page.
  *
- * Hidden on mobile (lg+ only). Hides itself if fewer than 2 services.
+ * Deliberately quiet: a small label, dots, and one gold BOX that slides to the
+ * package you are currently reading. Row labels stay hidden until their row is
+ * active or hovered, so the rail never puts text on top of page content (the
+ * page reserves a right gutter for it on lg screens).
+ *
+ * College & Senior High are pinned at the top with a divider — they are
+ * single-package jumps, so their navigation lives here. Clicking a row calls
+ * `onJump(slug)`.
+ *
+ * Hidden below lg.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
+import { GraduationCap, Scroll } from "lucide-react";
+import { scrollToId, shortServiceLabel } from "../../lib/sectionNav";
 
-export default function ServiceNavigator({ services }) {
-  const [activeSlug, setActiveSlug] = useState(null);
+const PINNED_ICONS = {
+  "college-packages": GraduationCap,
+  "senior-high-packages": Scroll,
+};
+
+export default function ServiceNavigator({ services = [], pinned = [], activeSlug, onJump }) {
   const [visible, setVisible] = useState(false);
 
-  // Show navigator only after scrolling past the hero area
-  useEffect(() => {
-    const handleScroll = () => setVisible(window.scrollY > 400);
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+  const pinnedSlugs = pinned.map((s) => s.slug);
+  const rest = services.filter((s) => !pinnedSlugs.includes(s.slug));
+  const itemCount = pinned.length + rest.length;
 
-  // Track which service block is in view
-  useEffect(() => {
-    if (!services || services.length === 0) return;
+  const idsKey = services.map((s) => s.slug).join("|");
+  const idsRef = useRef(idsKey);
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Find the entry most in view
-        const visible = entries
-          .filter(e => e.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-        if (visible.length > 0) {
-          setActiveSlug(visible[0].target.dataset.serviceSlug);
-        }
-      },
-      {
-        threshold: [0.1, 0.3, 0.5],
-        rootMargin: "-100px 0px -30% 0px",
+  // Latest slugs for the scroll listener without re-subscribing each render.
+  useEffect(() => {
+    idsRef.current = idsKey;
+  });
+
+  // Show the rail only while the package list actually occupies the screen.
+  useEffect(() => {
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const slugs = (idsRef.current || "").split("|").filter(Boolean);
+      if (window.scrollY < 320 || slugs.length === 0) {
+        setVisible(false);
+        return;
       }
+      const first = document.getElementById(`service-block-${slugs[0]}`);
+      const last = document.getElementById(`service-block-${slugs[slugs.length - 1]}`);
+      let show = true;
+      if (first && last) {
+        show =
+          first.getBoundingClientRect().top < window.innerHeight * 0.9 &&
+          last.getBoundingClientRect().bottom > window.innerHeight * 0.1;
+      }
+      setVisible(show);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    measure();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [idsKey]);
+
+  if (itemCount < 2) return null;
+
+  const jump = (slug) => {
+    if (onJump) onJump(slug);
+    else scrollToId(`service-block-${slug}`);
+  };
+
+  const renderItem = (service) => {
+    const slug = service.slug;
+    const isActive = activeSlug === slug;
+    const Icon = PINNED_ICONS[slug];
+    const label = shortServiceLabel(service);
+
+    return (
+      <li key={slug} className="w-full">
+        <button
+          type="button"
+          onClick={() => jump(slug)}
+          title={label}
+          aria-current={isActive ? "true" : undefined}
+          aria-label={`Jump to ${label}`}
+          className="group/item relative flex w-full items-center justify-end gap-2 rounded-md px-2 py-1 text-right"
+        >
+          {/* The box — slides to the package you are currently reading */}
+          {isActive && (
+            <motion.span
+              layoutId="jump-to-active"
+              transition={{ type: "spring", stiffness: 460, damping: 36 }}
+              className="absolute inset-0 rounded-md border border-gold/50 bg-white/95 backdrop-blur-sm shadow-warm-sm"
+              aria-hidden="true"
+            />
+          )}
+
+          {/* Label — hidden until the row is active or hovered */}
+          <span
+            className={`
+              relative z-10 min-w-0 flex-1 truncate font-body text-[11px] transition-opacity duration-200
+              ${isActive
+                ? "font-semibold text-primary opacity-100"
+                : "text-neutral-500 opacity-0 group-hover/item:opacity-100 group-hover/item:text-primary"}
+            `}
+          >
+            {label}
+          </span>
+
+          {/* Indicator: pinned rows use a gold icon, the rest a dot */}
+          <span
+            className={`
+              relative z-10 flex h-4 w-4 shrink-0 items-center justify-center transition-colors duration-200
+              ${isActive ? "text-gold" : "text-neutral-300 group-hover/item:text-neutral-500"}
+            `}
+          >
+            {Icon ? (
+              <Icon size={13} strokeWidth={2} />
+            ) : (
+              <span
+                className={`
+                  block rounded-full transition-all duration-300
+                  ${isActive
+                    ? "h-2 w-2 bg-gold"
+                    : "h-1.5 w-1.5 bg-neutral-300 group-hover/item:bg-neutral-500"}
+                `}
+              />
+            )}
+          </span>
+        </button>
+      </li>
     );
-
-    // Observe all service block elements
-    services.forEach(s => {
-      const el = document.getElementById(`service-block-${s.slug}`);
-      if (el) observer.observe(el);
-    });
-
-    return () => observer.disconnect();
-  }, [services]);
-
-  if (!services || services.length < 2) return null;
-
-  function scrollTo(slug) {
-    const el = document.getElementById(`service-block-${slug}`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-    setActiveSlug(slug);
-  }
-
-  const categoryIcons = {
-    graduation: "🎓",
-    portrait:   "📸",
-    event:      "🎉",
-    family:     "👨‍👩‍👧",
-    couple:     "💑",
-    commercial: "💼",
   };
 
   return (
-    <div
-      className={`fixed right-4 xl:right-8 top-1/2 -translate-y-1/2 z-40 hidden lg:flex flex-col gap-1.5
+    <nav
+      aria-label="Packages"
+      className={`
+        fixed right-3 xl:right-6 top-1/2 -translate-y-1/2 z-40 hidden lg:flex
+        w-[11rem] flex-col items-end gap-1
         transition-all duration-500 ease-smooth
-        ${visible ? "opacity-100 translate-x-0" : "opacity-0 translate-x-10 pointer-events-none"}
+        ${visible ? "opacity-100 translate-x-0" : "opacity-0 translate-x-8 pointer-events-none"}
       `}
-      aria-label="Service sections navigator"
     >
-      {/* Label */}
-      <p className="font-body text-[9px] uppercase tracking-[0.2em] text-neutral-400 text-right mb-1">
-        Jump to
+      <p className="mb-1 flex w-full items-center justify-end gap-2 font-body text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">
+        Packages
+        <span className="h-px w-4 bg-gold" aria-hidden="true" />
       </p>
 
-      {services.map((service, _i) => {
-        const isActive = activeSlug === service.slug;
-        return (
-          <button
-            key={service.slug}
-            onClick={() => scrollTo(service.slug)}
-            title={service.name}
-            className="group flex items-center justify-end gap-2 text-right"
-            aria-label={`Jump to ${service.name}`}
-          >
-            {/* Label (shows on hover or active) */}
-            <span
-              className={`font-body text-[11px] font-medium whitespace-nowrap transition-all duration-200 ${
-                isActive
-                  ? "opacity-100 text-primary"
-                  : "opacity-0 group-hover:opacity-100 text-neutral-500"
-              }`}
-            >
-              {categoryIcons[service.category] || "📷"} {service.name}
-            </span>
+      <ul className="flex w-full flex-col items-end gap-0.5" role="list">
+        {pinned.map(renderItem)}
+        {pinned.length > 0 && rest.length > 0 && (
+          <li aria-hidden="true" className="flex w-full justify-end py-0.5">
+            <span className="w-8 h-px bg-neutral-300/80" />
+          </li>
+        )}
+        {rest.map(renderItem)}
+      </ul>
 
-            {/* Dot indicator */}
-            <span
-              className={`shrink-0 rounded-full transition-all duration-300 ${
-                isActive
-                  ? "w-3 h-3 bg-gold shadow-gold ring-2 ring-gold/30"
-                  : "w-2 h-2 bg-neutral-300 group-hover:bg-neutral-500"
-              }`}
-            />
-          </button>
-        );
-      })}
-
-      {/* Bottom line */}
-      <div className="w-px h-8 bg-gradient-to-b from-neutral-200 to-transparent self-end mt-1" />
-    </div>
+      <div className="mt-1 h-6 w-px self-end bg-gradient-to-b from-neutral-300 to-transparent" aria-hidden="true" />
+      <span className="sr-only">{itemCount} packages listed</span>
+    </nav>
   );
 }

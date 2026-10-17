@@ -158,7 +158,7 @@ export default function AdminCMS() {
   };
 
   return (
-    <div className="w-full max-w-screen-2xl mx-auto space-y-6 pb-16 animate-fade-in font-body">
+    <div className="w-full pb-16 animate-fade-in font-body">
       {/* ── 1. Luxury Administrative Hero Banner ────────────────────────────── */}
       <AdminHeroBanner
         station="admin"
@@ -177,6 +177,9 @@ export default function AdminCMS() {
         onRefresh={loadData}
         isRefreshing={loading}
       />
+
+      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
 
       {/* Action Success Toast */}
       {actionSuccessMsg && (
@@ -208,7 +211,7 @@ export default function AdminCMS() {
             <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200">
               <Megaphone size={20} />
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
               BROADCAST
             </span>
           </div>
@@ -227,7 +230,7 @@ export default function AdminCMS() {
             <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-200">
               <MessageCircle size={20} />
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
               KNOWLEDGE
             </span>
           </div>
@@ -246,7 +249,7 @@ export default function AdminCMS() {
             <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200">
               <ImageIcon size={20} />
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
               GALLERY
             </span>
           </div>
@@ -265,7 +268,7 @@ export default function AdminCMS() {
             <div className="w-10 h-10 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
               <Globe size={20} />
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
               LIVE
             </span>
@@ -294,7 +297,7 @@ export default function AdminCMS() {
         >
           <Megaphone size={16} className={activeTab === 'announcements' ? 'text-gold' : 'text-neutral-400'} />
           <span>Notices & Banners</span>
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+          <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
             activeTab === 'announcements' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
           }`}>
             {announcements.length}
@@ -311,7 +314,7 @@ export default function AdminCMS() {
         >
           <MessageCircle size={16} className={activeTab === 'faqs' ? 'text-gold' : 'text-neutral-400'} />
           <span>FAQs</span>
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+          <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
             activeTab === 'faqs' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
           }`}>
             {faqs.length}
@@ -328,7 +331,7 @@ export default function AdminCMS() {
         >
           <ImageIcon size={16} className={activeTab === 'gallery' ? 'text-gold' : 'text-neutral-400'} />
           <span>Portfolio Gallery</span>
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+          <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
             activeTab === 'gallery' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
           }`}>
             {gallery.length}
@@ -358,7 +361,7 @@ export default function AdminCMS() {
         >
           <Users size={16} className={activeTab === 'team' ? 'text-gold' : 'text-neutral-400'} />
           <span>Team Members</span>
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+          <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
             activeTab === 'team' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
           }`}>
             {team.length}
@@ -375,7 +378,7 @@ export default function AdminCMS() {
         >
           <Shield size={16} className={activeTab === 'legal' ? 'text-gold' : 'text-neutral-400'} />
           <span>Legal Policies</span>
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+          <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
             activeTab === 'legal' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
           }`}>
             {legalDocs.length}
@@ -441,6 +444,7 @@ export default function AdminCMS() {
           )}
         </>
       )}
+      </div>
     </div>
   );
 }
@@ -629,7 +633,7 @@ function AnnouncementsView({ items, onRefresh, showToast }) {
               <div key={a.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-neutral-50/50 transition-colors">
                 <div className="space-y-1.5 flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                    <span className={`text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
                       isWarning 
                         ? 'bg-amber-50 text-amber-800 border-amber-200' 
                         : isPromo 
@@ -641,7 +645,7 @@ function AnnouncementsView({ items, onRefresh, showToast }) {
 
                     <button
                       onClick={() => handleToggleActive(a)}
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all flex items-center gap-1 ${
+                      className={`text-xs font-bold px-2 py-0.5 rounded-full border transition-all flex items-center gap-1 ${
                         a.is_active 
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
                           : 'bg-neutral-100 text-neutral-500 border-neutral-200 hover:bg-neutral-200'
@@ -652,7 +656,7 @@ function AnnouncementsView({ items, onRefresh, showToast }) {
                       {a.is_active ? 'Active on Portal' : 'Inactive / Hidden'}
                     </button>
 
-                    <span className="text-[10px] text-neutral-400">
+                    <span className="text-xs text-neutral-400">
                       Sort Order: #{a.sort_order || 0}
                     </span>
                   </div>
@@ -668,7 +672,7 @@ function AnnouncementsView({ items, onRefresh, showToast }) {
                         {a.cta_text} {a.cta_link && <ArrowRight size={11} />}
                       </span>
                       {a.cta_link && (
-                        <span className="text-[10px] text-neutral-400 font-mono">({a.cta_link})</span>
+                        <span className="text-xs text-neutral-400 font-mono">({a.cta_link})</span>
                       )}
                     </div>
                   )}
@@ -987,13 +991,13 @@ function FaqsView({ items, onRefresh, showToast }) {
             <div key={f.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-start justify-between gap-4 hover:bg-neutral-50/50 transition-colors">
               <div className="space-y-1.5 flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-700 border border-neutral-200">
+                  <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-700 border border-neutral-200">
                     {f.category || 'General'}
                   </span>
 
                   <button
                     onClick={() => handleToggleActive(f)}
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all flex items-center gap-1 ${
+                    className={`text-xs font-bold px-2 py-0.5 rounded-full border transition-all flex items-center gap-1 ${
                       f.is_active 
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
                         : 'bg-neutral-100 text-neutral-500 border-neutral-200 hover:bg-neutral-200'
@@ -1004,7 +1008,7 @@ function FaqsView({ items, onRefresh, showToast }) {
                     {f.is_active ? 'Active' : 'Hidden'}
                   </button>
 
-                  <span className="text-[10px] text-neutral-400">
+                  <span className="text-xs text-neutral-400">
                     Order: #{f.sort_order || 0}
                   </span>
                 </div>
@@ -1362,13 +1366,13 @@ function GalleryView({ items, onRefresh, showToast }) {
                 />
                 
                 {/* Category Badge */}
-                <span className="absolute top-2 left-2 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/60 text-white backdrop-blur-sm shadow-xs">
+                <span className="absolute top-2 left-2 text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/60 text-white backdrop-blur-sm shadow-xs">
                   {item.category || 'portrait'}
                 </span>
 
                 {/* Featured Badge */}
                 {item.is_featured && (
-                  <span className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-gold text-primary flex items-center gap-1 shadow-sm">
+                  <span className="absolute top-2 right-2 text-xs font-bold px-2 py-0.5 rounded-full bg-gold text-primary flex items-center gap-1 shadow-sm">
                     <Star size={10} className="fill-primary" /> Featured
                   </span>
                 )}
@@ -1418,7 +1422,7 @@ function GalleryView({ items, onRefresh, showToast }) {
                     <button
                       type="button"
                       onClick={(e) => handleQuickAppreciate(e, item)}
-                      className="text-[10px] font-bold text-neutral-500 hover:text-rose-600 hover:bg-rose-50 px-2 py-1 rounded-lg border border-neutral-200 hover:border-rose-200 transition-colors flex items-center gap-1 shrink-0"
+                      className="text-xs font-bold text-neutral-500 hover:text-rose-600 hover:bg-rose-50 px-2 py-1 rounded-lg border border-neutral-200 hover:border-rose-200 transition-colors flex items-center gap-1 shrink-0"
                       title="Add +1 Customer Appreciation directly"
                     >
                       <span>+1</span>
@@ -1427,7 +1431,7 @@ function GalleryView({ items, onRefresh, showToast }) {
                   </div>
                 </div>
 
-                <div className="mt-3 pt-2 border-t border-neutral-100 flex justify-between items-center text-[10px] text-neutral-400">
+                <div className="mt-3 pt-2 border-t border-neutral-100 flex justify-between items-center text-xs text-neutral-400">
                   <span>Order #{item.sort_order || 0}</span>
                   <span className="capitalize font-medium text-neutral-500">{item.category}</span>
                 </div>
@@ -1527,21 +1531,21 @@ function GalleryView({ items, onRefresh, showToast }) {
                 <button
                   type="button"
                   onClick={() => setFormData({ ...formData, likes: (parseInt(formData.likes, 10) || 0) + 1 })}
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-800 transition-colors"
+                  className="text-xs font-bold px-2 py-0.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-800 transition-colors"
                 >
                   +1
                 </button>
                 <button
                   type="button"
                   onClick={() => setFormData({ ...formData, likes: (parseInt(formData.likes, 10) || 0) + 10 })}
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-800 transition-colors"
+                  className="text-xs font-bold px-2 py-0.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-800 transition-colors"
                 >
                   +10
                 </button>
                 <button
                   type="button"
                   onClick={() => setFormData({ ...formData, likes: (parseInt(formData.likes, 10) || 0) + 50 })}
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-800 transition-colors"
+                  className="text-xs font-bold px-2 py-0.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-800 transition-colors"
                 >
                   +50
                 </button>
@@ -1555,7 +1559,7 @@ function GalleryView({ items, onRefresh, showToast }) {
               className="w-full border border-rose-200 bg-white rounded-xl px-3 py-2 text-xs font-semibold text-neutral-800 focus:border-rose-400 focus:outline-none"
               placeholder="0"
             />
-            <p className="text-[10px] text-rose-700/80 mt-1">
+            <p className="text-xs text-rose-700/80 mt-1">
               Reflects genuine client feedback on public portfolio. Updates are synchronized directly to database.
             </p>
           </div>
@@ -1949,7 +1953,7 @@ function TeamView({ items, onRefresh, showToast }) {
                   <div className="min-w-0">
                     <h4 className="font-semibold text-primary text-sm truncate">{m.name}</h4>
                     <p className="text-xs text-gold font-medium truncate">{m.role}</p>
-                    <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full inline-block mt-1 ${
+                    <span className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full inline-block mt-1 ${
                       m.is_active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-neutral-100 text-neutral-500'
                     }`}>
                       {m.is_active ? 'Active Member' : 'Inactive'}
@@ -2172,7 +2176,7 @@ function LegalView({ items, onRefresh, showToast }) {
             <div key={d.slug} className="bg-white rounded-2xl border border-neutral-200/80 p-5 shadow-xs hover:shadow-warm-sm transition-all flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between gap-3 mb-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gold/10 text-gold border border-gold/20">
+                  <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gold/10 text-gold border border-gold/20">
                     /{d.slug}
                   </span>
                   <span className="text-[11px] text-neutral-400">

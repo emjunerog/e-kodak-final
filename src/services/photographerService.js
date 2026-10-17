@@ -138,6 +138,90 @@ export async function getBookingDetails(bookingId) {
 }
 
 /**
+ * recordPhotographerActivity
+ * --------------------------
+ * Centralized studio logger that records every photographer schedule journey,
+ * shift commitment, booking progress, and output submission.
+ * Persists to public.admin_activity_logs, writes to local cache, and dispatches events.
+ */
+export async function recordPhotographerActivity({
+  photographerId,
+  photographerName = 'Photographer',
+  actionType,
+  entityType = 'photographer_availability',
+  entityId = null,
+  entityLabel = null,
+  description,
+  details = {},
+}) {
+  if (!photographerId) return;
+  const nowIso = new Date().toISOString();
+
+  // 1. Local storage immediate cache for instant offline responsiveness
+  try {
+    const key = `ekodak_photographer_activity_logs_${photographerId}`;
+    const cache = JSON.parse(localStorage.getItem(key) || '[]');
+    const newEntry = {
+      id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      admin_id: photographerId,
+      admin_name: photographerName,
+      admin_role: 'photographer',
+      action_type: actionType,
+      entity_type: entityType,
+      entity_id: entityId || photographerId,
+      entity_label: entityLabel || actionType,
+      description,
+      details: { ...details, photographer_id: photographerId },
+      created_at: nowIso,
+    };
+    cache.unshift(newEntry);
+    localStorage.setItem(key, JSON.stringify(cache.slice(0, 100)));
+
+    // Also update recent changes cache for calendar undo/history if applicable
+    const recentKey = `ekodak_photographer_recent_changes_${photographerId}`;
+    const recentCache = JSON.parse(localStorage.getItem(recentKey) || '[]');
+    recentCache.unshift({
+      id: `rc-${Date.now()}`,
+      text: entityLabel || description,
+      createdAt: nowIso,
+      targetDates: details?.targetDates || details?.dates || [],
+    });
+    localStorage.setItem(recentKey, JSON.stringify(recentCache.slice(0, 15)));
+  } catch (err) {
+    console.warn('Local activity cache warning:', err);
+  }
+
+  // 2. Persist to public.admin_activity_logs in Supabase
+  try {
+    if (isSupabaseConfigured && supabase) {
+      await supabase.from('admin_activity_logs').insert([{
+        admin_id: photographerId,
+        admin_name: photographerName,
+        admin_role: 'photographer',
+        action_type: actionType,
+        entity_type: entityType,
+        entity_id: entityId ? String(entityId) : String(photographerId),
+        entity_label: entityLabel || actionType,
+        description,
+        details: { ...details, photographer_id: photographerId },
+        created_at: nowIso,
+      }]);
+    }
+  } catch (err) {
+    console.warn('Supabase activity log record warning:', err);
+  }
+
+  // 3. Dispatch events to notify UI components
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ekodak_photographer_activity'));
+      window.dispatchEvent(new CustomEvent('ekodak:logs-updated'));
+      window.dispatchEvent(new CustomEvent('ekodak_audit_trail_updated'));
+    }
+  } catch {}
+}
+
+/**
  * updateBookingStatusByPhotographer
  * ---------------------------------
  * Photographers can progress their assigned shoot (e.g. CAPTURE when shooting starts).
@@ -175,6 +259,20 @@ export async function updateBookingStatusByPhotographer(bookingIdOrOptions, mayb
       remarks: remarks.trim() || `Status updated to ${newStatus} by photographer.`,
       changed_by: photographerId,
     });
+
+    // Record photographer activity log
+    if (photographerId) {
+      const bNum = updatedBooking?.booking_number || 'Booking';
+      await recordPhotographerActivity({
+        photographerId,
+        actionType: 'STATUS_CHANGE',
+        entityType: 'booking',
+        entityId: bookingId,
+        entityLabel: `#${bNum}`,
+        description: `Updated booking #${bNum} lifecycle status to ${newStatus}.`,
+        details: { booking_number: bNum, newStatus, remarks },
+      });
+    }
 
     return { data: updatedBooking, error: null };
   } catch (err) {
@@ -232,6 +330,18 @@ export async function acceptAssignment({
         booking_number: bNum,
         action: 'ASSIGNMENT_ACCEPTED',
       },
+    });
+
+    // Record photographer activity log
+    await recordPhotographerActivity({
+      photographerId,
+      photographerName,
+      actionType: 'PHOTOGRAPHER_ASSIGNED',
+      entityType: 'booking',
+      entityId: bookingId,
+      entityLabel: `#${bNum}`,
+      description: `Accepted and locked in shoot assignment for booking #${bNum}.`,
+      details: { booking_number: bNum, action: 'ASSIGNMENT_ACCEPTED' },
     });
 
     return { data: updatedBooking, error: null };
@@ -296,6 +406,18 @@ export async function declineAssignment({
       },
     });
 
+    // Record photographer activity log
+    await recordPhotographerActivity({
+      photographerId,
+      photographerName,
+      actionType: 'BOOKING_DECLINED',
+      entityType: 'booking',
+      entityId: bookingId,
+      entityLabel: `#${bNum}`,
+      description: `Declined shoot assignment for booking #${bNum}. Reason: "${reason}".`,
+      details: { booking_number: bNum, reason, action: 'ASSIGNMENT_DECLINED' },
+    });
+
     return { data: updatedBooking, error: null };
   } catch (err) {
     console.error('declineAssignment error:', err);
@@ -346,6 +468,18 @@ export async function requestRescheduleByPhotographer({
       },
     });
 
+    // Record photographer activity log
+    await recordPhotographerActivity({
+      photographerId,
+      photographerName,
+      actionType: 'BOOKING_RESCHEDULE_REQUESTED',
+      entityType: 'booking',
+      entityId: bookingId,
+      entityLabel: `#${bookingNumber}`,
+      description: `Requested reschedule for booking #${bookingNumber} to ${proposedDate} at ${proposedTime}. Reason: "${reason}".`,
+      details: { booking_number: bookingNumber, proposed_date: proposedDate, proposed_time: proposedTime, reason },
+    });
+
     return { error: null };
   } catch (err) {
     console.error('requestRescheduleByPhotographer error:', err);
@@ -360,8 +494,8 @@ export async function requestRescheduleByPhotographer({
  * --------------------
  * Calculates real counts for today's shoots, upcoming this week, in progress, and completed.
  */
-export async function getPhotographerStats(photographerId) {
-  if (!isSupabaseConfigured) {
+export function calculatePhotographerStats(bookings = []) {
+  if (!bookings || bookings.length === 0) {
     return {
       todayShoots: 0,
       upcomingWeek: 0,
@@ -370,60 +504,86 @@ export async function getPhotographerStats(photographerId) {
     };
   }
 
+  const todayStr = new Date().toISOString().split('T')[0];
+  const sevenDaysFromNow = new Date();
+  sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+  const nextWeekStr = sevenDaysFromNow.toISOString().split('T')[0];
+
+  const todayShoots = bookings.filter(
+    b => b.event_date === todayStr && !['CANCELLED', 'REJECTED'].includes(b.status)
+  ).length;
+
+  const upcomingWeek = bookings.filter(
+    b => b.event_date >= todayStr && b.event_date <= nextWeekStr && !['CANCELLED', 'REJECTED', 'COMPLETED'].includes(b.status)
+  ).length;
+
+  const inProgress = bookings.filter(
+    b => ['PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'EDITING', 'PRINTING', 'READY'].includes(b.status)
+  ).length;
+
+  const completed = bookings.filter(b => b.status === 'COMPLETED').length;
+
+  return {
+    todayShoots,
+    upcomingWeek,
+    inProgress,
+    completed,
+  };
+}
+
+export async function getPhotographerStats(photographerId) {
+  if (!isSupabaseConfigured) {
+    const empty = { todayShoots: 0, upcomingWeek: 0, inProgress: 0, completed: 0 };
+    return { ...empty, data: empty };
+  }
+
   try {
     const { data: bookings } = await getAssignedBookings(photographerId);
-    if (!bookings || bookings.length === 0) {
-      return {
-        todayShoots: 0,
-        upcomingWeek: 0,
-        inProgress: 0,
-        completed: 0,
-      };
-    }
-
-    const todayStr = new Date().toISOString().split('T')[0];
-    const sevenDaysFromNow = new Date();
-    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
-    const nextWeekStr = sevenDaysFromNow.toISOString().split('T')[0];
-
-    const todayShoots = bookings.filter(
-      b => b.event_date === todayStr && !['CANCELLED', 'REJECTED'].includes(b.status)
-    ).length;
-
-    const upcomingWeek = bookings.filter(
-      b => b.event_date >= todayStr && b.event_date <= nextWeekStr && !['CANCELLED', 'REJECTED', 'COMPLETED'].includes(b.status)
-    ).length;
-
-    const inProgress = bookings.filter(
-      b => ['PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'EDITING', 'PRINTING', 'READY'].includes(b.status)
-    ).length;
-
-    const completed = bookings.filter(b => b.status === 'COMPLETED').length;
-
+    const stats = calculatePhotographerStats(bookings || []);
+    // Support both direct access (stats.todayShoots) and wrapped access (stats.data.todayShoots)
     return {
-      todayShoots,
-      upcomingWeek,
-      inProgress,
-      completed,
+      ...stats,
+      data: stats,
     };
   } catch (err) {
     console.error('getPhotographerStats error:', err);
-    return {
-      todayShoots: 0,
-      upcomingWeek: 0,
-      inProgress: 0,
-      completed: 0,
-    };
+    const empty = { todayShoots: 0, upcomingWeek: 0, inProgress: 0, completed: 0 };
+    return { ...empty, data: empty };
   }
 }
 
 // ── Availability ─────────────────────────────────────────────────────────────
 
+// Helper to normalize any date representation (including UTC-shifted ISO timestamps) into clean 'YYYY-MM-DD'
+export function normalizeDateStr(val) {
+  if (!val) return '';
+  if (typeof val === 'string') {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+    if (val.includes('T')) {
+      const d = new Date(val);
+      if (!isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      }
+    }
+    return val.substring(0, 10);
+  }
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    const day = String(val.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  return String(val).substring(0, 10);
+}
+
 /**
  * getAvailability
  * ---------------
  * Fetches photographer_availability records for a given month/year,
- * supporting both schema date column variants.
+ * supporting both schema date column variants and normalizing dates to local YYYY-MM-DD.
  */
 export async function getAvailability(photographerId, month, year) {
   if (!isSupabaseConfigured) return { data: [], error: null };
@@ -443,56 +603,205 @@ export async function getAvailability(photographerId, month, year) {
     const { data, error } = await query;
     if (error) throw error;
 
-    // Filter to the month range in memory safely without UTC offset shifts
-    const records = (data || []).filter(r => {
-      const d = (r.availability_date || r.date || '').toString().substring(0, 10);
+    // Filter to the month range in memory safely with normalized local date strings
+    const records = (data || []).map(r => {
+      const isUnavail = r.status?.toUpperCase() === 'UNAVAILABLE' || r.status?.toUpperCase() === 'BLOCKED' || r.is_available === false;
+      const sT = extractTimeHM(r.start_time, '08:00');
+      const eT = extractTimeHM(r.end_time, '17:00');
+      const isFullDayShift = sT === '08:00' && eT === '17:00';
+      const isCustomHours = !isUnavail && !isFullDayShift && (
+        r.status?.toUpperCase() === 'CUSTOM' ||
+        (sT !== '08:00' || eT !== '17:00')
+      );
+
+      return {
+        ...r,
+        availability_date: normalizeDateStr(r.availability_date || r.date),
+        date: normalizeDateStr(r.date || r.availability_date),
+        status: isUnavail ? 'UNAVAILABLE' : (isCustomHours ? 'CUSTOM' : 'AVAILABLE'),
+        is_available: !isUnavail,
+      };
+    }).filter(r => {
+      const d = r.availability_date;
       return d >= startStr && d <= endStr;
     });
 
-    return { data: records, error: null };
+    // Deduplicate by normalized availability_date (keep latest valid record)
+    const uniqueMap = new Map();
+    records.forEach(rec => {
+      const existing = uniqueMap.get(rec.availability_date);
+      if (!existing || new Date(rec.created_at || 0) >= new Date(existing.created_at || 0)) {
+        uniqueMap.set(rec.availability_date, rec);
+      }
+    });
+    const uniqueRecords = Array.from(uniqueMap.values());
+
+    return { data: uniqueRecords, error: null };
   } catch (err) {
     console.error('getAvailability error:', err);
     return { data: [], error: err };
   }
 }
 
+function extractTimeHM(t, defaultVal = '08:00') {
+  if (!t) return defaultVal;
+  const parts = String(t).trim().split(':');
+  if (parts.length < 2) return defaultVal;
+  const h = parts[0].padStart(2, '0');
+  const m = parts[1].padStart(2, '0');
+  return `${h}:${m}`;
+}
+
 /**
  * setAvailability
  * ---------------
  * Saves or toggles custom availability for a specific date.
+ * Persists status: 'AVAILABLE' (or 'UNAVAILABLE') with custom start_time/end_time
+ * without inserting into GENERATED ALWAYS columns ('date' and 'is_available').
  */
-export async function setAvailability({ photographer_id, date, is_available, notes = null, start_time = '09:00:00', end_time = '18:00:00' }) {
+export async function setAvailability({
+  photographer_id,
+  date,
+  is_available = true,
+  status = null,
+  notes = null,
+  start_time = '08:00:00',
+  end_time = '17:00:00'
+}) {
   if (!isSupabaseConfigured) return { data: null, error: null };
   try {
-    // Delete existing records for that date and photographer
-    const { error: delError } = await supabase
-      .from('photographer_availability')
-      .delete()
-      .eq('photographer_id', photographer_id)
-      .eq('availability_date', date);
-
-    if (delError) {
-      console.warn('Delete previous availability warning:', delError);
+    const cleanDate = normalizeDateStr(date);
+    
+    // Status normalization:
+    // Schema CHECK constraint allows: AVAILABLE, UNAVAILABLE, BOOKED, BLOCKED.
+    // 'is_available' column is GENERATED ALWAYS AS (status = 'AVAILABLE').
+    let dbStatus = 'AVAILABLE';
+    if (status === 'UNAVAILABLE' || status === 'BLOCKED' || is_available === false) {
+      dbStatus = 'UNAVAILABLE';
+    } else {
+      dbStatus = 'AVAILABLE';
     }
 
-    const statusVal = is_available ? 'AVAILABLE' : 'UNAVAILABLE';
+    const sH = extractTimeHM(start_time, '08:00');
+    const eH = extractTimeHM(end_time, '17:00');
+    const sTime = `${sH}:00`;
+    const eTime = `${eH}:00`;
 
-    const { data, error } = await supabase
+    const isFullDayShift = (sH === '08:00' && eH === '17:00');
+    const isCustomRecord = !isFullDayShift && (status === 'CUSTOM' || (sH !== '08:00' || eH !== '17:00')) && dbStatus === 'AVAILABLE';
+
+    let noteText = notes;
+    if (isCustomRecord) {
+      if (!noteText || !noteText.toLowerCase().includes('custom')) {
+        noteText = `Custom hours: ${sH}–${eH}`;
+      }
+    } else if (dbStatus === 'AVAILABLE') {
+      noteText = 'Full Day Available';
+    }
+
+    // Delete existing records for that date and photographer
+    try {
+      await supabase
+        .from('photographer_availability')
+        .delete()
+        .eq('photographer_id', photographer_id)
+        .eq('availability_date', cleanDate);
+    } catch (_) {}
+
+    // CRITICAL: Insert only base physical columns.
+    // NEVER include 'date' or 'is_available' because they are ALWAYS GENERATED columns!
+    const res = await supabase
       .from('photographer_availability')
       .insert([{
         photographer_id,
-        availability_date: date,
-        status: statusVal,
-        start_time,
-        end_time,
-        notes,
+        availability_date: cleanDate,
+        status: dbStatus,
+        start_time: sTime,
+        end_time: eTime,
+        notes: noteText,
       }])
       .select();
 
-    return { data: data?.[0] || null, error };
+    if (res.error) {
+      console.error('setAvailability insert error:', res.error);
+      return { data: null, error: res.error };
+    }
+
+    const savedRecord = res.data?.[0] ? {
+      ...res.data[0],
+      availability_date: normalizeDateStr(res.data[0].availability_date || res.data[0].date),
+      date: normalizeDateStr(res.data[0].date || res.data[0].availability_date),
+      status: isCustomRecord ? 'CUSTOM' : dbStatus,
+      is_available: dbStatus === 'AVAILABLE',
+    } : null;
+
+    return { data: savedRecord, error: null };
   } catch (err) {
     console.error('setAvailability error:', err);
     return { data: null, error: err };
+  }
+}
+
+/**
+ * getStudioTeamAvailabilityForDate
+ * --------------------------------
+ * Fetches the cooperative availability status of all studio photographers for a given date.
+ * Allows photographers to coordinate coverage and work cooperatively.
+ */
+export async function getStudioTeamAvailabilityForDate(date) {
+  if (!isSupabaseConfigured || !date) return { data: [], error: null };
+  try {
+    const targetDate = normalizeDateStr(date);
+    const { data: profiles, error: pErr } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name, avatar_url, role')
+      .eq('role', 'photographer')
+      .neq('role', 'admin')
+      .eq('is_active', true)
+      .order('first_name', { ascending: true });
+
+    if (pErr) throw pErr;
+
+    const { data: avData, error: avErr } = await supabase
+      .from('photographer_availability')
+      .select('*');
+
+    const dateAvails = (avData || []).filter(r => {
+      const d = normalizeDateStr(r.availability_date || r.date);
+      return d === targetDate;
+    });
+
+    const team = (profiles || []).map(p => {
+      const match = dateAvails.find(a => a.photographer_id === p.id);
+      let status = 'DEFAULT_AVAILABLE';
+      if (match) {
+        const isUn = match.status?.toUpperCase() === 'UNAVAILABLE' || match.status?.toUpperCase() === 'BLOCKED' || match.is_available === false;
+        const sT = extractTimeHM(match.start_time, '08:00');
+        const eT = extractTimeHM(match.end_time, '17:00');
+        const isFullDay = sT === '08:00' && eT === '17:00';
+        const isCust = !isUn && !isFullDay && (
+          match.status?.toUpperCase() === 'CUSTOM' ||
+          (sT !== '08:00' || eT !== '17:00')
+        );
+        status = isUn ? 'UNAVAILABLE' : (isCust ? 'CUSTOM' : 'AVAILABLE');
+      }
+      return {
+        id: p.id,
+        first_name: p.first_name,
+        last_name: p.last_name,
+        avatar_url: p.avatar_url,
+        role: p.role,
+        status,
+        start_time: match?.start_time || null,
+        end_time: match?.end_time || null,
+        notes: match?.notes || '',
+      };
+    });
+
+    return { data: team, error: null };
+  } catch (err) {
+    console.error('getStudioTeamAvailabilityForDate error:', err);
+    return { data: [], error: err };
   }
 }
 
@@ -501,38 +810,85 @@ export async function setAvailability({ photographer_id, date, is_available, not
  * ---------------------
  * Saves or toggles custom availability for an array of dates.
  */
-export async function setBatchAvailability({ photographer_id, dates = [], is_available, notes = null }) {
+export async function setBatchAvailability({
+  photographer_id,
+  dates = [],
+  is_available,
+  status = null,
+  start_time = '08:00:00',
+  end_time = '17:00:00',
+  notes = null,
+}) {
   if (!isSupabaseConfigured || !dates || dates.length === 0) return { data: null, error: null };
   try {
-    const { error: delError } = await supabase
-      .from('photographer_availability')
-      .delete()
-      .eq('photographer_id', photographer_id)
-      .in('availability_date', dates);
+    const cleanDates = Array.from(new Set(dates.map((d) => normalizeDateStr(d)))).filter(Boolean);
+    const isUnavail = status === 'UNAVAILABLE' || status === 'BLOCKED' || is_available === false;
+    const statusVal = isUnavail ? 'UNAVAILABLE' : 'AVAILABLE';
+    const sH = extractTimeHM(start_time, '08:00');
+    const eH = extractTimeHM(end_time, '17:00');
+    const sTime = `${sH}:00`;
+    const eTime = `${eH}:00`;
 
-    if (delError) {
-      console.warn('Batch delete previous availability warning:', delError);
-    }
-
-    const statusVal = is_available ? 'AVAILABLE' : 'UNAVAILABLE';
-    const rows = dates.map(d => ({
+    // CRITICAL: Do NOT include generated columns 'date' or 'is_available'
+    const rows = cleanDates.map((d) => ({
       photographer_id,
       availability_date: d,
       status: statusVal,
-      start_time: '09:00:00',
-      end_time: '18:00:00',
+      start_time: sTime,
+      end_time: eTime,
       notes,
     }));
 
     const { data, error } = await supabase
       .from('photographer_availability')
-      .insert(rows)
+      .upsert(rows, { onConflict: 'photographer_id,availability_date' })
       .select();
 
     return { data: data || [], error };
   } catch (err) {
     console.error('setBatchAvailability error:', err);
     return { data: null, error: err };
+  }
+}
+
+/**
+ * clearMonthAvailability
+ * ----------------------
+ * Clears custom availability records for the specified dates.
+ */
+export async function clearMonthAvailability({ photographer_id, dates = [] }) {
+  if (!isSupabaseConfigured || !photographer_id || dates.length === 0) return { error: null };
+  try {
+    const cleanDates = dates.map(d => normalizeDateStr(d));
+    const { error } = await supabase
+      .from('photographer_availability')
+      .delete()
+      .eq('photographer_id', photographer_id)
+      .in('availability_date', cleanDates);
+    return { error };
+  } catch (err) {
+    console.error('clearMonthAvailability error:', err);
+    return { error: err };
+  }
+}
+
+/**
+ * clearAllPhotographerAvailability
+ * --------------------------------
+ * Removes all custom availability records for a photographer,
+ * resetting schedule states cleanly to pristine 0.
+ */
+export async function clearAllPhotographerAvailability(photographerId) {
+  if (!isSupabaseConfigured || !photographerId) return { error: null };
+  try {
+    const { error } = await supabase
+      .from('photographer_availability')
+      .delete()
+      .eq('photographer_id', photographerId);
+    return { error };
+  } catch (err) {
+    console.error('clearAllPhotographerAvailability error:', err);
+    return { error: err };
   }
 }
 
@@ -937,6 +1293,18 @@ export async function submitSamplesToAdmin({
       }
     });
 
+    // Record photographer activity log
+    await recordPhotographerActivity({
+      photographerId,
+      photographerName,
+      actionType: 'OUTPUT_SUBMISSION',
+      entityType: 'photo_outputs',
+      entityId: bookingId,
+      entityLabel: `#${bNum}`,
+      description: `Submitted ${photoCount} sample photo(s) (${setsSummary || 'Sets'}) for booking #${bNum} for Admin Quality Review.`,
+      details: { booking_number: bNum, photo_count: photoCount, sets_summary: setsSummary, stage: 'EDITING' },
+    });
+
     return { data: updatedBooking, transfer, error: transferError };
   } catch (err) {
     console.error('submitSamplesToAdmin error:', err);
@@ -1102,19 +1470,20 @@ export function getCleanLocation(locStr) {
 }
 
 function parseStudentDetailsFromNotes(notes) {
-  const blockMatch = notes.match(/\[(?:STUDENT DETAILS|STUDENT & YEARBOOK DETAILS)\]([\s\S]*?)(?=(\n\s*\n\s*\[|$))/i);
-  if (!blockMatch) return null;
-  const block = blockMatch[1];
+  if (!notes || typeof notes !== 'string') return null;
   return {
-    type: block.match(/•\s*Type:\s*([^\n\r]+)/i)?.[1]?.trim(),
-    mode: block.match(/•\s*(?:Booking\s*Mode|Agreement(?:\s*Status)?):\s*([^\n\r]+)/i)?.[1]?.trim(),
-    school: block.match(/•\s*School:\s*([^\n\r]+)/i)?.[1]?.trim(),
-    campus: block.match(/•\s*Campus\s*(?:\/\s*Address)?:\s*([^\n\r]+)/i)?.[1]?.trim(),
-    degree: block.match(/•\s*(?:Degree|Program|Strand|Course)(?:\s*\/\s*(?:Program|Strand|Course))?:\s*([^\n\r]+)/i)?.[1]?.trim(),
-    batch: block.match(/•\s*Batch:\s*([^\n\r]+)/i)?.[1]?.trim(),
-    section: block.match(/•\s*Section\s*(?:\/\s*Batch)?:\s*([^\n\r]+)/i)?.[1]?.trim(),
-    studentId: block.match(/•\s*Student\s*ID:\s*([^\n\r]+)/i)?.[1]?.trim(),
-    scheduleNote: block.match(/•\s*Schedule\s*Note:\s*([^\n\r]+)/i)?.[1]?.trim(),
+    studentName: notes.match(/•\s*Student\s*Name:\s*([^\n\r]+)/i)?.[1]?.trim(),
+    middleName: notes.match(/•\s*Middle\s*Name:\s*([^\n\r]+)/i)?.[1]?.trim(),
+    type: notes.match(/•\s*Type:\s*([^\n\r]+)/i)?.[1]?.trim(),
+    mode: notes.match(/•\s*(?:Booking\s*Mode|Agreement(?:\s*Status)?):\s*([^\n\r]+)/i)?.[1]?.trim(),
+    school: notes.match(/•\s*School:\s*([^\n\r]+)/i)?.[1]?.trim(),
+    campus: notes.match(/•\s*Campus\s*(?:\/\s*Address)?:\s*([^\n\r]+)/i)?.[1]?.trim(),
+    degree: notes.match(/•\s*(?:Degree|Program|Strand|Course)(?:\s*(?:\/|\&)\s*(?:Program|Strand|Course))?:\s*([^\n\r]+)/i)?.[1]?.trim(),
+    batch: notes.match(/•\s*Batch:\s*([^\n\r]+)/i)?.[1]?.trim(),
+    section: notes.match(/•\s*Section\s*(?:\/\s*Batch)?:\s*([^\n\r]+)/i)?.[1]?.trim(),
+    studentId: notes.match(/•\s*Student\s*ID:\s*([^\n\r]+)/i)?.[1]?.trim(),
+    yearbookMotto: notes.match(/•\s*Yearbook\s*Motto:\s*([^\n\r]+)/i)?.[1]?.trim(),
+    scheduleNote: notes.match(/•\s*(?:Schedule\s*)?Note:\s*([^\n\r]+)/i)?.[1]?.trim(),
   };
 }
 
@@ -1138,6 +1507,7 @@ export function parseBookingBrief(booking) {
     notes.includes('School Partner Agreement');
 
   const academicSpecs = {
+    studentName: studentData?.studentName || booking?.student_details?.student_name || null,
     school: studentData?.school || studioSpecs.university || null,
     campus: studentData?.campus || studioSpecs.campus || null,
     degree: studentData?.degree || studioSpecs.degree || null,
@@ -1148,6 +1518,7 @@ export function parseBookingBrief(booking) {
     mode: rawMode || null,
     isSchoolPartner,
     scheduleNote: studentData?.scheduleNote || booking?.student_details?.schedule_note || null,
+    yearbookMotto: studentData?.yearbookMotto || null,
     togaSize: studioSpecs.togaSize || null,
     innerAttireSize: studioSpecs.innerAttireSize || null,
     backdrop: studioSpecs.backdrop || null,
@@ -1193,14 +1564,33 @@ export function parseBookingBrief(booking) {
 
   // 5. Clean Human Notes (Strip all machine generated blocks)
   const cleanNotes = notes
+    .replace(/\[BOOKING BENEFICIARY(?:\s*&\s*PARTICIPANT)?\][\s\S]*?(?=(\n\s*\n\s*\[|$))/gi, '')
+    .replace(/\[BOOKING PARTICIPANT(?:\s*\/\s*BENEFICIARY)?\][\s\S]*?(?=(\n\s*\n\s*\[|$))/gi, '')
     .replace(/\[STUDENT & YEARBOOK DETAILS\][\s\S]*?(?=(\n\s*\n\s*\[|$))/gi, '')
+    .replace(/\[STUDENT DETAILS\][\s\S]*?(?=(\n\s*\n\s*\[|$))/gi, '')
     .replace(/\[WEDDING DETAILS\][\s\S]*?(?=(\n\s*\n\s*\[|$))/gi, '')
     .replace(/\[CORPORATE DETAILS\][\s\S]*?(?=(\n\s*\n\s*\[|$))/gi, '')
     .replace(/\[SELECTED STYLE PEGS\][\s\S]*?(?=(\n\s*\n\s*\[|$))/gi, '')
     .replace(/\[SELECTED ADD-ONS\][\s\S]*?(?=(\n\s*\n\s*\[|$))/gi, '')
     .trim();
 
-  // 6. Client Name and Contact helper
+  // 6. Beneficiary / Participant extraction
+  const participantMatch = notes.match(/\[BOOKING BENEFICIARY(?:\s*&\s*PARTICIPANT)?\]([\s\S]*?)(?=\n\n\[|$)/i) ||
+                           notes.match(/\[BOOKING PARTICIPANT(?:\s*\/\s*BENEFICIARY)?\]([\s\S]*?)(?=\n\n\[|$)/i);
+  let participantDetails = null;
+  if (participantMatch) {
+    const block = participantMatch[1];
+    participantDetails = {
+      bookingFor: /someone\s*else/i.test(block.match(/•\s*Booking\s*For:\s*([^\n\r]+)/i)?.[1] || '') ? 'someone_else' : 'myself',
+      participantName: block.match(/•\s*(?:Participant|Beneficiary|Person|Client)\s*Name:\s*([^\n\r]+)/i)?.[1]?.trim(),
+      phone: block.match(/•\s*(?:Participant\s*)?(?:Contact\s*)?Phone(?:\s*Number)?:\s*([^\n\r]+)/i)?.[1]?.trim(),
+      email: block.match(/•\s*(?:Participant\s*)?(?:Contact\s*)?Email:\s*([^\n\r]+)/i)?.[1]?.trim(),
+      relationship: block.match(/•\s*Relationship(?:\s*to\s*Account\s*Owner)?:\s*([^\n\r]+)/i)?.[1]?.trim(),
+      accountOwner: block.match(/•\s*Account\s*Owner:\s*([^\n\r]+)/i)?.[1]?.trim(),
+    };
+  }
+
+  // 7. Client Name and Contact helper
   const clientName = [booking?.customer?.first_name, booking?.customer?.last_name]
     .filter(Boolean)
     .join(' ')
@@ -1216,6 +1606,7 @@ export function parseBookingBrief(booking) {
     stylePegs,
     cleanNotes,
     clientName,
+    participantDetails,
     cleanLocation,
   };
 }
@@ -1223,7 +1614,7 @@ export function parseBookingBrief(booking) {
 // ── Smart AI Conflict Resolver & Auto-Reschedule ─────────────────────────────
 
 // Helper for Philippine holidays in AI schedule optimizer
-function checkPhilippineHoliday(year, month0, day) {
+export function checkPhilippineHoliday(year, month0, day) {
   const m = month0 + 1;
   const mmdd = `${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   const fixedHolidays = {

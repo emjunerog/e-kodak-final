@@ -364,7 +364,7 @@ export default function StaffQRScannerModal({ isOpen, onClose }) {
                 <h3 className="font-heading text-base font-bold text-primary">
                   Studio QR Pass Scanner
                 </h3>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
                   Staff Desk
                 </span>
               </div>
@@ -533,7 +533,7 @@ export default function StaffQRScannerModal({ isOpen, onClose }) {
 
                 <div className="flex items-center justify-between pt-2 border-t border-neutral-200/60">
                   <span className="text-neutral-500 font-medium">Payment Status</span>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase tracking-wider ${
                     verifiedResult.booking.payment_status === 'PAID'
                       ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                       : 'bg-amber-100 text-amber-800 border border-amber-300'
@@ -631,7 +631,7 @@ export default function StaffQRScannerModal({ isOpen, onClose }) {
               <div className="p-3 rounded-xl bg-gold/10 border border-gold/30 text-xs text-neutral-700 flex items-center gap-2">
                 <Sparkles size={15} className="text-gold shrink-0" />
                 <p className="text-[11px] leading-relaxed">
-                  <strong className="font-bold">Fast Paste:</strong> Take a screenshot (<kbd className="px-1.5 py-0.5 rounded bg-white font-mono text-[10px] border border-neutral-200">Win+Shift+S</kbd>) and press <kbd className="px-1.5 py-0.5 rounded bg-white font-mono text-[10px] border border-neutral-200">Ctrl+V</kbd> anywhere on this screen.
+                  <strong className="font-bold">Fast Paste:</strong> Take a screenshot (<kbd className="px-1.5 py-0.5 rounded bg-white font-mono text-xs border border-neutral-200">Win+Shift+S</kbd>) and press <kbd className="px-1.5 py-0.5 rounded bg-white font-mono text-xs border border-neutral-200">Ctrl+V</kbd> anywhere on this screen.
                 </p>
               </div>
 
@@ -725,7 +725,7 @@ export default function StaffQRScannerModal({ isOpen, onClose }) {
                     Verify Pass
                   </button>
                 </div>
-                <p className="text-[10px] text-neutral-400">
+                <p className="text-xs text-neutral-400">
                   USB / Bluetooth 2D barcode scanner guns automatically transmit upon trigger.
                 </p>
               </div>

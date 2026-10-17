@@ -206,7 +206,7 @@ export default function ReferenceImageUploader({ files, setFiles, maxFiles = 3, 
                 <div className="p-3 flex items-center justify-between gap-2 border-t border-neutral-100 bg-white">
                   <div className="min-w-0">
                     <p className="font-body text-xs font-bold text-primary truncate">{file.name}</p>
-                    <p className="font-body text-[10px] text-neutral-500 font-medium mt-0.5">
+                    <p className="font-body text-xs text-neutral-500 font-medium mt-0.5">
                       {(file.size / 1024 / 1024).toFixed(2)} MB · Ready for bay
                     </p>
                   </div>

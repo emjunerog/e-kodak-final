@@ -16,13 +16,22 @@
 
 import { useState } from "react";
 import { Plus, Minus } from "lucide-react";
-import { useScrollReveal } from "../../lib/useScrollReveal";
+import { motion } from "framer-motion";
+import {
+  viewport,
+  stagger,
+  staggerChild,
+  ease,
+} from "../../lib/motion";
 import SectionHeader from "../ui/SectionHeader";
 
 function AccordionItem({ faq, isOpen, onToggle }) {
   return (
-    <div
-      className={`border rounded-xl overflow-hidden transition-all duration-300 ${
+    <motion.div
+      variants={staggerChild}
+      whileHover={{ y: -3 }}
+      transition={{ type: "spring", stiffness: 320, damping: 26 }}
+      className={`border rounded-xl overflow-hidden transition-[border-color,box-shadow] duration-300 ${
         isOpen
           ? "border-gold/40 shadow-warm-sm"
           : "border-neutral-200 hover:border-neutral-300"
@@ -39,8 +48,10 @@ function AccordionItem({ faq, isOpen, onToggle }) {
         <span className="font-heading text-primary text-base font-medium leading-snug">
           {faq.question}
         </span>
-        <span
-          className={`shrink-0 flex items-center justify-center w-7 h-7 rounded-full transition-all duration-300 ${
+        <motion.span
+          animate={{ scale: isOpen ? 1.15 : 1, rotate: isOpen ? 180 : 0 }}
+          transition={{ type: "spring", stiffness: 340, damping: 16 }}
+          className={`shrink-0 flex items-center justify-center w-7 h-7 rounded-full ${
             isOpen ? "bg-gold text-primary" : "bg-neutral-100 text-neutral-500"
           }`}
           aria-hidden="true"
@@ -49,7 +60,7 @@ function AccordionItem({ faq, isOpen, onToggle }) {
             ? <Minus size={14} strokeWidth={2.5} />
             : <Plus size={14} strokeWidth={2.5} />
           }
-        </span>
+        </motion.span>
       </button>
 
       {/* Answer panel */}
@@ -62,22 +73,25 @@ function AccordionItem({ faq, isOpen, onToggle }) {
         }`}
       >
         <div className="px-5 pb-5 pt-1">
-          <div className="w-8 h-px bg-gold/40 mb-3" aria-hidden="true" />
+          <motion.div
+            className="w-8 h-px bg-gold/40 mb-3 origin-left"
+            initial={false}
+            animate={{ scaleX: isOpen ? 1 : 0.3 }}
+            transition={{ duration: 0.5, ease: ease.expo }}
+            aria-hidden="true"
+          />
           <p className="font-body text-neutral-500 text-sm leading-relaxed">
             {faq.answer}
           </p>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
 export default function ServiceFAQ({ faqs, topics, title = "Frequently Asked Questions", subtitle }) {
   const [openId, setOpenId]       = useState(null);
   const [activeTopic, setActiveTopic] = useState("all");
-
-  const { ref: headRef, inView: headIn } = useScrollReveal();
-  const { ref: bodyRef, inView: bodyIn } = useScrollReveal({ threshold: 0.05 });
 
   const allTopics = [{ id: "all", label: "All Questions" }, ...(topics || [])];
 
@@ -90,28 +104,25 @@ export default function ServiceFAQ({ faqs, topics, title = "Frequently Asked Que
       <div className="container-custom max-w-4xl">
 
         {/* Header */}
-        <div
-          ref={headRef}
-          className={`transition-all duration-700 ease-smooth ${
-            headIn ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-          }`}
-        >
-          <SectionHeader
-            eyebrow="FAQ"
-            title={title}
-            subtitle={subtitle || "Everything you need to know before booking your session."}
-            id="faq-heading"
-          />
-        </div>
+        <SectionHeader
+          eyebrow="FAQ"
+          title={title}
+          subtitle={subtitle || "Everything you need to know before booking your session."}
+          id="faq-heading"
+        />
 
         {/* Topic Filter Tabs */}
-        <div
+        <motion.div
           className="flex flex-wrap gap-2 justify-center mb-10"
           role="tablist"
           aria-label="FAQ topics"
+          variants={stagger(0.05)}
+          initial="hidden"
+          whileInView="show"
+          viewport={viewport}
         >
           {allTopics.map((topic) => (
-            <button
+            <motion.button
               key={topic.id}
               role="tab"
               aria-selected={activeTopic === topic.id}
@@ -119,23 +130,28 @@ export default function ServiceFAQ({ faqs, topics, title = "Frequently Asked Que
                 setActiveTopic(topic.id);
                 setOpenId(null);
               }}
-              className={`px-4 py-2 rounded-full text-xs font-body font-medium uppercase tracking-wider transition-all duration-200 ${
+              variants={staggerChild}
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.96 }}
+              className={`px-4 py-2 rounded-full text-xs font-body font-medium uppercase tracking-wider transition-[background-color,color,box-shadow,border-color] duration-200 ${
                 activeTopic === topic.id
                   ? "bg-primary text-white shadow-warm-sm"
                   : "bg-white border border-neutral-200 text-neutral-500 hover:border-neutral-400 hover:text-primary"
               }`}
             >
               {topic.label}
-            </button>
+            </motion.button>
           ))}
-        </div>
+        </motion.div>
 
         {/* Accordion */}
-        <div
-          ref={bodyRef}
-          className={`space-y-3 transition-all duration-700 ease-smooth ${
-            bodyIn ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
-          }`}
+        <motion.div
+          className="space-y-3"
+          variants={stagger(0.07)}
+          initial="hidden"
+          whileInView="show"
+          viewport={viewport}
+          key={activeTopic}
         >
           {filtered.map((faq) => (
             <AccordionItem
@@ -150,7 +166,7 @@ export default function ServiceFAQ({ faqs, topics, title = "Frequently Asked Que
               No questions in this topic yet.
             </p>
           )}
-        </div>
+        </motion.div>
       </div>
     </section>
   );

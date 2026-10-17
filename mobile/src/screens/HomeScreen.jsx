@@ -20,28 +20,29 @@ import {
   Platform, Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import {
   QrCode, BookOpen, ChevronRight,
   HelpCircle, Calendar, Bell, X,
+  Ticket, Wallet, Shirt, MapPin,
 } from 'lucide-react-native';
 
 import BrandLogo from '../components/BrandLogo';
 import GlassCard from '../components/GlassCard';
+import GlassBackground from '../components/GlassBackground';
 import StatusBadge from '../components/StatusBadge';
 import GoldButton from '../components/GoldButton';
+import PremiumIcon from '../components/PremiumIcon';
+import MascotStage from '../components/MascotStage';
 import StudioPhotoReel from '../components/StudioPhotoReel';
 import ScanInstructionsModal from '../components/ScanInstructionsModal';
 import StudioMascotKit from '../components/StudioMascotKit';
 import { RatesModal, PrepModal, StudioBayModal } from '../components/StudioToolModals';
 import {
-  ActivatePassVector,
   ScanPassVector,
   MyPassesVector,
-  StudioRatesVector,
-  ShootPrepVector,
-  StudioBayVector,
 } from '../components/StudioVectorIllustrations';
 import { useTheme } from '../context/ThemeContext';
 import {
@@ -119,27 +120,8 @@ export default function HomeScreen({ navigation }) {
         backgroundColor={isDark ? '#0C0A08' : '#FAF8F5'}
       />
 
-      {/* Full-Screen Atmospheric Atelier Luxury Gradients */}
-      <LinearGradient
-        colors={
-          isDark
-            ? ['#0C0A08', '#16120E', '#0E0C09', '#1A140E', '#090806']
-            : ['#FAF8F5', '#F5EFE6', '#EDE4D4', '#F7F3EB', '#FAF7F2']
-        }
-        locations={[0, 0.22, 0.50, 0.78, 1]}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <LinearGradient
-        colors={
-          isDark
-            ? ['rgba(212, 175, 55, 0.08)', 'transparent', 'rgba(212, 175, 55, 0.04)', 'transparent']
-            : ['rgba(212, 175, 55, 0.12)', 'transparent', 'rgba(212, 175, 55, 0.06)', 'transparent']
-        }
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-        pointerEvents="none"
-      />
+      {/* Ambient Glass Backdrop */}
+      <GlassBackground />
 
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: 110 }]}
@@ -155,12 +137,12 @@ export default function HomeScreen({ navigation }) {
       >
         {/* ── Top Header: Brand Logo, Title & Actions ── */}
         <View style={styles.topHeaderBar}>
-          {/* Header Gradient */}
+          {/* Frosted header wash */}
           <LinearGradient
             colors={
               isDark
-                ? ['rgba(28, 23, 18, 0.94)', 'rgba(14, 12, 9, 0.97)']
-                : ['rgba(255, 255, 255, 0.96)', 'rgba(247, 244, 238, 0.92)']
+                ? ['rgba(28, 23, 18, 0.72)', 'rgba(14, 12, 9, 0.78)']
+                : ['rgba(255, 255, 255, 0.72)', 'rgba(247, 244, 238, 0.68)']
             }
             style={StyleSheet.absoluteFillObject}
           />
@@ -177,57 +159,56 @@ export default function HomeScreen({ navigation }) {
             {/* Top Left: 3D Emblem + E-KODAK + Subtitle + Tagline */}
             <BrandLogo layout="left" showTagline size="sm" withBackdrop={false} />
 
-            {/* Top Right Quick Action Icons & Mascot */}
+            {/* Top Right Quick Action Icons */}
             <View style={styles.topRightActions}>
-              <StudioMascotKit size={42} pose={mobileMascotPose} interactive={true} />
-
-              <TouchableOpacity
-                onPress={() => {
-                  try { Haptics.selectionAsync(); } catch {}
-                  setShowScanGuide(true);
-                }}
-                style={[
-                  styles.headerActionBtn,
-                  {
-                    backgroundColor: isDark ? 'rgba(255, 245, 225, 0.12)' : 'rgba(255, 255, 255, 0.95)',
-                    borderColor: isDark ? 'rgba(212, 175, 55, 0.35)' : colors.gold.border,
-                  },
-                ]}
-                activeOpacity={0.8}
+              <PremiumIcon
+                icon={HelpCircle}
+                size={20}
+                box={44}
+                tone="glass"
+                glow={false}
                 accessibilityLabel="Quick Guide"
-              >
-                <HelpCircle size={20} color={colors.gold.light} />
-              </TouchableOpacity>
+                onPress={() => setShowScanGuide(true)}
+              />
 
-              <TouchableOpacity
-                onPress={() => {
-                  try { Haptics.selectionAsync(); } catch {}
-                  setShowNotificationsModal(true);
-                }}
-                style={[
-                  styles.headerActionBtn,
-                  {
-                    backgroundColor: isDark ? 'rgba(255, 245, 225, 0.12)' : 'rgba(255, 255, 255, 0.95)',
-                    borderColor: isDark ? 'rgba(212, 175, 55, 0.35)' : colors.gold.border,
-                  },
-                ]}
-                activeOpacity={0.8}
-                accessibilityLabel="Studio Notifications"
-              >
-                <Bell size={20} color={colors.gold.light} />
-                <View style={styles.unreadBadgeDot} />
-              </TouchableOpacity>
+              <View style={{ position: 'relative' }}>
+                <PremiumIcon
+                  icon={Bell}
+                  size={20}
+                  box={44}
+                  tone="glass"
+                  glow={false}
+                  accessibilityLabel="Studio Notifications"
+                  onPress={() => setShowNotificationsModal(true)}
+                />
+                <View style={styles.unreadBadgeDot} pointerEvents="none" />
+              </View>
             </View>
           </View>
         </View>
 
-        {/* ── 3D Compact Studio Pass Cards ── */}
+        {/* ── Mascot Initialization Stage — Kodak the Fox centerpiece ── */}
+        <MascotStage
+          pose={mobileMascotPose}
+          mascotSize={120}
+          actionLabel={recentBooking ? 'View Live Progress' : 'Scan Studio Pass'}
+          onAction={() => {
+            try { Haptics.selectionAsync(); } catch {}
+            if (recentBooking) {
+              navigation.navigate('Bookings');
+            } else {
+              navigation.navigate('Scanner');
+            }
+          }}
+        />
+
+        {/* ── Studio Pass Services ── */}
         <View style={styles.compactCardsSection}>
           <Text style={[styles.sectionHeaderTitle, { color: colors.gold.DEFAULT, marginBottom: Spacing[1] }]}>
             STUDIO PASS SERVICES
           </Text>
 
-          {/* Card 1: Activate Your Studio Pass (Full Width, 3D Physical Card) */}
+          {/* Card 1: Activate Your Studio Pass */}
           <TouchableOpacity
             activeOpacity={0.88}
             onPress={() => {
@@ -236,77 +217,39 @@ export default function HomeScreen({ navigation }) {
             }}
             style={styles.activateCardWrapper}
           >
-            <View style={styles.card3DShadowShell}>
-              <View style={[styles.card3DThicknessBase, { backgroundColor: isDark ? '#2E241B' : '#C8B99F' }]}>
-                <GlassCard glow highlight style={styles.activate3DCard}>
-                  {/* 3D Diagonal Surface Gradient */}
-                  <LinearGradient
-                    colors={
-                      isDark
-                        ? ['rgba(212, 175, 55, 0.16)', 'rgba(32, 26, 20, 0.85)', 'rgba(12, 10, 8, 0.96)']
-                        : ['rgba(212, 175, 55, 0.20)', 'rgba(255, 255, 255, 0.95)', 'rgba(242, 237, 227, 0.98)']
-                    }
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={StyleSheet.absoluteFillObject}
-                  />
+            <GlassCard glow highlight style={styles.activateCard}>
+              <View style={styles.activateRow}>
+                <PremiumIcon icon={Ticket} size={30} box={68} tone="gold" glow />
 
-                  {/* 3D Top-Left Specular Surface Sheen */}
-                  <LinearGradient
-                    colors={['rgba(255, 255, 255, 0.08)', 'transparent']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 0.6, y: 0.6 }}
-                    style={StyleSheet.absoluteFillObject}
-                    pointerEvents="none"
-                  />
+                <View style={styles.activateInfoCol}>
+                  <Text style={[styles.activateTitle, { color: colors.text.primary }]}>
+                    Activate Your Studio Pass
+                  </Text>
+                  <Text style={[styles.activateDesc, { color: colors.text.secondary }]} numberOfLines={2}>
+                    Link your physical receipt or web reservation to unlock live shoot progress and milestones.
+                  </Text>
 
-                  <View style={styles.activateRow}>
-                    {/* 3D Raised Vector Podium - Subtle Luminous Core */}
-                    <View style={styles.podium3DWrapper}>
-                      <LinearGradient
-                        colors={['#FFE7A3', '#D4AF37', '#7A5208', '#F5D77F']}
-                        start={{ x: 0.1, y: 0 }}
-                        end={{ x: 0.9, y: 1 }}
-                        style={styles.podiumBeveledRing}
-                      >
-                        <View style={[styles.podiumCoreDisc, { backgroundColor: isDark ? 'rgba(255, 248, 235, 0.12)' : '#FFFDF9' }]}>
-                          <StudioMascotKit pose="hold_qr" size={72} interactive={false} showBadge={false} />
-                        </View>
-                      </LinearGradient>
-                    </View>
-
-                    {/* Justified Content Column */}
-                    <View style={styles.activateInfoCol}>
-                      <Text style={[styles.activateTitle, { color: colors.text.primary }]}>
-                        Activate Your Studio Pass
+                  {/* Quick Guide Pill */}
+                  <View style={styles.quickGuidePill}>
+                    <LinearGradient
+                      colors={gradients.gold}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.quickGuidePillGrad}
+                    >
+                      <HelpCircle size={12} color="#FFFFFF" strokeWidth={2.2} />
+                      <Text style={[styles.quickGuidePillText, { color: '#FFFFFF' }]}>
+                        Quick Guide
                       </Text>
-                      <Text style={[styles.activateDesc, { color: colors.text.secondary }]} numberOfLines={2}>
-                        Link your physical receipt or web reservation to unlock live shoot progress and milestones.
-                      </Text>
-
-                      {/* 3D Quick Guide Tactile Pill */}
-                      <View style={styles.quickGuidePill3D}>
-                        <LinearGradient
-                          colors={gradients.gold}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 0 }}
-                          style={styles.quickGuidePillGrad}
-                        >
-                          <HelpCircle size={13} color="#FFFFFF" strokeWidth={2.2} />
-                          <Text style={[styles.quickGuidePillText, { color: '#FFFFFF' }]}>
-                            Quick Guide
-                          </Text>
-                          <ChevronRight size={13} color="#FFFFFF" strokeWidth={2.4} />
-                        </LinearGradient>
-                      </View>
-                    </View>
+                      <ChevronRight size={12} color="#FFFFFF" strokeWidth={2.4} />
+                    </LinearGradient>
                   </View>
-                </GlassCard>
+                </View>
               </View>
-            </View>
+            </GlassCard>
           </TouchableOpacity>
 
-          {/* Cards 2 & 3: Scan Studio Pass & My Studio Passes (Side by Side 3D Cards) */}
+          {/* Cards 2 & 3: Scan Studio Pass & My Studio Passes */}
           <View style={styles.sideBySideRow}>
             {/* Left: Scan Studio Pass */}
             <TouchableOpacity
@@ -314,60 +257,41 @@ export default function HomeScreen({ navigation }) {
               onPress={() => navigation.navigate('Scanner')}
               style={styles.sideCardCol}
             >
-              <View style={styles.card3DShadowShell}>
-                <View style={[styles.card3DThicknessBase, { backgroundColor: isDark ? '#2E241B' : '#C8B99F' }]}>
-                  <GlassCard glow highlight style={styles.sideCompactCard3D}>
-                    {/* 3D Diagonal Gradient */}
-                    <LinearGradient
-                      colors={
-                        isDark
-                          ? ['rgba(212, 175, 55, 0.16)', 'rgba(30, 24, 18, 0.88)', 'rgba(12, 10, 8, 0.98)']
-                          : ['rgba(212, 175, 55, 0.20)', 'rgba(255, 255, 255, 0.95)', 'rgba(244, 239, 230, 0.98)']
-                      }
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={StyleSheet.absoluteFillObject}
-                    />
-
-                    {/* 3D Raised Circular Podium - Subtle Luminous Core */}
-                    <View style={styles.podium3DCircleWrapper}>
-                      <LinearGradient
-                        colors={['#FFE7A3', '#D4AF37', '#7A5208', '#F5D77F']}
-                        start={{ x: 0.1, y: 0 }}
-                        end={{ x: 0.9, y: 1 }}
-                        style={styles.podiumCircleRing}
-                      >
-                        <View style={[styles.podiumCircleDisc, { backgroundColor: isDark ? 'rgba(255, 248, 235, 0.12)' : '#FFFDF9' }]}>
-                          <ScanPassVector size={64} />
-                        </View>
-                      </LinearGradient>
+              <GlassCard glow highlight style={styles.sideCompactCard}>
+                <View style={styles.podiumCircleWrapper}>
+                  <LinearGradient
+                    colors={['#FFE7A3', '#D4AF37', '#7A5208', '#F5D77F']}
+                    start={{ x: 0.1, y: 0 }}
+                    end={{ x: 0.9, y: 1 }}
+                    style={styles.podiumCircleRing}
+                  >
+                    <View style={[styles.podiumCircleDisc, { backgroundColor: isDark ? 'rgba(255, 248, 235, 0.12)' : '#FFFDF9' }]}>
+                      <ScanPassVector size={58} />
                     </View>
-
-                    {/* Symmetrical Justified Typography */}
-                    <Text style={[styles.sideCardTitle, { color: colors.text.primary }]}>
-                      Scan Studio Pass
-                    </Text>
-                    <Text style={[styles.sideCardDesc, { color: colors.text.muted }]} numberOfLines={2}>
-                      Point camera at any receipt or QR pass.
-                    </Text>
-
-                    {/* 3D Tactile Action Button */}
-                    <View style={styles.sideActionBtn3D}>
-                      <LinearGradient
-                        colors={gradients.gold}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={styles.sideActionGrad}
-                      >
-                        <QrCode size={13} color="#FFFFFF" strokeWidth={2.2} />
-                        <Text style={[styles.sideActionText, { color: '#FFFFFF' }]}>
-                          Scan Pass
-                        </Text>
-                      </LinearGradient>
-                    </View>
-                  </GlassCard>
+                  </LinearGradient>
                 </View>
-              </View>
+
+                <Text style={[styles.sideCardTitle, { color: colors.text.primary }]}>
+                  Scan Studio Pass
+                </Text>
+                <Text style={[styles.sideCardDesc, { color: colors.text.muted }]} numberOfLines={2}>
+                  Point camera at any receipt or QR pass.
+                </Text>
+
+                <View style={styles.sideActionBtn}>
+                  <LinearGradient
+                    colors={gradients.gold}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.sideActionGrad}
+                  >
+                    <QrCode size={13} color="#FFFFFF" strokeWidth={2.2} />
+                    <Text style={[styles.sideActionText, { color: '#FFFFFF' }]}>
+                      Scan Pass
+                    </Text>
+                  </LinearGradient>
+                </View>
+              </GlassCard>
             </TouchableOpacity>
 
             {/* Right: My Studio Passes */}
@@ -376,66 +300,46 @@ export default function HomeScreen({ navigation }) {
               onPress={() => navigation.navigate('Bookings')}
               style={styles.sideCardCol}
             >
-              <View style={styles.card3DShadowShell}>
-                <View style={[styles.card3DThicknessBase, { backgroundColor: isDark ? '#2E241B' : '#C8B99F' }]}>
-                  <GlassCard highlight style={styles.sideCompactCard3D}>
-                    {/* 3D Diagonal Gradient */}
-                    <LinearGradient
-                      colors={
-                        isDark
-                          ? ['rgba(212, 175, 55, 0.16)', 'rgba(30, 24, 18, 0.88)', 'rgba(12, 10, 8, 0.98)']
-                          : ['rgba(212, 175, 55, 0.20)', 'rgba(255, 255, 255, 0.95)', 'rgba(244, 239, 230, 0.98)']
-                      }
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={StyleSheet.absoluteFillObject}
-                    />
-
-                    {/* 3D Raised Circular Podium - Subtle Luminous Core */}
-                    <View style={styles.podium3DCircleWrapper}>
-                      <LinearGradient
-                        colors={['#FFE7A3', '#D4AF37', '#7A5208', '#F5D77F']}
-                        start={{ x: 0.1, y: 0 }}
-                        end={{ x: 0.9, y: 1 }}
-                        style={styles.podiumCircleRing}
-                      >
-                        <View style={[styles.podiumCircleDisc, { backgroundColor: isDark ? 'rgba(255, 248, 235, 0.12)' : '#FFFDF9' }]}>
-                          <MyPassesVector size={64} />
-                        </View>
-                      </LinearGradient>
+              <GlassCard highlight style={styles.sideCompactCard}>
+                <View style={styles.podiumCircleWrapper}>
+                  <LinearGradient
+                    colors={['#FFE7A3', '#D4AF37', '#7A5208', '#F5D77F']}
+                    start={{ x: 0.1, y: 0 }}
+                    end={{ x: 0.9, y: 1 }}
+                    style={styles.podiumCircleRing}
+                  >
+                    <View style={[styles.podiumCircleDisc, { backgroundColor: isDark ? 'rgba(255, 248, 235, 0.12)' : '#FFFDF9' }]}>
+                      <MyPassesVector size={58} />
                     </View>
-
-                    {/* Symmetrical Justified Typography */}
-                    <Text style={[styles.sideCardTitle, { color: colors.text.primary }]}>
-                      My Studio Passes
-                    </Text>
-                    <Text style={[styles.sideCardDesc, { color: colors.text.muted }]} numberOfLines={2}>
-                      Review active photo passes & proofs.
-                    </Text>
-
-                    {/* 3D Tactile Action Button */}
-                    <View style={styles.sideActionBtn3D}>
-                      <LinearGradient
-                        colors={gradients.gold}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={styles.sideActionGrad}
-                      >
-                        <BookOpen size={13} color="#FFFFFF" strokeWidth={2.2} />
-                        <Text style={[styles.sideActionText, { color: '#FFFFFF' }]}>
-                          {savedBookings.length > 0 ? `${savedBookings.length} Active` : 'Passes'}
-                        </Text>
-                      </LinearGradient>
-                    </View>
-                  </GlassCard>
+                  </LinearGradient>
                 </View>
-              </View>
+
+                <Text style={[styles.sideCardTitle, { color: colors.text.primary }]}>
+                  My Studio Passes
+                </Text>
+                <Text style={[styles.sideCardDesc, { color: colors.text.muted }]} numberOfLines={2}>
+                  Review active photo passes & proofs.
+                </Text>
+
+                <View style={styles.sideActionBtn}>
+                  <LinearGradient
+                    colors={gradients.gold}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.sideActionGrad}
+                  >
+                    <BookOpen size={13} color="#FFFFFF" strokeWidth={2.2} />
+                    <Text style={[styles.sideActionText, { color: '#FFFFFF' }]}>
+                      {savedBookings.length > 0 ? `${savedBookings.length} Active` : 'Passes'}
+                    </Text>
+                  </LinearGradient>
+                </View>
+              </GlassCard>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* ── Three Functional Studio Tool Cards ── */}
-        {/* ── Three Functional Studio Tool Cards (3D Physical Architecture) ── */}
         <View style={styles.toolsSection}>
           <Text style={[styles.sectionHeaderTitle, { color: colors.gold.DEFAULT }]}>STUDIO TOOLS & GUIDES</Text>
           <View style={styles.threeToolsRow}>
@@ -445,44 +349,15 @@ export default function HomeScreen({ navigation }) {
               onPress={() => setShowRates(true)}
               style={styles.toolCol}
             >
-              <View style={styles.card3DShadowShell}>
-                <View style={[styles.card3DThicknessBase, { backgroundColor: isDark ? '#2E241B' : '#C8B99F' }]}>
-                  <GlassCard highlight style={styles.tool3DCard}>
-                    {/* 3D Diagonal Gradient */}
-                    <LinearGradient
-                      colors={
-                        isDark
-                          ? ['rgba(212, 175, 55, 0.14)', 'rgba(28, 22, 17, 0.88)', 'rgba(12, 10, 8, 0.98)']
-                          : ['rgba(212, 175, 55, 0.18)', 'rgba(255, 255, 255, 0.95)', 'rgba(244, 239, 230, 0.98)']
-                      }
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={StyleSheet.absoluteFillObject}
-                    />
-
-                    {/* 3D Raised Vector Podium - Subtle Luminous Core */}
-                    <View style={styles.toolPodium3DWrapper}>
-                      <LinearGradient
-                        colors={['#FFE7A3', '#D4AF37', '#7A5208', '#F5D77F']}
-                        start={{ x: 0.1, y: 0 }}
-                        end={{ x: 0.9, y: 1 }}
-                        style={styles.toolPodiumRing}
-                      >
-                        <View style={[styles.toolPodiumDisc, { backgroundColor: isDark ? 'rgba(255, 248, 235, 0.12)' : '#FFFDF9' }]}>
-                          <StudioRatesVector size={34} />
-                        </View>
-                      </LinearGradient>
-                    </View>
-
-                    <Text style={[styles.toolTitle, { color: colors.text.primary }]} numberOfLines={1}>
-                      Studio Rates
-                    </Text>
-                    <Text style={[styles.toolSub, { color: colors.text.muted }]} numberOfLines={1}>
-                      Packages & Sets
-                    </Text>
-                  </GlassCard>
-                </View>
-              </View>
+              <GlassCard highlight style={styles.toolCard}>
+                <PremiumIcon icon={Wallet} size={22} box={52} tone="soft" glow />
+                <Text style={[styles.toolTitle, { color: colors.text.primary }]} numberOfLines={1}>
+                  Studio Rates
+                </Text>
+                <Text style={[styles.toolSub, { color: colors.text.muted }]} numberOfLines={1}>
+                  Packages & Sets
+                </Text>
+              </GlassCard>
             </TouchableOpacity>
 
             {/* Tool 2: Shoot Prep */}
@@ -491,42 +366,15 @@ export default function HomeScreen({ navigation }) {
               onPress={() => setShowPrep(true)}
               style={styles.toolCol}
             >
-              <View style={styles.card3DShadowShell}>
-                <View style={[styles.card3DThicknessBase, { backgroundColor: isDark ? '#2E241B' : '#C8B99F' }]}>
-                  <GlassCard highlight style={styles.tool3DCard}>
-                    <LinearGradient
-                      colors={
-                        isDark
-                          ? ['rgba(212, 175, 55, 0.14)', 'rgba(28, 22, 17, 0.88)', 'rgba(12, 10, 8, 0.98)']
-                          : ['rgba(212, 175, 55, 0.18)', 'rgba(255, 255, 255, 0.95)', 'rgba(244, 239, 230, 0.98)']
-                      }
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={StyleSheet.absoluteFillObject}
-                    />
-
-                    <View style={styles.toolPodium3DWrapper}>
-                      <LinearGradient
-                        colors={['#FFE7A3', '#D4AF37', '#7A5208', '#F5D77F']}
-                        start={{ x: 0.1, y: 0 }}
-                        end={{ x: 0.9, y: 1 }}
-                        style={styles.toolPodiumRing}
-                      >
-                        <View style={[styles.toolPodiumDisc, { backgroundColor: isDark ? 'rgba(255, 248, 235, 0.12)' : '#FFFDF9' }]}>
-                          <ShootPrepVector size={34} />
-                        </View>
-                      </LinearGradient>
-                    </View>
-
-                    <Text style={[styles.toolTitle, { color: colors.text.primary }]} numberOfLines={1}>
-                      Shoot Prep
-                    </Text>
-                    <Text style={[styles.toolSub, { color: colors.text.muted }]} numberOfLines={1}>
-                      Wardrobe & Tips
-                    </Text>
-                  </GlassCard>
-                </View>
-              </View>
+              <GlassCard highlight style={styles.toolCard}>
+                <PremiumIcon icon={Shirt} size={22} box={52} tone="soft" glow />
+                <Text style={[styles.toolTitle, { color: colors.text.primary }]} numberOfLines={1}>
+                  Shoot Prep
+                </Text>
+                <Text style={[styles.toolSub, { color: colors.text.muted }]} numberOfLines={1}>
+                  Wardrobe & Tips
+                </Text>
+              </GlassCard>
             </TouchableOpacity>
 
             {/* Tool 3: Studio Bay */}
@@ -535,47 +383,20 @@ export default function HomeScreen({ navigation }) {
               onPress={() => setShowStudio(true)}
               style={styles.toolCol}
             >
-              <View style={styles.card3DShadowShell}>
-                <View style={[styles.card3DThicknessBase, { backgroundColor: isDark ? '#2E241B' : '#C8B99F' }]}>
-                  <GlassCard highlight style={styles.tool3DCard}>
-                    <LinearGradient
-                      colors={
-                        isDark
-                          ? ['rgba(212, 175, 55, 0.14)', 'rgba(28, 22, 17, 0.88)', 'rgba(12, 10, 8, 0.98)']
-                          : ['rgba(212, 175, 55, 0.18)', 'rgba(255, 255, 255, 0.95)', 'rgba(244, 239, 230, 0.98)']
-                      }
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={StyleSheet.absoluteFillObject}
-                    />
-
-                    <View style={styles.toolPodium3DWrapper}>
-                      <LinearGradient
-                        colors={['#FFE7A3', '#D4AF37', '#7A5208', '#F5D77F']}
-                        start={{ x: 0.1, y: 0 }}
-                        end={{ x: 0.9, y: 1 }}
-                        style={styles.toolPodiumRing}
-                      >
-                        <View style={[styles.toolPodiumDisc, { backgroundColor: isDark ? 'rgba(255, 248, 235, 0.12)' : '#FFFDF9' }]}>
-                          <StudioBayVector size={34} />
-                        </View>
-                      </LinearGradient>
-                    </View>
-
-                    <Text style={[styles.toolTitle, { color: colors.text.primary }]} numberOfLines={1}>
-                      Studio Bay
-                    </Text>
-                    <Text style={[styles.toolSub, { color: colors.text.muted }]} numberOfLines={1}>
-                      Hours & Location
-                    </Text>
-                  </GlassCard>
-                </View>
-              </View>
+              <GlassCard highlight style={styles.toolCard}>
+                <PremiumIcon icon={MapPin} size={22} box={52} tone="soft" glow />
+                <Text style={[styles.toolTitle, { color: colors.text.primary }]} numberOfLines={1}>
+                  Studio Bay
+                </Text>
+                <Text style={[styles.toolSub, { color: colors.text.muted }]} numberOfLines={1}>
+                  Hours & Location
+                </Text>
+              </GlassCard>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ── Active Studio Pass Dossier Preview (If exists - 3D Architecture) ── */}
+        {/* ── Active Studio Pass Dossier Preview ── */}
         {recentBooking && (
           <View style={styles.recentPassSection}>
             <View style={styles.sectionHeaderRow}>
@@ -589,80 +410,74 @@ export default function HomeScreen({ navigation }) {
               activeOpacity={0.88}
               onPress={() => navigation.navigate('Bookings')}
             >
-              <View style={styles.card3DShadowShell}>
-                <View style={[styles.card3DThicknessBase, { backgroundColor: isDark ? '#2E241B' : '#C8B99F' }]}>
-                  <GlassCard glow highlight style={styles.activeDossier3DCard}>
-                    <LinearGradient
-                      colors={gradients.gold}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 0, y: 1 }}
-                      style={styles.dossierSpine}
-                    />
-                    <View style={styles.dossierContent}>
-                      <View style={styles.dossierTop}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.dossierNum, { color: colors.gold.DEFAULT }]}>
-                            Pass #{recentBooking.bookingNumber || '—'}
-                          </Text>
-                          {recentBooking.clientName && (
-                            <Text style={[styles.dossierClient, { color: colors.text.primary }]}>{recentBooking.clientName}</Text>
-                          )}
-                          {recentBooking.serviceName && (
-                            <Text style={[styles.dossierService, { color: colors.text.secondary }]}>{recentBooking.serviceName}</Text>
-                          )}
-                        </View>
-                        <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                          <StatusBadge status={recentBooking.status} size="sm" />
-                          {recentBooking.sessionDate && (
-                            <View style={styles.dateBadge}>
-                              <Calendar size={11} color={colors.text.muted} />
-                              <Text style={[styles.dateBadgeText, { color: colors.text.muted }]}>
-                                {new Date(recentBooking.sessionDate).toLocaleDateString('en-US', {
-                                  month: 'short', day: 'numeric',
-                                })}
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-                      </View>
-
-                      <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
-
-                      {/* Kodak Fox Active Session Companion */}
-                      <View style={styles.dossierMascotRow}>
-                        <StudioMascotKit pose={mobileMascotPose} size={46} interactive={true} />
-                        <View style={{ flex: 1, marginLeft: 10 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={[styles.dossierMascotTitle, { color: colors.gold.DEFAULT }]}>
-                              KODAK · STUDIO GUIDE
-                            </Text>
-                            <View style={[styles.mascotStatusPill, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
-                              <Text style={[styles.mascotStatusText, { color: colors.gold.light }]}>
-                                {mobileMascotPose.toUpperCase()}
-                              </Text>
-                            </View>
-                          </View>
-                          <Text style={[styles.dossierMascotText, { color: colors.text.secondary }]}>
-                            {mobileMascotPose === 'shoot' && 'Atelier camera is primed! Live shoot in flight.'}
-                            {mobileMascotPose === 'inspect' && 'Curating film negatives & proof sheet.'}
-                            {mobileMascotPose === 'celebrate' && 'Session deliverables ready to cherish!'}
-                            {mobileMascotPose === 'welcome' && 'Pass confirmed! Awaiting camera bay entry.'}
-                          </Text>
-                        </View>
-                      </View>
-
-                      <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
-
-                      <View style={styles.dossierFooter}>
-                        <Text style={[styles.dossierPrompt, { color: colors.text.muted }]}>Tap to view live studio progress</Text>
-                        <View style={[styles.chevronPill, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
-                          <ChevronRight size={13} color={colors.gold.light} />
-                        </View>
-                      </View>
+              <GlassCard glow highlight style={styles.activeDossierCard}>
+                <LinearGradient
+                  colors={gradients.gold}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={styles.dossierSpine}
+                />
+                <View style={styles.dossierContent}>
+                  <View style={styles.dossierTop}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.dossierNum, { color: colors.gold.DEFAULT }]}>
+                        Pass #{recentBooking.bookingNumber || '—'}
+                      </Text>
+                      {recentBooking.clientName && (
+                        <Text style={[styles.dossierClient, { color: colors.text.primary }]}>{recentBooking.clientName}</Text>
+                      )}
+                      {recentBooking.serviceName && (
+                        <Text style={[styles.dossierService, { color: colors.text.secondary }]}>{recentBooking.serviceName}</Text>
+                      )}
                     </View>
-                  </GlassCard>
+                    <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                      <StatusBadge status={recentBooking.status} size="sm" />
+                      {recentBooking.sessionDate && (
+                        <View style={styles.dateBadge}>
+                          <Calendar size={11} color={colors.text.muted} />
+                          <Text style={[styles.dateBadgeText, { color: colors.text.muted }]}>
+                            {new Date(recentBooking.sessionDate).toLocaleDateString('en-US', {
+                              month: 'short', day: 'numeric',
+                            })}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
+
+                  {/* Kodak Fox Active Session Companion */}
+                  <View style={styles.dossierMascotRow}>
+                    <StudioMascotKit pose={mobileMascotPose} size={46} interactive={true} />
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[styles.dossierMascotTitle, { color: colors.gold.DEFAULT }]}>
+                          KODAK · STUDIO GUIDE
+                        </Text>
+                        <View style={[styles.mascotStatusPill, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
+                          <Text style={[styles.mascotStatusText, { color: colors.gold.light }]}>
+                            {mobileMascotPose.toUpperCase()}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.dossierMascotText, { color: colors.text.secondary }]}>
+                        {mobileMascotPose === 'shoot' && 'Atelier camera is primed! Live shoot in flight.'}
+                        {mobileMascotPose === 'inspect' && 'Curating film negatives & proof sheet.'}
+                        {mobileMascotPose === 'celebrate' && 'Session deliverables ready to cherish!'}
+                        {mobileMascotPose === 'welcome' && 'Pass confirmed! Awaiting camera bay entry.'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
+
+                  <View style={styles.dossierFooter}>
+                    <Text style={[styles.dossierPrompt, { color: colors.text.muted }]}>Tap to view live studio progress</Text>
+                    <PremiumIcon icon={ChevronRight} size={14} box={30} tone="gold" glow />
+                  </View>
                 </View>
-              </View>
+              </GlassCard>
             </TouchableOpacity>
           </View>
         )}
@@ -702,6 +517,7 @@ export default function HomeScreen({ navigation }) {
         onRequestClose={() => setShowNotificationsModal(false)}
       >
         <View style={styles.modalOverlay}>
+          <BlurView intensity={isDark ? 60 : 40} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
           <TouchableOpacity
             style={StyleSheet.absoluteFill}
             activeOpacity={1}
@@ -711,21 +527,20 @@ export default function HomeScreen({ navigation }) {
             <GlassCard glow highlight style={styles.notifCard}>
               <View style={styles.notifHeader}>
                 <View style={styles.notifTitleRow}>
-                  <View style={[styles.notifIconWrap, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
-                    <Bell size={18} color={colors.gold.light} />
-                  </View>
+                  <PremiumIcon icon={Bell} size={18} box={40} tone="soft" glow />
                   <View>
                     <Text style={[styles.notifTitle, { color: colors.text.primary }]}>Studio Alerts</Text>
                     <Text style={[styles.notifSub, { color: colors.text.muted }]}>Real-time atelier updates</Text>
                   </View>
                 </View>
-                <TouchableOpacity
+                <PremiumIcon
+                  icon={X}
+                  size={15}
+                  box={32}
+                  tone="glass"
+                  accessibilityLabel="Dismiss alerts"
                   onPress={() => setShowNotificationsModal(false)}
-                  style={[styles.notifCloseBtn, { backgroundColor: colors.bg.elevated }]}
-                  activeOpacity={0.7}
-                >
-                  <X size={16} color={colors.text.primary} />
-                </TouchableOpacity>
+                />
               </View>
 
               <View style={styles.notifList}>
@@ -780,7 +595,7 @@ const getStyles = (colors, isDark) => StyleSheet.create({
   topHeaderBar: {
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: colors.bg.base,
+    backgroundColor: 'transparent',
     paddingTop: Platform.OS === 'ios' ? 48 : 38,
     paddingBottom: 22,
     paddingHorizontal: Spacing[4],
@@ -836,7 +651,7 @@ const getStyles = (colors, isDark) => StyleSheet.create({
   // Modal styles for Notifications
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(5, 4, 3, 0.85)',
+    backgroundColor: 'rgba(5, 4, 3, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: Spacing[4],
@@ -925,87 +740,33 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     gap: Spacing[3],
   },
 
-  // 3D Card Foundation Shared Styles
-  card3DShadowShell: {
-    width: '100%',
-    borderRadius: Radius.lg + 2, // 22
-    shadowColor: isDark ? '#000000' : '#8A7355',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: isDark ? 0.65 : 0.28,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  card3DThicknessBase: {
-    width: '100%',
-    borderRadius: Radius.lg + 2, // 22
-    paddingBottom: 4, // creates physical 3D card bottom thickness extrusion
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: isDark ? 'rgba(212, 175, 55, 0.22)' : 'rgba(180, 140, 80, 0.35)',
-    borderBottomWidth: 3,
-    borderBottomColor: isDark ? '#3D2D1E' : '#8A7355',
+  // Compact Studio Pass Cards
+  compactCardsSection: {
+    paddingHorizontal: Spacing[4],
+    paddingTop: Spacing[3],
+    gap: Spacing[3],
   },
 
-  // Card 1: Activate Your Studio Pass (Full Width, 3D Physical Card)
+  // Card 1: Activate Your Studio Pass
   activateCardWrapper: {
     width: '100%',
   },
-  activate3DCard: {
-    borderRadius: Radius.lg, // 20
-    paddingVertical: Spacing[4], // 16px
-    paddingHorizontal: Spacing[5], // 20px
-    minHeight: 140,
+  activateCard: {
+    borderRadius: Radius['2xl'],
+    paddingVertical: Spacing[4] + 2,
+    paddingHorizontal: Spacing[5],
+    minHeight: 124,
     justifyContent: 'center',
-    overflow: 'hidden',
     position: 'relative',
-    borderWidth: 1,
-    borderColor: isDark ? 'rgba(212, 175, 55, 0.30)' : 'rgba(212, 175, 55, 0.40)',
-    borderTopWidth: 1.5,
-    borderTopColor: isDark ? 'rgba(255, 235, 175, 0.65)' : 'rgba(255, 255, 255, 0.95)', // Specular top chamfer highlight
-    borderBottomWidth: 1,
-    borderBottomColor: isDark ? 'rgba(60, 45, 30, 0.45)' : 'rgba(120, 90, 50, 0.3)',
   },
   activateRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing[3] + 4, // 16px
-    zIndex: 2,
-  },
-  podium3DWrapper: {
-    width: 82,
-    height: 82,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: isDark ? '#3D2D1E' : '#8A7355',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 5,
-  },
-  podiumBeveledRing: {
-    width: 82,
-    height: 82,
-    borderRadius: 24,
-    padding: 2.2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'rgba(90, 65, 25, 0.25)',
-  },
-  podiumCoreDisc: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: isDark ? 'rgba(212, 175, 55, 0.25)' : 'rgba(212, 175, 55, 0.20)',
-    overflow: 'hidden',
+    gap: Spacing[4],
   },
   activateInfoCol: {
     flex: 1,
-    gap: 3,
+    gap: 4,
     justifyContent: 'center',
   },
   activateTitle: {
@@ -1019,27 +780,18 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     fontSize: 11.5,
     lineHeight: 16,
   },
-  quickGuidePill3D: {
+  quickGuidePill: {
     alignSelf: 'flex-start',
     marginTop: 6,
     borderRadius: Radius.full,
-    shadowColor: isDark ? '#000000' : '#8A7355',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
-    elevation: 4,
-    borderBottomWidth: 2,
-    borderBottomColor: isDark ? '#5C3E00' : '#856404',
   },
   quickGuidePillGrad: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 4.5,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
     borderRadius: Radius.full,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.45)',
   },
   quickGuidePillText: {
     fontFamily: Typography.fontBodyBold,
@@ -1057,55 +809,38 @@ const getStyles = (colors, isDark) => StyleSheet.create({
   sideCardCol: {
     flex: 1,
   },
-  sideCompactCard3D: {
+  sideCompactCard: {
     flex: 1,
-    borderRadius: Radius.lg, // 20
-    paddingVertical: 14,
-    paddingHorizontal: 10,
-    height: 226, // Exact unified height for symmetrical justified alignment
+    borderRadius: Radius['2xl'],
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    height: 236,
     alignItems: 'center',
     justifyContent: 'space-between',
-    overflow: 'hidden',
     position: 'relative',
-    borderWidth: 1,
-    borderColor: isDark ? 'rgba(212, 175, 55, 0.30)' : 'rgba(212, 175, 55, 0.40)',
-    borderTopWidth: 1.5,
-    borderTopColor: isDark ? 'rgba(255, 235, 175, 0.65)' : 'rgba(255, 255, 255, 0.95)',
-    borderBottomWidth: 1,
-    borderBottomColor: isDark ? 'rgba(0, 0, 0, 0.75)' : 'rgba(120, 90, 50, 0.3)',
   },
-  podium3DCircleWrapper: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+  podiumCircleWrapper: {
+    width: 72,
+    height: 72,
+    borderRadius: Radius.xl,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.45,
-    shadowRadius: 6,
-    elevation: 5,
-    zIndex: 2,
     marginTop: 2,
   },
   podiumCircleRing: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    padding: 2.2,
+    width: 72,
+    height: 72,
+    borderRadius: Radius.xl,
+    padding: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'rgba(0, 0, 0, 0.45)',
   },
   podiumCircleDisc: {
     width: '100%',
     height: '100%',
-    borderRadius: 36,
+    borderRadius: Radius.xl - 2,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: isDark ? 'rgba(212, 175, 55, 0.25)' : 'rgba(212, 175, 55, 0.20)',
     overflow: 'hidden',
   },
   sideCardTitle: {
@@ -1115,38 +850,26 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     letterSpacing: 0.2,
     lineHeight: 18,
     marginTop: 4,
-    zIndex: 2,
   },
   sideCardDesc: {
     fontFamily: Typography.fontBody,
     fontSize: 10.5,
-    lineHeight: 14.5,
+    lineHeight: 15,
     textAlign: 'center',
     paddingHorizontal: 4,
-    zIndex: 2,
-    minHeight: 29, // Reserved for 2 lines so both buttons are strictly aligned
+    minHeight: 30,
   },
-  sideActionBtn3D: {
+  sideActionBtn: {
     width: '100%',
-    borderRadius: Radius.lg,
-    shadowColor: isDark ? '#000000' : '#8A7355',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
-    elevation: 4,
-    borderBottomWidth: 2,
-    borderBottomColor: isDark ? '#5C3E00' : '#856404',
-    zIndex: 2,
+    borderRadius: Radius.full,
   },
   sideActionGrad: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    height: 36,
-    borderRadius: Radius.lg,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.45)',
+    height: 38,
+    borderRadius: Radius.full,
   },
   sideActionText: {
     fontFamily: Typography.fontBodyBold,
@@ -1154,7 +877,7 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     letterSpacing: 0.4,
   },
 
-  // 3 Tools Section (3D Physical Architecture)
+  // 3 Tools Section
   toolsSection: {
     paddingHorizontal: Spacing[4],
     marginTop: Spacing[5],
@@ -1169,62 +892,21 @@ const getStyles = (colors, isDark) => StyleSheet.create({
   threeToolsRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: Spacing[2] + 2, // 10px
+    gap: Spacing[2] + 2,
     width: '100%',
   },
   toolCol: {
     flex: 1,
   },
-  tool3DCard: {
+  toolCard: {
     flex: 1,
-    borderRadius: Radius.lg - 2, // 18px
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    height: 142, // exact unified height across all 3 tools
+    borderRadius: Radius.xl,
+    paddingVertical: 14,
+    paddingHorizontal: 6,
+    height: 140,
     alignItems: 'center',
     justifyContent: 'space-between',
-    overflow: 'hidden',
     position: 'relative',
-    borderWidth: 1,
-    borderColor: isDark ? 'rgba(212, 175, 55, 0.28)' : 'rgba(212, 175, 55, 0.38)',
-    borderTopWidth: 1.5,
-    borderTopColor: isDark ? 'rgba(255, 235, 175, 0.65)' : 'rgba(255, 255, 255, 0.95)',
-    borderBottomWidth: 1,
-    borderBottomColor: isDark ? 'rgba(0, 0, 0, 0.75)' : 'rgba(120, 90, 50, 0.3)',
-  },
-  toolPodium3DWrapper: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
-    elevation: 4,
-    zIndex: 2,
-    marginTop: 2,
-  },
-  toolPodiumRing: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    padding: 1.8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderBottomWidth: 1.8,
-    borderBottomColor: 'rgba(0, 0, 0, 0.45)',
-  },
-  toolPodiumDisc: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: isDark ? 'rgba(212, 175, 55, 0.25)' : 'rgba(212, 175, 55, 0.20)',
-    overflow: 'hidden',
   },
   toolTitle: {
     fontFamily: Typography.fontHeadingSemi,
@@ -1232,7 +914,6 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     color: colors.text.primary,
     textAlign: 'center',
     marginTop: 2,
-    zIndex: 2,
   },
   toolSub: {
     fontFamily: Typography.fontBody,
@@ -1240,7 +921,6 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     color: colors.text.muted,
     textAlign: 'center',
     marginBottom: 2,
-    zIndex: 2,
   },
 
   // Active Pass Dossier
@@ -1259,17 +939,11 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     fontSize: Typography.size.xs,
     color: colors.gold.light,
   },
-  activeDossier3DCard: {
+  activeDossierCard: {
     flexDirection: 'row',
-    borderRadius: Radius.lg,
+    borderRadius: Radius['2xl'],
     overflow: 'hidden',
     padding: 0,
-    borderWidth: 1,
-    borderColor: isDark ? 'rgba(212, 175, 55, 0.30)' : 'rgba(212, 175, 55, 0.40)',
-    borderTopWidth: 1.5,
-    borderTopColor: isDark ? 'rgba(255, 235, 175, 0.65)' : 'rgba(255, 255, 255, 0.95)',
-    borderBottomWidth: 1,
-    borderBottomColor: isDark ? 'rgba(0, 0, 0, 0.75)' : 'rgba(120, 90, 50, 0.3)',
   },
   dossierSpine: {
     width: 4,

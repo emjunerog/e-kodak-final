@@ -59,8 +59,9 @@ import AdminServices from "./pages/admin/AdminServices";
 import AdminSettings from "./pages/admin/AdminSettings";
 import AdminCMS from "./pages/admin/AdminCMS";
 import AdminBookingDetail from "./pages/admin/AdminBookingDetail";
-import AdminWorkstation from "./pages/admin/AdminWorkstation";
+import AdminActivityLogsPage from "./pages/admin/AdminActivityLogsPage";
 import AdminStaff from "./pages/admin/AdminStaff";
+import AdminYearbookGenerator from "./pages/admin/AdminYearbookGenerator";
 
 // ── Photographer Pages (Phase 5) ──────────────────────────────────────────────
 import PhotographerLayout from "./components/photographer/PhotographerLayout";
@@ -68,7 +69,9 @@ import PhotographerDashboard from "./pages/photographer/PhotographerDashboard";
 import PhotographerBookings from "./pages/photographer/PhotographerBookings";
 import PhotographerAvailability from "./pages/photographer/PhotographerAvailability";
 import PhotographerUploads from "./pages/photographer/PhotographerUploads";
+import PhotographerActivityLogs from "./pages/photographer/PhotographerActivityLogs";
 import PhotographerSettings from "./pages/photographer/PhotographerSettings";
+import PhotographerProfile from "./pages/photographer/PhotographerProfile";
 
 // ── Placeholder component for unimplemented routes ────────────────────────────
 function ComingSoon({ page }) {
@@ -151,7 +154,9 @@ export default function App() {
             <Route path="settings" element={<AdminOnlyRoute><AdminSettings /></AdminOnlyRoute>} />
             <Route path="staff" element={<AdminOnlyRoute><AdminStaff /></AdminOnlyRoute>} />
             <Route path="cms" element={<AdminOnlyRoute><AdminCMS /></AdminOnlyRoute>} />
-            <Route path="workstation" element={<AdminWorkstation />} />
+            <Route path="yearbook" element={<AdminYearbookGenerator />} />
+            <Route path="activity-logs" element={<AdminActivityLogsPage />} />
+            <Route path="workstation" element={<Navigate to="/admin/activity-logs" replace />} />
           </Route>
 
           {/* PHOTOGRAPHER MODULE — Phase 5 */}
@@ -160,7 +165,9 @@ export default function App() {
             <Route path="bookings" element={<PhotographerBookings />} />
             <Route path="availability" element={<PhotographerAvailability />} />
             <Route path="uploads" element={<PhotographerUploads />} />
+            <Route path="activity-logs" element={<PhotographerActivityLogs />} />
             <Route path="settings" element={<PhotographerSettings />} />
+            <Route path="profile" element={<PhotographerProfile />} />
           </Route>
 
           {/* 404 Fallback */}

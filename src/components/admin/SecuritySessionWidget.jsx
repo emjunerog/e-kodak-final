@@ -70,7 +70,7 @@ export default function SecuritySessionWidget() {
         <ShieldCheck size={14} className="text-emerald-600 group-hover:scale-110 transition-transform" />
         <span className="hidden xl:inline font-bold">Security Shield:</span>
         <span>Active</span>
-        <span className="text-[10px] bg-emerald-200/60 text-emerald-900 font-body px-1.5 py-0.5 rounded uppercase">
+        <span className="text-xs bg-emerald-200/60 text-emerald-900 font-body px-1.5 py-0.5 rounded uppercase">
           TLS 1.3
         </span>
       </button>
@@ -118,7 +118,7 @@ export default function SecuritySessionWidget() {
                   <span className="text-[11px] font-bold uppercase tracking-wider text-gold flex items-center gap-1.5">
                     <UserCheck size={14} /> 1. Authentication & Identity
                   </span>
-                  <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 px-2 py-0.5 rounded-full">
+                  <span className="text-xs bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 px-2 py-0.5 rounded-full">
                     RBAC Enforced
                   </span>
                 </div>
@@ -126,25 +126,25 @@ export default function SecuritySessionWidget() {
                 <div className="p-3.5 rounded-2xl bg-neutral-50 border border-neutral-200/80 space-y-2.5">
                   <div className="grid grid-cols-2 gap-2 text-[11px]">
                     <div>
-                      <span className="text-neutral-400 block text-[10px] uppercase">Unique Account ID</span>
+                      <span className="text-neutral-400 block text-xs uppercase">Unique Account ID</span>
                       <span className="font-body font-bold text-primary truncate block" title={user?.id}>
                         {user?.id ? `${user.id.slice(0, 14)}...` : 'AUTH_ADMIN_SESSION'}
                       </span>
                     </div>
                     <div>
-                      <span className="text-neutral-400 block text-[10px] uppercase">Account Email</span>
+                      <span className="text-neutral-400 block text-xs uppercase">Account Email</span>
                       <span className="font-semibold text-neutral-700 truncate block">
                         {user?.email || 'admin@e-kodak.com'}
                       </span>
                     </div>
                     <div>
-                      <span className="text-neutral-400 block text-[10px] uppercase">Active Role</span>
+                      <span className="text-neutral-400 block text-xs uppercase">Active Role</span>
                       <span className="font-bold text-primary flex items-center gap-1">
                         <Key size={11} className="text-gold" /> {roleName}
                       </span>
                     </div>
                     <div>
-                      <span className="text-neutral-400 block text-[10px] uppercase">Privilege Level</span>
+                      <span className="text-neutral-400 block text-xs uppercase">Privilege Level</span>
                       <span className="text-emerald-700 font-semibold">{rolePrivilege}</span>
                     </div>
                   </div>
@@ -174,20 +174,20 @@ export default function SecuritySessionWidget() {
                   <span className="text-[11px] font-bold uppercase tracking-wider text-gold flex items-center gap-1.5">
                     <Database size={14} /> 2. Data Integrity & DB Permissions
                   </span>
-                  <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 px-2 py-0.5 rounded-full">
+                  <span className="text-xs bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 px-2 py-0.5 rounded-full">
                     RLS Active
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                   <div className="p-2.5 rounded-xl bg-neutral-50 border border-neutral-200/80">
-                    <span className="text-neutral-400 block text-[10px] uppercase">Input Validation</span>
+                    <span className="text-neutral-400 block text-xs uppercase">Input Validation</span>
                     <span className="font-bold text-emerald-700 flex items-center gap-1 mt-0.5">
                       <CheckCircle2 size={12} /> XSS & SQLi Sanitized
                     </span>
                   </div>
                   <div className="p-2.5 rounded-xl bg-neutral-50 border border-neutral-200/80">
-                    <span className="text-neutral-400 block text-[10px] uppercase">Database Security</span>
+                    <span className="text-neutral-400 block text-xs uppercase">Database Security</span>
                     <span className="font-bold text-emerald-700 flex items-center gap-1 mt-0.5">
                       <CheckCircle2 size={12} /> Restricted RLS Policies
                     </span>
@@ -204,7 +204,7 @@ export default function SecuritySessionWidget() {
                   <button
                     type="button"
                     onClick={() => setDemoPiiMasked(!demoPiiMasked)}
-                    className="text-[10px] text-primary hover:text-gold flex items-center gap-1 font-semibold"
+                    className="text-xs text-primary hover:text-gold flex items-center gap-1 font-semibold"
                   >
                     {demoPiiMasked ? <Eye size={11} /> : <EyeOff size={11} />}
                     {demoPiiMasked ? "Simulate Reveal" : "Enforce Mask"}
@@ -237,7 +237,7 @@ export default function SecuritySessionWidget() {
                   <span className="text-[11px] font-bold uppercase tracking-wider text-gold flex items-center gap-1.5">
                     <Fingerprint size={14} /> 4 & 5. Media & Activity Monitoring
                   </span>
-                  <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 px-2 py-0.5 rounded-full">
+                  <span className="text-xs bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 px-2 py-0.5 rounded-full">
                     Audited in PHT
                   </span>
                 </div>

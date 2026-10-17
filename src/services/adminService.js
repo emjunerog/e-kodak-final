@@ -1,4 +1,38 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { getEffectivePaymentStatus } from '../lib/bookingUtils';
+
+// ── In-Memory Fast Cache with TTL ───────────────────────────────────────────
+const serviceCache = new Map();
+const DEFAULT_TTL_MS = 20000; // 20s
+
+export function getCachedAdminData(key) {
+  const item = serviceCache.get(key);
+  if (!item) return null;
+  if (Date.now() > item.expiresAt) {
+    serviceCache.delete(key);
+    return null;
+  }
+  return item.data;
+}
+
+export function setCachedAdminData(key, data, ttlMs = DEFAULT_TTL_MS) {
+  serviceCache.set(key, {
+    data,
+    expiresAt: Date.now() + ttlMs,
+  });
+}
+
+export function invalidateAdminCache(prefix = null) {
+  if (!prefix) {
+    serviceCache.clear();
+    return;
+  }
+  for (const key of serviceCache.keys()) {
+    if (key.startsWith(prefix)) {
+      serviceCache.delete(key);
+    }
+  }
+}
 
 /**
  * getDashboardStats
@@ -6,12 +40,18 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
  * Returns booking counts grouped by status for the admin dashboard overview.
  * Requires staff/admin role — RLS enforces this on the server.
  */
-export async function getDashboardStats() {
+export async function getDashboardStats({ forceFresh = false } = {}) {
   if (!isSupabaseConfigured) {
     return {
       data: null,
       error: new Error('Database connection is not configured. Real stats require active database credentials.'),
     };
+  }
+
+  const cacheKey = 'admin:dashboard_stats';
+  if (!forceFresh) {
+    const cached = getCachedAdminData(cacheKey);
+    if (cached) return { data: cached, error: null };
   }
 
   try {
@@ -78,6 +118,7 @@ export async function getDashboardStats() {
     // Cleared total: either fully paid bookings or total payments recorded
     counts.cleared = counts.cleared_bookings > 0 ? counts.cleared_bookings : (paymentsCount || 0);
 
+    setCachedAdminData(cacheKey, counts, 15000);
     return { data: counts, error: null };
   } catch (error) {
     console.error('getDashboardStats error:', error);
@@ -119,15 +160,39 @@ export async function getRecentBookings(limit = 50) {
         down_payment_confirmed,
         is_deleted,
         created_at,
-        service:services(id, name, base_price, category),
-        customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, email, phone)
+        service:services(id, name, base_price, category, tiers, inclusions),
+        customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, email, phone, address, studio_specs),
+        photographer:photographer_profiles!bookings_photographer_id_fkey(
+          id,
+          specialization,
+          profile:profiles(first_name, last_name)
+        )
       `)
       .or('is_deleted.is.null,is_deleted.eq.false')
       .order('created_at', { ascending: false })
       .limit(limit);
 
     if (error) throw error;
-    const filtered = (data || []).filter(b => !b.is_deleted);
+    const filtered = (data || []).filter(b => !b.is_deleted).map(b => {
+      const effPayStatus = getEffectivePaymentStatus(b);
+      // Auto-heal DB record if downpayment was detected (e.g., down_payment_amount > 0) but payment_status was UNPAID
+      if (b.payment_status === 'UNPAID' && effPayStatus === 'DOWNPAYMENT') {
+        supabase
+          .from('bookings')
+          .update({
+            payment_status: 'PARTIAL',
+            down_payment_confirmed: true,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', b.id)
+          .then();
+      }
+      return {
+        ...b,
+        payment_status: effPayStatus,
+        effective_payment_status: effPayStatus,
+      };
+    });
     return { data: filtered, error: null };
   } catch (error) {
     console.error('getRecentBookings error:', error);
@@ -156,6 +221,10 @@ export async function getPendingBookings(limit = 5) {
         payment_status,
         event_date,
         is_deleted,
+        total_amount,
+        down_payment_amount,
+        remaining_balance,
+        down_payment_confirmed,
         service:services(name),
         customer:profiles!bookings_customer_id_fkey(first_name, last_name)
       `)
@@ -165,7 +234,11 @@ export async function getPendingBookings(limit = 5) {
       .limit(limit);
 
     if (error) throw error;
-    const filtered = (data || []).filter(b => !b.is_deleted);
+    const filtered = (data || []).filter(b => !b.is_deleted).map(b => ({
+      ...b,
+      payment_status: getEffectivePaymentStatus(b),
+      effective_payment_status: getEffectivePaymentStatus(b),
+    }));
     return { data: filtered, error: null };
   } catch (error) {
     console.error('getPendingBookings error:', error);
@@ -178,15 +251,22 @@ export async function getPendingBookings(limit = 5) {
  * ------------
  * Returns a paginated list of customer profiles.
  */
-export async function getCustomers({ page = 1, pageSize = 20, search = '' } = {}) {
+export async function getCustomers({ page = 1, pageSize = 20, search = '', forceFresh = false } = {}) {
   if (!isSupabaseConfigured) return { data: [], count: 0, error: null };
+
+  const cacheKey = `admin:customers:${page}:${pageSize}:${(search || '').trim().toLowerCase()}`;
+  if (!forceFresh) {
+    const cached = getCachedAdminData(cacheKey);
+    if (cached) return { data: cached.data, count: cached.count, error: null };
+  }
+
   try {
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
     let query = supabase
       .from('profiles')
       .select(`
-        id, first_name, last_name, middle_name, phone, address, avatar_url, is_active, created_at, updated_at, role, badges, bio, studio_specs,
+        id, first_name, last_name, middle_name, phone, address, avatar_url, is_active, created_at, updated_at, role, bio, studio_specs,
         bookings(id, booking_number, status, payment_status, total_amount, event_date, is_deleted, created_at)
       `, { count: 'exact' })
       .eq('role', 'customer')
@@ -201,6 +281,8 @@ export async function getCustomers({ page = 1, pageSize = 20, search = '' } = {}
       ...cust,
       bookings: (cust.bookings || []).filter(b => !b.is_deleted)
     }));
+
+    setCachedAdminData(cacheKey, { data: cleaned, count }, 20000);
     return { data: cleaned, count, error: null };
   } catch (error) {
     console.error('getCustomers error:', error);
@@ -220,7 +302,7 @@ export async function getCustomerDetail(id) {
     const { data, error } = await supabase
       .from('profiles')
       .select(`
-        id, first_name, last_name, middle_name, phone, address, avatar_url, is_active, created_at, role, badges, bio, studio_specs,
+        id, first_name, last_name, middle_name, phone, address, avatar_url, is_active, created_at, role, bio, studio_specs,
         bookings(id, booking_number, status, payment_status, event_date, is_deleted, created_at, total_amount, service:services(name))
       `)
       .eq('id', id)
@@ -253,6 +335,8 @@ export async function deleteCustomer(id) {
       .eq('id', id);
 
     if (error) throw error;
+    invalidateAdminCache('admin:customers');
+    invalidateAdminCache('admin:dashboard_stats');
     return { error: null };
   } catch (error) {
     console.error('deleteCustomer error:', error);
@@ -1108,32 +1192,6 @@ export async function getBookingAuditLogs({ limit = 30 } = {}) {
 }
 
 /**
- * updateCustomerBadges
- * --------------------
- * Allows studio administrators to award or revoke official studio recognitions for a client.
- */
-export async function updateCustomerBadges(customerId, badges) {
-  if (!isSupabaseConfigured) return { data: null, error: null };
-  try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({ 
-        badges: badges || [], 
-        updated_at: new Date().toISOString() 
-      })
-      .eq('id', customerId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return { data, error: null };
-  } catch (error) {
-    console.error('updateCustomerBadges error:', error);
-    return { data: null, error };
-  }
-}
-
-/**
  * uploadAdminPhotoOutput
  * ----------------------
  * Allows studio administrators or photographers to upload edited package deliverable photos
@@ -1234,8 +1292,15 @@ export async function deleteAdminPhotoOutput(outputId) {
  * Returns all non-customer profiles (admin, staff, finance, photographer)
  * joined with photographer profile metadata and assigned workload counts.
  */
-export async function getAllWorkers() {
+export async function getAllWorkers({ forceFresh = false } = {}) {
   if (!isSupabaseConfigured) return { data: [], error: null };
+
+  const cacheKey = 'admin:all_workers';
+  if (!forceFresh) {
+    const cached = getCachedAdminData(cacheKey);
+    if (cached) return { data: cached, error: null };
+  }
+
   try {
     let { data, error } = await supabase
       .from('profiles')
@@ -1244,6 +1309,8 @@ export async function getAllWorkers() {
         photographer_profile:photographer_profiles(specialization, bio, is_available)
       `)
       .in('role', ['admin', 'staff', 'finance', 'photographer'])
+      .not('email', 'is', null)
+      .neq('email', '')
       .order('created_at', { ascending: false });
 
     // Fallback if join is not established in schema cache
@@ -1253,13 +1320,17 @@ export async function getAllWorkers() {
         .from('profiles')
         .select('id, first_name, last_name, email, phone, avatar_url, role, is_active, bio, created_at, updated_at')
         .in('role', ['admin', 'staff', 'finance', 'photographer'])
+        .not('email', 'is', null)
+        .neq('email', '')
         .order('created_at', { ascending: false });
 
       if (fallback.error) throw fallback.error;
       data = fallback.data;
     }
 
-    const mapped = (data || []).map(w => {
+    const mapped = (data || [])
+      .filter(w => w && w.email && w.email.trim() !== '')
+      .map(w => {
       const ph = Array.isArray(w.photographer_profile)
         ? w.photographer_profile[0]
         : (w.photographer_profile || null);
@@ -1281,6 +1352,7 @@ export async function getAllWorkers() {
       };
     });
 
+    setCachedAdminData(cacheKey, mapped, 25000);
     return { data: mapped, error: null };
   } catch (err) {
     console.error('getAllWorkers error:', err);
@@ -1343,6 +1415,7 @@ export async function createWorkerProfile({
       if (phErr) console.warn('createWorkerProfile photographer_profiles insert warning:', phErr);
     }
 
+    invalidateAdminCache('admin:all_workers');
     return { data: createdProfile, error: null };
   } catch (err) {
     console.error('createWorkerProfile error:', err);
@@ -1408,6 +1481,7 @@ export async function updateWorkerProfile(id, {
       }
     }
 
+    invalidateAdminCache('admin:all_workers');
     return { error: null };
   } catch (err) {
     console.error('updateWorkerProfile error:', err);
@@ -1432,6 +1506,7 @@ export async function deleteWorkerProfile(id) {
       .eq('id', id);
 
     if (error) throw error;
+    invalidateAdminCache('admin:all_workers');
     return { error: null };
   } catch (err) {
     console.error('deleteWorkerProfile error:', err);

@@ -12,6 +12,7 @@
   "dependencies": {
     "@emailjs/browser": "^4.4.1",
     "@google/genai": "^2.18.0",
+    "@iconify/react": "^6.0.2",
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
     "bootstrap": "^5.3.8",

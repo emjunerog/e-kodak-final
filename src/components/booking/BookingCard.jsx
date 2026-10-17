@@ -12,9 +12,11 @@ import {
   CheckCircle2,
   Clock,
   Bell,
-  Package
+  Package,
+  User
 } from "lucide-react";
 import { getStatusBadge, getPaymentLabel } from "../../lib/bookingUtils";
+import { parseParticipantDetailsFromNotes } from "../../services/bookingService";
 import QRPass from "./QRPass";
 
 // ── Expandable Icon Badge (Space-saving: Icon-only by default, expands to full text on hover) ──
@@ -37,7 +39,7 @@ function ExpandableBadge({
     >
       <Icon size={12} className={`shrink-0 transition-transform duration-300 ${isExpanded ? 'scale-110' : 'group-hover/pill:scale-110'} ${iconClassName}`} />
       <span
-        className={`overflow-hidden whitespace-nowrap text-[10px] font-body font-semibold tracking-wide transition-all duration-300 ease-in-out ${
+        className={`overflow-hidden whitespace-nowrap text-xs font-body font-semibold tracking-wide transition-all duration-300 ease-in-out ${
           isExpanded
             ? 'max-w-[450px] opacity-100 ml-1.5'
             : 'max-w-0 opacity-0 ml-0 group-hover/pill:max-w-[450px] group-hover/pill:opacity-100 group-hover/pill:ml-1.5'
@@ -113,6 +115,12 @@ export default function BookingCard({ booking }) {
   const needsDownpayment = totalAmt > 0 && remBalance > 0 && isUnpaid && (!booking.down_payment_confirmed && downPaid === 0);
   const downAmount = needsDownpayment ? Math.min(remBalance, Math.max(500, Math.round(totalAmt * 0.5))) : 0;
 
+  const participantDetails = useMemo(() => {
+    return booking.participant_details || parseParticipantDetailsFromNotes(booking.notes);
+  }, [booking.participant_details, booking.notes]);
+  const isSomeoneElse = participantDetails?.booking_for === 'someone_else';
+  const participantName = participantDetails?.full_name || student_details?.student_name || null;
+
   return (
     <div className="bg-white dark:bg-neutral-900 rounded-2xl p-4 sm:p-5 shadow-xs border border-neutral-200/80 dark:border-neutral-800 hover:border-gold/40 dark:hover:border-gold/30 hover:shadow-md transition-all group space-y-4">
       
@@ -133,9 +141,28 @@ export default function BookingCard({ booking }) {
               title="Photographer Assigned: Dedicated photographer reserved"
             />
           ) : (
-            <span className={`px-2.5 py-0.5 rounded-full border text-[10px] font-body font-bold uppercase tracking-wider ${statusClass}`}>
+            <span className={`px-2.5 py-0.5 rounded-full border text-xs font-body font-bold uppercase tracking-wider ${statusClass}`}>
               {status}
             </span>
+          )}
+
+          {/* Beneficiary Badge: Participant / Someone Else */}
+          {isSomeoneElse ? (
+            <ExpandableBadge
+              icon={User}
+              text={`For: ${participantName} (${participantDetails?.relationship || 'Participant'})`}
+              className="bg-amber-500/15 border-amber-500/30 hover:border-amber-500/60 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 font-bold"
+              iconClassName="text-amber-600 dark:text-amber-400"
+              title={`Booking Beneficiary: ${participantName} (${participantDetails?.relationship || 'Participant'}) · Booked by Account Owner`}
+            />
+          ) : (
+            <ExpandableBadge
+              icon={User}
+              text="For: Myself"
+              className="bg-neutral-100 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 hover:border-gold/50 text-neutral-600 dark:text-neutral-300"
+              iconClassName="text-gold"
+              title="Booking for Account Owner"
+            />
           )}
 
           {/* Schedule to be announced badge (Icon if not hovered, expands to full text on hover) */}
@@ -182,7 +209,7 @@ export default function BookingCard({ booking }) {
             />
           )}
         </div>
-        <span className="text-[10px] font-body text-neutral-400">
+        <span className="text-xs font-body text-neutral-400">
           Booked {created_at ? new Date(created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
         </span>
       </div>
@@ -200,7 +227,7 @@ export default function BookingCard({ booking }) {
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center text-neutral-300 dark:text-neutral-600">
               <Camera size={24} className="text-gold/60 mb-0.5" />
-              <span className="text-[9px] font-body uppercase text-neutral-400">Portrait</span>
+              <span className="text-[11px] font-body uppercase text-neutral-400">Portrait</span>
             </div>
           )}
         </div>
@@ -212,6 +239,30 @@ export default function BookingCard({ booking }) {
               {service?.name || "Graduation Studio Package"}
               {tier_name && <span className="text-gold font-body font-semibold ml-2 text-sm">({tier_name})</span>}
             </h3>
+            {isSomeoneElse ? (
+              <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30">
+                  Someone Else · {participantDetails?.relationship || 'Participant'}
+                </span>
+                <p className="text-xs text-neutral-700 dark:text-neutral-300 font-medium flex items-center gap-1">
+                  <span className="text-neutral-400">Participant:</span>
+                  <strong className="text-primary dark:text-gold font-bold">{participantName}</strong>
+                </p>
+                {participantDetails?.account_owner && (
+                  <span className="text-xs text-neutral-400 font-normal">
+                    (Booked by {participantDetails.account_owner})
+                  </span>
+                )}
+              </div>
+            ) : student_details?.student_name ? (
+              <p className="text-xs text-neutral-600 dark:text-neutral-400 font-medium mt-0.5 flex items-center gap-1.5">
+                <span className="text-neutral-400 font-normal">Graduate:</span>
+                <span className="font-semibold text-primary dark:text-gold">{student_details.student_name}</span>
+                <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-800">
+                  Myself
+                </span>
+              </p>
+            ) : null}
           </div>
 
           {/* Structured 3-pill Grid (Hoverable Icons + Tooltips) */}
@@ -233,7 +284,7 @@ export default function BookingCard({ booking }) {
               <span className="truncate font-medium">{displayDate} {displayTime && `· ${displayTime}`}</span>
               <div className="tooltip-bubble">
                 <span className="font-semibold block text-gold">{isScheduleTBD ? 'Schedule Announcement' : 'Session Schedule'}</span>
-                <span className="block text-[10px] text-neutral-300 font-normal leading-tight mt-0.5">
+                <span className="block text-xs text-neutral-300 font-normal leading-tight mt-0.5">
                   {isScheduleTBD ? 'To be announced · You will be notified via SMS & portal' : `${displayDate} at ${displayTime || 'Regular Session Slot'}`}
                 </span>
               </div>
@@ -254,7 +305,7 @@ export default function BookingCard({ booking }) {
               </span>
               <div className="tooltip-bubble">
                 <span className="font-semibold block text-gold">Financial Details</span>
-                <span className="block text-[10px] text-neutral-300 font-normal leading-tight mt-0.5">
+                <span className="block text-xs text-neutral-300 font-normal leading-tight mt-0.5">
                   Total: ₱{totalAmt.toLocaleString()} {remBalance > 0 ? `(₱${remBalance.toLocaleString()} remaining balance)` : '(Fully settled)'}
                 </span>
               </div>
@@ -269,7 +320,7 @@ export default function BookingCard({ booking }) {
               <span className="truncate font-medium">Studio In-Person Claiming</span>
               <div className="tooltip-bubble">
                 <span className="font-semibold block text-gold">Handover Method</span>
-                <span className="block text-[10px] text-neutral-300 font-normal leading-tight mt-0.5">
+                <span className="block text-xs text-neutral-300 font-normal leading-tight mt-0.5">
                   Pick up graduation portraits and framed prints at the studio counter
                 </span>
               </div>
@@ -293,8 +344,8 @@ export default function BookingCard({ booking }) {
         {/* Progress Bar Info */}
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="min-w-0 space-y-1.5 flex-1 max-w-sm">
-            <div className="flex justify-between items-center text-[10px] font-body">
-              <span className="text-neutral-400 dark:text-neutral-500 font-bold uppercase tracking-wider text-[9px] flex items-center gap-1.5">
+            <div className="flex justify-between items-center text-xs font-body">
+              <span className="text-neutral-400 dark:text-neutral-500 font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5">
                 <Layers size={11} className="text-gold" />
                 <span>Progress</span>
               </span>

@@ -157,7 +157,7 @@ export default function SidebarOrderCalendar({ bookings = [] }) {
           className="flex items-center gap-1 text-[11px] font-bold text-neutral-700 dark:text-neutral-200 hover:text-primary dark:hover:text-white transition-colors min-w-0"
         >
           <CalendarIcon size={12} className="text-gold shrink-0" />
-          <span className="font-heading uppercase tracking-wider text-[10px] truncate">Calendar</span>
+          <span className="font-heading uppercase tracking-wider text-xs truncate">Calendar</span>
           {isExpanded ? <ChevronUp size={11} className="text-neutral-400 shrink-0" /> : <ChevronDown size={11} className="text-neutral-400 shrink-0" />}
         </button>
 
@@ -170,7 +170,7 @@ export default function SidebarOrderCalendar({ bookings = [] }) {
             >
               <ChevronLeft size={12} />
             </button>
-            <span className="text-[10px] font-semibold text-neutral-600 dark:text-neutral-300 font-body min-w-[54px] text-center whitespace-nowrap">
+            <span className="text-xs font-semibold text-neutral-600 dark:text-neutral-300 font-body min-w-[54px] text-center whitespace-nowrap">
               {monthLabel}
             </span>
             <button
@@ -187,7 +187,7 @@ export default function SidebarOrderCalendar({ bookings = [] }) {
       {isExpanded && (
         <div className="space-y-1.5 animate-fade-in">
           {/* Days of week */}
-          <div className="grid grid-cols-7 gap-0.5 text-center text-[9px] font-bold text-neutral-400 font-body">
+          <div className="grid grid-cols-7 gap-0.5 text-center text-[11px] font-bold text-neutral-400 font-body">
             {DAYS_OF_WEEK.map((d) => (
               <span key={d}>{d}</span>
             ))}
@@ -248,7 +248,7 @@ export default function SidebarOrderCalendar({ bookings = [] }) {
           </div>
 
           {/* Legend */}
-          <div className="flex items-center justify-between text-[9px] text-neutral-400 pt-1 px-0.5 border-t border-neutral-200/50 dark:border-neutral-800">
+          <div className="flex items-center justify-between text-[11px] text-neutral-400 pt-1 px-0.5 border-t border-neutral-200/50 dark:border-neutral-800">
             <div className="flex items-center gap-1.5">
               <span className="flex items-center gap-0.5">
                 <span className="w-2.5 h-1 rounded-sm bg-amber-500" /> Placed
@@ -260,7 +260,7 @@ export default function SidebarOrderCalendar({ bookings = [] }) {
             <button
               type="button"
               onClick={jumpToToday}
-              className="text-gold font-bold hover:underline text-[9px]"
+              className="text-gold font-bold hover:underline text-[11px]"
             >
               Today
             </button>
@@ -277,11 +277,11 @@ export default function SidebarOrderCalendar({ bookings = [] }) {
               <div className="flex items-center justify-between font-semibold text-primary dark:text-neutral-100 border-b border-neutral-100 dark:border-neutral-800 pb-1 font-body">
                 <div className="flex items-center gap-1 min-w-0">
                   <CalendarIcon size={11} className="text-gold shrink-0" />
-                  <span className="text-[10px] font-body font-bold truncate">
+                  <span className="text-xs font-body font-bold truncate">
                     {new Date(activeDateKey + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                   </span>
                 </div>
-                <span className="text-[8px] font-body text-gold bg-gold/15 px-1 py-0.2 rounded border border-gold/30 font-bold shrink-0">
+                <span className="text-[10px] font-body text-gold bg-gold/15 px-1 py-0.2 rounded border border-gold/30 font-bold shrink-0">
                   {hoveredDateKey && !selectedDateKey ? 'Hover' : selectedDateKey ? 'Pinned' : 'Details'}
                 </span>
               </div>
@@ -295,14 +295,14 @@ export default function SidebarOrderCalendar({ bookings = [] }) {
                       className="p-1.5 rounded-lg bg-neutral-50 dark:bg-neutral-800/70 border border-neutral-200/80 dark:border-neutral-700/80 flex flex-col gap-1 shadow-2xs font-body"
                     >
                       <div className="flex items-center justify-between gap-1">
-                        <span className={`text-[8px] font-bold px-1.5 py-0.2 rounded uppercase font-body ${
+                        <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded uppercase font-body ${
                           evt.type === 'ORDER_PLACED' 
                             ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300' 
                             : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300'
                         }`}>
                           {evt.label}
                         </span>
-                        <span className="text-[9px] text-neutral-400 font-body font-bold">
+                        <span className="text-[11px] text-neutral-400 font-body font-bold">
                           #{evt.booking.booking_number}
                         </span>
                       </div>
@@ -312,7 +312,7 @@ export default function SidebarOrderCalendar({ bookings = [] }) {
                         {evt.booking.tier_name ? ` · ${evt.booking.tier_name}` : ''}
                       </p>
 
-                      <div className="flex items-center justify-between text-[9px] text-neutral-500 dark:text-neutral-400 font-body">
+                      <div className="flex items-center justify-between text-[11px] text-neutral-500 dark:text-neutral-400 font-body">
                         <span className="truncate flex items-center gap-1">
                           <Clock size={9} />
                           {evt.booking.preferred_time ? evt.booking.preferred_time.substring(0, 5) : 'Any Time'}
@@ -320,7 +320,7 @@ export default function SidebarOrderCalendar({ bookings = [] }) {
                         <span className="text-gold font-bold">{evt.booking.status}</span>
                       </div>
                       
-                      <div className="flex items-center gap-2 mt-0.5 text-[9px] font-body text-neutral-500">
+                      <div className="flex items-center gap-2 mt-0.5 text-[11px] font-body text-neutral-500">
                         <span className="flex items-center gap-1 bg-neutral-100 dark:bg-neutral-800 px-1 py-0.5 rounded">
                           <CreditCard size={9} className="text-neutral-400" />
                           {getPaymentLabel(evt.booking.payment_status)}
@@ -333,7 +333,7 @@ export default function SidebarOrderCalendar({ bookings = [] }) {
                         )}
                       </div>
 
-                      <div className="flex items-center justify-end gap-2 pt-0.5 border-t border-neutral-200/50 dark:border-neutral-700/60 text-[9px] font-body">
+                      <div className="flex items-center justify-end gap-2 pt-0.5 border-t border-neutral-200/50 dark:border-neutral-700/60 text-[11px] font-body">
                         <Link
                           to="/dashboard/progress"
                           className="text-gold font-bold hover:underline flex items-center gap-0.5"
@@ -353,7 +353,7 @@ export default function SidebarOrderCalendar({ bookings = [] }) {
                   ))}
                 </div>
               ) : (
-                <div className="flex items-center justify-between px-2 py-1 bg-neutral-50 dark:bg-neutral-800/60 rounded-lg text-[10px] font-body text-neutral-400 border border-neutral-200/60 dark:border-neutral-700/60">
+                <div className="flex items-center justify-between px-2 py-1 bg-neutral-50 dark:bg-neutral-800/60 rounded-lg text-xs font-body text-neutral-400 border border-neutral-200/60 dark:border-neutral-700/60">
                   <span className="truncate">No scheduled shoots</span>
                   <Link
                     to={`/dashboard/book?date=${activeDateKey}`}

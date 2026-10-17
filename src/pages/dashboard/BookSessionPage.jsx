@@ -4,16 +4,17 @@ import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import {
   Camera, Calendar, Clock, MapPin, ArrowRight, ArrowLeft, Loader2,
   CheckCircle, Package, PlusCircle, Check, Sparkles, GraduationCap,
-  Building, User, Mail, Phone, Info, HelpCircle, Layers, Image as ImageIcon,
+  Building, User, Users, Mail, Phone, Info, HelpCircle, Layers, Image as ImageIcon,
   ExternalLink, ChevronRight, X, QrCode, Heart, Briefcase, Search,
   ChevronDown, ChevronUp, Eye, Trash2, ShieldCheck, AlertCircle, FileText,
   Video, Edit3, Lock, Palette, UploadCloud, MessageSquare, Plus,
-  Timer, BellRing, CreditCard, Copy, Printer, Download, CheckCircle2
+  Timer, BellRing, CreditCard, Copy, Printer, Download, CheckCircle2, UserCheck, Wifi, WifiOff, Signal
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import { createBooking, SERVICE_SLUG_TO_UUID } from "../../services/bookingService";
 import { getServices, getAddOns } from "../../services/contentService";
-import { createBooking } from "../../services/bookingService";
+import { SERVICES } from "../../data/servicesData";
 import { assignPhotographer } from "../../services/aiAssignmentService";
 import { recordCustomerAction } from "../../services/customerAuditService";
 import ReferenceImageUploader from "../../components/booking/ReferenceImageUploader";
@@ -29,6 +30,7 @@ import {
 } from "../../lib/cebuAcademicData";
 import StudioDropdown from "../../components/ui/StudioDropdown";
 import LiveClock from "../../components/dashboard/LiveClock";
+import DashboardHero from "../../components/dashboard/DashboardHero";
 import { motion, AnimatePresence } from "framer-motion";
 
 // ── Studio Operating Hours & Discrete Time Slots (8:00 AM – 5:00 PM) ───────────
@@ -42,116 +44,6 @@ const STUDIO_TIME_SLOTS = [
   { time: "15:00", label: "3:00 PM – 4:00 PM", period: "Afternoon" },
   { time: "16:00", label: "4:00 PM – 5:00 PM", period: "Afternoon" },
 ];
-
-// ── Preset Visual Reference Pegs tailored per service ───────────────────────────
-const PRESET_STYLE_PEGS = {
-  graduation: [
-    { 
-      id: "creative_candid", 
-      title: "Creative & Candid", 
-      desc: "Spontaneous, authentic moments and candid expressions celebrating your milestone", 
-      tag: "Candid",
-      image: "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?w=800&q=80&auto=format&fit=crop"
-    },
-    { 
-      id: "warm_golden_glow", 
-      title: "Warm Golden Glow", 
-      desc: "Soft amber rim lighting with rich, radiant skin tones and cinematic warmth", 
-      tag: "Warm Tone",
-      image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&q=80&auto=format&fit=crop"
-    },
-    { 
-      id: "bright_high_key", 
-      title: "Bright High-Key Minimalist", 
-      desc: "Clean, ultra-crisp all-white illumination for modern, timeless graduation portraits", 
-      tag: "High-Key",
-      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&q=80&auto=format&fit=crop"
-    },
-    { 
-      id: "moody_fine_art", 
-      title: "Moody Fine-Art Chiaroscuro", 
-      desc: "Deep charcoal gradients with dramatic softbox shadows and painterly color grading", 
-      tag: "Fine-Art",
-      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=800&q=80&auto=format&fit=crop"
-    },
-  ],
-  wedding: [
-    { 
-      id: "romantic_veil", 
-      title: "Soft Romantic & Veil Drama", 
-      desc: "Delicate backlight with sweeping veil movement and sunset glow", 
-      tag: "Romantic",
-      image: "https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80&auto=format&fit=crop"
-    },
-    { 
-      id: "bridal_editorial", 
-      title: "Editorial Bridal Solo", 
-      desc: "Magazine-quality lighting emphasizing gown details and bouquet", 
-      tag: "Editorial",
-      image: "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80&auto=format&fit=crop"
-    },
-    { 
-      id: "candid_emotive", 
-      title: "Unposed Emotive Moments", 
-      desc: "Authentic laughter and heartfelt glances between the couple", 
-      tag: "Candid",
-      image: "https://images.unsplash.com/photo-1465495976277-4387d4b0b4c6?w=800&q=80&auto=format&fit=crop"
-    },
-    { 
-      id: "monochrome_bw", 
-      title: "Cinematic Fine-Art B&W", 
-      desc: "High-contrast monochrome for a timeless, artistic memory", 
-      tag: "Monochrome",
-      image: "https://images.unsplash.com/photo-1537633552985-df8429e8048b?w=800&q=80&auto=format&fit=crop"
-    },
-  ],
-  corporate: [
-    { 
-      id: "executive_gray", 
-      title: "Crisp Executive Headshot", 
-      desc: "Neutral gray gradient backdrop with sharp, authoritative lighting", 
-      tag: "Executive",
-      image: "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=800&q=80&auto=format&fit=crop"
-    },
-    { 
-      id: "warm_linkedin", 
-      title: "Approachable Professional", 
-      desc: "Engaging warm lighting tailored for LinkedIn and portfolio bio", 
-      tag: "Corporate",
-      image: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=800&q=80&auto=format&fit=crop"
-    },
-    { 
-      id: "creative_tech", 
-      title: "Creative Industry Smart-Casual", 
-      desc: "Contemporary dynamic angle with soft rim accent light", 
-      tag: "Creative",
-      image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&q=80&auto=format&fit=crop"
-    },
-  ],
-  general: [
-    { 
-      id: "signature_studio", 
-      title: "Signature Studio Lighting", 
-      desc: "Multi-point softbox portrait with authentic, radiant skin tones", 
-      tag: "Studio",
-      image: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=800&q=80&auto=format&fit=crop"
-    },
-    { 
-      id: "high_key_white", 
-      title: "Bright High-Key Backdrop", 
-      desc: "Vibrant and clean all-white backdrop for clean portraits", 
-      tag: "Bright",
-      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&q=80&auto=format&fit=crop"
-    },
-    { 
-      id: "fine_art_moody", 
-      title: "Moody Fine-Art Portrait", 
-      desc: "Artistic chiaroscuro shadows with painterly color grading", 
-      tag: "Artistic",
-      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=800&q=80&auto=format&fit=crop"
-    },
-  ]
-};
 
 // ── Special Request Pre-template suggestions (Clean, no emojis) ───────────────
 const SPECIAL_REQUEST_TEMPLATES = {
@@ -200,6 +92,48 @@ const getServiceIcon = (svc) => {
   return <Package size={15} className="text-gold shrink-0" />;
 };
 
+// ── Clean & normalize class section inputs: strip redundant school/strand/grade/course prefixes and "Section" words ──
+const normalizeSectionOnly = (input, strandOrCourse = "") => {
+  if (!input || typeof input !== "string") return "";
+  let clean = input;
+
+  // 1. Remove redundant Grade levels (e.g. "Grade 12", "Grade 11", "G12", "G11", "12-", "11-")
+  clean = clean.replace(/^(?:Grade\s*\d+|G\d+|(?:11|12))\s*[-–—/:]*\s*/i, "");
+
+  // 2. Remove selected strand/course if user typed it at start (e.g. "STEM", "ABM", "BSIT", "BSCS", "BEED")
+  if (strandOrCourse && typeof strandOrCourse === "string" && strandOrCourse.trim()) {
+    const escaped = strandOrCourse.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    clean = clean.replace(new RegExp(`^${escaped}\\s*[-–—/:]*\\s*`, 'i'), '');
+  }
+  // Also common academic abbreviations
+  clean = clean.replace(/^(?:STEM|ABM|HUMSS|GAS|TVL|ICT|HE|BSIT|BSCS|BSCE|BSED|BEED|BSBA|BSHM|BSA|BSN)\s*[-–—/:]*\s*/i, "");
+
+  // 3. Remove "Class Section", "Section", "Sec.", "Sec", "Block" from beginning
+  clean = clean.replace(/^(?:Class\s*Section|Section|Sec\.?|Block)\s*[-–—/:]*\s*/i, "");
+
+  // 4. Remove leftover leading punctuation or dashes
+  clean = clean.replace(/^[-–—/:\s]+/, "").trim();
+
+  if (!clean) return "";
+
+  // 5. Intelligent capitalization:
+  // Short code (letters/numbers, e.g. "A", "B", "1", "4-1", "4A")
+  const isShortCode = /^[A-Za-z0-9]{1,3}(?:[-–—/][A-Za-z0-9]{1,3})?$/.test(clean);
+  if (isShortCode) {
+    return clean.toUpperCase();
+  }
+
+  // Named sections (e.g. "alcala", "duterte", "rizal", "st. thomas", "maria clara")
+  // Format in proper Title Case
+  return clean
+    .split(/\s+/)
+    .map(word => {
+      if (word.length <= 1) return word.toUpperCase();
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(" ");
+};
+
 // ── Visual Helper for Add-On Mini Cards (Dark Obsidian Theme) ────────────────
 const getAddOnVisuals = (name = "", category = "") => {
   const text = (name + " " + (category || "")).toLowerCase();
@@ -213,6 +147,7 @@ const getAddOnVisuals = (name = "", category = "") => {
     return {
       icon: <Layers size={13} className="stroke-[2.2]" />,
       iconBg: "bg-amber-500/20 text-gold border-gold/40",
+      lightIconBg: "bg-[#FAF5EB] text-[#B5883F] border-[#EFE4D2]",
       specBadge,
       cleanName,
     };
@@ -221,6 +156,7 @@ const getAddOnVisuals = (name = "", category = "") => {
     return {
       icon: <Camera size={13} className="stroke-[2.2]" />,
       iconBg: "bg-sky-500/20 text-sky-400 border-sky-400/40",
+      lightIconBg: "bg-sky-50 text-sky-700 border-sky-200",
       specBadge,
       cleanName,
     };
@@ -229,6 +165,7 @@ const getAddOnVisuals = (name = "", category = "") => {
     return {
       icon: <ExternalLink size={13} className="stroke-[2.2]" />,
       iconBg: "bg-emerald-500/20 text-emerald-400 border-emerald-500/40",
+      lightIconBg: "bg-emerald-50 text-emerald-700 border-emerald-200",
       specBadge,
       cleanName,
     };
@@ -237,6 +174,7 @@ const getAddOnVisuals = (name = "", category = "") => {
     return {
       icon: <Video size={13} className="stroke-[2.2]" />,
       iconBg: "bg-purple-500/20 text-purple-400 border-purple-400/40",
+      lightIconBg: "bg-purple-50 text-purple-700 border-purple-200",
       specBadge,
       cleanName,
     };
@@ -245,6 +183,7 @@ const getAddOnVisuals = (name = "", category = "") => {
     return {
       icon: <MapPin size={13} className="stroke-[2.2]" />,
       iconBg: "bg-orange-500/20 text-orange-400 border-orange-400/40",
+      lightIconBg: "bg-orange-50 text-orange-700 border-orange-200",
       specBadge,
       cleanName,
     };
@@ -253,6 +192,7 @@ const getAddOnVisuals = (name = "", category = "") => {
     return {
       icon: <Heart size={13} className="stroke-[2.2]" />,
       iconBg: "bg-rose-500/25 text-rose-400 border-rose-400/40",
+      lightIconBg: "bg-rose-50 text-rose-700 border-rose-200",
       specBadge,
       cleanName,
     };
@@ -264,60 +204,312 @@ const getAddOnVisuals = (name = "", category = "") => {
     cleanName,
   };
 };
+// ── Helper to Parse Verbose Inclusions into Clean, Balanced Cards (Photo Format) ──
+const parseInclusionDetails = (rawText = "", allTiers = []) => {
+  const text = (rawText || "").trim();
+  const lower = text.toLowerCase();
+  const isExclusion = lower.includes("no free") || lower.includes("not included");
+  const isComplimentary = lower.includes("free ") || lower.startsWith("free") || lower.includes("complimentary");
+
+  const qtyMatch = text.match(/^([0-9]+\s*(?:pieces?|units?|copies|pages|photographers|shoots?|sets?)|[0-9]+-[0-9]+x[0-9]+|[0-9]+x[0-9]+|[0-9]+pcs\.?|[0-9]+pc\.?)\s*(.*)/i);
+  let quantity = qtyMatch ? qtyMatch[1].trim() : (isComplimentary ? "FREE" : "Included");
+  let coreText = qtyMatch ? qtyMatch[2].trim() : text;
+
+  if (/^([0-9]+)\s*pieces?$/i.test(quantity)) {
+    const n = quantity.match(/([0-9]+)/)[1];
+    quantity = `${n} ${n === "1" ? "Piece" : "Pieces"}`;
+  } else if (/^([0-9]+)\s*units?$/i.test(quantity)) {
+    const n = quantity.match(/([0-9]+)/)[1];
+    quantity = `${n} ${n === "1" ? "Unit" : "Units"}`;
+  } else if (/^([0-9]+)\s*photographers?/i.test(quantity) || lower.includes("photographers on site")) {
+    const nMatch = text.match(/([0-9]+)\s*(?:professional\s*)?photographers/i);
+    const n = nMatch ? nMatch[1] : "Pro";
+    quantity = `${n} Photographers`;
+  }
+
+  let title = "Studio Inclusion";
+  let specBadge = null;
+  let subtitle = "Studio quality print";
+  let icon = <Check size={13} className="stroke-[2.5]" />;
+  let iconBg = "bg-amber-100/90 text-amber-800 border-amber-200/90";
+  let image = "https://images.unsplash.com/photo-1513519245088-0e12902e5a38?w=300&q=80&auto=format&fit=crop";
+
+  const dimMatch = text.match(/(\d+\s*[×x]\s*\d+\s*(?:\"|inch(?:es)?)?|\b2R\b|\b4R\b|\b5×7\"|\b8×10\"|\b10×12\"|\b11×14\"|\b12×16\"|\b12×18\"|\b24×30\")/i);
+  if (dimMatch) {
+    specBadge = dimMatch[1].replace(/\s+/g, "").toUpperCase();
+    if (!specBadge.includes('"') && !specBadge.includes('R')) {
+      specBadge += '"';
+    }
+  }
+
+  if (lower.includes("family")) {
+    title = "Family Portrait";
+    subtitle = "Studio family pictorial with parents/guardians";
+    image = "https://images.unsplash.com/photo-1511895426328-dc8714191300?w=300&q=80&auto=format&fit=crop";
+    icon = <Users size={13} className="stroke-[2.2]" />;
+    specBadge = specBadge || "8×10\"";
+  } else if (lower.includes("filipiniana") || lower.includes("barong") || lower.includes("pilipiñ")) {
+    if (lower.includes("wallet")) {
+      title = "Wallet Prints (Attire)";
+      subtitle = "Pocket prints in Barong / Filipiniana";
+      image = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&q=80&auto=format&fit=crop";
+      icon = <ImageIcon size={13} className="stroke-[2.2]" />;
+      specBadge = "2R (2.5×3.5\")";
+    } else {
+      title = "Filipiniana / Barong";
+      subtitle = lower.includes("crystal") ? "Crystal wood frame" : "Traditional national attire portrait";
+      image = "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=300&q=80&auto=format&fit=crop";
+      icon = <Sparkles size={13} className="stroke-[2.2]" />;
+      specBadge = specBadge || "8×10\"";
+    }
+  } else if (lower.includes("crystal") || (lower.includes("portrait") && (lower.includes("frame") || lower.includes("mount") || lower.includes("wood")))) {
+    title = "Framed Portrait";
+    subtitle = lower.includes("mount") ? "Crystal wood mount" : "Crystal wood frame with glass";
+    image = "https://images.unsplash.com/photo-1513519245088-0e12902e5a38?w=300&q=80&auto=format&fit=crop";
+    icon = <Layers size={13} className="stroke-[2.2]" />;
+    specBadge = specBadge || "10×12\"";
+  } else if (lower.includes("wallet")) {
+    icon = <ImageIcon size={13} className="stroke-[2.2]" />;
+    specBadge = specBadge || "2R (2.5×3.5\")";
+    if (lower.includes("cap") || lower.includes("toga")) {
+      title = "Wallet Prints (Cap)";
+      subtitle = "Wallet photos with academic cap & gown";
+      image = "https://images.unsplash.com/photo-1526047932273-341f2a7631f9?w=300&q=80&auto=format&fit=crop";
+    } else if (lower.includes("attire") || lower.includes("barong") || lower.includes("filipiniana")) {
+      title = "Wallet Prints (Attire)";
+      subtitle = "Filipiniana or Barong prints";
+      image = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&q=80&auto=format&fit=crop";
+    } else {
+      title = "Wallet Prints";
+      subtitle = "Pocket-sized glossy prints on Fuji paper";
+      image = "https://images.unsplash.com/photo-1526047932273-341f2a7631f9?w=300&q=80&auto=format&fit=crop";
+    }
+  } else if (lower.includes("passport") || lower.includes("tesda")) {
+    icon = <CreditCard size={13} className="stroke-[2.2]" />;
+    title = "Passport ID Prints";
+    specBadge = "TESDA (35×45mm)";
+    subtitle = "Standard passport & official ID specification";
+    image = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&q=80&auto=format&fit=crop";
+  } else if (lower.includes("2x2") || lower.includes("2×2")) {
+    icon = <CreditCard size={13} className="stroke-[2.2]" />;
+    specBadge = "2×2\" (51×51mm)";
+    title = lower.includes("casual") ? "2×2\" Casual IDs" : "2×2\" Formal IDs";
+    subtitle = lower.includes("casual") ? "Casual attire ID photos" : "Formal attire application photos";
+    image = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&q=80&auto=format&fit=crop";
+  } else if (lower.includes("1x1") || lower.includes("1×1")) {
+    icon = <CreditCard size={13} className="stroke-[2.2]" />;
+    specBadge = "1×1\" (25×25mm)";
+    title = "1×1\" ID Prints";
+    subtitle = "School records & official form photos";
+    image = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&q=80&auto=format&fit=crop";
+  } else if (lower.includes("desk") || lower.includes("5x7") || lower.includes("5×7")) {
+    icon = <ImageIcon size={13} className="stroke-[2.2]" />;
+    specBadge = "5×7\"";
+    title = "Desk Photo Print";
+    subtitle = "Desktop tabletop colored print";
+    image = "https://images.unsplash.com/photo-1582562124811-c09040d0a901?w=300&q=80&auto=format&fit=crop";
+  } else if (lower.includes("makeup") || lower.includes("make-up") || lower.includes("hair")) {
+    icon = <Heart size={13} className="stroke-[2.2]" />;
+    iconBg = "bg-rose-100 text-rose-700 border-rose-200";
+    title = "Studio Hair & Makeup";
+    specBadge = "Complimentary";
+    subtitle = "Professional styling & cosmetics";
+    quantity = "FREE";
+    image = "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=300&q=80&auto=format&fit=crop";
+  } else if (lower.includes("toga") || lower.includes("cap")) {
+    icon = <GraduationCap size={13} className="stroke-[2.2]" />;
+    title = "Graduation Toga";
+    specBadge = "Regalia";
+    subtitle = "Toga, cap & hood use";
+    quantity = "FREE";
+    image = "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=300&q=80&auto=format&fit=crop";
+  } else {
+    title = coreText.length > 25 ? coreText.slice(0, 23) + "..." : coreText;
+  }
+
+  // Cross-tier comparison for all sets
+  const comparisons = (allTiers || []).map(t => {
+    const found = (t.highlights || []).find(h => {
+      const hLow = h.toLowerCase();
+      if (title === 'Framed Portrait' && (hLow.includes('framed') || (hLow.includes('portrait') && (hLow.includes('wood') || hLow.includes('mount') || hLow.includes('frame'))))) return true;
+      if (title === 'Filipiniana / Barong' && (hLow.includes('filipiniana') || hLow.includes('barong')) && !hLow.includes('wallet')) return true;
+      if (title === 'Family Portrait' && hLow.includes('family')) return true;
+      if (title === 'Wallet Prints (Cap)' && hLow.includes('wallet') && hLow.includes('cap')) return true;
+      if (title === 'Wallet Prints (Attire)' && hLow.includes('wallet') && (hLow.includes('attire') || hLow.includes('barong') || hLow.includes('filipiniana'))) return true;
+      if (title === 'Wallet Prints' && hLow.includes('wallet') && !hLow.includes('cap') && !hLow.includes('attire') && !hLow.includes('barong')) return true;
+      if (title === 'Passport ID Prints' && hLow.includes('passport')) return true;
+      if (title.includes('2×2') && (hLow.includes('2×2') || hLow.includes('2x2'))) {
+        if (title.includes('Casual') && hLow.includes('casual')) return true;
+        if (!title.includes('Casual') && !hLow.includes('casual')) return true;
+      }
+      if (title.includes('1×1') && (hLow.includes('1×1') || hLow.includes('1x1'))) return true;
+      if (title === 'Desk Photo Print' && hLow.includes('desk')) return true;
+      if (title === 'Studio Hair & Makeup' && (hLow.includes('makeup') || hLow.includes('hair'))) return true;
+      return false;
+    });
+
+    let details = 'Not in this set';
+    let hasIt = false;
+    if (found) {
+      hasIt = true;
+      const q = found.match(/^(\d+)\s*(?:pieces?|pcs?|pc)/i);
+      const d = found.match(/(\d+\s*[×x]\s*\d+\s*(?:\"|inch(?:es)?)?|\b2R\b|\b5×7\"|\b8×10\"|\b10×12\"|\b12×16\"|\b12×18\")/i);
+      const isFree = found.toLowerCase().includes('free') || found.toLowerCase().includes('complimentary');
+      const qText = q ? (q[1] + (parseInt(q[1], 10) === 1 ? ' pc' : ' pcs')) : (isFree ? 'FREE' : '');
+      const sText = d ? d[1].trim() : '';
+      const finishText = found.toLowerCase().includes('crystal wood frame') ? 'Crystal Frame' : (found.toLowerCase().includes('mount') ? 'Mount' : (found.toLowerCase().includes('unframed') ? 'Unframed' : ''));
+      details = [qText, sText, finishText].filter(Boolean).join(' · ');
+    }
+    return {
+      tierName: t.name,
+      hasIt,
+      details,
+    };
+  });
+
+  return {
+    title,
+    specBadge,
+    size: specBadge,
+    subtitle,
+    quantity,
+    icon,
+    iconBg,
+    isComplimentary,
+    isExclusion,
+    image,
+    comparisons,
+    raw: rawText,
+  };
+};
+
+// ── Helper to Consolidate Redundant Inclusions (e.g. 3 duplicate Wallet Print items or duplicate 2x2 IDs) ──
+const consolidateInclusions = (rawInclusions = [], allTiers = []) => {
+  if (!rawInclusions || !rawInclusions.length) return [];
+
+  const parsed = rawInclusions.map(h => parseInclusionDetails(h, allTiers));
+  const consolidated = [];
+  let walletGroup = null;
+  let id2x2Group = null;
+
+  parsed.forEach(item => {
+    const raw = (item.raw || item.title || "").toLowerCase();
+    const isWallet = item.title.toLowerCase().includes("wallet") || raw.includes("wallet");
+    const is2x2 = item.title.includes("2×2") || item.title.includes("2x2") || raw.includes("2×2") || raw.includes("2x2");
+
+    if (isWallet) {
+      const qtyMatch = (item.raw || "").match(/^(\d+)/);
+      const qtyNum = qtyMatch ? parseInt(qtyMatch[1], 10) : (parseInt(item.quantity) || 6);
+
+      let variant = "Standard";
+      if (raw.includes("cap") || raw.includes("toga")) variant = "Cap & Gown";
+      else if (raw.includes("filipiniana") || raw.includes("barong") || raw.includes("attire")) variant = "Filipiniana / Barong";
+
+      if (!walletGroup) {
+        walletGroup = {
+          ...item,
+          title: "Wallet Prints",
+          specBadge: "2R (2.5×3.5\")",
+          totalQty: qtyNum,
+          variants: [variant],
+          quantity: `${qtyNum} Pieces`,
+          subtitle: variant,
+        };
+        consolidated.push(walletGroup);
+      } else {
+        walletGroup.totalQty += qtyNum;
+        walletGroup.quantity = `${walletGroup.totalQty} Pieces`;
+        if (!walletGroup.variants.includes(variant)) {
+          walletGroup.variants.push(variant);
+        }
+        walletGroup.subtitle = walletGroup.variants.join(" · ");
+      }
+    } else if (is2x2) {
+      const qtyMatch = (item.raw || "").match(/^(\d+)/);
+      const qtyNum = qtyMatch ? parseInt(qtyMatch[1], 10) : (parseInt(item.quantity) || 6);
+      let variant = raw.includes("casual") ? "Casual" : "Formal";
+
+      if (!id2x2Group) {
+        id2x2Group = {
+          ...item,
+          title: "2×2\" ID Prints",
+          specBadge: "51×51mm",
+          totalQty: qtyNum,
+          variants: [variant],
+          quantity: `${qtyNum} Pieces`,
+          subtitle: variant,
+        };
+        consolidated.push(id2x2Group);
+      } else {
+        id2x2Group.totalQty += qtyNum;
+        id2x2Group.quantity = `${id2x2Group.totalQty} Pieces`;
+        if (!id2x2Group.variants.includes(variant)) {
+          id2x2Group.variants.push(variant);
+        }
+        id2x2Group.subtitle = id2x2Group.variants.join(" & ");
+      }
+    } else {
+      consolidated.push(item);
+    }
+  });
+
+  return consolidated;
+};
+
 // ── Visual Helper for Inclusion Chips (Matching Photo 1 Inclusions Card) ─────
 const getInclusionConfig = (text = "") => {
   const t = text.toLowerCase();
   const isExclusion = t.includes("no free");
-  const isComplimentary = t.includes("free ") || t.startsWith("free");
+  const isComplimentary = t.includes("free ") || t.startsWith("free") || t.includes("complimentary");
 
-  const specMatch = text.match(/^([0-9]+-[0-9]+x[0-9]+|[0-9]+x[0-9]+|[0-9]+pcs\.?|[0-9]+pc\.?)\s*(.*)/i);
+  const specMatch = text.match(/^([0-9]+\s*(?:pieces?|units?|copies|pages)|[0-9]+-[0-9]+x[0-9]+|[0-9]+x[0-9]+|[0-9]+pcs\.?|[0-9]+pc\.?)\s*(.*)/i);
   const specBadge = specMatch ? specMatch[1] : null;
   const mainText = specMatch ? specMatch[2] : text;
 
-  let icon = <Check size={11} className="stroke-[2.5]" />;
-  let iconBg = "bg-amber-500/15 text-gold border-gold/30";
-  let cardBg = "bg-white/[0.05] hover:bg-white/[0.09] border-white/10 hover:border-gold/50";
-  let textColor = "text-neutral-200";
+  let icon = <Check size={12} className="stroke-[2.5]" />;
+  let iconBg = "bg-amber-100/80 text-amber-800 border-amber-200/90";
+  let cardBg = "bg-white/95 hover:bg-white border-amber-200/70 hover:border-amber-400/80 shadow-2xs hover:shadow-xs";
+  let textColor = "text-neutral-800";
   let badge = null;
 
   if (t.includes("passport") || t.includes("2x2") || t.includes("wallet") || t.includes("8x10") || t.includes("10x12") || t.includes("1x1") || t.includes("print") || t.includes("picture") || t.includes("colored")) {
-    icon = <ImageIcon size={11} className="stroke-[2.2]" />;
-    iconBg = "bg-amber-500/15 text-gold border-gold/30";
-    cardBg = "bg-white/[0.05] hover:bg-white/[0.09] border-white/10 hover:border-gold/50";
-    textColor = "text-neutral-200";
+    icon = <ImageIcon size={12} className="stroke-[2.2]" />;
+    iconBg = "bg-amber-100/80 text-amber-800 border-amber-200/90";
+    cardBg = "bg-white/95 hover:bg-white border-amber-200/70 hover:border-amber-400/80 shadow-2xs hover:shadow-xs";
+    textColor = "text-neutral-800";
   } else if (t.includes("frame") || t.includes("album") || t.includes("crystal") || t.includes("wood")) {
-    icon = <Layers size={11} className="stroke-[2.2]" />;
-    iconBg = "bg-stone-500/20 text-stone-300 border-stone-500/40";
-    cardBg = "bg-white/[0.05] hover:bg-white/[0.09] border-white/10 hover:border-stone-400/50";
-    textColor = "text-neutral-200";
-  } else if (t.includes("digital") || t.includes("file") || t.includes("usb") || t.includes("soft copy")) {
-    icon = <ExternalLink size={11} className="stroke-[2.2]" />;
-    iconBg = "bg-emerald-500/20 text-emerald-400 border-emerald-500/40";
-    cardBg = "bg-white/[0.05] hover:bg-white/[0.09] border-white/10 hover:border-emerald-400/50";
-    textColor = "text-neutral-200";
-  } else if (t.includes("make") || t.includes("hair") || t.includes("gown") || t.includes("wardrobe") || t.includes("attire") || t.includes("pilipiña") || t.includes("styling")) {
-    icon = <Heart size={11} className="stroke-[2.2]" />;
-    iconBg = "bg-rose-500/25 text-rose-400 border-rose-400/40";
-    cardBg = "bg-gradient-to-r from-rose-950/70 via-amber-950/40 to-neutral-900 border-rose-500/50";
-    textColor = "text-rose-100 font-bold";
+    icon = <Layers size={12} className="stroke-[2.2]" />;
+    iconBg = "bg-stone-100 text-stone-700 border-stone-200";
+    cardBg = "bg-white/95 hover:bg-white border-amber-200/70 hover:border-amber-400/80 shadow-2xs hover:shadow-xs";
+    textColor = "text-neutral-800";
+  } else if (t.includes("digital") || t.includes("file") || t.includes("usb") || t.includes("soft copy") || t.includes("drive")) {
+    icon = <ExternalLink size={12} className="stroke-[2.2]" />;
+    iconBg = "bg-emerald-100/80 text-emerald-800 border-emerald-200";
+    cardBg = "bg-white/95 hover:bg-white border-amber-200/70 hover:border-amber-400/80 shadow-2xs hover:shadow-xs";
+    textColor = "text-neutral-800";
+  } else if (t.includes("make") || t.includes("hair") || t.includes("gown") || t.includes("wardrobe") || t.includes("attire") || t.includes("pilipiña") || t.includes("styling") || t.includes("toga")) {
+    icon = <Heart size={12} className="stroke-[2.2]" />;
+    iconBg = "bg-rose-100 text-rose-700 border-rose-200";
+    cardBg = "bg-gradient-to-r from-rose-50/95 via-amber-50/60 to-white border-rose-200/90 shadow-2xs hover:shadow-xs";
+    textColor = "text-rose-950 font-bold";
     badge = "Complimentary Perk";
   } else if (t.includes("studio") || t.includes("session") || t.includes("hour") || t.includes("minute")) {
-    icon = <Clock size={11} className="stroke-[2.2]" />;
-    iconBg = "bg-amber-500/20 text-gold border-gold/30";
-    cardBg = "bg-white/[0.05] hover:bg-white/[0.09] border-white/10 hover:border-gold/50";
-    textColor = "text-neutral-200";
-  } else if (t.includes("photo") || t.includes("shot") || t.includes("pose") || t.includes("candid") || t.includes("portrait")) {
-    icon = <Camera size={11} className="stroke-[2.2]" />;
-    iconBg = "bg-amber-500/15 text-gold border-gold/30";
-    cardBg = "bg-white/[0.05] hover:bg-white/[0.09] border-white/10 hover:border-gold/50";
-    textColor = "text-neutral-200";
+    icon = <Clock size={12} className="stroke-[2.2]" />;
+    iconBg = "bg-amber-100/80 text-amber-800 border-amber-200/90";
+    cardBg = "bg-white/95 hover:bg-white border-amber-200/70 hover:border-amber-400/80 shadow-2xs hover:shadow-xs";
+    textColor = "text-neutral-800";
+  } else if (t.includes("photo") || t.includes("shot") || t.includes("pose") || t.includes("candid") || t.includes("portrait") || t.includes("photographer")) {
+    icon = <Camera size={12} className="stroke-[2.2]" />;
+    iconBg = "bg-amber-100/80 text-amber-800 border-amber-200/90";
+    cardBg = "bg-white/95 hover:bg-white border-amber-200/70 hover:border-amber-400/80 shadow-2xs hover:shadow-xs";
+    textColor = "text-neutral-800";
   }
 
   if (isExclusion) {
-    icon = <X size={11} className="stroke-[2.5]" />;
-    iconBg = "bg-white/10 text-neutral-400 border-white/10";
-    cardBg = "bg-white/[0.02] border-white/5";
-    textColor = "text-neutral-500";
+    icon = <X size={12} className="stroke-[2.5]" />;
+    iconBg = "bg-neutral-100 text-neutral-400 border-neutral-200";
+    cardBg = "bg-neutral-50/60 border-neutral-200/70";
+    textColor = "text-neutral-400 line-through";
     badge = null;
   }
 
@@ -335,7 +527,6 @@ const getInclusionConfig = (text = "") => {
   };
 };
 
-
 // ── Fallback Photography Cover Images ─────────────────────────────────────────
 const SERVICE_COVER_MAP = {
   "college-packages": "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=900&q=80&auto=format&fit=crop",
@@ -352,6 +543,109 @@ function parsePrice(val) {
   return parseFloat(cleaned) || 0;
 }
 
+// ── Motion-Detecting Review Accordion Dropdown Component ───────────────────────
+function ReviewAccordionItem({
+  id,
+  isOpen,
+  isPinned,
+  icon,
+  title,
+  subtitle,
+  onEdit,
+  children,
+  onMouseEnter,
+  onMouseMove,
+  onMouseLeave,
+  onTogglePin
+}) {
+  return (
+    <div
+      onMouseEnter={onMouseEnter}
+      onMouseMove={onMouseMove}
+      onMouseLeave={onMouseLeave}
+      className={`border rounded-2xl overflow-hidden bg-white shadow-xs transition-all duration-300 ${
+        isOpen
+          ? "border-amber-300/90 ring-2 ring-amber-400/20 shadow-sm"
+          : "border-neutral-200/90 hover:border-amber-300/60 hover:shadow-xs"
+      }`}
+    >
+      <div
+        onClick={onTogglePin}
+        className="p-4 bg-gradient-to-r from-neutral-50/90 to-amber-50/30 flex items-center justify-between cursor-pointer hover:bg-neutral-100/70 transition-colors select-none"
+      >
+        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+          <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
+            {icon}
+          </div>
+          <div className="min-w-0">
+            <span className="font-heading text-sm font-bold text-primary block leading-tight truncate">
+              {title}
+            </span>
+            <span className="text-[11px] text-neutral-500 font-body block truncate">
+              {subtitle}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {isPinned && (
+            <span className="hidden sm:inline-flex items-center gap-1 text-xs font-bold text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-300">
+              <Lock size={10} /> Locked
+            </span>
+          )}
+          {onEdit && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+              className="text-xs font-bold text-gold hover:underline bg-gold/10 px-2.5 py-1 rounded-lg border border-gold/20"
+            >
+              Edit
+            </button>
+          )}
+          <motion.div
+            animate={{ rotate: isOpen ? 180 : 0 }}
+            transition={{ duration: 0.22, ease: "easeInOut" }}
+            className="text-neutral-400"
+          >
+            <ChevronDown size={16} />
+          </motion.div>
+        </div>
+      </div>
+
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            key={`accordion-content-${id}`}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{
+              height: "auto",
+              opacity: 1,
+              transition: {
+                height: { duration: 0.26, ease: [0.04, 0.62, 0.23, 0.98] },
+                opacity: { duration: 0.2, delay: 0.04 }
+              }
+            }}
+            exit={{
+              height: 0,
+              opacity: 0,
+              transition: {
+                height: { duration: 0.2, ease: [0.04, 0.62, 0.23, 0.98] },
+                opacity: { duration: 0.12 }
+              }
+            }}
+            className="overflow-hidden border-t border-neutral-100"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export default function BookingPage() {
   const [searchParams] = useSearchParams();
   const initialServiceSlug = searchParams.get("service");
@@ -362,6 +656,7 @@ export default function BookingPage() {
 
   // Customer Profile DB State & Editing
   const [customerProfile, setCustomerProfile] = useState(null);
+  const activeProfile = customerProfile || profile;
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
@@ -372,6 +667,67 @@ export default function BookingPage() {
   const [editLastName, setEditLastName] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [yearbookMotto, setYearbookMotto] = useState("");
+
+  // Who is this booking for? ("myself" | "someone_else")
+  const [bookingFor, setBookingFor] = useState("myself");
+  const [showBookingForModal, setShowBookingForModal] = useState(false);
+  const [pendingTierToConfirm, setPendingTierToConfirm] = useState(null);
+  const [submissionTimeElapsed, setSubmissionTimeElapsed] = useState(0);
+  const [networkQuality, setNetworkQuality] = useState({
+    isOnline: typeof navigator !== "undefined" ? navigator.onLine : true,
+    isLowSignal: false,
+    effectiveType: "4g",
+    rtt: 0
+  });
+
+  // Participant / Beneficiary details (for whom this specific booking is actually for)
+  const [participantFirstName, setParticipantFirstName] = useState("");
+  const [participantMiddleName, setParticipantMiddleName] = useState("");
+  const [participantLastName, setParticipantLastName] = useState("");
+  const [participantPhone, setParticipantPhone] = useState("");
+  const [participantEmail, setParticipantEmail] = useState("");
+  const [participantRelationship, setParticipantRelationship] = useState("Friend");
+
+  // Student / Graduate specific name (separate from Account Profile so booking for another student never overwrites account profile)
+  const [studentFirstName, setStudentFirstName] = useState("");
+  const [studentMiddleName, setStudentMiddleName] = useState("");
+  const [studentLastName, setStudentLastName] = useState("");
+
+  const handleSelectBookingFor = useCallback((choice) => {
+    setBookingFor(choice);
+    if (choice === "myself") {
+      const activeP = customerProfile || profile;
+      const fn = activeP?.first_name || user?.user_metadata?.first_name || "";
+      const mn = activeP?.middle_name || user?.user_metadata?.middle_name || "";
+      const ln = activeP?.last_name || user?.user_metadata?.last_name || "";
+      const ph = activeP?.phone || user?.user_metadata?.phone || "";
+      const em = activeP?.email || user?.email || "";
+      setParticipantFirstName(fn);
+      setParticipantMiddleName(mn);
+      setParticipantLastName(ln);
+      setParticipantPhone(ph);
+      setParticipantEmail(em);
+      setParticipantRelationship("Self");
+      setStudentFirstName(fn);
+      setStudentMiddleName(mn);
+      setStudentLastName(ln);
+    } else {
+      const activeP = customerProfile || profile;
+      const accountFn = activeP?.first_name || user?.user_metadata?.first_name || "";
+      const accountLn = activeP?.last_name || user?.user_metadata?.last_name || "";
+      if (participantFirstName === accountFn && participantLastName === accountLn) {
+        setParticipantFirstName("");
+        setParticipantMiddleName("");
+        setParticipantLastName("");
+        setParticipantPhone("");
+        setParticipantEmail("");
+        setParticipantRelationship("Friend");
+        setStudentFirstName("");
+        setStudentMiddleName("");
+        setStudentLastName("");
+      }
+    }
+  }, [customerProfile, profile, user, participantFirstName, participantLastName]);
 
   // Actively fetch customer profile from database if available
   const fetchCustomerProfile = useCallback(async () => {
@@ -392,6 +748,14 @@ export default function BookingPage() {
           setEditLastName(data.last_name || "");
           setEditPhone(data.phone || "");
           setYearbookMotto(data.bio || data.motto || (data.custom_data && data.custom_data.bio) || "");
+          setStudentFirstName(prev => prev || data.first_name || "");
+          setStudentMiddleName(prev => prev || data.middle_name || "");
+          setStudentLastName(prev => prev || data.last_name || "");
+          setParticipantFirstName(prev => prev || data.first_name || "");
+          setParticipantMiddleName(prev => prev || data.middle_name || "");
+          setParticipantLastName(prev => prev || data.last_name || "");
+          setParticipantPhone(prev => prev || data.phone || "");
+          setParticipantEmail(prev => prev || data.email || user.email || "");
           return;
         }
       }
@@ -409,6 +773,14 @@ export default function BookingPage() {
       setEditLastName(profile.last_name || "");
       setEditPhone(profile.phone || "");
       setYearbookMotto(profile.bio || profile.motto || (profile.custom_data && profile.custom_data.bio) || "");
+      setStudentFirstName(prev => prev || profile.first_name || "");
+      setStudentMiddleName(prev => prev || profile.middle_name || "");
+      setStudentLastName(prev => prev || profile.last_name || "");
+      setParticipantFirstName(prev => prev || profile.first_name || "");
+      setParticipantMiddleName(prev => prev || profile.middle_name || "");
+      setParticipantLastName(prev => prev || profile.last_name || "");
+      setParticipantPhone(prev => prev || profile.phone || "");
+      setParticipantEmail(prev => prev || profile.email || user.email || "");
     } else if (user) {
       const meta = user.user_metadata || {};
       const fallback = {
@@ -426,6 +798,14 @@ export default function BookingPage() {
       setEditLastName(fallback.last_name);
       setEditPhone(fallback.phone);
       setYearbookMotto(fallback.bio);
+      setStudentFirstName(prev => prev || fallback.first_name || "");
+      setStudentMiddleName(prev => prev || fallback.middle_name || "");
+      setStudentLastName(prev => prev || fallback.last_name || "");
+      setParticipantFirstName(prev => prev || fallback.first_name || "");
+      setParticipantMiddleName(prev => prev || fallback.middle_name || "");
+      setParticipantLastName(prev => prev || fallback.last_name || "");
+      setParticipantPhone(prev => prev || fallback.phone || "");
+      setParticipantEmail(prev => prev || fallback.email || user.email || "");
     }
   }, [user, profile]);
 
@@ -442,6 +822,9 @@ export default function BookingPage() {
       setEditLastName(profile.last_name || "");
       setEditPhone(profile.phone || "");
       setYearbookMotto(profile.bio || profile.motto || (profile.custom_data && profile.custom_data.bio) || "");
+      setStudentFirstName(prev => prev || profile.first_name || "");
+      setStudentMiddleName(prev => prev || profile.middle_name || "");
+      setStudentLastName(prev => prev || profile.last_name || "");
     }
   }, [profile, customerProfile]);
 
@@ -462,7 +845,7 @@ export default function BookingPage() {
         middle_name: editMiddleName.trim(),
         last_name: editLastName.trim(),
         phone: editPhone.trim(),
-        bio: yearbookMotto.trim(),
+        bio: customerProfile?.bio || "",
         updated_at: new Date().toISOString()
       };
 
@@ -581,13 +964,19 @@ export default function BookingPage() {
   const [selectedShsStrand, setSelectedShsStrand] = useState("STEM");
   const [studentBatch, setStudentBatch] = useState("Batch 2026");
   const [studentSection, setStudentSection] = useState("");
+  const normalizedStudentSection = useMemo(() => {
+    if (!studentSection || !studentSection.trim()) return "";
+    const currentStrand = isSeniorHighService ? selectedShsStrand : studentCourse;
+    return normalizeSectionOnly(studentSection, currentStrand) || studentSection.trim();
+  }, [studentSection, isSeniorHighService, selectedShsStrand, studentCourse]);
   const [studentIdNumber, setStudentIdNumber] = useState("");
   const [univDropdownOpen, setUnivDropdownOpen] = useState(false);
   const [degreeDropdownOpen, setDegreeDropdownOpen] = useState(false);
-  const [activePegModal, setActivePegModal] = useState(null);
-  const [lightboxImg, setLightboxImg] = useState(null);
+    const [lightboxImg, setLightboxImg] = useState(null);
   const [proceedingSvcSlug, setProceedingSvcSlug] = useState(null);
   const [hoveredTierName, setHoveredTierName] = useState(null);
+  const [hoveredInclusionIndex, setHoveredInclusionIndex] = useState(null);
+  const [hoveredInclusionIndexReview, setHoveredInclusionIndexReview] = useState(null);
   const [isAddonCardHovered, setIsAddonCardHovered] = useState(false);
   const [isAddonPanelHovered, setIsAddonPanelHovered] = useState(false);
   const [isAddonCardPinned, setIsAddonCardPinned] = useState(false);
@@ -598,6 +987,29 @@ export default function BookingPage() {
   const [copiedPassUrl, setCopiedPassUrl] = useState(false);
   const qrPassRef = useRef(null);
   const tierScrollRef = useRef(null);
+  const tierHoverTimeoutRef = useRef(null);
+  const addonHoverTimeoutRef = useRef(null);
+
+  const handleAddonCardEnter = () => {
+    if (addonHoverTimeoutRef.current) clearTimeout(addonHoverTimeoutRef.current);
+    setIsAddonCardHovered(true);
+  };
+  const handleAddonCardLeave = () => {
+    if (addonHoverTimeoutRef.current) clearTimeout(addonHoverTimeoutRef.current);
+    addonHoverTimeoutRef.current = setTimeout(() => {
+      setIsAddonCardHovered(false);
+    }, 90);
+  };
+  const handleAddonPanelEnter = () => {
+    if (addonHoverTimeoutRef.current) clearTimeout(addonHoverTimeoutRef.current);
+    setIsAddonPanelHovered(true);
+  };
+  const handleAddonPanelLeave = () => {
+    if (addonHoverTimeoutRef.current) clearTimeout(addonHoverTimeoutRef.current);
+    addonHoverTimeoutRef.current = setTimeout(() => {
+      setIsAddonPanelHovered(false);
+    }, 90);
+  };
 
   // Dropdown container refs for outside-click dismissal
   const univContainerRef = useRef(null);
@@ -617,17 +1029,29 @@ export default function BookingPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Automatically scroll to top and ensure scroll is unlocked whenever booking step changes
+  useEffect(() => {
+    document.body.style.overflow = "";
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [step]);
+
   // Body scroll lock and Escape key listener for lightbox/peg/confirmation modals
   useEffect(() => {
-    if (!activePegModal && !lightboxImg && !showStep4ConfirmModal && !showOrderConfirmModal && !showReservationSuccessModal) return;
-    const prevOverflow = document.body.style.overflow;
+    if (step === 8) {
+      document.body.style.overflow = "";
+      return;
+    }
+    if (!lightboxImg && !showStep4ConfirmModal && !showBookingForModal && !showOrderConfirmModal && !showReservationSuccessModal) {
+      document.body.style.overflow = "";
+      return;
+    }
     document.body.style.overflow = "hidden";
 
     const handleKeyDown = (e) => {
       if (e.key === "Escape") {
-        setActivePegModal(null);
-        setLightboxImg(null);
+                setLightboxImg(null);
         setShowStep4ConfirmModal(false);
+        setShowBookingForModal(false);
         setShowOrderConfirmModal(false);
         setShowReservationSuccessModal(false);
       }
@@ -635,10 +1059,10 @@ export default function BookingPage() {
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      document.body.style.overflow = prevOverflow;
+      document.body.style.overflow = "";
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [activePegModal, lightboxImg, showStep4ConfirmModal, showOrderConfirmModal, showReservationSuccessModal]);
+  }, [step, lightboxImg, showStep4ConfirmModal, showBookingForModal, showOrderConfirmModal, showReservationSuccessModal]);
 
   // Auto-sync studentType based on selected service
   useEffect(() => {
@@ -742,70 +1166,185 @@ export default function BookingPage() {
       }
     }
   }, [isAcademicService, academicBookingMode]);
-
   // Visual Reference Pegs & Files
-  const [selectedPresetPegs, setSelectedPresetPegs] = useState([]);
   const [referenceFiles, setReferenceFiles] = useState([]);
   const [notes, setNotes] = useState("");
 
-  // Review Accordion Toggles
-  const [reviewAccordions, setReviewAccordions] = useState({
-    pkg: true,
-    client: true,
-    schedule: true,
-    addons: true,
-    pegs: true
+  // Review Accordion Motion & Lock State (Auto-show & auto-hide on motion)
+  const [motionEnabled, setMotionEnabled] = useState(true);
+  const [hoveredAccordion, setHoveredAccordion] = useState(null);
+  const [pinnedAccordions, setPinnedAccordions] = useState({
+    pkg: false,
+    client: false,
+    schedule: false,
+    addons: false,
+    pegs: false
   });
+  const motionTimeoutRef = useRef(null);
+
+  const handleAccordionMouseEnter = useCallback((key) => {
+    if (motionTimeoutRef.current) {
+      clearTimeout(motionTimeoutRef.current);
+      motionTimeoutRef.current = null;
+    }
+    setHoveredAccordion(key);
+  }, []);
+
+  const handleAccordionMouseLeave = useCallback((key) => {
+    if (motionTimeoutRef.current) {
+      clearTimeout(motionTimeoutRef.current);
+    }
+    motionTimeoutRef.current = setTimeout(() => {
+      setHoveredAccordion((current) => (current === key ? null : current));
+    }, 180);
+  }, []);
+
+  const toggleAccordionPin = useCallback((key) => {
+    setPinnedAccordions((prev) => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  }, []);
+
+  const isAccordionOpen = useCallback((key) => {
+    if (pinnedAccordions[key]) return true;
+    if (motionEnabled && hoveredAccordion === key) return true;
+    return false;
+  }, [pinnedAccordions, motionEnabled, hoveredAccordion]);
 
   // Submission State
   const [validationError, setValidationError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isBatchOrderMode, setIsBatchOrderMode] = useState(false);
+
+  // Smart Session & Venue Detector (Detects customer selection whether in studio or school or custom venue)
+  const detectedSessionInfo = useMemo(() => {
+    const isSchoolCampus = isAcademicService && (academicBookingMode === "SCHOOL_PARTNER" || locationType === "CAMPUS");
+    const isCustomVenue = locationType === "CUSTOM";
+    const isStudio = locationType === "STUDIO" || (!isSchoolCampus && !isCustomVenue);
+
+    if (isSchoolCampus) {
+      return {
+        type: "SCHOOL",
+        badge: "School Campus Pictorial",
+        venue: studentSchool ? `${studentSchool} (On-Campus)` : "Official Partner School Campus",
+        venueAddress: studentSchoolAddress || "Campus grounds / designated school pictorial hall",
+        scheduleTitle: "Official School Batch Schedule",
+        scheduleSubtitle: normalizedStudentSection ? `Arranged with Section ${normalizedStudentSection} (${studentBatch || 'Batch 2026'})` : "Timetable arranged directly with school administration",
+        duration: "15–20 Mins / Student (Organized Batch Flow)",
+        isStudio: false,
+        isSchool: true,
+      };
+    }
+
+    if (isCustomVenue) {
+      return {
+        type: "CUSTOM",
+        badge: "On-Location Session",
+        venue: customVenue || customAddress || "Client-Designated Venue",
+        venueAddress: customAddress ? `${customAddress}${customBarangayCity ? `, ${customBarangayCity}` : ''}` : "On-location mobile studio deployment",
+        scheduleTitle: eventDate ? `${eventDate} • ${preferredTime || 'Time TBD'}` : "Scheduled Event Time",
+        scheduleSubtitle: "Designated private or event venue",
+        duration: selectedTier?.duration && !selectedTier.duration.toLowerCase().includes("studio session")
+          ? selectedTier.duration
+          : "1–2 Hours (On-Location Session)",
+        isStudio: false,
+        isSchool: false,
+      };
+    }
+
+    return {
+      type: "STUDIO",
+      badge: "In-Studio Session",
+      venue: "E-Kodak Studio Cebu (Main Studio Bay)",
+      venueAddress: "Studio Bay 1 & 2 • 311 Rizal Street, City of Naga, Cebu",
+      scheduleTitle: eventDate ? `${eventDate} • ${preferredTime || 'Time TBD'}` : "Reserved Studio Slot",
+      scheduleSubtitle: "Fully equipped air-conditioned studio with dressing & styling bays",
+      duration: selectedTier?.duration && !selectedTier.duration.toLowerCase().includes("studio session")
+        ? selectedTier.duration
+        : "45–60 Mins (Dedicated Studio Slot)",
+      isStudio: true,
+      isSchool: false,
+    };
+  }, [isAcademicService, academicBookingMode, locationType, studentSchool, studentSchoolAddress, customVenue, customAddress, customBarangayCity, eventDate, preferredTime, selectedTier, studentSection, studentBatch]);
+
+  // Fast-Track Campus Batch Review (Shortens process from 7 steps to 3 steps for school partners)
+  const handleFastTrackBatchReview = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    setValidationError("");
+    if (!participantFirstName.trim()) {
+      setValidationError("Please enter your First Name to continue.");
+      return;
+    }
+    if (!studentSchool.trim()) {
+      setValidationError("Please select or enter your School / Campus name.");
+      return;
+    }
+    if (!studentSection.trim()) {
+      setValidationError("Please enter your Class Section for batch ordering.");
+      return;
+    }
+    setAcademicBookingMode("SCHOOL_PARTNER");
+    setLocationType("CAMPUS");
+    setStep(7); // Jump straight to Review & Confirm!
+  };
   const [bookingResult, setBookingResult] = useState(null);
 
   // Fetch Services & Add-ons
   useEffect(() => {
     async function fetchData() {
-      const [servicesRes, addOnsRes] = await Promise.all([
-        getServices(),
-        getAddOns()
-      ]);
+      try {
+        const [servicesRes, addOnsRes] = await Promise.all([
+          getServices(),
+          getAddOns()
+        ]);
 
-      if (servicesRes.error) {
-        setError("Failed to load services.");
-      } else {
-        const loadedServices = servicesRes.data || [];
+        const loadedServices = (servicesRes?.data && servicesRes.data.length > 0)
+          ? servicesRes.data
+          : (SERVICES || []);
+
         setServices(loadedServices);
-        
+
         // Auto-select if passed in URL
         if (initialServiceSlug && loadedServices.length > 0) {
-          const srv = loadedServices.find(s => s.slug === initialServiceSlug);
+          const srv = loadedServices.find(s => 
+            s.slug === initialServiceSlug || 
+            s.id === initialServiceSlug || 
+            s.category === initialServiceSlug ||
+            (initialServiceSlug === 'studio-packages' && s.slug === 'senior-high-packages') ||
+            (initialServiceSlug === 'senior-high' && s.slug === 'senior-high-packages') ||
+            (initialServiceSlug === 'college' && s.slug === 'college-packages')
+          );
           if (srv) {
             setSelectedService(srv);
             if (initialTierName) {
-              const tier = srv.tiers?.find(t => t.name === initialTierName);
+              const tier = srv.tiers?.find(t => t.name === initialTierName || t.name?.toLowerCase() === initialTierName.toLowerCase());
               if (tier) setSelectedTier(tier);
             }
             if (initialTierName) setStep(3);
             else setStep(2);
           }
         }
-      }
 
-      if (!addOnsRes.error && addOnsRes.data) {
-        // Enforce deduplication by normalized name
-        const seen = new Set();
-        const uniqueAddOns = [];
-        for (const item of addOnsRes.data) {
-          const norm = (item.name || '').trim().toLowerCase();
-          if (norm && !seen.has(norm)) {
-            seen.add(norm);
-            uniqueAddOns.push(item);
+        if (addOnsRes?.data && Array.isArray(addOnsRes.data)) {
+          // Enforce deduplication by normalized name
+          const seen = new Set();
+          const uniqueAddOns = [];
+          for (const item of addOnsRes.data) {
+            const norm = (item.name || '').trim().toLowerCase();
+            if (norm && !seen.has(norm)) {
+              seen.add(norm);
+              uniqueAddOns.push(item);
+            }
           }
+          setAddOnsList(uniqueAddOns);
         }
-        setAddOnsList(uniqueAddOns);
+      } catch (fetchErr) {
+        console.error("Failed to load services data, using fallback:", fetchErr);
+        setServices(SERVICES || []);
+      } finally {
+        setLoadingData(false);
       }
-      
-      setLoadingData(false);
     }
     fetchData();
   }, [initialServiceSlug, initialTierName]);
@@ -948,12 +1487,22 @@ export default function BookingPage() {
       setShowStep4ConfirmModal(true);
       return;
     } else if (step === 4) {
+      // Validate participant personal information
+      if (!participantFirstName.trim()) {
+        setValidationError(
+          bookingFor === "someone_else"
+            ? "Please enter the First Name of the participant this booking is for."
+            : "Please verify your First Name to continue."
+        );
+        return;
+      }
+      if (bookingFor === "someone_else" && !participantLastName.trim()) {
+        setValidationError("Please enter the Last Name of the participant.");
+        return;
+      }
+
       // Validate dynamic fields based on service
       if (isCollegeService || isSeniorHighService) {
-        if (!editFirstName.trim()) {
-          setValidationError("Please enter your First Name for your client profile.");
-          return;
-        }
         if (!studentSchool.trim()) {
           setValidationError(`Please select or enter your ${isCollegeService ? "University / College" : "High School"}.`);
           return;
@@ -963,23 +1512,12 @@ export default function BookingPage() {
           return;
         }
         if (!studentSection.trim()) {
-          setValidationError("Class Section is required for graduation lab batching.");
+          setValidationError("Class Section is required for graduation records.");
           return;
         }
         if (!studentIdNumber.trim()) {
           setValidationError("Please provide your Student ID Number.");
           return;
-        }
-
-        // Auto-save edited client profile fields directly to database
-        const activeProf = customerProfile || profile;
-        if (
-          editFirstName.trim() !== (activeProf?.first_name || "") ||
-          editMiddleName.trim() !== (activeProf?.middle_name || "") ||
-          editLastName.trim() !== (activeProf?.last_name || "") ||
-          editPhone.trim() !== (activeProf?.phone || "")
-        ) {
-          handleSaveProfile();
         }
       } else if (isWeddingService) {
         if (!brideName.trim() || !groomName.trim()) {
@@ -1025,7 +1563,7 @@ export default function BookingPage() {
     setTimeout(() => {
       setStep(2);
       setProceedingSvcSlug(null);
-    }, 240);
+    }, 40);
   };
 
   // Submit Booking
@@ -1035,41 +1573,96 @@ export default function BookingPage() {
 
     const isSchoolPartner = isAcademicService && academicBookingMode === "SCHOOL_PARTNER";
 
+    const activeP = customerProfile || profile;
+    const accountOwnerFullName = [activeP?.first_name || user?.user_metadata?.first_name || "", activeP?.last_name || user?.user_metadata?.last_name || ""].filter(Boolean).join(" ") || "Client";
+    const participantFullName = [participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") || (bookingFor === "myself" ? accountOwnerFullName : "Participant");
+
+    let activeCustomerId = user?.id || activeP?.id;
+    if (!activeCustomerId && isSupabaseConfigured && supabase) {
+      try {
+        const { data: sessData } = await supabase.auth.getSession();
+        if (sessData?.session?.user?.id) {
+          activeCustomerId = sessData.session.user.id;
+        } else {
+          const { data: authData } = await supabase.auth.getUser();
+          if (authData?.user?.id) {
+            activeCustomerId = authData.user.id;
+          }
+        }
+      } catch (authErr) {
+        console.warn("[Auth Check]", authErr);
+      }
+    }
+
+    if (!activeCustomerId) {
+      try {
+        const cached = sessionStorage.getItem('ekodak_user_profile');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed?.id) activeCustomerId = parsed.id;
+        }
+      } catch {}
+    }
+
+    if (!activeCustomerId) {
+      setIsSubmitting(false);
+      setValidationError("You must be logged in to reserve a photoshoot slot. Please sign in or refresh your session.");
+      return;
+    }
+
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const resolvedServiceId = (
+      (selectedService?.id && UUID_REGEX.test(selectedService.id))
+        ? selectedService.id
+        : (SERVICE_SLUG_TO_UUID?.[selectedService?.slug] || SERVICE_SLUG_TO_UUID?.[selectedService?.id] || "1471388e-b74f-41ec-96c8-1d220d557a89")
+    );
+
     // Build consolidated notes with metadata
     let consolidatedNotes = notes || "";
     
+    // 1. Participant / Beneficiary Block (Clearly defines who the session is for vs account owner)
+    const beneficiaryBlock = `[BOOKING BENEFICIARY & PARTICIPANT]\n• Booking For: ${bookingFor === "someone_else" ? "Someone Else" : "Myself"}\n• Participant Name: ${participantFullName}\n• Participant Phone: ${participantPhone || 'N/A'}\n• Participant Email: ${participantEmail || 'N/A'}\n• Relationship to Account Owner: ${bookingFor === "someone_else" ? (participantRelationship || 'Beneficiary') : 'Self (Account Owner)'}\n• Account Owner: ${accountOwnerFullName} (${activeP?.email || user?.email || 'N/A'})`;
+    consolidatedNotes = consolidatedNotes ? `${beneficiaryBlock}\n\n${consolidatedNotes}` : beneficiaryBlock;
+
     if (isAcademicService) {
-      const studentFullName = [editFirstName, editMiddleName, editLastName].filter(Boolean).join(" ");
-      const studentBlock = `[STUDENT DETAILS]\n• Type: ${studentType === "COLLEGE" ? "College / University" : "Senior High School"}\n• Booking Mode: ${isSchoolPartner ? "School Campus (Date set by school) [SCHOOL_PARTNER]" : "Individual Booking"}\n• Student Name: ${studentFullName || 'N/A'}\n• Middle Name: ${editMiddleName || 'N/A'}\n• School: ${studentSchool}\n• Campus / Address: ${studentSchoolAddress || 'N/A'}\n• Degree / Strand: ${studentType === "COLLEGE" ? (studentCourse || 'N/A') : (selectedShsStrand || 'N/A')}\n• Batch: ${studentBatch || 'N/A'}\n• Section: ${studentSection}\n• Student ID: ${studentIdNumber}\n• Yearbook Motto: ${yearbookMotto || 'N/A'}${schoolScheduleNote ? `\n• Note: ${schoolScheduleNote}` : ''}`;
-      consolidatedNotes = consolidatedNotes ? `${studentBlock}\n\n${consolidatedNotes}` : studentBlock;
+      const studentBlock = `[STUDENT DETAILS]\n• Type: ${studentType === "COLLEGE" ? "College / University" : "Senior High School"}\n• Booking Mode: ${isSchoolPartner ? "School Campus (Date set by school) [SCHOOL_PARTNER]" : "Individual Booking"}\n• Student Name: ${participantFullName || 'N/A'}\n• Middle Name: ${participantMiddleName || 'N/A'}\n• School: ${studentSchool}\n• Campus / Address: ${studentSchoolAddress || 'N/A'}\n• Degree / Strand: ${studentType === "COLLEGE" ? (studentCourse || 'N/A') : (selectedShsStrand || 'N/A')}\n• Batch: ${studentBatch || 'N/A'}\n• Section: ${normalizedStudentSection || studentSection}\n• Student ID: ${studentIdNumber}\n• Yearbook Motto: ${yearbookMotto || 'N/A'}${schoolScheduleNote ? `\n• Note: ${schoolScheduleNote}` : ''}`;
+      consolidatedNotes = `${consolidatedNotes}\n\n${studentBlock}`;
     } else if (isWeddingService) {
       const weddingBlock = `[WEDDING DETAILS]\n• Couple: ${brideName} & ${groomName}\n• Theme / Palette: ${weddingTheme || 'N/A'}\n• Ceremony Venue: ${ceremonyVenue || 'N/A'}\n• Coordinator: ${coordinatorName || 'N/A'} (${coordinatorContact || 'N/A'})`;
-      consolidatedNotes = consolidatedNotes ? `${weddingBlock}\n\n${consolidatedNotes}` : weddingBlock;
+      consolidatedNotes = `${consolidatedNotes}\n\n${weddingBlock}`;
     } else if (isCorporateService) {
       const corpBlock = `[CORPORATE DETAILS]\n• Company: ${companyName || 'N/A'}\n• Role: ${clientRole || 'N/A'}\n• Intended Photo Usage: ${photoUsage || 'N/A'}`;
-      consolidatedNotes = consolidatedNotes ? `${corpBlock}\n\n${consolidatedNotes}` : corpBlock;
-    }
-
-    if (selectedPresetPegs.length > 0) {
-      const pegsBlock = `[SELECTED STYLE PEGS]\n${selectedPresetPegs.map(p => `• ${p}`).join('\n')}`;
-      consolidatedNotes = consolidatedNotes ? `${consolidatedNotes}\n\n${pegsBlock}` : pegsBlock;
+      consolidatedNotes = `${consolidatedNotes}\n\n${corpBlock}`;
     }
 
     const payload = {
-      customer_id: user.id,
-      service_id: selectedService.id,
+      customer_id: activeCustomerId,
+      service_id: resolvedServiceId,
+      service_slug: selectedService?.slug || null,
       tier_name: selectedTier?.name || null,
       selected_add_ons: selectedAddOns.map(a => ({ name: a.name, price: parsePrice(a.price) })),
+      participant_details: {
+        booking_for: bookingFor,
+        full_name: participantFullName,
+        first_name: participantFirstName,
+        middle_name: participantMiddleName,
+        last_name: participantLastName,
+        phone: participantPhone,
+        email: participantEmail,
+        relationship: bookingFor === "someone_else" ? participantRelationship : "Self",
+        account_owner_name: accountOwnerFullName,
+        account_owner_email: activeP?.email || user?.email
+      },
       student_details: isAcademicService ? {
         type: studentType,
         booking_mode: academicBookingMode,
-        student_name: [editFirstName, editMiddleName, editLastName].filter(Boolean).join(" "),
-        middle_name: editMiddleName || null,
+        student_name: participantFullName,
+        middle_name: participantMiddleName || null,
         school: studentSchool,
         school_address: studentSchoolAddress,
         course: studentType === "COLLEGE" ? studentCourse : selectedShsStrand,
         batch: studentBatch,
-        section: studentSection,
+        section: normalizedStudentSection || studentSection,
         student_id: studentIdNumber,
         yearbook_motto: yearbookMotto || null,
         schedule_note: schoolScheduleNote || null,
@@ -1094,39 +1687,49 @@ export default function BookingPage() {
       setValidationError("Failed to create booking: " + submitError.message);
     } else {
       setShowOrderConfirmModal(false);
+      setShowReservationSuccessModal(false);
       setBookingResult(data);
       setStep(8);
-      setShowReservationSuccessModal(true);
+      document.body.style.overflow = "";
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
       
-      // Record customer booking creation in audit trail
-      if (user?.id) {
-        recordCustomerAction({
-          userId: user.id,
-          category: 'BOOKING',
-          title: `Session Reserved (#${data.booking_number || 'New'})`,
-          description: `Customer submitted photoshoot reservation for ${selectedService?.name || 'Studio Session'}${selectedTier ? ` (${selectedTier.name})` : ''}.`,
-          changes: [
-            `Service: ${selectedService?.name}`,
-            selectedTier ? `Tier: ${selectedTier.name}` : null,
-            eventDate ? `Date: ${eventDate}` : null,
-            preferredTime ? `Time: ${preferredTime}` : null,
-            resolvedLocation ? `Location: ${resolvedLocation}` : null,
-            selectedAddOns.length > 0 ? `Add-ons: ${selectedAddOns.map(a => a.name).join(', ')}` : null
-          ].filter(Boolean),
-          bookingId: data.id,
-          bookingNumber: data.booking_number
-        });
+      // Record customer booking creation in audit trail safely
+      if (activeCustomerId) {
+        try {
+          recordCustomerAction({
+            userId: activeCustomerId,
+            category: 'BOOKING',
+            title: `Session Reserved (#${data.booking_number || 'New'})`,
+            description: `Customer submitted photoshoot reservation for ${selectedService?.name || 'Studio Session'}${selectedTier ? ` (${selectedTier.name})` : ''}.`,
+            changes: [
+              `Service: ${selectedService?.name}`,
+              selectedTier ? `Tier: ${selectedTier.name}` : null,
+              eventDate ? `Date: ${eventDate}` : null,
+              preferredTime ? `Time: ${preferredTime}` : null,
+              resolvedLocation ? `Location: ${resolvedLocation}` : null,
+              selectedAddOns.length > 0 ? `Add-ons: ${selectedAddOns.map(a => a.name).join(', ')}` : null
+            ].filter(Boolean),
+            bookingId: data.id,
+            bookingNumber: data.booking_number
+          });
+        } catch (auditErr) {
+          console.warn("[Customer Action Audit Warning]", auditErr);
+        }
       }
 
       // Background studio photographer allocation attempt
-      assignPhotographer({
-        id: data.id,
-        service_name: selectedService.name,
-        booking_date: isSchoolPartner ? null : eventDate,
-        booking_time: isSchoolPartner ? null : preferredTime,
-      }).catch(err => {
-        console.warn("[Photographer Allocation]", err);
-      });
+      try {
+        assignPhotographer({
+          id: data.id,
+          service_name: selectedService?.name || 'Studio Session',
+          booking_date: isSchoolPartner ? null : eventDate,
+          booking_time: isSchoolPartner ? null : preferredTime,
+        }).catch(err => {
+          console.warn("[Photographer Allocation]", err);
+        });
+      } catch (allocErr) {
+        console.warn("[Photographer Allocation Sync Warning]", allocErr);
+      }
     }
   };
 
@@ -1171,395 +1774,529 @@ export default function BookingPage() {
   };
 
   // ── STEP 8: RESERVATION SUCCESS & CAMERA-READY QR PASS ────────────────────
-  if (step === 8 && bookingResult) {
+  if (step === 8) {
     const isSchoolPartner = isAcademicService && academicBookingMode === "SCHOOL_PARTNER";
-    const effectiveToken = bookingResult.booking_token || bookingResult.id;
+    const activeBooking = bookingResult || {
+      id: "pending",
+      booking_number: "BK-2026-00002",
+      booking_token: "pending",
+      total_amount: totalAmount,
+      down_payment_amount: downPaymentAmount,
+      remaining_balance: remainingBalance,
+      location: resolvedLocation,
+      status: "PENDING"
+    };
+    const effectiveToken = activeBooking.booking_token || activeBooking.id;
     const passUrl = typeof window !== 'undefined' ? `${window.location.origin}/pass?token=${encodeURIComponent(effectiveToken)}` : `/pass?token=${encodeURIComponent(effectiveToken)}`;
 
+    const progressMilestones = [
+      {
+        step: 1,
+        title: "Reserved",
+        badge: "Completed",
+        isCurrent: false,
+        isCompleted: true,
+        icon: CheckCircle2,
+        timing: "Completed",
+        tooltip: "Your photoshoot reservation is logged in our studio queue with your selected package and schedule parameters.",
+        avatarClass: "bg-emerald-500 text-white ring-4 ring-emerald-100 shadow-xs",
+        chipClass: "text-emerald-700 bg-emerald-50 border-emerald-200"
+      },
+      {
+        step: 2,
+        title: "Downpayment",
+        badge: "Action Required",
+        isCurrent: true,
+        isCompleted: false,
+        icon: CreditCard,
+        timing: "Direct payment once confirmed",
+        tooltip: "Once studio administrators review and confirm your booking request, you can directly settle your 50% deposit in Billing & Payments.",
+        avatarClass: "bg-gradient-to-br from-amber-400 to-amber-500 text-neutral-950 ring-4 ring-amber-300/60 shadow-md animate-pulse",
+        chipClass: "text-amber-950 bg-amber-100 border-amber-300"
+      },
+      {
+        step: 3,
+        title: "Confirmed",
+        badge: "Upcoming",
+        isCurrent: false,
+        isCompleted: false,
+        icon: ShieldCheck,
+        timing: "Direct after verification",
+        tooltip: "Studio administrators verify your deposit and issue official confirmation with your assigned photographer credentials.",
+        avatarClass: "bg-neutral-100 text-neutral-500 ring-2 ring-neutral-200/80 group-hover:bg-amber-100 group-hover:text-amber-900 group-hover:ring-gold/40 transition-all",
+        chipClass: "text-neutral-500 bg-neutral-100 border-neutral-200"
+      },
+      {
+        step: 4,
+        title: "Photoshoot",
+        badge: "Session Day",
+        isCurrent: false,
+        isCompleted: false,
+        icon: Camera,
+        timing: "On scheduled date",
+        tooltip: "Arrive at the studio or on-campus venue. Present your digital QR pass at the front desk for instant camera check-in.",
+        avatarClass: "bg-neutral-100 text-neutral-500 ring-2 ring-neutral-200/80 group-hover:bg-amber-100 group-hover:text-amber-900 group-hover:ring-gold/40 transition-all",
+        chipClass: "text-neutral-500 bg-neutral-100 border-neutral-200"
+      },
+      {
+        step: 5,
+        title: "Photo Delivery",
+        badge: "Final Gallery",
+        isCurrent: false,
+        isCompleted: false,
+        icon: Sparkles,
+        timing: "3–5 days post-session",
+        tooltip: "Receive your color-graded high-resolution portrait gallery, downloadable digital proofs, and print fulfillment.",
+        avatarClass: "bg-neutral-100 text-neutral-500 ring-2 ring-neutral-200/80 group-hover:bg-amber-100 group-hover:text-amber-900 group-hover:ring-gold/40 transition-all",
+        chipClass: "text-neutral-500 bg-neutral-100 border-neutral-200"
+      }
+    ];
+
     return (
-      <div className="animate-fade-in max-w-7xl mx-auto pb-24 lg:pb-16 mt-16 px-4 font-body relative">
-        {/* Ambient Motion Graphics */}
+      <div className="animate-fade-in w-full max-w-[1440px] mx-auto px-2 sm:px-4 py-2 sm:py-4 font-body relative">
+        {/* Subtle Ambient Studio Lighting */}
         <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true">
-          <div className="absolute top-0 left-0 w-[800px] h-[800px] rounded-full bg-amber-300/6 blur-[140px] animate-float-slow-1" />
-          <div className="absolute top-1/3 right-0 w-[700px] h-[700px] rounded-full bg-gold/5 blur-[130px] animate-float-slow-2" />
-          <div className="absolute bottom-0 left-1/3 w-[600px] h-[600px] rounded-full bg-amber-400/5 blur-[120px] animate-float-slow-1" />
+          <div className="absolute top-0 left-1/4 w-[600px] h-[600px] rounded-full bg-amber-300/5 blur-[120px] pointer-events-none" />
+          <div className="absolute top-1/3 right-10 w-[500px] h-[500px] rounded-full bg-gold/5 blur-[120px] pointer-events-none" />
         </div>
 
-        <div className="w-full min-w-0 relative z-10">
-          <div className="rounded-3xl p-6 sm:p-10 shadow-2xl transition-all duration-500 relative white-animated-gradient-bg border border-white/80 ring-1 ring-gold/25 overflow-hidden">
-            
-            {/* Luminous Animated Moving Gradient Orbs */}
-            <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-3xl">
-              <div className="absolute -top-32 -left-32 w-[600px] h-[600px] rounded-full bg-gradient-to-br from-amber-300/35 via-gold/30 to-transparent blur-[90px] animate-float-slow-1 pointer-events-none" />
-              <div className="absolute top-1/3 -right-32 w-[650px] h-[650px] rounded-full bg-gradient-to-bl from-gold/40 via-amber-400/25 to-transparent blur-[100px] animate-float-slow-2 pointer-events-none" />
-              <div className="absolute -bottom-32 left-1/3 w-[650px] h-[650px] rounded-full bg-gradient-to-tr from-yellow-300/35 via-amber-300/25 to-transparent blur-[95px] animate-float-slow-1 pointer-events-none" />
-            </div>
-
-            {/* Top Status Header */}
-            <div className="text-center max-w-2xl mx-auto mb-8 sm:mb-10 relative z-10">
-              <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-900 flex items-center justify-center mx-auto mb-4 shadow-sm">
-                <CheckCircle2 size={36} className="text-amber-800" />
+        {/* ── THE SIGNATURE E-KODAK WARM CREAM / CHAMPAGNE STUDIO FOLIO CONTAINER ── */}
+        <div className="rounded-3xl sm:rounded-[32px] p-5 sm:p-7 lg:p-8 shadow-2xl relative z-10 bg-[#faf7f2] border border-amber-200/70 overflow-hidden space-y-5">
+          
+          {/* ── Clean, Non-Repetitive Top Header ── */}
+          <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs border border-neutral-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center shrink-0 shadow-2xs">
+                <CheckCircle2 size={22} />
               </div>
-              
-              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-900 text-xs font-bold uppercase tracking-wider mb-2.5">
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                Slot Reserved • Payment Pending
-              </div>
-
-              <h1 className="font-heading text-3xl sm:text-4xl text-neutral-950 font-bold tracking-tight">
-                Booking Reserved Successfully!
-              </h1>
-              <p className="font-body text-neutral-600 text-xs sm:text-sm mt-2 leading-relaxed">
-                Your photoshoot slot is secured under reference <strong className="text-gold font-mono">{bookingResult.booking_number}</strong>. Please settle your reservation downpayment in <strong className="text-neutral-900">Billing &amp; Payments</strong> within <span className="font-bold text-amber-900 underline decoration-amber-500">2 to 12 hours</span> to confirm your session.
-              </p>
-            </div>
-
-            {/* ⏳ Reservation 2h–12h Window & 🔔 Auto-Notification Reminder Banner */}
-            <div className="mb-8 rounded-2xl bg-gradient-to-r from-neutral-950 via-[#18140c] to-neutral-950 border border-gold/40 p-5 sm:p-6 text-white shadow-xl relative overflow-hidden z-10">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-gold/10 rounded-full blur-2xl pointer-events-none" />
-              
-              <div className="relative z-10 grid sm:grid-cols-12 gap-4 items-center">
-                <div className="sm:col-span-8 space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-gold border border-gold/30 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 font-mono">
-                      <Timer size={12} /> 2h – 12h Hold Window
-                    </span>
-                    <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 font-mono">
-                      <BellRing size={12} /> Auto-Reminders Active
-                    </span>
-                  </div>
-                  <h3 className="font-heading text-lg sm:text-xl font-bold text-amber-200">
-                    50% Reservation Downpayment: {formattedDownPayment}
-                  </h3>
-                  <p className="text-xs text-neutral-300 font-body leading-relaxed">
-                    Your reservation is held. Head to <strong className="text-white">Billing &amp; Payments</strong> to complete your downpayment. Automated reminder notifications have been scheduled for <strong className="text-gold">2 hours</strong>, <strong className="text-gold">6 hours</strong>, and <strong className="text-gold">12 hours</strong> so you won't lose your slot.
-                  </p>
-                </div>
-
-                <div className="sm:col-span-4 flex sm:justify-end">
-                  <Link
-                    to="/dashboard/payments"
-                    className="btn-primary !bg-gradient-to-r !from-amber-400 !via-gold !to-amber-500 !text-neutral-950 font-bold px-5 py-3 text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-gold/20 hover:scale-105 active:scale-95 transition-all w-full sm:w-auto"
-                  >
-                    <CreditCard size={15} /> Pay in Billing &amp; Payments
-                  </Link>
-                </div>
-              </div>
-            </div>
-
-            {/* 2-Column Responsive Layout: Custom Viewfinder QR Pass (Left) & Reservation Receipt (Right) */}
-            <div className="grid lg:grid-cols-12 gap-8 items-start mb-8 relative z-10">
-              
-              {/* ── COLUMN 1: CUSTOM STUDIO QR PASS (CAMERA VIEWFINDER RETICLE) ── */}
-              <div className="lg:col-span-5 bg-gradient-to-b from-neutral-950 via-[#131218] to-neutral-950 rounded-3xl p-6 sm:p-7 text-white shadow-2xl border border-gold/40 relative overflow-hidden flex flex-col justify-between">
-                
-                {/* Ambient Card Glow */}
-                <div className="absolute -top-24 -left-24 w-52 h-52 bg-gold/15 rounded-full blur-3xl pointer-events-none" />
-                <div className="absolute -bottom-24 -right-24 w-52 h-52 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-
-                <div className="relative z-10 text-center">
-                  
-                  {/* QR Pass Header */}
-                  <div className="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-white/10">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-gold bg-gold/15 border border-gold/30 px-2.5 py-1 rounded-full flex items-center gap-1.5 font-mono">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                      Live Cloud Synced
-                    </span>
-                    <span className="text-xs font-mono font-bold text-neutral-300">
-                      {bookingResult.booking_number}
-                    </span>
-                  </div>
-
-                  {/* 📸 CAMERA VIEWFINDER RETICLE FRAME (Tightly framing the QR Code) */}
-                  <div className="relative inline-block my-2 mx-auto">
-                    {/* 4 Precision Gold Camera Viewfinder Reticle Corners */}
-                    <div className="absolute -top-2.5 -left-2.5 w-6 h-6 border-t-2 border-l-2 border-gold rounded-tl-sm pointer-events-none z-20 shadow-xs" />
-                    <div className="absolute -top-2.5 -right-2.5 w-6 h-6 border-t-2 border-r-2 border-gold rounded-tr-sm pointer-events-none z-20 shadow-xs" />
-                    <div className="absolute -bottom-2.5 -left-2.5 w-6 h-6 border-b-2 border-l-2 border-gold rounded-bl-sm pointer-events-none z-20 shadow-xs" />
-                    <div className="absolute -bottom-2.5 -right-2.5 w-6 h-6 border-b-2 border-r-2 border-gold rounded-br-sm pointer-events-none z-20 shadow-xs" />
-                    
-                    {/* Viewfinder Lens Axis Crosshair Markers */}
-                    <div className="absolute top-1/2 -left-3.5 -translate-y-1/2 w-2 h-[1px] bg-gold/70 pointer-events-none z-20" />
-                    <div className="absolute top-1/2 -right-3.5 -translate-y-1/2 w-2 h-[1px] bg-gold/70 pointer-events-none z-20" />
-                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 h-2 w-[1px] bg-gold/70 pointer-events-none z-20" />
-                    <div className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 h-2 w-[1px] bg-gold/70 pointer-events-none z-20" />
-
-                    {/* High-Contrast White Canvas with QR Code */}
-                    <div 
-                      ref={qrPassRef}
-                      className="bg-white p-4 sm:p-5 rounded-2xl shadow-2xl inline-block border-2 border-gold/70 cursor-pointer hover:scale-[1.02] transition-transform group relative overflow-hidden"
-                      onClick={handleCopyPassURL}
-                      title="Click to copy public pass URL"
-                    >
-                      <QRCodeSVG
-                        bookingToken={effectiveToken}
-                        size={220}
-                        level="Q"
-                        foregroundColor="#0a0a0f"
-                        backgroundColor="#ffffff"
-                        includeMargin={false}
-                      />
-                      <div className="absolute inset-0 bg-neutral-950/15 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none backdrop-blur-[1px]">
-                        <span className="bg-neutral-950/90 text-gold text-[10px] font-bold px-2.5 py-1.5 rounded-lg border border-gold/30 shadow-md flex items-center gap-1.5 font-mono">
-                          <QrCode size={12} /> Ready to Scan
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Booking Token & Copy Button */}
-                  <div className="mt-3 bg-white/[0.06] border border-white/10 p-2.5 rounded-xl flex items-center justify-between text-[11px] font-mono text-neutral-300">
-                    <span className="truncate max-w-[190px]">{effectiveToken}</span>
-                    <button
-                      type="button"
-                      onClick={handleCopyPassToken}
-                      className="text-[11px] font-bold text-gold hover:text-white bg-gold/15 border border-gold/30 px-2.5 py-0.5 rounded-md transition-colors flex items-center gap-1 cursor-pointer shrink-0"
-                    >
-                      {copiedToken ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
-                      {copiedToken ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-
-                  {/* Dynamic Data Guarantee Note */}
-                  <div className="mt-4 p-3 rounded-xl bg-white/[0.03] border border-white/10 text-left text-[11px] text-neutral-400 space-y-1">
-                    <div className="flex items-center gap-1.5 text-gold font-semibold font-mono text-[10px] uppercase tracking-wider">
-                      <Sparkles size={12} /> Permanent Pass &amp; Auto-Sync
-                    </div>
-                    <p className="leading-relaxed">
-                      This unique QR code never changes. When downpayments are settled or orders are updated, all data automatically syncs in real-time when scanned.
-                    </p>
-                  </div>
-
-                  {/* Actions Grid */}
-                  <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-white/10 text-xs font-semibold">
-                    <a
-                      href={passUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn-outline !border-white/20 !text-neutral-200 hover:!text-white hover:!bg-white/10 hover:!border-gold/50 py-2.5 flex items-center justify-center gap-1.5 rounded-xl transition-all"
-                    >
-                      <ExternalLink size={13} className="text-gold" /> Open Pass
-                    </a>
-
-                    <button
-                      type="button"
-                      onClick={handleDownloadPassSVG}
-                      className="btn-outline !border-white/20 !text-neutral-200 hover:!text-white hover:!bg-white/10 hover:!border-gold/50 py-2.5 flex items-center justify-center gap-1.5 rounded-xl transition-all cursor-pointer"
-                    >
-                      <Download size={13} className="text-gold" /> Download
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleCopyPassURL}
-                      className="btn-outline !border-white/20 !text-neutral-200 hover:!text-white hover:!bg-white/10 hover:!border-gold/50 py-2 flex items-center justify-center gap-1.5 rounded-xl transition-all cursor-pointer col-span-1"
-                    >
-                      {copiedPassUrl ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} className="text-gold" />}
-                      {copiedPassUrl ? "URL Copied" : "Copy Link"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handlePrintReceipt}
-                      className="btn-outline !border-white/20 !text-neutral-200 hover:!text-white hover:!bg-white/10 hover:!border-gold/50 py-2 flex items-center justify-center gap-1.5 rounded-xl transition-all cursor-pointer col-span-1"
-                    >
-                      <Printer size={12} className="text-gold" /> Print Pass
-                    </button>
-                  </div>
-
-                </div>
-              </div>
-
-              {/* ── COLUMN 2: RESERVATION RECEIPT DETAILS & BREAKDOWN ── */}
-              <div className="lg:col-span-7 space-y-4">
-                <div className="border border-gold/25 rounded-3xl p-6 sm:p-7 bg-white/95 backdrop-blur-md shadow-xl space-y-5">
-                  
-                  {/* Receipt Title & Reference */}
-                  <div className="flex items-center justify-between pb-4 border-b border-neutral-200/80">
-                    <div>
-                      <span className="text-[10px] font-bold text-gold uppercase tracking-widest block font-mono">Official Reservation</span>
-                      <h2 className="font-heading text-xl sm:text-2xl font-bold text-neutral-950">Photoshoot Summary</h2>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block font-mono">Booking Number</span>
-                      <span className="font-mono font-extrabold text-base sm:text-lg text-primary bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-lg inline-block text-amber-950">
-                        {bookingResult.booking_number}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Key Line Items */}
-                  <div className="space-y-3 text-xs font-body">
-                    
-                    {/* Service & Tier */}
-                    <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/60 via-white to-amber-50/20 border border-amber-200/80 flex items-start justify-between gap-3 shadow-2xs hover:border-gold/60 transition-all">
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900/80 block font-mono">
-                          Service &amp; Package
-                        </span>
-                        <span className="font-bold text-sm text-neutral-950 block">
-                          {selectedService?.name} {selectedTier && `(${selectedTier.name})`}
-                        </span>
-                        {selectedTier?.duration && (
-                          <span className="text-[11px] text-neutral-600 flex items-center gap-1.5 font-medium">
-                            <Clock size={12} className="text-gold" /> Session Duration: {selectedTier.duration}
-                          </span>
-                        )}
-                      </div>
-                      <span className="font-extrabold text-neutral-950 text-base shrink-0 font-heading">₱{basePrice.toLocaleString()}</span>
-                    </div>
-
-                    {/* Student / Client Profile */}
-                    <div className="p-4 rounded-2xl bg-gradient-to-br from-neutral-50/70 via-white to-amber-50/15 border border-neutral-200/80 space-y-2 shadow-2xs">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block font-mono">
-                        Client Information
-                      </span>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <span className="text-neutral-400 block text-[10px] uppercase font-medium">Name:</span>
-                          <span className="font-semibold text-neutral-900 block truncate">
-                            {[editFirstName, editMiddleName, editLastName].filter(Boolean).join(" ") || "Client"}
-                          </span>
-                        </div>
-                        {editPhone && (
-                          <div>
-                            <span className="text-neutral-400 block text-[10px] uppercase font-medium">Contact:</span>
-                            <span className="font-semibold text-neutral-900 block truncate">{editPhone}</span>
-                          </div>
-                        )}
-                        {isAcademicService && studentSchool && (
-                          <div className="col-span-2 pt-2 border-t border-neutral-200/60">
-                            <span className="text-neutral-400 block text-[10px] uppercase font-medium">Academic Details:</span>
-                            <span className="font-semibold text-gold block truncate">
-                              {studentSchool} {studentCourse ? `• ${studentCourse}` : (selectedShsStrand ? `• ${selectedShsStrand}` : '')} {studentSection ? `(${studentSection})` : ''}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Schedule & Location */}
-                    <div className="p-4 rounded-2xl bg-gradient-to-br from-neutral-50/70 via-white to-amber-50/15 border border-neutral-200/80 space-y-1.5 shadow-2xs">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block font-mono">
-                        Target Schedule &amp; Venue
-                      </span>
-                      <div className="font-medium text-neutral-900 text-xs sm:text-sm">
-                        {isSchoolPartner
-                          ? "Coordinated via Official School Agreement (Batch Notification)"
-                          : `${eventDate || "Date TBD"} at ${STUDIO_TIME_SLOTS.find(s => s.time === preferredTime)?.label || preferredTime}`}
-                      </div>
-                      <div className="text-[11px] text-neutral-600 flex items-center gap-1.5 mt-0.5 truncate font-medium">
-                        <MapPin size={12} className="text-gold shrink-0" />
-                        <span className="truncate">{resolvedLocation}</span>
-                      </div>
-                    </div>
-
-                    {/* Add-ons List if any */}
-                    {selectedAddOns.length > 0 && (
-                      <div className="p-4 rounded-2xl bg-gradient-to-br from-neutral-50/70 via-white to-amber-50/15 border border-neutral-200/80 space-y-2 shadow-2xs">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 font-mono">
-                            Selected Add-ons ({selectedAddOns.length})
-                          </span>
-                          <span className="font-bold text-gold">+₱{addOnsTotal.toLocaleString()}</span>
-                        </div>
-                        <div className="space-y-1">
-                          {selectedAddOns.map((a, i) => (
-                            <div key={i} className="flex justify-between text-[11px] text-neutral-600">
-                              <span>• {a.name}</span>
-                              <span className="font-medium text-neutral-900">+₱{parsePrice(a.price).toLocaleString()}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Financial Breakdown Table */}
-                    <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-100/50 via-amber-50/40 to-amber-100/30 border border-amber-300/80 space-y-3 mt-2 shadow-xs">
-                      <div className="flex justify-between items-center text-neutral-700">
-                        <span className="font-medium">Total Photography Package:</span>
-                        <span className="font-heading font-bold text-neutral-950 text-base">{formattedTotal}</span>
-                      </div>
-
-                      <div className="flex justify-between items-center py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500/20 via-gold/25 to-amber-500/20 border border-gold/60 text-amber-950 font-bold">
-                        <div className="flex items-center gap-1.5">
-                          <Timer size={15} className="text-amber-900" />
-                          <span className="text-xs sm:text-sm">50% Downpayment Due (2h–12h Window):</span>
-                        </div>
-                        <span className="text-base sm:text-lg text-amber-950 font-extrabold font-heading">{formattedDownPayment}</span>
-                      </div>
-
-                      <div className="flex justify-between text-xs text-neutral-600 pt-0.5">
-                        <span>Remaining Balance (Due on shoot day):</span>
-                        <span className="font-semibold text-neutral-900">{formattedRemaining}</span>
-                      </div>
-                    </div>
-
-                  </div>
-
-                  {/* Primary Action Buttons */}
-                  <div className="pt-2 space-y-2.5">
-                    <Link
-                      to="/dashboard/payments"
-                      className="btn-primary w-full flex items-center justify-center gap-2 py-4 text-sm font-bold !bg-gradient-to-r !from-amber-400 !via-gold !to-amber-500 !text-neutral-950 shadow-xl shadow-gold/25 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer rounded-2xl"
-                    >
-                      <CreditCard size={16} /> Pay Downpayment in Billing &amp; Payments <ArrowRight size={16} />
-                    </Link>
-
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <Link
-                        to={`/dashboard/bookings/${bookingResult.id}`}
-                        className="btn-outline w-full flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold rounded-xl hover:border-gold transition-colors"
-                      >
-                        <FileText size={13} className="text-gold" /> Order Details
-                      </Link>
-                      <Link
-                        to="/dashboard/bookings"
-                        className="btn-outline w-full flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold rounded-xl hover:border-gold transition-colors"
-                      >
-                        My Bookings
-                      </Link>
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-
-            </div>
-
-            {/* ── Full-Width Companion App & Mobile Scanner Banner ── */}
-            <div className="rounded-2xl border border-gold/30 bg-gradient-to-r from-neutral-950 via-[#18140e] to-neutral-950 p-5 text-left text-white shadow-xl relative overflow-hidden z-10">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-gold/10 rounded-full blur-2xl pointer-events-none" />
-              
-              <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-start gap-3.5">
-                  <div className="w-12 h-12 rounded-2xl bg-gold/15 border border-gold/30 flex items-center justify-center shrink-0">
-                    <span className="text-2xl">📱</span>
-                  </div>
-                  <div>
-                    <h4 className="font-heading text-sm sm:text-base font-bold text-gold">
-                      Track Your Booking Live on Mobile
-                    </h4>
-                    <p className="text-xs text-neutral-300 font-body leading-relaxed max-w-xl mt-0.5">
-                      Scan your QR pass with any iPhone or Android camera to view live studio updates. Install the <strong className="text-white">E-Kodak Companion App</strong> for real-time milestone notifications and photo delivery alerts.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-500/40 px-3 py-1.5 rounded-xl flex items-center gap-1 font-mono">
-                    <Check size={13} /> Mobile Camera Ready
+              <div>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h1 className="font-heading text-lg sm:text-xl font-bold text-neutral-950">
+                    Booking Reserved Successfully!
+                  </h1>
+                  <span className="font-mono text-xs font-bold bg-amber-500/10 text-amber-900 border border-amber-500/30 px-2.5 py-0.5 rounded-lg">
+                    #{activeBooking.booking_number}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Tentatively Held
                   </span>
                 </div>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Slot secured in studio schedule queue. Once admin confirms your reservation, you can pay your downpayment directly.
+                </p>
               </div>
+            </div>
+
+            {/* Hold Window Capsule */}
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs shrink-0 font-medium self-start sm:self-auto">
+              <Timer size={14} className="text-amber-700 shrink-0" />
+              <span>50% Downpayment: <strong className="font-bold text-neutral-950">{formattedDownPayment}</strong></span>
+              <span className="text-neutral-300">·</span>
+              <span className="text-[11px] text-amber-800 font-semibold">Direct Payment Once Confirmed</span>
+            </div>
+          </div>
+
+          {/* ── 3-Column Balanced Layout: Left (QR Pass) · Center (Details & Payment) · Right (Progress Sidebar) ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+            
+            {/* ── 1. LEFT COLUMN: PROMINENT LARGE QR STUDIO PASS (lg:col-span-4) ── */}
+            <div className="lg:col-span-4 bg-gradient-to-b from-[#121115] via-[#16151c] to-[#0f0e13] rounded-2xl sm:rounded-3xl p-5 sm:p-6 text-white shadow-xl border border-gold/30 flex flex-col justify-between h-full relative overflow-hidden space-y-4">
+              <div className="absolute top-0 right-0 w-44 h-44 bg-gold/10 rounded-full blur-3xl pointer-events-none" />
+
+              {/* Pass Header */}
+              <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-white/10 text-xs relative z-10">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  <span className="font-mono font-bold text-gold text-xs uppercase tracking-wider">
+                    Camera-Ready Pass
+                  </span>
+                </div>
+                <span className="font-mono text-neutral-400 text-xs">
+                  #{activeBooking.booking_number}
+                </span>
+              </div>
+
+              {/* Prominent Large QR Code Canvas */}
+              <div className="relative text-center my-auto py-1 z-10 flex flex-col items-center justify-center">
+                <div className="relative inline-block">
+                  {/* Precision Gold Camera Viewfinder Reticle Brackets */}
+                  <div className="absolute -top-2 -left-2 w-6 h-6 border-t-2 border-l-2 border-gold rounded-tl-xs pointer-events-none z-20" />
+                  <div className="absolute -top-2 -right-2 w-6 h-6 border-t-2 border-r-2 border-gold rounded-tr-xs pointer-events-none z-20" />
+                  <div className="absolute -bottom-2 -left-2 w-6 h-6 border-b-2 border-l-2 border-gold rounded-bl-xs pointer-events-none z-20" />
+                  <div className="absolute -bottom-2 -right-2 w-6 h-6 border-b-2 border-r-2 border-gold rounded-br-xs pointer-events-none z-20" />
+                  
+                  <div 
+                    ref={qrPassRef}
+                    className="bg-white p-3.5 sm:p-4 rounded-2xl shadow-2xl inline-block border border-gold/60 cursor-pointer hover:scale-[1.02] transition-transform group relative overflow-hidden"
+                    onClick={handleCopyPassURL}
+                    title="Click to copy public pass URL"
+                  >
+                    <QRCodeSVG
+                      bookingToken={effectiveToken}
+                      size={220}
+                      level="Q"
+                      foregroundColor="#0a0a0f"
+                      backgroundColor="#ffffff"
+                      includeMargin={false}
+                    />
+                    <div className="absolute inset-0 bg-neutral-950/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                      <span className="bg-neutral-950/90 text-gold text-xs font-bold px-2.5 py-1 rounded-md border border-gold/30 flex items-center gap-1.5 font-mono shadow-lg">
+                        <QrCode size={11} /> Scan Pass
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Digital Token & Copy Strip */}
+              <div className="bg-white/[0.06] border border-white/10 px-3 py-2 rounded-xl flex items-center justify-between text-xs font-mono text-neutral-300 relative z-10">
+                <div className="min-w-0 pr-2">
+                  <span className="text-[11.5px] text-neutral-400 block uppercase font-sans font-medium">Digital Token:</span>
+                  <span className="truncate block max-w-[170px] text-white font-semibold text-xs">{effectiveToken}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyPassToken}
+                  className="text-xs font-bold text-gold hover:text-white bg-gold/15 border border-gold/30 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  {copiedToken ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                  {copiedToken ? "Copied" : "Copy"}
+                </button>
+              </div>
+
+              {/* 2x2 Action Buttons Grid (Clean, equal heights) */}
+              <div className="grid grid-cols-2 gap-2 text-xs relative z-10">
+                <a
+                  href={passUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="h-10 px-2.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 hover:border-gold/50 text-neutral-200 hover:text-white flex items-center justify-center gap-1.5 transition-all font-medium text-xs text-center"
+                >
+                  <ExternalLink size={12} className="text-gold shrink-0" /> Open Pass
+                </a>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadPassSVG}
+                  className="h-10 px-2.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 hover:border-gold/50 text-neutral-200 hover:text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer font-medium text-xs text-center"
+                >
+                  <Download size={12} className="text-gold shrink-0" /> Download
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyPassURL}
+                  className="h-10 px-2.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 hover:border-gold/50 text-neutral-200 hover:text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer font-medium text-xs text-center"
+                >
+                  {copiedPassUrl ? <Check size={12} className="text-emerald-400 shrink-0" /> : <Copy size={12} className="text-gold shrink-0" />}
+                  {copiedPassUrl ? "Copied" : "Copy Link"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePrintReceipt}
+                  className="h-10 px-2.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 hover:border-gold/50 text-neutral-200 hover:text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer font-medium text-xs text-center"
+                >
+                  <Printer size={12} className="text-gold shrink-0" /> Print
+                </button>
+              </div>
+
+              {/* Clean Micro Sync Footer */}
+              <div className="pt-2 border-t border-white/10 text-center text-xs text-neutral-400 relative z-10">
+                <span className="text-gold font-medium">📱 Live Studio Pass:</span> Present at reception for instant check-in.
+              </div>
+            </div>
+
+            {/* ── 2. CENTER COLUMN: RESERVATION DETAILS & PAYMENT SUMMARY (lg:col-span-5) ── */}
+            <div className="lg:col-span-5 flex flex-col justify-between h-full space-y-4">
+              
+              {/* Top: Photoshoot Details Card */}
+              <div className="bg-white rounded-2xl sm:rounded-3xl p-5 shadow-xs border border-neutral-200/80 space-y-3.5">
+                <div className="flex items-center justify-between pb-2.5 border-b border-neutral-100">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
+                      <Camera size={14} />
+                    </div>
+                    <h3 className="font-heading text-sm font-bold text-neutral-950">
+                      Photoshoot Details
+                    </h3>
+                  </div>
+                  <span className="text-[11px] font-semibold text-neutral-500">
+                    Studio Confirmed
+                  </span>
+                </div>
+
+                {/* 2-Column Grid: Package & Schedule */}
+                <div className="grid sm:grid-cols-2 gap-2.5 text-xs items-stretch">
+                  {/* Package Card */}
+                  <div className="p-3 rounded-xl bg-amber-50/40 border border-amber-200/70 flex flex-col justify-between space-y-1">
+                    <div>
+                      <span className="text-[11.5px] font-mono font-bold uppercase tracking-wider text-amber-900/70 block">
+                        Package &amp; Tier
+                      </span>
+                      <p className="font-heading font-bold text-neutral-950 text-xs sm:text-sm mt-0.5 truncate">
+                        {selectedService?.name}
+                      </p>
+                      <p className="text-[11.5px] text-neutral-700 font-medium">
+                        Tier: <span className="font-semibold text-amber-950">{selectedTier?.name || "Standard"}</span>
+                      </p>
+                    </div>
+                    <p className="text-xs text-neutral-600 flex items-center gap-1 pt-1 border-t border-amber-200/40">
+                      <Clock size={11} className="text-gold shrink-0" />
+                      <span>{detectedSessionInfo.duration}</span>
+                    </p>
+                  </div>
+
+                  {/* Schedule Card */}
+                  <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200/70 flex flex-col justify-between space-y-1">
+                    <div>
+                      <span className="text-[11.5px] font-mono font-bold uppercase tracking-wider text-neutral-400 block">
+                        {detectedSessionInfo.isSchool ? "Date & School Venue" : "Date & Studio Venue"}
+                      </span>
+                      <p className="font-heading font-bold text-neutral-950 text-xs sm:text-sm mt-0.5 flex items-center gap-1 truncate">
+                        <Calendar size={12} className="text-gold shrink-0" />
+                        <span className="truncate">
+                          {isSchoolPartner
+                            ? "Official School Batch Schedule"
+                            : (eventDate ? eventDate : "Date TBD")}
+                        </span>
+                      </p>
+                      <p className="text-[11.5px] text-neutral-700 font-medium">
+                        {!isSchoolPartner && preferredTime 
+                          ? (STUDIO_TIME_SLOTS.find(s => s.time === preferredTime)?.label || preferredTime) 
+                          : (isSchoolPartner ? "School Batch Hours" : "Time Slot TBD")}
+                      </p>
+                    </div>
+                    <p className="text-xs text-neutral-600 flex items-center gap-1 pt-1 border-t border-neutral-200/40 truncate">
+                      <MapPin size={11} className="text-gold shrink-0" />
+                      <span className="truncate">{resolvedLocation}</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Graduate & Participant Strip */}
+                <div className="p-3 rounded-xl bg-neutral-50/80 border border-neutral-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div>
+                    <span className="text-[11.5px] font-mono font-bold uppercase tracking-wider text-neutral-400 block">
+                      {isAcademicService ? "Graduate / Student" : "Client"}
+                    </span>
+                    <p className="font-heading font-bold text-neutral-950 text-xs mt-0.5">
+                      {isAcademicService 
+                        ? ([studentFirstName, studentMiddleName, studentLastName].filter(Boolean).join(" ") || "Student")
+                        : ([editFirstName, editMiddleName, editLastName].filter(Boolean).join(" ") || "Client")}
+                      {editPhone && <span className="text-neutral-500 font-normal ml-1 text-[11px]">({editPhone})</span>}
+                    </p>
+                  </div>
+
+                  {isAcademicService && studentSchool && (
+                    <div className="text-left sm:text-right">
+                      <span className="text-[11.5px] font-mono font-bold uppercase tracking-wider text-neutral-400 block">
+                        Academic Campus
+                      </span>
+                      <p className="font-semibold text-neutral-900 text-xs truncate max-w-[200px]">
+                        {studentSchool}
+                      </p>
+                      <p className="text-xs text-gold font-medium truncate max-w-[200px]">
+                        {studentCourse || selectedShsStrand} {studentBatch ? `• ${studentBatch}` : ''}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Add-ons mini strip (if any) */}
+                {selectedAddOns.length > 0 && (
+                  <div className="px-3 py-2 rounded-xl bg-amber-50/30 border border-amber-200/60 flex items-center justify-between text-xs">
+                    <span className="text-neutral-700 text-[11px] truncate max-w-[240px]">
+                      Add-ons: <strong className="text-neutral-900">{selectedAddOns.map(a => a.name).join(', ')}</strong>
+                    </span>
+                    <span className="font-bold text-gold text-xs shrink-0">+₱{addOnsTotal.toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom: Payment Breakdown & CTAs */}
+              <div className="bg-white rounded-2xl sm:rounded-3xl p-5 shadow-xs border border-neutral-200/80 space-y-3.5">
+                <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
+                  <div className="flex items-center gap-2">
+                    <CreditCard size={15} className="text-amber-700" />
+                    <h3 className="font-heading text-sm font-bold text-neutral-950">
+                      Payment Breakdown
+                    </h3>
+                  </div>
+                  <span className="text-[11px] font-mono font-semibold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                    Guaranteed Rate
+                  </span>
+                </div>
+
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between items-center text-neutral-600 text-[11.5px]">
+                    <span>Base Package</span>
+                    <span className="font-medium text-neutral-900">₱{basePrice.toLocaleString()}</span>
+                  </div>
+
+                  {selectedAddOns.length > 0 && (
+                    <div className="flex justify-between items-center text-neutral-600 text-[11.5px]">
+                      <span>Selected Add-ons</span>
+                      <span className="font-medium text-gold">+₱{addOnsTotal.toLocaleString()}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-center pt-1.5 border-t border-neutral-100 text-xs font-bold text-neutral-950">
+                    <span>Total Package Value</span>
+                    <span className="font-heading text-base font-bold text-neutral-950">{formattedTotal}</span>
+                  </div>
+                </div>
+
+                {/* Highlighted 50% Downpayment Banner */}
+                <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-400/20 to-amber-500/15 border border-gold/60 flex items-center justify-between gap-3 shadow-2xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-900 flex items-center justify-center shrink-0 border border-gold/40">
+                      <Timer size={16} className="text-amber-800" />
+                    </div>
+                    <div>
+                      <span className="text-[11.5px] font-mono font-bold uppercase tracking-wider text-amber-900/80 block">
+                        50% Downpayment Due
+                      </span>
+                      <p className="text-[11px] text-amber-950">
+                        Payable Upon Admin Confirmation
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-heading font-extrabold text-base sm:text-lg text-neutral-950 block">
+                      {formattedDownPayment}
+                    </span>
+                    <span className="text-[11.5px] text-amber-800 font-medium">Due Now</span>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center text-[11px] text-neutral-500 px-0.5">
+                  <span>Balance payable at studio:</span>
+                  <span className="font-semibold text-neutral-800">{formattedRemaining}</span>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="space-y-2 pt-1">
+                  <Link
+                    to="/dashboard/payments"
+                    className="btn-primary w-full h-11 flex items-center justify-center gap-2 text-xs sm:text-sm font-bold !bg-gradient-to-r !from-amber-400 !via-gold !to-amber-500 !text-neutral-950 shadow-md shadow-gold/25 hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer rounded-xl"
+                  >
+                    <CreditCard size={16} /> Pay Downpayment in Billing &amp; Payments <ArrowRight size={15} />
+                  </Link>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <Link
+                      to={`/dashboard/bookings/${activeBooking.id}`}
+                      className="h-9 flex items-center justify-center gap-1.5 font-medium rounded-lg border border-neutral-200 hover:border-gold hover:text-neutral-950 text-neutral-700 bg-neutral-50/50 hover:bg-neutral-100 transition-colors text-xs text-center"
+                    >
+                      <FileText size={12} className="text-gold shrink-0" /> Order Details
+                    </Link>
+                    <Link
+                      to="/dashboard/bookings"
+                      className="h-9 flex items-center justify-center gap-1.5 font-medium rounded-lg border border-neutral-200 hover:border-gold hover:text-neutral-950 text-neutral-700 bg-neutral-50/50 hover:bg-neutral-100 transition-colors text-xs text-center"
+                    >
+                      My Bookings
+                    </Link>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* ── 3. RIGHT VERTICAL SIDEBAR: ANIMATED BOOKING PROGRESS & WHAT HAPPENS NEXT (lg:col-span-3) ── */}
+            <div className="lg:col-span-3 bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs border border-neutral-200/80 flex flex-col justify-between h-full space-y-3 relative">
+              
+              {/* Header */}
+              <div className="pb-2.5 border-b border-neutral-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
+                    <Sparkles size={14} />
+                  </div>
+                  <div>
+                    <h3 className="font-heading text-sm font-bold text-neutral-950 leading-tight">
+                      Booking Progress
+                    </h3>
+                    <p className="text-xs text-neutral-400">
+                      Hover steps for full details
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Vertical Animated Progress Stepper */}
+              <div className="relative flex-1 flex flex-col justify-between py-1 space-y-2.5">
+                {/* Connecting Vertical Track Line */}
+                <div className="absolute top-4 bottom-4 left-5 w-0.5 bg-neutral-200 z-0" />
+                <div className="absolute top-4 left-5 w-0.5 h-[25%] bg-gradient-to-b from-emerald-500 to-amber-500 z-0" />
+
+                {progressMilestones.map((item) => {
+                  const StepIcon = item.icon;
+                  return (
+                    <div 
+                      key={item.step}
+                      className="group relative z-10 flex items-start gap-3 p-2 rounded-xl transition-all duration-200 hover:bg-amber-50/60 border border-transparent hover:border-amber-200/70 cursor-pointer"
+                    >
+                      {/* Animated Icon Avatar */}
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-200 ${item.avatarClass}`}>
+                        <StepIcon size={18} />
+                      </div>
+
+                      {/* Step Text Summary */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[11.5px] font-mono font-bold uppercase tracking-wider text-neutral-400">
+                            Step {item.step}
+                          </span>
+                          <span className={`text-[11px] font-semibold px-1.5 py-0.2 rounded ${item.chipClass}`}>
+                            {item.badge}
+                          </span>
+                        </div>
+                        <h4 className="font-heading font-bold text-xs text-neutral-950 mt-0.5">
+                          {item.title}
+                        </h4>
+                        <p className="text-xs text-neutral-500 truncate mt-0.5">
+                          {item.timing}
+                        </p>
+                      </div>
+
+                      {/* ── Interactive Hoverable Text Display Popover / Floating Tooltip ── */}
+                      <div className="absolute right-full mr-2.5 top-1/2 -translate-y-1/2 w-64 p-3.5 bg-neutral-950/95 text-white rounded-2xl shadow-2xl border border-gold/40 pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 z-50 backdrop-blur-md hidden lg:block">
+                        <div className="flex items-center justify-between gap-1 pb-1.5 border-b border-white/10 mb-2">
+                          <span className="text-xs font-mono font-bold text-gold uppercase tracking-wider flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gold" /> Step {item.step}: {item.title}
+                          </span>
+                          <span className="text-[11px] text-neutral-400">
+                            {item.timing}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-neutral-300 leading-snug">
+                          {item.tooltip}
+                        </p>
+                        {/* Caret / Pointer Arrow */}
+                        <div className="absolute top-1/2 -translate-y-1/2 -right-1.5 w-3 h-3 bg-neutral-950 border-r border-t border-gold/40 rotate-45" />
+                      </div>
+
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Bottom Quick Help Tip */}
+              <div className="pt-2 border-t border-neutral-100 text-xs text-neutral-400 flex items-center gap-1.5">
+                <Info size={12} className="text-gold shrink-0" />
+                <span>Next: Settle 50% deposit in Payments</span>
+              </div>
+
             </div>
 
           </div>
+
         </div>
       </div>
     );
   }
 
-  const stepTitles = [
+      const stepTitles = [
     "Service", "Package Tier", "Add-ons", "Client Details", "Schedule & Studio", "Style Pegs", "Review"
   ];
 
@@ -1602,13 +2339,13 @@ export default function BookingPage() {
       {totalAmount > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-primary text-white px-4 py-3 flex items-center justify-between shadow-warm-md border-t border-primary-light/20">
           <div>
-            <p className="text-[10px] text-neutral-300 uppercase tracking-wider font-medium">Total Balance</p>
+            <p className="text-xs text-neutral-300 uppercase tracking-wider font-medium">Total Balance</p>
             <p className="font-heading font-bold text-xl text-white">{formattedTotal}</p>
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <p className="text-[10px] text-gold font-bold">{formattedDownPayment}</p>
-              <p className="text-[10px] text-neutral-400">50% down</p>
+              <p className="text-xs text-gold font-bold">{formattedDownPayment}</p>
+              <p className="text-xs text-neutral-400">50% down</p>
             </div>
             <span className="text-[11px] font-bold bg-gold text-primary px-3 py-1.5 rounded-full">
               Step {step}/7
@@ -1637,276 +2374,306 @@ export default function BookingPage() {
         document.body
       )}
 
-      {/* Preset Peg Lightbox Preview Modal rendered via Portal outside layout & stepper context */}
-      {activePegModal && typeof document !== "undefined" && createPortal(
-        <div 
-          className="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in overflow-y-auto"
-          onClick={() => setActivePegModal(null)}
-        >
+      
+      {/* Confirmation Modal Before Step 4 (Luxury White Theme - Non-Redundant & Uncluttered) */}
+      {showStep4ConfirmModal && typeof document !== "undefined" && (() => {
+        const rawInclusions = selectedTier?.highlights || selectedTier?.inclusions || [];
+        const consolidatedInclusionsList = consolidateInclusions(rawInclusions, selectedService?.tiers);
+        const romanTier = selectedTier?._idx !== undefined
+          ? ["I", "II", "III", "IV", "V", "VI"][selectedTier._idx] || "I"
+          : (selectedTier?.name?.match(/set\s*([a-z0-9]+)/i)?.[1]?.toUpperCase() || "I");
+
+        return createPortal(
           <div 
-            className="relative max-w-2xl w-full bg-white rounded-2xl overflow-hidden shadow-2xl flex flex-col my-auto"
-            onClick={e => e.stopPropagation()}
+            className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-fade-in"
+            onClick={() => setShowStep4ConfirmModal(false)}
           >
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100 bg-neutral-50">
-              <div>
-                <span className="text-[10px] font-bold text-gold uppercase tracking-wider block">
-                  {activePegModal.tag} Style Reference
-                </span>
-                <h3 className="font-heading text-base font-bold text-primary">
-                  {activePegModal.title}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActivePegModal(null)}
-                className="p-1.5 text-neutral-400 hover:text-primary rounded-lg hover:bg-neutral-200 transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-3 bg-neutral-950 flex items-center justify-center max-h-[70vh] overflow-hidden">
-              <img 
-                src={activePegModal.image} 
-                alt={activePegModal.title} 
-                className="max-h-[65vh] w-auto object-contain rounded-lg shadow-md"
-              />
-            </div>
-            <div className="p-4 bg-neutral-50 border-t border-neutral-100 flex items-center justify-between gap-3">
-              <p className="text-xs text-neutral-600 font-body">
-                {activePegModal.desc}
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  togglePresetPeg(activePegModal);
-                  setActivePegModal(null);
+            <div
+              className="relative w-full max-w-3xl rounded-3xl overflow-hidden shadow-2xl border border-amber-300/80 my-auto animate-scale-up"
+              style={{
+                background: "linear-gradient(165deg, #FFFFFF 0%, #FAF8F5 50%, #F5F0E8 100%)",
+                boxShadow: "0 25px 60px -15px rgba(44, 34, 22, 0.22), 0 0 35px rgba(212,175,55,0.15), inset 0 1px 0 rgba(255,255,255,1)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Golden top decorative bar */}
+              <div className="h-1.5 w-full bg-gradient-to-r from-amber-400 via-[#D4AF37] to-amber-500" />
+
+              {/* Header (Clean, Non-redundant) */}
+              <div 
+                className="p-6 sm:p-7 pb-4 border-b border-amber-200/60 flex items-start justify-between gap-4"
+                style={{
+                  background: "linear-gradient(90deg, rgba(212,175,55,0.12) 0%, rgba(255,255,255,0.85) 100%)",
                 }}
-                className={`btn-primary text-xs py-2 px-4 shrink-0 font-bold ${
-                  selectedPresetPegs.includes(activePegModal.title) ? "!bg-emerald-600 !text-white" : ""
-                }`}
               >
-                {selectedPresetPegs.includes(activePegModal.title) ? "Selected ✓" : "Select this Peg"}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Confirmation Modal Before Step 4 */}
-      {showStep4ConfirmModal && typeof document !== "undefined" && createPortal(
-        <div 
-          className="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-fade-in"
-          onClick={() => setShowStep4ConfirmModal(false)}
-        >
-          <div
-            className="relative w-full max-w-2xl bg-neutral-950 text-white rounded-3xl overflow-hidden shadow-2xl border border-gold/40 my-auto animate-scale-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Golden top decorative bar */}
-            <div className="h-1.5 w-full bg-gradient-to-r from-amber-400 via-gold to-amber-500" />
-
-            {/* Header */}
-            <div className="p-5 sm:p-6 pb-4 border-b border-white/10 flex items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-gold bg-gold/15 border border-gold/30 px-3 py-0.5 rounded-full flex items-center gap-1.5 shadow-xs font-mono">
-                    <Sparkles size={11} className="text-gold" /> Step 3 Confirmation
-                  </span>
+                <div>
+                  <h3 className="font-heading text-2xl sm:text-3xl font-extrabold text-neutral-950 tracking-tight">
+                    Review Selection
+                  </h3>
+                  <p className="text-xs sm:text-sm text-neutral-500 font-medium mt-1">
+                    Verify package deliverables before proceeding to client details.
+                  </p>
                 </div>
-                <h3 className="font-heading text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-                  Confirm Selections
-                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowStep4ConfirmModal(false)}
+                  className="w-9 h-9 rounded-full bg-white/90 hover:bg-white text-neutral-500 hover:text-neutral-900 border border-neutral-200/80 flex items-center justify-center transition-colors shrink-0 shadow-2xs cursor-pointer"
+                  title="Close modal"
+                >
+                  <X size={18} />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowStep4ConfirmModal(false)}
-                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-neutral-400 hover:text-white flex items-center justify-center transition-colors shrink-0"
-                title="Close modal"
-              >
-                <X size={18} />
-              </button>
-            </div>
 
-            {/* Price banner strictly on left top-side format */}
-            <div className="px-6 py-3 bg-neutral-900/90 border-b border-white/10 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-gold animate-pulse shrink-0" />
-                <span className="font-heading font-bold text-neutral-200 text-xs sm:text-sm tracking-tight">
-                  Total Balance : <span className="text-gold font-extrabold">{formattedTotal}</span> | Downpayment: <span className="text-amber-400 font-extrabold">{formattedDownPayment}</span> / 50%
-                </span>
+              {/* Financial Summary Strip (Concise, Zero repetition) */}
+              <div className="px-6 sm:px-7 py-3.5 bg-gradient-to-r from-amber-50/90 via-[#FAF7F2] to-amber-50/60 border-b border-amber-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-5 sm:gap-6">
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-neutral-500 font-mono block">
+                      Total
+                    </span>
+                    <span className="font-heading font-extrabold text-neutral-950 text-base sm:text-lg">
+                      {formattedTotal}
+                    </span>
+                  </div>
+                  <div className="h-7 w-px bg-amber-200/80" />
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-amber-900 font-mono block">
+                      50% Downpayment
+                    </span>
+                    <span className="font-heading font-black text-[#B5883F] text-base sm:text-lg">
+                      {formattedDownPayment}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-xs text-neutral-600 font-medium bg-white/70 border border-amber-200/60 px-3 py-1.5 rounded-xl w-fit">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                  <span>Remaining balance settled on shoot day</span>
+                </div>
               </div>
-            </div>
 
-            {/* Modal Body: Photo 1 Hierarchy (NO PRICES INSIDE CARDS) */}
-            <div className="p-5 sm:p-6 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
-              <div className="grid sm:grid-cols-2 gap-3.5">
-                {/* Package Main Card (NO PRICE) */}
-                <div className="relative rounded-2xl overflow-hidden border border-white/15 bg-neutral-900/90 p-4 flex flex-col justify-between shadow-lg">
-                  <div className="flex items-start gap-3">
-                    <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-gold/30 relative">
+              {/* Modal Body: Spacious, Beautiful Studio Cards */}
+              <div className="p-6 sm:p-7 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                {/* Unified Package & Set Showcase Card (No duplicate Set A label) */}
+                <div className="rounded-2xl border border-amber-200/80 bg-white p-4 sm:p-5 shadow-2xs hover:border-amber-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start sm:items-center gap-4 min-w-0">
+                    <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-xl overflow-hidden shrink-0 border border-amber-300/80 relative shadow-2xs bg-neutral-100">
                       <img 
                         src={selectedService?.coverImage || selectedService?.cover_image || SERVICE_COVER_MAP[selectedService?.slug] || "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=400&q=80"}
                         alt={selectedService?.name}
                         className="w-full h-full object-cover"
                       />
                     </div>
-                    <div className="min-w-0">
-                      <span className="text-[9px] uppercase font-bold tracking-wider text-gold/80 block font-mono">
-                        Package
-                      </span>
-                      <h4 className="font-heading font-bold text-white text-sm truncate mt-0.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="text-[11px] uppercase font-bold tracking-wider text-amber-900 bg-amber-100/80 border border-amber-200/80 px-2 py-0.5 rounded font-mono">
+                          {selectedService?.category || "Package"}
+                        </span>
+                        <span className="text-[11px] font-bold text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded font-mono">
+                          Collection {romanTier}
+                        </span>
+                      </div>
+                      <h4 className="font-heading font-extrabold text-neutral-950 text-base sm:text-lg leading-snug">
                         {selectedService?.name || "Selected Package"}
                       </h4>
+                      <p className="text-xs text-neutral-500 font-medium mt-0.5 flex items-center gap-1.5 flex-wrap">
+                        <span className="text-amber-800 font-bold">{selectedTier?.name || "Standard Set"}</span>
+                        <span className="text-neutral-300">•</span>
+                        <span>{consolidatedInclusionsList.length} Consolidated Deliverables</span>
+                      </p>
                     </div>
                   </div>
-                </div>
 
-                {/* Selected Set Mini Card (NO PRICE) */}
-                <div className="relative rounded-2xl overflow-hidden border border-gold/45 bg-gradient-to-br from-neutral-900 via-neutral-900 to-amber-950/25 p-4 flex flex-col justify-between shadow-lg">
-                  <div className="flex items-start gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400/25 via-gold/15 to-transparent border border-gold/50 flex items-center justify-center shrink-0 shadow-inner">
-                      <span className="font-heading font-black text-gold text-lg">
-                        {selectedTier?._idx !== undefined
-                          ? ["I", "II", "III", "IV", "V", "VI"][selectedTier._idx] || "I"
-                          : (selectedTier?.name?.match(/set\s*([a-z0-9]+)/i)?.[1]?.toUpperCase() || "I")}
-                      </span>
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-[9px] uppercase font-bold tracking-wider text-gold block font-mono">
-                        Set
-                      </span>
-                      <h4 className="font-heading font-bold text-white text-sm truncate mt-0.5">
-                        {selectedTier?.name || "Standard Set"}
-                      </h4>
-                      <span className="text-[11px] text-neutral-300 font-mono">
-                        {(selectedTier?.highlights || selectedTier?.inclusions || []).length} Inclusions
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Inclusions Preview */}
-              {(selectedTier?.highlights || selectedTier?.inclusions || []).length > 0 && (
-                <div className="rounded-2xl border border-white/10 bg-neutral-900/70 p-3.5 space-y-2">
-                  <p className="text-[9px] font-black uppercase tracking-[0.25em] text-gold/70 font-mono">
-                    What's Included
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
-                    {(selectedTier?.highlights || selectedTier?.inclusions || []).slice(0, 6).map((h, i) => {
-                      const cfg = getInclusionConfig(h);
-                      return (
-                        <div key={i} className="flex items-center gap-2 p-1.5 px-2 rounded-lg bg-black/40 border border-white/10">
-                          <div className={`w-4 h-4 rounded ${cfg.iconBg} flex items-center justify-center shrink-0`}>
-                            {cfg.icon}
-                          </div>
-                          <span className="text-[11px] text-neutral-200 truncate">
-                            {cfg.mainText}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Selected Add-ons Mini List (NO PRICE) */}
-              {selectedAddOns.length > 0 && (
-                <div className="rounded-2xl border border-white/10 bg-neutral-900/70 p-3.5 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Sparkles size={13} className="text-gold" />
-                    <span className="text-xs font-bold text-neutral-200 uppercase tracking-wider font-mono">
-                      Add-ons ({selectedAddOns.length})
+                  <div className="sm:text-right shrink-0 border-t sm:border-t-0 pt-2.5 sm:pt-0 border-neutral-100 flex sm:flex-col justify-between items-center sm:items-end">
+                    <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 font-mono">
+                      Package Price
+                    </span>
+                    <span className="font-heading font-black text-lg text-neutral-950">
+                      ₱{parsePrice(selectedTier?.price || selectedService?.base_price || 0).toLocaleString()}
                     </span>
                   </div>
-                  <div className="grid sm:grid-cols-2 gap-1.5 pt-1">
-                    {selectedAddOns.map((addon, idx) => {
-                      const visuals = getAddOnVisuals(addon.name, addon.category);
-                      return (
-                        <div 
-                          key={idx}
-                          className="p-2 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between gap-2"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 border ${visuals.iconBg}`}>
-                              {visuals.icon}
+                </div>
+
+                {/* Deliverables Section (Consolidated & Non-Redundant) */}
+                {consolidatedInclusionsList.length > 0 && (
+                  <div className="rounded-2xl border border-amber-200/80 bg-white p-4 sm:p-5 space-y-3 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold uppercase tracking-wider text-amber-900 font-mono flex items-center gap-1.5">
+                        <Sparkles size={13} className="text-amber-700" /> Deliverables ({consolidatedInclusionsList.length})
+                      </p>
+                      <span className="text-[11px] text-neutral-500 font-medium">
+                        Studio Quality Guaranteed
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-60 overflow-y-auto pr-1.5 custom-scrollbar">
+                      {consolidatedInclusionsList.map((p, i) => {
+                        const isSingular = p.quantity && (p.quantity.startsWith("1 Piece") || p.quantity.startsWith("1 piece") || p.quantity.startsWith("1 Unit") || p.quantity.startsWith("1 unit"));
+                        const isFree = p.quantity && p.quantity.toLowerCase().includes("free");
+                        const showQuantityBadge = p.quantity && !isSingular && !p.quantity.toLowerCase().includes("included");
+
+                        return (
+                          <div 
+                            key={i} 
+                            className="flex items-center justify-between gap-3 p-2.5 px-3.5 rounded-xl bg-gradient-to-r from-amber-50/30 via-white to-white border border-neutral-200/80 hover:border-amber-300 transition-colors shadow-2xs min-w-0"
+                          >
+                            {/* Left: Icon + Title & Spec */}
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border shadow-2xs ${p.iconBg}`}>
+                                {p.icon}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs font-heading font-bold text-neutral-900 truncate" title={p.title}>
+                                  {p.title}
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                  {p.specBadge && (
+                                    <span className="text-xs text-neutral-500 font-mono font-medium truncate">
+                                      {p.specBadge}
+                                    </span>
+                                  )}
+                                  {p.subtitle && (
+                                    <>
+                                      {p.specBadge && <span className="text-neutral-300 text-xs">•</span>}
+                                      <span className="text-xs text-neutral-400 font-body truncate">
+                                        {p.subtitle}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <span className="text-xs text-neutral-200 font-medium truncate">
-                              {visuals.cleanName}
+
+                            {/* Right: Quantity Badge (Only for >1 or FREE, no redundant '1 Piece' tags) */}
+                            {showQuantityBadge && (
+                              <span className="text-xs font-bold px-2 py-0.5 rounded-md font-mono shrink-0 shadow-2xs bg-amber-100/90 text-amber-950 border border-amber-300">
+                                {p.quantity}
+                              </span>
+                            )}
+                            {isFree && (
+                              <span className="text-xs font-bold px-2 py-0.5 rounded-md font-mono shrink-0 shadow-2xs bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                FREE
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Selected Add-ons Mini List */}
+                {selectedAddOns.length > 0 && (
+                  <div className="rounded-2xl border border-amber-200/80 bg-white p-4 sm:p-5 space-y-3 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-amber-900 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                        <Sparkles size={13} className="text-amber-700" /> Additional Add-ons ({selectedAddOns.length})
+                      </span>
+                      <span className="text-[11px] text-neutral-500 font-medium">Selected extras</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-48 overflow-y-auto pr-1.5 custom-scrollbar">
+                      {selectedAddOns.map((addon, idx) => {
+                        const visuals = getAddOnVisuals(addon.name, addon.category);
+                        return (
+                          <div 
+                            key={idx}
+                            className="p-2.5 px-3.5 rounded-xl bg-white border border-neutral-200/80 hover:border-amber-300 flex items-center justify-between gap-3 shadow-2xs min-w-0"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${visuals.lightIconBg || visuals.iconBg}`}>
+                                {visuals.icon}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs font-heading font-bold text-neutral-900 truncate" title={visuals.cleanName}>
+                                  {visuals.cleanName}
+                                </div>
+                                {visuals.specBadge && (
+                                  <div className="text-xs text-neutral-500 font-mono mt-0.5 truncate">
+                                    {visuals.specBadge}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <span className="text-xs font-heading font-extrabold text-neutral-950 font-mono shrink-0">
+                              +₱{parsePrice(addon.price || 0).toLocaleString()}
                             </span>
                           </div>
-                          {visuals.specBadge && (
-                            <span className="px-1.5 py-0.2 rounded text-[8.5px] font-bold uppercase tracking-wider bg-gold/20 text-gold border border-gold/40 font-mono shrink-0">
-                              {visuals.specBadge}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+
+              {/* Footer Actions */}
+              <div className="p-4 sm:p-5 px-6 sm:px-7 bg-white/95 border-t border-amber-200/60 flex items-center justify-between gap-4">
+                <button
+                  type="button"
+                  onClick={() => setShowStep4ConfirmModal(false)}
+                  className="px-5 py-2.5 rounded-xl border border-neutral-200 hover:border-amber-400 bg-white hover:bg-neutral-50 text-neutral-700 hover:text-neutral-900 text-xs font-bold transition-all flex items-center gap-2 shadow-2xs cursor-pointer"
+                >
+                  <ArrowLeft size={14} /> Back
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowStep4ConfirmModal(false);
+                    setStep(4);
+                  }}
+                  className="group flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 via-gold to-amber-500 hover:from-amber-300 hover:to-amber-500 text-neutral-950 font-heading font-black text-xs sm:text-sm h-11 px-6 sm:px-7 rounded-xl shadow-md shadow-gold/25 hover:shadow-gold/45 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shrink-0"
+                >
+                  <span>Proceed to Details</span>
+                  <ArrowRight size={15} className="stroke-[2.5]" />
+                </button>
+              </div>
             </div>
+          </div>,
+          document.body
+        );
+      })()}
 
-            {/* Footer Actions */}
-            <div className="p-4 sm:p-5 bg-neutral-900/90 border-t border-white/10 flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => setShowStep4ConfirmModal(false)}
-                className="px-4 py-2.5 rounded-xl border border-white/20 text-neutral-300 hover:text-white hover:bg-white/10 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                <ArrowLeft size={14} /> Back
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowStep4ConfirmModal(false);
-                  setStep(4);
-                }}
-                className="btn-primary !bg-gradient-to-r !from-amber-400 !via-gold !to-amber-500 !text-neutral-950 font-bold px-6 py-2.5 text-xs tracking-wider shadow-lg shadow-gold/25 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <Check size={16} className="stroke-[3]" /> Confirm &amp; Proceed to Details
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* ── Order Confirmation Modal Before Step 8 (QR Pass) ────────── */}
+      {/* ── Order Confirmation Modal Before Step 8 (QR Pass) (Luxury White Theme) ────────── */}
       {showOrderConfirmModal && typeof document !== "undefined" && createPortal(
         <div 
-          className="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-fade-in"
+          className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-fade-in"
           onClick={() => !isSubmitting && setShowOrderConfirmModal(false)}
         >
           <div
-            className="relative w-full max-w-2xl bg-neutral-950 text-white rounded-3xl overflow-hidden shadow-2xl border border-gold/40 my-auto animate-scale-up"
+            className="relative w-full max-w-2xl sm:max-w-3xl rounded-3xl overflow-hidden shadow-2xl border border-amber-300/80 my-auto animate-scale-up"
+            style={{
+              background: "linear-gradient(165deg, #FFFFFF 0%, #FAF8F5 50%, #F5F0E8 100%)",
+              boxShadow: "0 25px 60px -15px rgba(44, 34, 22, 0.22), 0 0 35px rgba(212,175,55,0.15), inset 0 1px 0 rgba(255,255,255,1)",
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Golden top decorative bar */}
-            <div className="h-1.5 w-full bg-gradient-to-r from-amber-400 via-gold to-amber-500" />
+            <div className="h-1.5 w-full bg-gradient-to-r from-amber-400 via-[#D4AF37] to-amber-500" />
 
             {/* Header */}
-            <div className="p-5 sm:p-6 pb-4 border-b border-white/10 flex items-start justify-between gap-4">
+            <div 
+              className="p-6 sm:p-7 pb-4 border-b border-amber-200/60 flex items-start justify-between gap-4"
+              style={{
+                background: "linear-gradient(90deg, rgba(212,175,55,0.12) 0%, rgba(255,255,255,0.85) 100%)",
+              }}
+            >
               <div>
                 <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-gold bg-gold/15 border border-gold/30 px-3 py-0.5 rounded-full flex items-center gap-1.5 shadow-xs font-mono">
-                    <Sparkles size={11} className="text-gold" /> Pre-Submission Verification
+                  <span className="text-xs font-bold uppercase tracking-widest text-amber-900 bg-amber-500/15 border border-amber-500/30 px-3 py-1 rounded-full flex items-center gap-1.5 shadow-2xs font-mono">
+                    <Sparkles size={11} className="text-amber-700" /> Pre-Submission Verification
                   </span>
                 </div>
-                <h3 className="font-heading text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                <h3 className="font-heading text-2xl sm:text-3xl font-extrabold text-neutral-950 tracking-tight mt-1">
                   Confirm Your Reservation
                 </h3>
-                <p className="text-xs text-neutral-400 font-body mt-1">
+                <p className="text-xs sm:text-sm text-neutral-500 font-medium mt-1">
                   Please review your photoshoot session details before we generate your digital QR pass.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => !isSubmitting && setShowOrderConfirmModal(false)}
-                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-neutral-400 hover:text-white flex items-center justify-center transition-colors shrink-0 disabled:opacity-50"
+                className="w-9 h-9 rounded-full bg-white/90 hover:bg-white text-neutral-500 hover:text-neutral-900 border border-neutral-200/80 flex items-center justify-center transition-colors shrink-0 shadow-2xs cursor-pointer disabled:opacity-50"
                 disabled={isSubmitting}
                 title="Close modal"
               >
@@ -1915,51 +2682,61 @@ export default function BookingPage() {
             </div>
 
             {/* Price banner */}
-            <div className="px-6 py-3 bg-neutral-900/90 border-b border-white/10 flex flex-wrap items-center justify-between gap-2">
+            <div className="px-6 sm:px-7 py-3.5 bg-gradient-to-r from-amber-50/90 via-[#FAF7F2] to-amber-50/60 border-b border-amber-200/70 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-gold animate-pulse shrink-0" />
-                <span className="font-heading font-bold text-neutral-200 text-xs sm:text-sm tracking-tight">
-                  Total Package : <span className="text-gold font-extrabold">{formattedTotal}</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span className="font-heading font-bold text-neutral-800 text-xs sm:text-sm tracking-tight">
+                  Total Package : <span className="text-neutral-950 font-extrabold">{formattedTotal}</span>
                 </span>
               </div>
               <div className="flex items-center gap-3 text-xs">
-                <span className="text-neutral-400">
-                  Down Payment (50%): <span className="text-amber-400 font-bold">{formattedDownPayment}</span>
+                <span className="text-neutral-600 font-medium">
+                  Down Payment (50%): <span className="text-[#B5883F] font-bold">{formattedDownPayment}</span>
                 </span>
-                <span className="text-neutral-400 hidden sm:inline">•</span>
-                <span className="text-neutral-400">
-                  At Studio: <span className="text-white font-bold">{formattedRemaining}</span>
+                <span className="text-neutral-300 hidden sm:inline">•</span>
+                <span className="text-neutral-600 font-medium">
+                  At Studio: <span className="text-neutral-900 font-bold">{formattedRemaining}</span>
                 </span>
               </div>
             </div>
 
             {/* Modal Body */}
-            <div className="p-5 sm:p-6 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar font-body">
-              
+            <div className="p-6 sm:p-7 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar font-body">
+              {/* Top Validation & Reservation Error Alert */}
+              {validationError && (
+                <div className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-300 flex items-start gap-3 text-xs text-rose-900 shadow-md animate-shake">
+                  <AlertCircle size={20} className="text-rose-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <strong className="block font-bold text-sm text-rose-950">Unable to Reserve Photoshoot Slot</strong>
+                    <p className="mt-1 text-xs text-rose-800 leading-relaxed font-medium">{validationError}</p>
+                  </div>
+                </div>
+              )}
+
               {/* Package & Inclusions Card */}
-              <div className="rounded-2xl border border-white/15 bg-neutral-900/90 p-4 shadow-lg space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <div className="rounded-2xl border border-amber-200/80 bg-white p-4 sm:p-5 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
                   <div className="flex items-center gap-2">
-                    <Package size={16} className="text-gold" />
-                    <span className="font-heading font-bold text-sm text-white">
-                      {selectedService?.name} — <span className="text-gold">{selectedTier?.name || "Standard"}</span>
+                    <Package size={16} className="text-amber-700" />
+                    <span className="font-heading font-bold text-sm sm:text-base text-neutral-950">
+                      {selectedService?.name} — <span className="text-amber-800">{selectedTier?.name || "Standard"}</span>
                     </span>
                   </div>
-                  <span className="text-xs font-mono font-bold text-gold">₱{basePrice.toLocaleString()}</span>
+                  <span className="text-xs sm:text-sm font-mono font-bold text-[#B5883F]">₱{basePrice.toLocaleString()}</span>
                 </div>
 
                 {/* Inclusions List */}
                 {tierInclusions.length > 0 && (
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                      <span className="text-xs font-bold text-amber-900 uppercase tracking-wider font-mono">
                         Package Inclusions ({tierInclusions.length} items)
                       </span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {tierInclusions.map((item, idx) => (
-                        <div key={idx} className="flex items-start gap-2 p-2 rounded-xl bg-white/[0.04] border border-white/10 text-xs text-neutral-300">
-                          <Check size={13} className="text-emerald-400 mt-0.5 shrink-0 stroke-[2.5]" />
+                        <div key={idx} className="flex items-start gap-2 p-2 px-2.5 rounded-xl bg-gradient-to-r from-amber-50/30 via-white to-white border border-neutral-200/80 text-xs text-neutral-800 shadow-2xs">
+                          <Check size={13} className="text-emerald-600 mt-0.5 shrink-0 stroke-[2.5]" />
                           <span className="leading-tight">{item}</span>
                         </div>
                       ))}
@@ -1968,69 +2745,89 @@ export default function BookingPage() {
                 )}
               </div>
 
-              {/* Client / Student Information (Important Only) */}
-              <div className="rounded-2xl border border-white/15 bg-neutral-900/90 p-4 shadow-lg space-y-2.5">
-                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              {/* Client / Student Information */}
+              <div className="rounded-2xl border border-amber-200/80 bg-white p-4 sm:p-5 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
                   <div className="flex items-center gap-2">
-                    {isAcademicService ? <GraduationCap size={16} className="text-gold" /> : <User size={16} className="text-blue-400" />}
-                    <span className="font-heading font-bold text-sm text-white">
-                      {isAcademicService ? "Student Details" : "Client Details"}
+                    {isAcademicService ? <GraduationCap size={16} className="text-amber-700" /> : <User size={16} className="text-amber-700" />}
+                    <span className="font-heading font-bold text-sm sm:text-base text-neutral-950">
+                      Participant &amp; Account Details
                     </span>
                   </div>
-                  {isAcademicService && studentIdNumber && (
-                    <span className="text-[11px] font-mono text-gold bg-gold/15 px-2 py-0.5 rounded border border-gold/30">
-                      ID: {studentIdNumber}
-                    </span>
-                  )}
+                  <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border font-mono ${
+                    bookingFor === "someone_else"
+                      ? "bg-amber-100 text-amber-900 border-amber-300"
+                      : "bg-emerald-50 text-emerald-800 border-emerald-300"
+                  }`}>
+                    {bookingFor === "someone_else" ? "Someone Else" : "Personal (Self)"}
+                  </span>
                 </div>
 
-                {isAcademicService ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                    <div>
-                      <span className="text-[10px] uppercase text-neutral-400 block font-medium">Student Name</span>
-                      <span className="font-bold text-white text-sm">
-                        {[editFirstName, editMiddleName, editLastName].filter(Boolean).join(" ") || "Student Name"}
+                {/* Account Owner vs Participant Distinction Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  {/* Account Owner */}
+                  <div className="p-3 rounded-xl bg-neutral-50/80 border border-neutral-200/80">
+                    <span className="text-xs uppercase text-neutral-500 block font-bold font-mono">Account Owner (Payer)</span>
+                    <span className="font-bold text-neutral-900 text-sm block mt-0.5">
+                      {activeProfile?.first_name || user?.user_metadata?.first_name || "Mark June"} {activeProfile?.last_name || user?.user_metadata?.last_name || "Repunte"}
+                    </span>
+                    <span className="text-[11px] text-neutral-500 block truncate mt-0.5">{activeProfile?.email || user?.email}</span>
+                  </div>
+
+                  {/* Booking Participant */}
+                  <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-300/80">
+                    <span className="text-xs uppercase text-amber-900 block font-bold font-mono">
+                      {isAcademicService ? "Graduate / Student" : "Photoshoot Participant"}
+                    </span>
+                    <span className="font-bold text-neutral-950 text-sm block mt-0.5">
+                      {[participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") || "Participant"}
+                    </span>
+                    {bookingFor === "someone_else" && participantRelationship && (
+                      <span className="text-xs text-amber-800 font-medium block mt-0.5">
+                        Relationship: <strong>{participantRelationship}</strong>
                       </span>
-                    </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Direct Contact for Participant if Someone Else */}
+                {bookingFor === "someone_else" && (participantPhone || participantEmail) && (
+                  <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-700 pt-1 border-t border-neutral-100">
+                    {participantPhone && <span>Direct Mobile: <strong className="text-neutral-900">{participantPhone}</strong></span>}
+                    {participantEmail && <span>Participant Email: <strong className="text-neutral-900">{participantEmail}</strong></span>}
+                  </div>
+                )}
+
+                {isAcademicService && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs pt-2.5 border-t border-neutral-100">
                     <div>
-                      <span className="text-[10px] uppercase text-neutral-400 block font-medium">School / Campus</span>
-                      <span className="font-medium text-neutral-200 truncate block" title={studentSchool}>
+                      <span className="text-xs uppercase text-neutral-500 block font-bold font-mono">School / Campus</span>
+                      <span className="font-medium text-neutral-900 truncate block mt-0.5" title={studentSchool}>
                         {studentSchool || "N/A"}
                       </span>
                     </div>
                     <div>
-                      <span className="text-[10px] uppercase text-neutral-400 block font-medium">
+                      <span className="text-xs uppercase text-neutral-500 block font-bold font-mono">
                         {studentType === "COLLEGE" ? "Degree / Course" : "Academic Strand"}
                       </span>
-                      <span className="font-medium text-neutral-200">
+                      <span className="font-medium text-neutral-900 block mt-0.5">
                         {studentType === "COLLEGE" ? (studentCourse || "N/A") : (selectedShsStrand || "N/A")}
                       </span>
                     </div>
                     <div>
-                      <span className="text-[10px] uppercase text-neutral-400 block font-medium">Section &amp; Batch</span>
-                      <span className="font-bold text-gold">
-                        {studentSection || "N/A"} • <span className="text-neutral-300 font-normal">{studentBatch || "Batch 2026"}</span>
+                      <span className="text-xs uppercase text-neutral-500 block font-bold font-mono">Section &amp; Batch</span>
+                      <span className="font-bold text-amber-900 block mt-0.5">
+                        {studentSection ? (studentSection.toLowerCase().startsWith('section') ? studentSection : `Section ${studentSection}`) : "N/A"} • <span className="text-neutral-500 font-normal">{studentBatch || "Batch 2026"}</span>
                       </span>
+                    </div>
+                    <div>
+                      <span className="text-xs uppercase text-neutral-500 block font-bold font-mono">Student ID</span>
+                      <span className="font-mono text-neutral-900 font-semibold block mt-0.5">{studentIdNumber || "N/A"}</span>
                     </div>
                     {yearbookMotto && (
-                      <div className="sm:col-span-2 p-2.5 rounded-xl bg-white/[0.03] border border-white/10">
-                        <span className="text-[10px] uppercase text-gold block font-semibold">Yearbook Motto</span>
-                        <p className="italic text-neutral-300 mt-0.5">&quot;{yearbookMotto}&quot;</p>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <span className="text-[10px] uppercase text-neutral-400 block font-medium">Client Name</span>
-                      <span className="font-bold text-white">
-                        {[editFirstName, editLastName].filter(Boolean).join(" ") || "Client"}
-                      </span>
-                    </div>
-                    {editPhone && (
-                      <div>
-                        <span className="text-[10px] uppercase text-neutral-400 block font-medium">Contact Phone</span>
-                        <span className="font-medium text-neutral-200">{editPhone}</span>
+                      <div className="sm:col-span-2 p-2.5 rounded-xl bg-amber-50/40 border border-amber-200/80">
+                        <span className="text-xs uppercase text-amber-900 block font-bold font-mono">Yearbook Motto</span>
+                        <p className="italic text-neutral-800 mt-0.5">&quot;{yearbookMotto}&quot;</p>
                       </div>
                     )}
                   </div>
@@ -2038,23 +2835,23 @@ export default function BookingPage() {
               </div>
 
               {/* Photoshoot Schedule & Location */}
-              <div className="rounded-2xl border border-white/15 bg-neutral-900/90 p-4 shadow-lg space-y-2 text-xs">
-                <div className="flex items-center gap-2 pb-2 border-b border-white/10">
-                  <Calendar size={16} className="text-gold" />
-                  <span className="font-heading font-bold text-sm text-white">Schedule &amp; Location</span>
+              <div className="rounded-2xl border border-amber-200/80 bg-white p-4 sm:p-5 shadow-2xs space-y-2.5 text-xs">
+                <div className="flex items-center gap-2 pb-2 border-b border-neutral-100">
+                  <Calendar size={16} className="text-amber-700" />
+                  <span className="font-heading font-bold text-sm text-neutral-950">Schedule &amp; Location</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <div>
-                    <span className="text-[10px] uppercase text-neutral-400 block font-medium">Date &amp; Time</span>
-                    <span className="font-bold text-neutral-200 block mt-0.5">
+                    <span className="text-xs uppercase text-neutral-500 block font-bold font-mono">Date &amp; Time</span>
+                    <span className="font-bold text-neutral-900 block mt-0.5">
                       {isAcademicService && academicBookingMode === "SCHOOL_PARTNER"
                         ? "Official School Batch Schedule (Agreed with School)"
                         : `${eventDate || "Date TBD"} at ${STUDIO_TIME_SLOTS.find(s => s.time === preferredTime)?.label || preferredTime || "TBD"}`}
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] uppercase text-neutral-400 block font-medium">Pictorial Venue</span>
-                    <span className="font-bold text-neutral-200 block mt-0.5 truncate" title={resolvedLocation}>
+                    <span className="text-xs uppercase text-neutral-500 block font-bold font-mono">Pictorial Venue</span>
+                    <span className="font-bold text-neutral-900 block mt-0.5 truncate" title={resolvedLocation}>
                       {isAcademicService && academicBookingMode === "SCHOOL_PARTNER" && locationType === "CAMPUS"
                         ? `On-Campus (${studentSchool || "School Campus"})`
                         : resolvedLocation}
@@ -2065,18 +2862,18 @@ export default function BookingPage() {
 
               {/* Selected Add-ons (if any) */}
               {selectedAddOns.length > 0 && (
-                <div className="rounded-2xl border border-white/15 bg-neutral-900/90 p-4 shadow-lg space-y-2 text-xs">
-                  <div className="flex items-center justify-between pb-2 border-b border-white/10">
-                    <span className="font-heading font-bold text-sm text-white flex items-center gap-1.5">
-                      <PlusCircle size={15} className="text-gold" /> Selected Add-ons ({selectedAddOns.length})
+                <div className="rounded-2xl border border-amber-200/80 bg-white p-4 sm:p-5 shadow-2xs space-y-2 text-xs">
+                  <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
+                    <span className="font-heading font-bold text-sm text-neutral-950 flex items-center gap-1.5">
+                      <PlusCircle size={15} className="text-amber-700" /> Selected Add-ons ({selectedAddOns.length})
                     </span>
-                    <span className="font-bold text-gold">+₱{addOnsTotal.toLocaleString()}</span>
+                    <span className="font-bold text-[#B5883F] font-mono">+₱{addOnsTotal.toLocaleString()}</span>
                   </div>
                   <div className="space-y-1">
                     {selectedAddOns.map((a, i) => (
-                      <div key={i} className="flex justify-between text-neutral-300 py-0.5">
+                      <div key={i} className="flex justify-between text-neutral-800 py-0.5">
                         <span>• {a.name}</span>
-                        <span className="font-semibold text-gold">+₱{parsePrice(a.price).toLocaleString()}</span>
+                        <span className="font-semibold text-amber-900 font-mono">+₱{parsePrice(a.price).toLocaleString()}</span>
                       </div>
                     ))}
                   </div>
@@ -2084,20 +2881,31 @@ export default function BookingPage() {
               )}
 
               {/* Slot Reservation Hold Notice */}
-              <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/40 flex items-start gap-2.5 text-xs text-amber-200">
-                <Timer size={18} className="text-gold shrink-0 mt-0.5" />
+              <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-300/80 flex items-start gap-2.5 text-xs text-amber-950 shadow-2xs">
+                <Timer size={18} className="text-amber-700 shrink-0 mt-0.5" />
                 <span>
-                  Confirming will place your photoshoot slot on <strong className="text-amber-100">Reserved</strong> status. You will have a <span className="text-white font-semibold underline decoration-gold">2-hour to 12-hour window</span> to settle your 50% reservation downpayment of <strong>₱{downPaymentAmount.toLocaleString()}</strong> in Billing &amp; Payments.
+                  Confirming will place your photoshoot slot on <strong className="text-amber-900 font-bold">Reserved</strong> status. Once our studio admin reviews and confirms your reservation, you can settle your 50% reservation downpayment of <strong>₱{downPaymentAmount.toLocaleString()}</strong> directly in Billing &amp; Payments without any expiration timer.
                 </span>
               </div>
+
+              {/* In-Modal Validation & Reservation Error Alert */}
+              {validationError && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-300 flex items-start gap-2.5 text-xs text-rose-900 shadow-2xs animate-shake">
+                  <AlertCircle size={18} className="text-rose-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <strong className="block font-bold text-rose-950">Unable to Reserve Photoshoot Slot</strong>
+                    <p className="mt-0.5 text-rose-800 leading-relaxed">{validationError}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Footer Actions */}
-            <div className="p-4 sm:p-5 bg-neutral-900/90 border-t border-white/10 flex items-center justify-between gap-3">
+            <div className="p-4 sm:p-5 px-6 sm:px-7 bg-white/95 border-t border-amber-200/60 flex items-center justify-between gap-3">
               <button
                 type="button"
                 onClick={() => !isSubmitting && setShowOrderConfirmModal(false)}
-                className="px-4 py-2.5 rounded-xl border border-white/20 text-neutral-300 hover:text-white hover:bg-white/10 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className="px-5 py-2.5 rounded-xl border border-neutral-200 hover:border-amber-400 bg-white hover:bg-neutral-50 text-neutral-700 hover:text-neutral-900 text-xs font-bold transition-all flex items-center gap-2 shadow-2xs cursor-pointer disabled:opacity-50"
                 disabled={isSubmitting}
               >
                 <ArrowLeft size={14} /> Back to Review
@@ -2107,7 +2915,7 @@ export default function BookingPage() {
                 type="button"
                 onClick={handleSubmitBooking}
                 disabled={isSubmitting}
-                className="btn-primary !bg-gradient-to-r !from-amber-400 !via-gold !to-amber-500 !text-neutral-950 font-bold px-6 py-2.5 text-xs tracking-wider shadow-lg shadow-gold/25 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                className="group flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 via-gold to-amber-500 hover:from-amber-300 hover:to-amber-500 text-neutral-950 font-heading font-black text-xs sm:text-sm h-11 px-6 sm:px-7 rounded-xl shadow-md shadow-gold/25 hover:shadow-gold/45 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shrink-0 disabled:opacity-50"
               >
                 {isSubmitting ? (
                   <>
@@ -2125,7 +2933,226 @@ export default function BookingPage() {
         document.body
       )}
 
-      {/* ── Reservation Success Modal with 2h-12h Payment Window & Auto-Reminders ───────────────────────────────── */}
+      
+      {/* ── Set Selection Beneficiary Confirmation Modal (Step 2) ── */}
+      <AnimatePresence>
+        {showBookingForModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[150] bg-neutral-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+            onClick={() => setShowBookingForModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.94, opacity: 0, y: 16 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.96, opacity: 0, y: 10 }}
+              transition={{ type: "spring", damping: 28, stiffness: 350 }}
+              className="bg-white rounded-3xl shadow-2xl border border-gold/30 p-6 sm:p-7 max-w-lg w-full relative overflow-hidden my-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Golden luxury top bar */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-400 via-gold to-amber-500" />
+
+              {/* Header */}
+              <div className="flex items-center justify-between gap-3 border-b border-neutral-100 pb-4 mb-5 pt-1">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-900 flex items-center justify-center font-bold text-sm border border-amber-500/30">
+                    <UserCheck size={20} />
+                  </div>
+                  <div>
+                    <span className="text-xs font-mono uppercase font-bold tracking-widest text-gold block">
+                      Booking Confirmation
+                    </span>
+                    <h3 className="font-heading font-extrabold text-lg sm:text-xl text-neutral-950 leading-tight">
+                      Who is this booking for?
+                    </h3>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowBookingForModal(false)}
+                  className="w-8 h-8 rounded-full bg-neutral-100 text-neutral-500 hover:text-neutral-950 flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200/80 mb-5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <Package size={16} className="text-gold shrink-0" />
+                  <span className="text-xs font-bold text-neutral-900">
+                    Selected: {(pendingTierToConfirm || selectedTier)?.name || "Session Package"}
+                  </span>
+                </div>
+                <span className="font-heading font-black text-gold text-sm">
+                  {(pendingTierToConfirm || selectedTier)?.price || ""}
+                </span>
+              </div>
+
+              <p className="text-xs text-neutral-600 font-body mb-4 leading-relaxed">
+                Please confirm whether this photography session is for yourself or another participant before proceeding:
+              </p>
+
+              {/* Interactive Choice Cards */}
+              <div className="space-y-3 mb-6">
+                {/* Option A: For Myself */}
+                <div
+                  onClick={() => handleSelectBookingFor("myself")}
+                  className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3.5 ${
+                    bookingFor === "myself"
+                      ? "border-gold bg-gradient-to-br from-amber-500/10 via-amber-50/50 to-white shadow-md shadow-gold/5 ring-1 ring-gold/40"
+                      : "border-neutral-200/80 bg-neutral-50/50 hover:bg-white hover:border-neutral-300"
+                  }`}
+                >
+                  <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
+                    bookingFor === "myself" ? "border-gold bg-gold text-neutral-950" : "border-neutral-300 bg-white"
+                  }`}>
+                    {bookingFor === "myself" && <div className="w-2 h-2 rounded-full bg-neutral-950" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-heading font-bold text-sm text-neutral-950">
+                        For Myself
+                      </span>
+                      <span className="text-gold font-bold text-xs sm:text-sm">
+                        — {customerProfile?.first_name || user?.user_metadata?.first_name || "Mark June"} {customerProfile?.last_name || user?.user_metadata?.last_name || "Repunte"}
+                      </span>
+                      <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        Account Owner
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 font-body mt-1 leading-snug">
+                      Photoshoot session, graduation regalia sizing, and official studio outputs will be issued in your own name.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Option B: For Someone Else */}
+                <div
+                  onClick={() => handleSelectBookingFor("someone_else")}
+                  className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3.5 ${
+                    bookingFor === "someone_else"
+                      ? "border-gold bg-gradient-to-br from-amber-500/10 via-amber-50/50 to-white shadow-md shadow-gold/5 ring-1 ring-gold/40"
+                      : "border-neutral-200/80 bg-neutral-50/50 hover:bg-white hover:border-neutral-300"
+                  }`}
+                >
+                  <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
+                    bookingFor === "someone_else" ? "border-gold bg-gold text-neutral-950" : "border-neutral-300 bg-white"
+                  }`}>
+                    {bookingFor === "someone_else" && <div className="w-2 h-2 rounded-full bg-neutral-950" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-heading font-bold text-sm text-neutral-950">
+                        For Someone Else / Others
+                      </span>
+                      <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                        Participant / Beneficiary
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 font-body mt-1 leading-snug">
+                      Booking for your son, daughter, friend, relative, or client. You will enter their name and details in Step 4.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-100">
+                <button
+                  type="button"
+                  onClick={() => setShowBookingForModal(false)}
+                  className="px-4 py-2.5 rounded-xl border border-neutral-200 text-xs font-bold text-neutral-600 hover:bg-neutral-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (pendingTierToConfirm) {
+                      setSelectedTier(pendingTierToConfirm);
+                      setPendingTierToConfirm(null);
+                      setStep(3);
+                    }
+                    setShowBookingForModal(false);
+                    setValidationError(""); // smoothly advance to Step 3
+                  }}
+                  className="btn-primary !bg-gradient-to-r !from-amber-400 !via-gold !to-amber-500 !text-neutral-950 px-6 py-2.5 text-xs font-bold tracking-wider shadow-md shadow-gold/20 flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95 transition-all"
+                >
+                  <span>Confirm &amp; Proceed to Add-ons</span>
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Low Network Signal Safeguard & Safe Transaction Processing Overlay ── */}
+      <AnimatePresence>
+        {isSubmitting && (networkQuality.isLowSignal || submissionTimeElapsed >= 1) && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="fixed inset-0 z-[99999] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.92, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: -10 }}
+              transition={{ type: "spring", damping: 26, stiffness: 320 }}
+              className="bg-neutral-900 border border-gold/40 shadow-2xl rounded-3xl p-6 sm:p-8 max-w-md w-full text-center relative overflow-hidden"
+            >
+              <div className="absolute -top-16 -right-16 w-36 h-36 bg-gold/15 rounded-full blur-2xl pointer-events-none" />
+              <div className="absolute -bottom-16 -left-16 w-36 h-36 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+
+              {/* Animated Radar/Signal Pulsing Circles */}
+              <div className="relative w-20 h-20 mx-auto mb-5 flex items-center justify-center">
+                <span className="absolute inset-0 rounded-full bg-gold/15 animate-ping" />
+                <span className="absolute inset-2 rounded-full bg-amber-400/20 animate-pulse" />
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-gold flex items-center justify-center text-neutral-950 shadow-lg relative z-10">
+                  <Wifi size={28} className="animate-pulse" />
+                </div>
+              </div>
+
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-semibold mb-3">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                <span>Low Signal Safe-Lock Active</span>
+              </div>
+
+              <h3 className="font-heading font-extrabold text-xl text-white tracking-tight mb-2">
+                Securing Studio Booking
+              </h3>
+
+              <p className="text-neutral-300 text-xs sm:text-sm leading-relaxed mb-5">
+                Low network signal detected. We are holding your transaction state safely in the studio gateway to prevent duplicate payments or unissued booking records.
+              </p>
+
+              {/* Smooth Animated Shimmer Progress Bar */}
+              <div className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden mb-3 border border-neutral-700/60 shadow-inner">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-amber-400 via-gold to-amber-300 rounded-full"
+                  animate={{ x: ["-100%", "100%"] }}
+                  transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}
+                  style={{ width: "65%" }}
+                />
+              </div>
+
+              <div className="flex items-center justify-center gap-2 text-[11px] text-neutral-400">
+                <ShieldCheck size={14} className="text-gold" />
+                <span>Please do not close or refresh this page.</span>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+{/* ── Reservation Success Modal with 2h-12h Payment Window & Auto-Reminders ───────────────────────────────── */}
       {showReservationSuccessModal && createPortal(
         <div
           className="fixed inset-0 z-[9999] bg-neutral-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in text-left font-body"
@@ -2161,6 +3188,33 @@ export default function BookingPage() {
               <p className="text-xs text-neutral-300 font-body mt-1.5 leading-relaxed">
                 Booking Reference: <strong className="text-gold font-mono">{bookingResult?.booking_number || 'New'}</strong>
               </p>
+
+              {/* Distinction: Booking Recipient vs Account Owner */}
+              <div className="mt-3.5 p-3 rounded-2xl bg-white/[0.05] border border-white/10 flex flex-wrap items-center justify-between gap-2 text-left">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
+                    <User size={14} />
+                  </div>
+                  <div>
+                    <span className="text-xs uppercase font-bold tracking-wider text-neutral-400 block leading-none">
+                      Session Participant
+                    </span>
+                    <span className="font-heading font-bold text-white text-xs sm:text-sm mt-0.5 block">
+                      {[participantFirstName, participantLastName].filter(Boolean).join(" ") || "Self"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                    bookingFor === "someone_else"
+                      ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                      : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                  }`}>
+                    {bookingFor === "someone_else" ? `Someone Else · ${participantRelationship || 'Participant'}` : "Myself (Account Owner)"}
+                  </span>
+                </div>
+              </div>
             </div>
 
             {/* Crucial Reservation Information Box */}
@@ -2174,10 +3228,10 @@ export default function BookingPage() {
                   </div>
                   <div>
                     <h4 className="font-bold text-amber-300 text-sm mb-1 flex items-center gap-1.5">
-                      2-Hour to 12-Hour Payment Window
+                      Direct Payment Upon Admin Confirmation
                     </h4>
                     <p className="text-neutral-300 leading-relaxed">
-                      Your schedule slot is temporarily held under <strong className="text-amber-200">Reserved</strong> status. Please settle your 50% reservation downpayment of <strong className="text-gold font-bold">₱{downPaymentAmount.toLocaleString()}</strong> in <strong className="text-white">Billing &amp; Payments</strong> within <span className="underline decoration-gold text-white font-semibold">2 to 12 hours</span> to secure your photographer and session.
+                      Your photoshoot reservation has been submitted for studio review. Once the studio administrator confirms your order, you can settle your 50% downpayment of <strong className="text-gold font-bold">₱{downPaymentAmount.toLocaleString()}</strong> directly in <strong className="text-white">Billing &amp; Payments</strong> without any expiration timer.
                     </p>
                   </div>
                 </div>
@@ -2191,10 +3245,10 @@ export default function BookingPage() {
                   </div>
                   <div>
                     <h4 className="font-bold text-blue-300 text-sm mb-1 flex items-center gap-1.5">
-                      Auto-Notification Reminders Active
+                      Instant Order Confirmation Alert
                     </h4>
                     <p className="text-neutral-300 leading-relaxed">
-                      Our system has automatically scheduled reminder alerts at <strong className="text-blue-200">2 hours</strong>, <strong className="text-blue-200">6 hours</strong>, and <strong className="text-blue-200">12 hours</strong>. You will receive real-time notifications on your client portal and companion app so your reservation stays protected.
+                      You will receive an instant notification as soon as the studio administrator confirms your booking request, allowing you to settle your downpayment directly to lock in your date.
                     </p>
                   </div>
                 </div>
@@ -2239,81 +3293,63 @@ export default function BookingPage() {
 
 
       {/* ── Top Editorial Hero Banner with Studio Philippine Time ────────── */}
-      <div className="mb-8">
+      <div className="mb-5 sm:mb-6">
         <Link to="/services" className="inline-flex items-center gap-1.5 text-neutral-400 hover:text-gold transition-colors font-body text-xs mb-3">
           <ArrowLeft size={14} /> Back to Services Catalog
         </Link>
 
-        <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-neutral-950 via-neutral-900 to-[#121c2d] p-6 sm:p-7 shadow-xl border border-neutral-800">
-          <div className="absolute top-0 right-0 w-80 h-80 bg-gold/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none" />
-          <div className="absolute bottom-0 left-1/4 w-72 h-72 bg-primary/25 rounded-full blur-3xl translate-y-1/3 pointer-events-none" />
-
-          <div className="relative z-10 grid lg:grid-cols-12 gap-6 items-center">
-            <div className="lg:col-span-7 space-y-3">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-gold bg-gold/15 border border-gold/30 px-3 py-1 rounded-full inline-flex items-center gap-1.5 shadow-xs">
-                <Sparkles size={12} className="text-gold" /> E-KODAK STUDIO CLIENT PORTAL
-              </span>
-
-              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-heading text-white font-bold tracking-tight">
-                Welcome back,{' '}
-                <span className="text-gold italic font-normal">{customerProfile?.first_name || profile?.first_name || user?.user_metadata?.first_name || 'Client'}</span>
-              </h1>
-
-              <p className="text-neutral-300 font-body text-xs sm:text-sm max-w-lg leading-relaxed">
-                Review your photo deliverables, schedule your next photoshoot, or track studio order milestones.
-              </p>
-
-              {/* Actions + Integrated Quick Tools Dock */}
-              <div className="pt-2 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  className="btn-primary py-2 px-4 text-xs flex items-center gap-2 shadow-lg shadow-gold/20 hover:scale-105 transition-all"
-                >
-                  <Camera size={15} /> Book a Session
-                </button>
-
-                <div className="flex items-center gap-1 bg-neutral-900/90 border border-neutral-700/80 rounded-xl p-1 backdrop-blur-md shadow-xs">
-                  <button
-                    type="button"
-                    onClick={() => triggerAIAssistant()}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-300 hover:text-gold hover:bg-neutral-800 transition-all hover:scale-110 active:scale-95"
-                    title="Studio Concierge"
-                  >
-                    <Sparkles size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/dashboard/bookings')}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-300 hover:text-gold hover:bg-neutral-800 transition-all hover:scale-110 active:scale-95"
-                    title="My Bookings"
-                  >
-                    <CheckCircle size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/dashboard/progress')}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-300 hover:text-gold hover:bg-neutral-800 transition-all hover:scale-110 active:scale-95"
-                    title="Session Milestones"
-                  >
-                    <Clock size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/dashboard/gallery')}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-300 hover:text-gold hover:bg-neutral-800 transition-all hover:scale-110 active:scale-95"
-                    title="Photo Deliverables"
-                  >
-                    <ImageIcon size={14} />
-                  </button>
-                </div>
-              </div>
+        <DashboardHero
+          role="client"
+          userName={customerProfile?.first_name || profile?.first_name || user?.user_metadata?.first_name || 'Client'}
+          badgeLabel="E-KODAK STUDIO CLIENT PORTAL"
+          badgeIcon={Sparkles}
+          subtitle="Review your photo deliverables, schedule your next photoshoot, or track studio order milestones."
+          primaryAction={{
+            label: 'Book a Session',
+            icon: Camera,
+            onClick: () => {},
+          }}
+          extraActions={
+            <div className="flex items-center gap-1 bg-neutral-900/90 border border-neutral-700/80 rounded-xl p-1 backdrop-blur-md shadow-xs">
+              <button
+                type="button"
+                onClick={() => triggerAIAssistant()}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-300 hover:text-gold hover:bg-neutral-800 transition-all hover:scale-110 active:scale-95 cursor-pointer"
+                title="Studio Concierge"
+                aria-label="Studio Concierge"
+              >
+                <Sparkles size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/dashboard/bookings')}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-300 hover:text-gold hover:bg-neutral-800 transition-all hover:scale-110 active:scale-95 cursor-pointer"
+                title="My Bookings"
+                aria-label="My Bookings"
+              >
+                <CheckCircle size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/dashboard/progress')}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-300 hover:text-gold hover:bg-neutral-800 transition-all hover:scale-110 active:scale-95 cursor-pointer"
+                title="Session Milestones"
+                aria-label="Session Milestones"
+              >
+                <Clock size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/dashboard/gallery')}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-300 hover:text-gold hover:bg-neutral-800 transition-all hover:scale-110 active:scale-95 cursor-pointer"
+                title="Photo Deliverables"
+                aria-label="Photo Deliverables"
+              >
+                <ImageIcon size={14} />
+              </button>
             </div>
-
-            <div className="lg:col-span-5">
-              <LiveClock variant="card" />
-            </div>
-          </div>
-        </div>
+          }
+        />
       </div>
 
       {/* Main Layout: Full-width horizontal space matching steps 1 to 7 */}
@@ -2426,7 +3462,7 @@ export default function BookingPage() {
                       {/* Horizontally Stacked Overlapping Cards with Generous Clearance */}
                       <div 
                         onMouseLeave={() => setHoveredServiceId(null)}
-                        className="relative z-10 flex flex-row flex-nowrap justify-center items-center -space-x-12 sm:-space-x-20 pt-20 sm:pt-24 pb-16 sm:pb-20 px-6 min-h-[660px] sm:min-h-[700px] overflow-visible no-scrollbar"
+                        className="relative z-10 flex flex-row flex-nowrap justify-start lg:justify-center items-center -space-x-12 sm:-space-x-20 pt-20 sm:pt-24 pb-16 sm:pb-20 px-6 min-h-[660px] sm:min-h-[700px] overflow-x-auto lg:overflow-visible no-scrollbar"
                       >
                         {services.map((svc, index) => {
                           const isSelected = selectedService?.id === svc.id;
@@ -2456,7 +3492,7 @@ export default function BookingPage() {
                                 y: isHovered ? -28 : (isOtherHovered ? defaultY + 8 : defaultY),
                                 scale: isHovered ? 1.08 : (isOtherHovered ? 0.93 : 1),
                                 zIndex: isHovered ? 50 : (isSelected ? 30 : index + 10),
-                                filter: isOtherHovered ? "blur(6px) brightness(0.6)" : "blur(0px) brightness(1)",
+                                opacity: isOtherHovered ? 0.5 : 1,
                               }}
                               transition={{
                                 type: "spring",
@@ -2464,7 +3500,7 @@ export default function BookingPage() {
                                 damping: 26,
                                 mass: 0.8
                               }}
-                              style={{ transformOrigin: "center center" }}
+                              style={{ transformOrigin: "center center", willChange: "transform, opacity" }}
                               className="relative shrink-0 cursor-pointer"
                             >
                               {/* Ambient Backlight Glow behind hovered card */}
@@ -2555,7 +3591,7 @@ export default function BookingPage() {
                                   {/* Starting Price & Proceed Action (Icon-only by default, expands on hover) */}
                                   <div className="mt-4 pt-3.5 border-t border-white/20 flex items-center justify-between gap-3">
                                     <div>
-                                      <span className="text-[10px] uppercase font-bold tracking-widest text-neutral-400 block">
+                                      <span className="text-xs uppercase font-bold tracking-widest text-neutral-400 block">
                                         Starting at
                                       </span>
                                       <span className="text-xl sm:text-2xl font-heading font-extrabold text-gold drop-shadow-sm">
@@ -2688,18 +3724,30 @@ export default function BookingPage() {
                             return (
                               <motion.div
                                 key={tier.name || idx}
-                                onMouseEnter={() => setHoveredTierName(tier.name)}
-                                onMouseLeave={() => setHoveredTierName(null)}
-                                onClick={() => { setSelectedTier({ ...tier, _idx: idx }); setValidationError(""); }}
+                                onMouseEnter={() => {
+                                  if (tierHoverTimeoutRef.current) clearTimeout(tierHoverTimeoutRef.current);
+                                  setHoveredTierName(tier.name);
+                                }}
+                                onMouseLeave={() => {
+                                  if (tierHoverTimeoutRef.current) clearTimeout(tierHoverTimeoutRef.current);
+                                  tierHoverTimeoutRef.current = setTimeout(() => {
+                                    setHoveredTierName(null);
+                                  }, 90);
+                                }}
+                                onClick={() => {
+                                    setPendingTierToConfirm({ ...tier, _idx: idx });
+                                    setShowBookingForModal(true);
+                                    setValidationError("");
+                                  }}
                                 animate={{
                                   rotate: isHovered ? 0 : defaultRotate,
                                   y: isHovered ? -26 : (isOtherHovered ? defaultY + 8 : defaultY),
                                   scale: isHovered ? 1.08 : (isOtherHovered ? 0.93 : 1),
                                   zIndex: isHovered ? 60 : (isTierSelected ? 30 : idx + 10),
-                                  filter: isOtherHovered ? "blur(3px) brightness(0.7)" : "blur(0px) brightness(1)",
+                                  opacity: isOtherHovered ? 0.55 : 1,
                                 }}
                                 transition={{ type: "spring", stiffness: 380, damping: 26, mass: 0.8 }}
-                                style={{ transformOrigin: "bottom center" }}
+                                style={{ transformOrigin: "bottom center", willChange: "transform, opacity" }}
                                 className="relative shrink-0 cursor-pointer"
                               >
                                 {/* Active selected glow ring */}
@@ -2766,8 +3814,8 @@ export default function BookingPage() {
                                         </span>
                                       </div>
                                       <div className="flex flex-col">
-                                        <span className="text-[9px] uppercase tracking-[0.25em] text-gold/70 font-bold leading-none">Collection</span>
-                                        <span className="text-[13px] font-heading font-black text-white leading-tight mt-0.5">Set {roman}</span>
+                                        <span className="text-[11px] uppercase tracking-[0.25em] text-gold/70 font-bold leading-none">Collection</span>
+                                        <span className="text-[13px] font-heading font-black text-white leading-tight mt-0.5">{tier.name || `Set ${roman}`}</span>
                                       </div>
                                     </div>
                                     {/* Best value removed as requested */}
@@ -2779,15 +3827,13 @@ export default function BookingPage() {
                                       <h3 className="font-heading font-extrabold text-white leading-tight drop-shadow-md text-lg">
                                         {tier.name}
                                       </h3>
-                                      <p className="text-[10px] text-gold/70 font-semibold mt-0.5">
-                                        {tier.highlights?.length || 0} inclusions · hover to view
-                                      </p>
+                                      
                                     </div>
 
                                     {/* Price & Check Button */}
                                     <div className="px-5 pb-4 pt-2.5 border-t border-white/15 bg-black/60 backdrop-blur-md flex items-center justify-between gap-3">
                                       <div>
-                                        <span className="text-[9px] uppercase font-bold tracking-widest text-neutral-400 block leading-none mb-1">
+                                        <span className="text-[11px] uppercase font-bold tracking-widest text-neutral-400 block leading-none mb-1">
                                           Rate
                                         </span>
                                         <span
@@ -2803,7 +3849,8 @@ export default function BookingPage() {
                                         type="button"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          setSelectedTier({ ...tier, _idx: idx });
+                                          setPendingTierToConfirm({ ...tier, _idx: idx });
+                                          setShowBookingForModal(true);
                                           setValidationError("");
                                         }}
                                         whileHover={{ scale: 1.12 }}
@@ -2822,262 +3869,221 @@ export default function BookingPage() {
                                 </div>
 
                                 {/* ────── RIGHT-SIDE INCLUSIONS PANEL (MODERN MINI-CARD MATCHING SETS CARD) ────── */}
-                                <AnimatePresence>
-                                  {isHovered && tier.highlights && tier.highlights.length > 0 && (
-                                    <motion.div
-                                      key="inclusions-panel"
-                                      initial={{ opacity: 0, x: showPanelLeft ? 18 : -18, scale: 0.95 }}
-                                      animate={{ opacity: 1, x: 0, scale: 1 }}
-                                      exit={{ opacity: 0, x: showPanelLeft ? 18 : -18, scale: 0.95 }}
-                                      transition={{ type: "spring", stiffness: 460, damping: 30, mass: 0.65 }}
-                                      className="absolute top-0 pointer-events-none z-[75]"
-                                      style={{
-                                        [showPanelLeft ? "right" : "left"]: "calc(100% + 14px)",
-                                        width: tier.highlights.length > 8 ? 470 : 430,
-                                      }}
-                                    >
-                                      {/* Luxury Obsidian Glass Mini-Card Matching the Sets Card */}
-                                      <div
-                                        className="rounded-3xl overflow-hidden pointer-events-auto transition-all duration-300 relative shadow-2xl"
+                                 <AnimatePresence>
+                                   {isHovered && tier.highlights && tier.highlights.length > 0 && (() => {
+                                      const popoverWidth = 540;
+
+                                      return (
+                                      <motion.div
+                                        key="inclusions-panel"
+                                        initial={{ opacity: 0, x: showPanelLeft ? 16 : -16, scale: 0.96 }}
+                                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                                        exit={{ opacity: 0, x: showPanelLeft ? 16 : -16, scale: 0.96 }}
+                                        transition={{ type: "spring", stiffness: 460, damping: 30, mass: 0.65 }}
+                                        className="absolute top-0 pointer-events-auto z-[75]"
+                                        onMouseEnter={() => {
+                                          if (tierHoverTimeoutRef.current) clearTimeout(tierHoverTimeoutRef.current);
+                                        }}
+                                        onMouseLeave={() => {
+                                          if (tierHoverTimeoutRef.current) clearTimeout(tierHoverTimeoutRef.current);
+                                          tierHoverTimeoutRef.current = setTimeout(() => {
+                                            setHoveredTierName(null);
+                                            setHoveredInclusionIndex(null);
+                                          }, 90);
+                                        }}
                                         style={{
-                                          background: "linear-gradient(165deg, rgba(24, 22, 20, 0.97) 0%, rgba(12, 11, 10, 0.98) 100%)",
-                                          border: "1px solid rgba(201, 169, 110, 0.45)",
-                                          boxShadow: "0 25px 60px -10px rgba(0,0,0,0.85), 0 0 30px rgba(201,169,110,0.22), inset 0 1px 0 rgba(255,255,255,0.15)",
-                                          backdropFilter: "blur(20px)",
+                                          [showPanelLeft ? "right" : "left"]: "calc(100% + 12px)",
+                                          width: popoverWidth,
+                                          maxWidth: "min(540px, calc(100vw - 320px))",
                                         }}
                                       >
-                                        {/* Golden luxury top accent line */}
-                                        <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-gold to-amber-500" />
-
-                                        {/* Editorial Header */}
+                                        {/* Invisible bridge over the 12px gap to prevent cursor loss */}
                                         <div
-                                          className="px-4 py-3 flex items-center justify-between gap-3"
+                                          className="absolute top-0 bottom-0 pointer-events-auto"
                                           style={{
-                                            background: "linear-gradient(90deg, rgba(201,169,110,0.14) 0%, rgba(255,255,255,0.02) 100%)",
-                                            borderBottom: "1px solid rgba(255,255,255,0.08)",
+                                            [showPanelLeft ? "right" : "left"]: -24,
+                                            width: 30,
+                                          }}
+                                        />
+
+                                        {/* Luxury Compact Card Matching User Reference (Clean, Direct, Hoverable) */}
+                                        <div
+                                          className="rounded-2xl pointer-events-auto transition-all duration-300 relative shadow-2xl"
+                                          style={{
+                                            background: "linear-gradient(170deg, #FFFFFF 0%, #FCFAF7 50%, #F8F3EB 100%)",
+                                            border: "1px solid rgba(212, 175, 55, 0.4)",
+                                            boxShadow: "0 20px 45px -10px rgba(44, 34, 22, 0.16), 0 0 24px rgba(212,175,55,0.08)",
+                                            backdropFilter: "blur(16px)",
                                           }}
                                         >
-                                          <div className="flex items-center gap-2.5">
-                                            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400/25 via-gold/15 to-transparent border border-gold/50 flex items-center justify-center shadow-xs text-gold shrink-0">
-                                              <span className="font-heading font-black text-gold text-sm leading-none">{roman}</span>
-                                            </div>
-                                            <div>
-                                              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-gold/70 leading-none font-mono">
-                                                What's Included
-                                              </p>
-                                              <h3 className="text-lg font-heading font-black text-white leading-tight mt-0.5">
-                                                {tier.name}
-                                              </h3>
+                                          {/* Golden luxury top accent line */}
+                                          <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-[#D4AF37] to-amber-500 rounded-t-2xl" />
+
+                                          {/* Direct Editorial Header (No Set A/B buttons, No Inclusions count badge) */}
+                                          <div
+                                            className="px-4 py-2.5 flex items-center justify-between gap-2 border-b border-[#EFE5D6]"
+                                            style={{
+                                              background: "linear-gradient(90deg, rgba(212,175,55,0.06) 0%, rgba(255,255,255,0.98) 100%)",
+                                            }}
+                                          >
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                              <div className="w-8 h-8 rounded-full bg-[#FAF5EB] border border-[#E6D7BD] flex items-center justify-center shadow-2xs text-amber-950 shrink-0">
+                                                <span className="font-heading font-black text-amber-950 text-sm leading-none">{roman}</span>
+                                              </div>
+                                              <div className="min-w-0">
+                                                <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#9A6A38] leading-none font-mono">
+                                                  What's Included
+                                                </p>
+                                                <h3 className="text-base font-heading font-black text-neutral-900 leading-tight mt-0.5 truncate">
+                                                  {tier.name}
+                                                </h3>
+                                              </div>
                                             </div>
                                           </div>
 
-                                          <div className="flex items-center gap-1.5 shrink-0">
-                                            <span className="text-[9px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-gold/15 text-gold border border-gold/30 font-mono shadow-2xs">
-                                              {tier.highlights.length} Inclusions
-                                            </span>
+                                          {/* Inclusions List - Hoverable Capsules Revealing Specifications & Set Comparisons */}
+                                          <div className="p-3">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                              {tier.highlights.map((h, i) => {
+                                                const p = parseInclusionDetails(h, selectedService.tiers);
+                                                const isLastOdd = !p.isComplimentary && tier.highlights.length % 2 === 1 && i === tier.highlights.length - 1;
+                                                const shouldSpanFull = p.isComplimentary || isLastOdd;
+                                                const isTopRow = i < 2;
+                                                const isItemHovered = hoveredInclusionIndex === i;
+
+                                                return (
+                                                  <div
+                                                    key={i}
+                                                    onMouseEnter={() => setHoveredInclusionIndex(i)}
+                                                    onMouseLeave={() => setHoveredInclusionIndex(null)}
+                                                    className={`relative ${shouldSpanFull ? "col-span-full" : ""}`}
+                                                  >
+                                                    <motion.div
+                                                      whileHover={{ scale: 1.02, x: 2 }}
+                                                      transition={{ type: "spring", stiffness: 420, damping: 26 }}
+                                                      className={`group relative px-3 py-2 rounded-xl border transition-all duration-200 flex items-center justify-between gap-2.5 shadow-2xs select-none cursor-pointer ${
+                                                        isItemHovered
+                                                          ? "bg-[#FFFDF7] border-amber-500/90 ring-1 ring-amber-400/40 shadow-md"
+                                                          : p.isComplimentary
+                                                          ? "bg-[#FCF5F6] hover:bg-[#FFF0F3] border-[#F6DCE2] hover:border-[#F2B5C3] shadow-xs"
+                                                          : "bg-white hover:bg-[#FFFDF9] border-[#E7DFD3] hover:border-amber-400/80 hover:shadow-xs"
+                                                      }`}
+                                                    >
+                                                      {/* Left: Icon + Direct Inclusion Name */}
+                                                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                                        <div
+                                                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border transition-transform duration-200 group-hover:scale-105 shadow-2xs ${
+                                                            p.isComplimentary
+                                                              ? "bg-[#FAE8EC] border-[#F3CED6] text-[#D8496E]"
+                                                              : "bg-[#FAF5EB] border-[#EFE4D2] text-[#B5883F]"
+                                                          }`}
+                                                        >
+                                                          {p.icon}
+                                                        </div>
+
+                                                        <span className="font-heading font-bold text-xs sm:text-[12.5px] text-neutral-900 leading-snug whitespace-nowrap group-hover:text-amber-950 transition-colors truncate">
+                                                          {p.title}
+                                                        </span>
+                                                      </div>
+
+                                                      {/* Right: Quantity (Pieces) + Check Circle */}
+                                                      <div className="flex items-center gap-2 shrink-0 pl-1">
+                                                        {p.isComplimentary ? (
+                                                          <span className="font-heading font-bold text-[11px] text-[#C23B60] bg-[#FDEEF2] px-2 py-0.5 rounded-full border border-[#F7CCD7]">
+                                                            FREE
+                                                          </span>
+                                                        ) : (
+                                                          <span className="font-heading font-bold text-xs sm:text-[12px] text-neutral-900 whitespace-nowrap">
+                                                            {p.quantity}
+                                                          </span>
+                                                        )}
+
+                                                        <div className="w-5.5 h-5.5 rounded-full flex items-center justify-center bg-[#E5A83B] text-neutral-950 shadow-xs border border-amber-300 shrink-0 group-hover:scale-105 transition-transform">
+                                                          <Check size={11} className="stroke-[3]" />
+                                                        </div>
+                                                      </div>
+                                                    </motion.div>
+
+                                                    {/* ─── COMPACT HOVER TOOLTIP: INCLUSION NAME & PHOTO SIZE ─── */}
+                                                    <AnimatePresence>
+                                                      {isItemHovered && (() => {
+                                                        const displaySize = (() => {
+                                                          if (p.size) {
+                                                            if (p.size === '2R') return '2R (2.5×3.5\")';
+                                                            return p.size.replace(/X/g, '×');
+                                                          }
+                                                          return p.isComplimentary ? 'Complimentary' : 'Standard';
+                                                        })();
+
+                                                        return (
+                                                        <motion.div
+                                                          initial={{ opacity: 0, y: isTopRow ? 6 : -6, scale: 0.95 }}
+                                                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                          exit={{ opacity: 0, y: isTopRow ? 4 : -4, scale: 0.95 }}
+                                                          transition={{ duration: 0.15, ease: "easeOut" }}
+                                                          className="absolute z-[120] rounded-xl p-1 shadow-2xl pointer-events-none whitespace-nowrap w-max max-w-[calc(100vw-32px)]"
+                                                          style={{
+                                                            [isTopRow ? "top" : "bottom"]: "calc(100% + 6px)",
+                                                            [shouldSpanFull ? "left" : i % 2 === 0 ? "left" : "right"]: 0,
+                                                            background: "linear-gradient(160deg, #1C1917 0%, #0F0E0C 100%)",
+                                                            border: "1.5px solid rgba(212, 175, 55, 0.65)",
+                                                            boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.85), 0 0 14px rgba(212, 175, 55, 0.2)",
+                                                          }}
+                                                        >
+                                                          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-amber-400/15 border border-amber-400/35 text-white">
+                                                            {/* Name of the Inclusion */}
+                                                            <span className="font-heading font-black text-amber-300 text-xs tracking-tight">
+                                                              {p.title}
+                                                            </span>
+
+                                                            {/* Divider */}
+                                                            <div className="w-[1px] h-3.5 bg-amber-400/30 shrink-0" />
+
+                                                            {/* Photo Size */}
+                                                            <div className="flex items-center gap-1.5 font-mono text-xs shrink-0">
+                                                              <span className="text-[11px] uppercase tracking-wider text-amber-400/90 font-bold">
+                                                                SIZE:
+                                                              </span>
+                                                              <span className="text-white font-black">
+                                                                {displaySize}
+                                                              </span>
+                                                            </div>
+                                                          </div>
+                                                        </motion.div>
+                                                        );
+                                                      })()}
+                                                    </AnimatePresence>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
                                           </div>
                                         </div>
 
-                                        {/* Inclusions List - Non-scrollable, balanced 2-column or 3-column micro-grid */}
-                                        <div className="p-3">
-                                          <div className={`grid ${tier.highlights.length > 8 ? "grid-cols-3" : "grid-cols-2"} gap-1.5`}>
-                                            {tier.highlights.map((h, i) => {
-                                              const isExclusion = h.toLowerCase().includes("no free");
-                                              const isComplimentary = h.toLowerCase().includes("free ") || h.toLowerCase().startsWith("free");
-
-                                              // Parse leading specs/quantity if present
-                                              const specMatch = h.match(/^([0-9]+-[0-9]+x[0-9]+|[0-9]+x[0-9]+|[0-9]+pcs\.?|[0-9]+pc\.?)\s*(.*)/i);
-                                              const specBadge = specMatch ? specMatch[1] : null;
-                                              const mainText = specMatch ? specMatch[2] : h;
-
-                                              // Complimentary items span full width across all columns
-                                              const isFullWidth = isComplimentary;
-
-                                              const getIconConfig = (text) => {
-                                                const t = text.toLowerCase();
-                                                if (t.includes("passport") || t.includes("2x2") || t.includes("wallet") || t.includes("8x10") || t.includes("10x12") || t.includes("1x1") || t.includes("print") || t.includes("picture") || t.includes("colored"))
-                                                  return {
-                                                    icon: <ImageIcon size={11} className="stroke-[2.2]" />,
-                                                    iconBg: "bg-amber-500/15 text-gold border-gold/30",
-                                                    cardBg: "bg-white/[0.05] hover:bg-white/[0.09] border-white/10 hover:border-gold/50",
-                                                    textColor: "text-neutral-200",
-                                                  };
-                                                if (t.includes("frame") || t.includes("album") || t.includes("crystal") || t.includes("wood"))
-                                                  return {
-                                                    icon: <Layers size={11} className="stroke-[2.2]" />,
-                                                    iconBg: "bg-stone-500/20 text-stone-300 border-stone-500/40",
-                                                    cardBg: "bg-white/[0.05] hover:bg-white/[0.09] border-white/10 hover:border-stone-400/50",
-                                                    textColor: "text-neutral-200",
-                                                  };
-                                                if (t.includes("digital") || t.includes("file") || t.includes("usb") || t.includes("soft copy"))
-                                                  return {
-                                                    icon: <ExternalLink size={11} className="stroke-[2.2]" />,
-                                                    iconBg: "bg-emerald-500/20 text-emerald-400 border-emerald-500/40",
-                                                    cardBg: "bg-white/[0.05] hover:bg-white/[0.09] border-white/10 hover:border-emerald-400/50",
-                                                    textColor: "text-neutral-200",
-                                                  };
-                                                if (t.includes("make") || t.includes("hair") || t.includes("gown") || t.includes("wardrobe") || t.includes("attire") || t.includes("pilipiña") || t.includes("styling"))
-                                                  return {
-                                                    icon: <Heart size={11} className="stroke-[2.2]" />,
-                                                    iconBg: "bg-rose-500/25 text-rose-400 border-rose-400/40",
-                                                    cardBg: "bg-gradient-to-r from-rose-950/70 via-amber-950/40 to-neutral-900 border-rose-500/50",
-                                                    textColor: "text-rose-100 font-bold",
-                                                    badge: "Complimentary Perk",
-                                                  };
-                                                if (t.includes("studio") || t.includes("session") || t.includes("hour") || t.includes("minute"))
-                                                  return {
-                                                    icon: <Clock size={11} className="stroke-[2.2]" />,
-                                                    iconBg: "bg-amber-500/20 text-gold border-gold/30",
-                                                    cardBg: "bg-white/[0.05] hover:bg-white/[0.09] border-white/10 hover:border-gold/50",
-                                                    textColor: "text-neutral-200",
-                                                  };
-                                                if (t.includes("photo") || t.includes("shot") || t.includes("pose") || t.includes("candid") || t.includes("portrait"))
-                                                  return {
-                                                    icon: <Camera size={11} className="stroke-[2.2]" />,
-                                                    iconBg: "bg-amber-500/15 text-gold border-gold/30",
-                                                    cardBg: "bg-white/[0.05] hover:bg-white/[0.09] border-white/10 hover:border-gold/50",
-                                                    textColor: "text-neutral-200",
-                                                  };
-                                                return {
-                                                  icon: <Check size={11} className="stroke-[2.5]" />,
-                                                  iconBg: "bg-amber-500/15 text-gold border-gold/30",
-                                                  cardBg: "bg-white/[0.05] hover:bg-white/[0.09] border-white/10 hover:border-gold/50",
-                                                  textColor: "text-neutral-200",
-                                                };
-                                              };
-
-                                              const cfg = isExclusion
-                                                ? {
-                                                    icon: <X size={11} className="stroke-[2.5]" />,
-                                                    iconBg: "bg-white/10 text-neutral-400 border-white/10",
-                                                    cardBg: "bg-white/[0.02] border-white/5",
-                                                    textColor: "text-neutral-500",
-                                                    badge: null,
-                                                  }
-                                                : getIconConfig(h);
-
-                                              return (
-                                                <motion.div
-                                                  key={i}
-                                                  initial={{ opacity: 0, y: 3 }}
-                                                  animate={{ opacity: 1, y: 0 }}
-                                                  transition={{ delay: i * 0.015, type: "spring", stiffness: 450, damping: 30 }}
-                                                  className={`flex items-center gap-1.5 p-1.5 px-2 rounded-xl border shadow-2xs transition-all duration-200 ${cfg.cardBg} ${
-                                                    isFullWidth ? "col-span-full" : "col-span-1"
-                                                  } ${isExclusion ? "opacity-45" : ""}`}
-                                                >
-                                                  {/* Refined micro icon squircle */}
-                                                  <div className={`w-5 h-5 rounded-md ${cfg.iconBg} border flex items-center justify-center shrink-0 shadow-2xs`}>
-                                                    {cfg.icon}
-                                                  </div>
-
-                                                  {/* Content with Spec Badge and Full Text */}
-                                                  <div className="flex-1 min-w-0 flex items-center gap-1 flex-wrap">
-                                                    {specBadge && !isExclusion && (
-                                                      <span className="px-1 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-gold/20 text-gold border border-gold/40 font-mono shrink-0">
-                                                        {specBadge}
-                                                      </span>
-                                                    )}
-                                                    <p className={`text-[10.5px] font-medium leading-snug break-words ${cfg.textColor} ${isExclusion ? "line-through" : ""}`}>
-                                                      {mainText}
-                                                    </p>
-                                                  </div>
-
-                                                  {/* Complimentary / Special Perk Badge */}
-                                                  {cfg.badge && !isExclusion && (
-                                                    <span className="text-[8px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-2xs shrink-0">
-                                                      {cfg.badge}
-                                                    </span>
-                                                  )}
-                                                </motion.div>
-                                              );
-                                            })}
-                                          </div>
-
-                                          {/* Bottom Studio Authenticity Bar */}
-                                          <div className="mt-2.5 pt-1.5 border-t border-white/10 flex items-center justify-between text-[8.5px] uppercase tracking-wider font-mono text-gold/70 font-bold">
-                                            <span className="flex items-center gap-1">
-                                              <Sparkles size={8} className="text-gold" />
-                                              All Inclusions Guaranteed
-                                            </span>
-                                            <span className="text-neutral-400">
-                                              Studio Quality Prints
-                                            </span>
-                                          </div>
-                                        </div>
-                                      </div>
-
-                                      {/* Seamless Connector Nub matching dark luxury background */}
-                                      <div
-                                        className="absolute top-7 w-3.5 h-3.5 pointer-events-none"
-                                        style={{
-                                          [showPanelLeft ? "right" : "left"]: -7,
-                                          transform: "rotate(45deg)",
-                                          background: "#121110",
-                                          borderTop: showPanelLeft ? "none" : "1px solid rgba(201,169,110,0.45)",
-                                          borderLeft: showPanelLeft ? "none" : "1px solid rgba(201,169,110,0.45)",
-                                          borderBottom: showPanelLeft ? "1px solid rgba(201,169,110,0.45)" : "none",
-                                          borderRight: showPanelLeft ? "1px solid rgba(201,169,110,0.45)" : "none",
-                                          boxShadow: showPanelLeft ? "2px 2px 4px rgba(0,0,0,0.3)" : "-2px -2px 4px rgba(0,0,0,0.3)",
-                                        }}
-                                      />
-                                    </motion.div>
-                                  )}
-                                </AnimatePresence>
+                                        {/* Seamless Connector Nub matching light luxury background */}
+                                        <div
+                                          className="absolute top-7 w-3 h-3 pointer-events-none"
+                                          style={{
+                                            [showPanelLeft ? "right" : "left"]: -6,
+                                            transform: "rotate(45deg)",
+                                            background: "#FCFAF7",
+                                            borderTop: showPanelLeft ? "none" : "1px solid rgba(212,175,55,0.4)",
+                                            borderLeft: showPanelLeft ? "none" : "1px solid rgba(212,175,55,0.4)",
+                                            borderBottom: showPanelLeft ? "1px solid rgba(212,175,55,0.4)" : "none",
+                                            borderRight: showPanelLeft ? "1px solid rgba(212,175,55,0.4)" : "none",
+                                            boxShadow: showPanelLeft ? "2px 2px 4px rgba(44,34,22,0.05)" : "-2px -2px 4px rgba(44,34,22,0.05)",
+                                          }}
+                                        />
+                                      </motion.div>
+                                      );
+                                    })()}
+                                  </AnimatePresence>
                               </motion.div>
                             );
                           })}
                         </div>
 
-                        {/* Direct A, B, C Set Selector (replaces arrows to let user select & view directly) */}
-                        <div className="relative z-20 flex items-center justify-center gap-2 pb-6 pt-1">
-                          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/95 backdrop-blur-md border border-gold/35 shadow-md">
-                            <span className="text-[10px] uppercase font-bold tracking-widest text-amber-900/80 mr-1 flex items-center gap-1 font-mono">
-                              <Sparkles size={11} className="text-gold" />
-                              <span>Sets:</span>
-                            </span>
-                            {selectedService.tiers.map((tier, idx) => {
-                              const isTierSelected = selectedTier?._idx !== undefined
-                                ? selectedTier._idx === idx
-                                : (selectedTier?.name === tier.name && (selectedTier?.price ? selectedTier.price === tier.price : true));
-
-                              const letter = tier.name.replace(/set\s*/i, "").trim() || String.fromCharCode(65 + idx);
-
-                              return (
-                                <motion.button
-                                  key={tier.name || idx}
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedTier({ ...tier, _idx: idx });
-                                    setHoveredTierName(tier.name);
-                                    setValidationError("");
-                                    if (tierScrollRef.current) {
-                                      const cardWidth = 265;
-                                      const targetScroll = Math.max(0, idx * (cardWidth - 45));
-                                      tierScrollRef.current.scrollTo({ left: targetScroll, behavior: "smooth" });
-                                    }
-                                  }}
-                                  whileHover={{ scale: 1.15 }}
-                                  whileTap={{ scale: 0.92 }}
-                                  className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-heading font-black transition-all cursor-pointer relative ${
-                                    isTierSelected
-                                      ? "bg-gradient-to-br from-amber-400 via-gold to-amber-500 text-neutral-950 ring-2 ring-gold/60 shadow-[0_0_12px_rgba(201,169,110,0.7)]"
-                                      : "bg-white hover:bg-gold/15 text-stone-700 hover:text-amber-900 border border-stone-200 hover:border-gold/50 shadow-2xs"
-                                  }`}
-                                  title={`Directly view & select ${tier.name}`}
-                                >
-                                  {letter}
-                                  {isTierSelected && (
-                                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-neutral-950 text-gold flex items-center justify-center shadow-xs border border-gold/50">
-                                      <Check size={8} className="stroke-[3.5]" />
-                                    </span>
-                                  )}
-                                </motion.button>
-                              );
-                            })}
-                          </div>
                         </div>
-                      </div>
 
                       {/* Selected set summary bar */}
                       <AnimatePresence>
@@ -3095,12 +4101,12 @@ export default function BookingPage() {
                                 <Check size={14} className="text-neutral-950 stroke-[3]" />
                               </div>
                               <div className="min-w-0">
-                                <p className="text-[9px] uppercase font-bold tracking-widest text-gold/80">Selected Set</p>
+                                <p className="text-[11px] uppercase font-bold tracking-widest text-gold/80">Selected Set</p>
                                 <p className="text-sm font-heading font-bold text-neutral-900 truncate">{selectedTier.name}</p>
                               </div>
                             </div>
                             <div className="text-right shrink-0">
-                              <p className="text-[9px] uppercase font-bold tracking-widest text-neutral-400">Package Rate</p>
+                              <p className="text-[11px] uppercase font-bold tracking-widest text-neutral-400">Package Rate</p>
                               <p className="font-heading font-extrabold text-gold text-lg">{selectedTier.price}</p>
                             </div>
                           </motion.div>
@@ -3114,7 +4120,7 @@ export default function BookingPage() {
                   STEP 3: HOVER-REVEAL ADD-ONS MINI CARDS
               ───────────────────────────────────────────────────────────── */}
               {step === 3 && (() => {
-                const isAddonsRevealed = isAddonCardHovered || isAddonPanelHovered || isAddonCardPinned || selectedAddOns.length > 0;
+                const isAddonsRevealed = isAddonCardHovered || isAddonPanelHovered || isAddonCardPinned;
                 const step3CoverImg = selectedTier?.cover_image || selectedService?.cover_image || SERVICE_COVER_MAP[selectedService?.slug] || "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=900&q=80&auto=format&fit=crop";
                 const tierRoman = selectedTier?._idx !== undefined
                   ? ["I", "II", "III", "IV", "V", "VI"][selectedTier._idx] || "I"
@@ -3131,7 +4137,7 @@ export default function BookingPage() {
                         Choose your add-ons
                       </h2>
                       <p className="text-xs text-neutral-600 font-body mt-1 max-w-md mx-auto">
-                        Hover over your selected package card to reveal optional add-on upgrades
+                        Select optional upgrades to enhance your studio package
                       </p>
                     </div>
 
@@ -3147,20 +4153,30 @@ export default function BookingPage() {
                         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[500px] h-[120px] rounded-full bg-amber-200/20 blur-[60px]" />
                       </div>
 
-                      <div className="relative z-10 flex flex-col lg:flex-row items-center justify-center gap-6 px-4 sm:px-8 overflow-visible">
+                      <motion.div
+                        layout
+                        transition={{ layout: { duration: 0.45, ease: [0.16, 1, 0.3, 1] } }}
+                        className="relative z-10 flex flex-col lg:flex-row items-center justify-center gap-6 px-4 sm:px-8 overflow-visible"
+                      >
                         {/* ── TRIGGER PACKAGE CARD (HOVER TO REVEAL) ── */}
                         <motion.div
-                          onMouseEnter={() => setIsAddonCardHovered(true)}
-                          onMouseLeave={() => setIsAddonCardHovered(false)}
+                          layout
+                          onMouseEnter={handleAddonCardEnter}
+                          onMouseLeave={handleAddonCardLeave}
                           onClick={() => setIsAddonCardPinned(p => !p)}
-                          whileHover={{ scale: 1.03 }}
+                          whileHover={{ scale: 1.018 }}
                           whileTap={{ scale: 0.98 }}
-                          transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                          transition={{
+                            layout: { duration: 0.45, ease: [0.16, 1, 0.3, 1] },
+                            scale: { duration: 0.28, ease: "easeOut" }
+                          }}
                           className="relative shrink-0 cursor-pointer select-none"
                         >
+                          {/* Invisible hover bridge towards the add-ons panel */}
+                          <div className="hidden lg:block absolute top-0 -right-8 bottom-0 w-8 pointer-events-auto z-30" />
                           {/* Ambient Glow */}
                           <div
-                            className="absolute -inset-3 rounded-[34px] pointer-events-none -z-10 transition-opacity duration-300"
+                            className="absolute -inset-3 rounded-[34px] pointer-events-none -z-10 transition-opacity duration-500 ease-out"
                             style={{
                               background: "radial-gradient(ellipse at 50% 85%, rgba(201,169,110,0.65) 0%, rgba(245,158,11,0.2) 50%, transparent 75%)",
                               filter: "blur(16px)",
@@ -3170,7 +4186,7 @@ export default function BookingPage() {
 
                           {/* Card Shell */}
                           <div
-                            className={`relative w-[260px] sm:w-[275px] rounded-3xl overflow-hidden shadow-2xl border-2 transition-all duration-300 ${
+                            className={`relative w-[260px] sm:w-[275px] rounded-3xl overflow-hidden shadow-2xl border-2 transition-all duration-500 ease-out ${
                               isAddonsRevealed
                                 ? "border-gold ring-2 ring-gold/50 shadow-[0_0_40px_rgba(201,169,110,0.45),0_20px_45px_rgba(0,0,0,0.6)]"
                                 : "border-white/40 hover:border-gold/70 shadow-xl"
@@ -3194,7 +4210,7 @@ export default function BookingPage() {
                                   </span>
                                 </div>
                                 <div className="flex flex-col">
-                                  <span className="text-[9px] uppercase tracking-[0.25em] text-gold/80 font-bold leading-none">Package</span>
+                                  <span className="text-[11px] uppercase tracking-[0.25em] text-gold/80 font-bold leading-none">Package</span>
                                   <span className="text-[13px] font-heading font-black text-white leading-tight mt-0.5">
                                     {selectedTier?.name || selectedService?.name || "Selected Set"}
                                   </span>
@@ -3202,7 +4218,7 @@ export default function BookingPage() {
                               </div>
 
                               {selectedAddOns.length > 0 && (
-                                <span className="text-[9px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-gold text-neutral-950 font-mono shadow-md">
+                                <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-gold text-neutral-950 font-mono shadow-md">
                                   +{selectedAddOns.length}
                                 </span>
                               )}
@@ -3210,82 +4226,70 @@ export default function BookingPage() {
 
                             {/* Bottom: Rate + Hover Hint */}
                             <div className="absolute bottom-0 left-0 right-0 z-20">
-                              <div className="px-5 pb-2">
-                                <span className="text-[9px] uppercase tracking-widest text-gold/80 font-bold block mb-0.5">
+                              <div className="p-5">
+                                <span className="text-[11px] uppercase tracking-widest text-gold/80 font-bold block mb-0.5">
                                   Base Package
                                 </span>
                                 <span className="font-heading font-black text-white text-2xl leading-none block drop-shadow-sm">
                                   {selectedTier?.price || (selectedService?.base_price ? `₱${parsePrice(selectedService.base_price).toLocaleString()}` : "Selected")}
                                 </span>
                               </div>
-
-                              <div className="px-5 py-3 border-t border-white/15 bg-black/60 backdrop-blur-md flex items-center justify-between gap-2">
-                                <span className="text-[11px] font-bold text-gold tracking-wide">
-                                  {isAddonsRevealed ? "Add-ons Revealed" : "Hover to reveal add-ons"}
-                                </span>
-                                <motion.div
-                                  animate={{ x: isAddonsRevealed ? 3 : [0, 4, 0] }}
-                                  transition={{ repeat: Infinity, duration: 1.6 }}
-                                  className="w-7 h-7 rounded-full bg-gold/20 border border-gold/40 flex items-center justify-center text-gold"
-                                >
-                                  <ArrowRight size={13} className="stroke-[2.5]" />
-                                </motion.div>
-                              </div>
                             </div>
                           </div>
                         </motion.div>
 
-                        {/* ── REVEALED OBSIDIAN MINI CARDS PANEL ── */}
+                        {/* ── REVEALED WHITE LUXURY MINI CARDS PANEL ── */}
                         <AnimatePresence>
                           {isAddonsRevealed && (
                             <motion.div
-                              key="addons-obsidian-panel"
-                              initial={{ opacity: 0, x: 24, scale: 0.95 }}
+                              layout
+                              key="addons-white-panel"
+                              initial={{ opacity: 0, x: 30, scale: 0.96 }}
                               animate={{ opacity: 1, x: 0, scale: 1 }}
-                              exit={{ opacity: 0, x: 20, scale: 0.95 }}
-                              transition={{ type: "spring", stiffness: 420, damping: 28 }}
-                              onMouseEnter={() => setIsAddonPanelHovered(true)}
-                              onMouseLeave={() => setIsAddonPanelHovered(false)}
-                              className="w-full max-w-[520px] rounded-3xl overflow-hidden shadow-2xl relative pointer-events-auto"
+                              exit={{ opacity: 0, x: 20, scale: 0.96 }}
+                              transition={{
+                                opacity: { duration: 0.28, ease: "easeInOut" },
+                                x: { duration: 0.42, ease: [0.16, 1, 0.3, 1] },
+                                scale: { duration: 0.42, ease: [0.16, 1, 0.3, 1] },
+                                layout: { duration: 0.45, ease: [0.16, 1, 0.3, 1] }
+                              }}
+                              onMouseEnter={handleAddonPanelEnter}
+                              onMouseLeave={handleAddonPanelLeave}
+                              className="w-full max-w-[520px] rounded-3xl overflow-hidden shadow-2xl relative pointer-events-auto border border-amber-300/60"
                               style={{
-                                background: "linear-gradient(165deg, rgba(24, 22, 20, 0.98) 0%, rgba(12, 11, 10, 0.99) 100%)",
-                                border: "1px solid rgba(201, 169, 110, 0.45)",
-                                boxShadow: "0 25px 60px -10px rgba(0,0,0,0.85), 0 0 30px rgba(201,169,110,0.22), inset 0 1px 0 rgba(255,255,255,0.15)",
-                                backdropFilter: "blur(20px)",
+                                background: "linear-gradient(165deg, #FFFFFF 0%, #FAF8F5 50%, #F5F0E8 100%)",
+                                boxShadow: "0 25px 50px -12px rgba(44, 34, 22, 0.16), 0 0 30px rgba(212,175,55,0.12), inset 0 1px 0 rgba(255,255,255,1)",
                               }}
                             >
+                              {/* Invisible hover bridge towards the package card */}
+                              <div className="hidden lg:block absolute top-0 -left-8 bottom-0 w-8 pointer-events-auto z-30" />
                               {/* Golden luxury top accent line */}
-                              <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-gold to-amber-500" />
+                              <div className="h-1.5 w-full bg-gradient-to-r from-amber-400 via-[#D4AF37] to-amber-500" />
 
                               {/* Header with SKIP BUTTON ON THE MINI CARDS PANEL */}
                               <div
-                                className="px-5 py-3.5 flex items-center justify-between gap-3"
+                                className="px-5 py-3.5 flex items-center justify-between gap-3 border-b border-amber-200/60"
                                 style={{
-                                  background: "linear-gradient(90deg, rgba(201,169,110,0.14) 0%, rgba(255,255,255,0.02) 100%)",
-                                  borderBottom: "1px solid rgba(255,255,255,0.08)",
+                                  background: "linear-gradient(90deg, rgba(212,175,55,0.12) 0%, rgba(255,255,255,0.7) 100%)",
                                 }}
                               >
                                 <div className="flex items-center gap-2.5">
-                                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400/25 via-gold/15 to-transparent border border-gold/50 flex items-center justify-center shadow-xs text-gold shrink-0">
-                                    <Sparkles size={15} className="text-gold" />
+                                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-100 via-amber-50 to-white border border-amber-300/80 flex items-center justify-center shadow-xs text-amber-900 shrink-0">
+                                    <Sparkles size={15} className="text-amber-700" />
                                   </div>
                                   <div>
-                                    <p className="text-[9px] font-black uppercase tracking-[0.25em] text-gold/70 leading-none font-mono">
+                                    <p className="text-[11px] font-black uppercase tracking-[0.25em] text-amber-800/80 leading-none font-mono">
                                       OPTIONAL EXTRAS
                                     </p>
-                                    <h3 className="text-base font-heading font-black text-white leading-tight mt-0.5">
+                                    <h3 className="text-base font-heading font-black text-neutral-900 leading-tight mt-0.5">
                                       Add-on Upgrades
                                     </h3>
                                   </div>
                                 </div>
 
-                                {/* SKIP BUTTON ON THE MINI CARDS PANEL AS REQUESTED */}
+                                {/* SKIP BUTTON ON THE MINI CARDS PANEL */}
                                 <div className="flex items-center gap-2 shrink-0">
-                                  {selectedAddOns.length > 0 && (
-                                    <span className="text-[9px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-gold/15 text-gold border border-gold/30 font-mono shadow-2xs">
-                                      {selectedAddOns.length} Selected
-                                    </span>
-                                  )}
+                                  
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -3293,7 +4297,7 @@ export default function BookingPage() {
                                       setSelectedAddOns([]);
                                       setShowStep4ConfirmModal(true);
                                     }}
-                                    className="text-xs font-semibold text-neutral-300 hover:text-white bg-white/10 hover:bg-white/20 border border-white/20 hover:border-gold/50 px-3 py-1 rounded-full transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                                    className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 bg-white/80 hover:bg-white border border-[#E2D6C3] hover:border-amber-400 px-3 py-1 rounded-full transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
                                     title="Skip add-ons and proceed to client details"
                                   >
                                     Skip <ArrowRight size={11} />
@@ -3301,7 +4305,7 @@ export default function BookingPage() {
                                 </div>
                               </div>
 
-                              {/* ── MINI CARDS GRID MATCHING THE USER'S PHOTO ── */}
+                              {/* ── MINI CARDS GRID MATCHING WHITE LUXURY THEME ── */}
                               <div className="p-3.5 sm:p-4">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                   {addOnsList.length === 0 ? (
@@ -3322,29 +4326,29 @@ export default function BookingPage() {
                                             e.stopPropagation();
                                             toggleAddOn(addon);
                                           }}
-                                          className={`group relative p-2.5 px-3 rounded-2xl border transition-all duration-200 cursor-pointer flex items-center justify-between gap-2.5 shadow-md select-none ${
+                                          className={`group relative p-2.5 px-3 rounded-2xl border transition-all duration-200 cursor-pointer flex items-center justify-between gap-2.5 shadow-2xs select-none ${
                                             isSelected
-                                              ? "bg-gradient-to-r from-amber-500/25 via-gold/15 to-white/[0.08] border-gold ring-1 ring-gold/60 shadow-[0_0_20px_rgba(201,169,110,0.25)]"
-                                              : "bg-white/[0.05] hover:bg-white/[0.09] border-white/20 hover:border-gold/50"
+                                              ? "bg-[#FFFDF7] border-amber-500/90 ring-1 ring-amber-400/50 shadow-md"
+                                              : "bg-white hover:bg-[#FFFDF9] border-[#E7DFD3] hover:border-amber-400/80 hover:shadow-xs"
                                           }`}
                                         >
                                           {/* Micro Squircle Icon + Title + Spec Badge */}
                                           <div className="flex items-center gap-2.5 min-w-0">
                                             <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 border transition-transform duration-200 ${
                                               isSelected
-                                                ? "bg-gold text-neutral-950 border-amber-300 shadow-sm"
-                                                : `${visuals.iconBg} group-hover:scale-105`
+                                                ? "bg-[#E5A83B] text-neutral-950 border-amber-300 shadow-sm"
+                                                : `${visuals.lightIconBg || visuals.iconBg} group-hover:scale-105`
                                             }`}>
                                               {isSelected ? <Check size={13} className="stroke-[3]" /> : visuals.icon}
                                             </div>
 
                                             <div className="min-w-0">
                                               <div className="flex items-center gap-1.5 flex-wrap">
-                                                <h4 className="font-heading font-bold text-xs sm:text-[13px] text-white leading-snug group-hover:text-gold transition-colors">
+                                                <h4 className="font-heading font-bold text-xs sm:text-[13px] text-neutral-900 leading-snug group-hover:text-amber-950 transition-colors">
                                                   {visuals.cleanName}
                                                 </h4>
                                                 {visuals.specBadge && (
-                                                  <span className="px-1.5 py-0.2 rounded text-[8.5px] font-black uppercase tracking-wider bg-gold/20 text-gold border border-gold/40 font-mono shrink-0">
+                                                  <span className="px-1.5 py-0.2 rounded text-[10.5px] font-black uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-300/80 font-mono shrink-0">
                                                     {visuals.specBadge}
                                                   </span>
                                                 )}
@@ -3354,15 +4358,15 @@ export default function BookingPage() {
 
                                           {/* Right: Rate + Check Toggle */}
                                           <div className="flex items-center gap-2 shrink-0 pl-1">
-                                            <span className="font-heading font-black text-gold text-xs whitespace-nowrap">
+                                            <span className="font-heading font-bold text-[#B5883F] text-xs whitespace-nowrap">
                                               +₱{parsePrice(addon.price).toLocaleString()}
                                             </span>
 
                                             <div
                                               className={`w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 ${
                                                 isSelected
-                                                  ? "bg-gradient-to-br from-amber-400 to-amber-600 text-neutral-950 shadow-xs border border-amber-300 scale-105"
-                                                  : "border border-white/30 group-hover:border-gold text-transparent bg-transparent"
+                                                  ? "bg-[#E5A83B] text-neutral-950 shadow-xs border border-amber-300 scale-105"
+                                                  : "border border-neutral-300 group-hover:border-amber-400 text-transparent bg-neutral-50"
                                               }`}
                                             >
                                               <Check size={11} className="stroke-[3]" />
@@ -3376,32 +4380,30 @@ export default function BookingPage() {
                               </div>
 
                               {/* ── STEP 3 CONFIRMATION ACTION BAR ── */}
-                              <div className="p-3.5 sm:p-4 pt-3 border-t border-white/10 bg-black/40 backdrop-blur-md flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-2 text-neutral-300 text-xs font-body">
-                                  <Sparkles size={14} className="text-gold" />
-                                  <span>{selectedAddOns.length > 0 ? `${selectedAddOns.length} upgrade(s) selected` : "Standard inclusions only"}</span>
+                              <div className="p-3.5 sm:p-4 pt-3 border-t border-amber-200/60 bg-white/60 flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2 text-neutral-600 text-xs font-body font-medium">
+                                  <Sparkles size={14} className="text-[#B5883F]" />
+                                  <span>Standard inclusions only</span>
                                 </div>
 
-                                {/* ONLY ICON THAT WHEN HOVERED A CONFIRM TEXT WILL APPEAR (PHOTO 2) */}
+                                {/* CONFIRM ACTION BUTTON */}
                                 <button
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setShowStep4ConfirmModal(true);
                                   }}
-                                  className="group relative flex items-center justify-center bg-gradient-to-r from-amber-400 via-gold to-amber-500 text-neutral-950 font-bold h-11 px-3.5 hover:px-5 rounded-2xl shadow-lg shadow-gold/25 hover:shadow-gold/45 transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer overflow-hidden shrink-0"
+                                  className="group flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 via-gold to-amber-500 hover:from-amber-300 hover:to-amber-500 text-neutral-950 font-heading font-black text-xs h-10 px-5 rounded-xl shadow-md shadow-gold/25 hover:shadow-gold/45 transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer shrink-0"
                                   title="Confirm"
                                 >
-                                  <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 group-hover:max-w-xs group-hover:opacity-100 group-hover:mr-2 transition-all duration-300 text-xs font-heading font-black tracking-wide">
-                                    Confirm
-                                  </span>
-                                  <ArrowRight size={18} className="shrink-0 stroke-[3] transition-transform duration-300 group-hover:translate-x-0.5" />
+                                  <span className="tracking-wide">Confirm</span>
+                                  <ArrowRight size={15} className="shrink-0 stroke-[3] transition-transform duration-200 group-hover:translate-x-0.5" />
                                 </button>
                               </div>
                             </motion.div>
                           )}
                         </AnimatePresence>
-                      </div>
+                      </motion.div>
                     </div>
                   </div>
                 );
@@ -3442,6 +4444,40 @@ export default function BookingPage() {
                           : "Review your package orders above and verify your contact profile and photoshoot requirements"}
                       </p>
                     </div>
+
+                    {/* ── Campus Batch Express Ordering Fast-Track Bar ── */}
+                    {isAcademicService && (
+                      <div className="rounded-2xl p-4 sm:p-5 bg-gradient-to-r from-amber-500/15 via-gold/10 to-amber-500/5 border border-gold/40 shadow-xs relative overflow-hidden">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                          <div className="flex items-center gap-3.5">
+                            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-400 to-gold text-neutral-950 flex items-center justify-center shrink-0 shadow-md border border-gold/40">
+                              <GraduationCap size={22} className="stroke-[2.5]" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-heading font-black text-sm sm:text-base text-neutral-950">
+                                  Campus Batch Express Ordering
+                                </h3>
+                                <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-gold/25 text-amber-950 border border-gold/50 shadow-2xs">
+                                  Fast-Track 3-Step Process
+                                </span>
+                              </div>
+                              <p className="text-xs text-neutral-600 font-body mt-0.5 leading-relaxed">
+                                Ordering under your school's senior high or university pictorial agreement? Complete your student &amp; section details below and click Fast-Track to skip manual date scheduling and jump straight to Review.
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleFastTrackBatchReview}
+                            className="shrink-0 w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-gold to-amber-500 hover:from-amber-300 hover:to-amber-500 text-neutral-950 font-heading font-black text-xs tracking-wider shadow-md shadow-gold/25 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            <span>⚡ 1-Click Fast-Track Review</span>
+                            <ArrowRight size={14} className="stroke-[3]" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* ─────────────────────────────────────────────────────────────
                         TOPMOST AREA: SELECTED ORDERS COMBINED CARDS HIERARCHY
@@ -3506,7 +4542,7 @@ export default function BookingPage() {
                                   </span>
                                 </div>
                                 <div className="flex flex-col">
-                                  <span className="text-[9px] uppercase tracking-[0.25em] text-gold/70 font-bold leading-none">
+                                  <span className="text-[11px] uppercase tracking-[0.25em] text-gold/70 font-bold leading-none">
                                     Collection
                                   </span>
                                   <span className="text-[13px] font-heading font-black text-white leading-tight mt-0.5">
@@ -3531,7 +4567,7 @@ export default function BookingPage() {
                                 <h3 className="font-heading font-extrabold text-white leading-tight drop-shadow-md text-xl">
                                   {selectedService?.name || "Selected Package"}
                                 </h3>
-                                <p className="text-[10px] text-gold/80 font-semibold mt-0.5">
+                                <p className="text-xs text-gold/80 font-semibold mt-0.5">
                                   {selectedTier?.highlights?.length || selectedTier?.inclusions?.length || 0} inclusions · {selectedTier?.name || "Selected Set"}
                                 </p>
                               </div>
@@ -3539,7 +4575,7 @@ export default function BookingPage() {
                               {/* Bottom bar with Check Icon */}
                               <div className="px-5 pb-4 pt-2.5 border-t border-white/15 bg-black/60 backdrop-blur-md flex items-center justify-between gap-3">
                                 <div>
-                                  <span className="text-[9px] uppercase font-bold tracking-widest text-neutral-400 block leading-none mb-1">
+                                  <span className="text-[11px] uppercase font-bold tracking-widest text-neutral-400 block leading-none mb-1">
                                     Package
                                   </span>
                                   <span className="font-heading font-black text-gold text-sm leading-none block">
@@ -3556,51 +4592,50 @@ export default function BookingPage() {
 
                           {/* ── 2. POP-UP CARD: SET NAME & INCLUSIONS (PHOTO 1 RIGHT CARD) ── */}
                           <div
-                            className="relative flex-1 rounded-3xl overflow-hidden shadow-2xl border border-gold/45 flex flex-col justify-between"
+                            className="relative flex-1 rounded-3xl overflow-hidden shadow-2xl border border-amber-300/60 flex flex-col justify-between"
                             style={{
-                              background: "linear-gradient(165deg, rgba(24, 22, 20, 0.97) 0%, rgba(12, 11, 10, 0.98) 100%)",
-                              boxShadow: "0 25px 60px -10px rgba(0,0,0,0.85), 0 0 30px rgba(201,169,110,0.22)",
+                              background: "linear-gradient(165deg, #FFFFFF 0%, #FAF8F5 50%, #F5F0E8 100%)",
+                              boxShadow: "0 25px 50px -12px rgba(44, 34, 22, 0.16), 0 0 30px rgba(212,175,55,0.12), inset 0 1px 0 rgba(255,255,255,1)",
                               minHeight: 390
                             }}
                           >
-                            {/* Seamless Connector Nub matching Photo 1 */}
+                            {/* Seamless Connector Nub matching light luxury background */}
                             <div
-                              className="hidden lg:block absolute top-7 -left-[7px] w-3.5 h-3.5 pointer-events-none rotate-45 bg-[#141210] border-l border-b border-gold/45 z-30"
+                              className="hidden lg:block absolute top-7 -left-[7px] w-3.5 h-3.5 pointer-events-none rotate-45 bg-[#FAF8F5] border-l border-b border-amber-300/60 z-30"
                             />
 
                             {/* Golden luxury top accent line */}
-                            <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-gold to-amber-500" />
+                            <div className="h-1.5 w-full bg-gradient-to-r from-amber-400 via-[#D4AF37] to-amber-500" />
 
                             {/* Header: What's Included + Set Name + Inclusions Count Pill (Photo 1) */}
                             <div
-                              className="px-5 py-3.5 flex items-center justify-between gap-3"
+                              className="px-5 py-3.5 flex items-center justify-between gap-3 border-b border-amber-200/60"
                               style={{
-                                background: "linear-gradient(90deg, rgba(201,169,110,0.14) 0%, rgba(255,255,255,0.02) 100%)",
-                                borderBottom: "1px solid rgba(255,255,255,0.08)",
+                                background: "linear-gradient(90deg, rgba(212,175,55,0.12) 0%, rgba(255,255,255,0.7) 100%)",
                               }}
                             >
                               <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400/25 via-gold/15 to-transparent border border-gold/50 flex items-center justify-center shadow-xs text-gold shrink-0">
-                                  <span className="font-heading font-black text-gold text-sm leading-none">{tierRoman}</span>
+                                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-100 via-amber-50 to-white border border-amber-300/80 flex items-center justify-center shadow-xs text-amber-900 shrink-0">
+                                  <span className="font-heading font-black text-amber-900 text-sm leading-none">{tierRoman}</span>
                                 </div>
                                 <div>
-                                  <p className="text-[9px] font-black uppercase tracking-[0.25em] text-gold/70 leading-none font-mono">
+                                  <p className="text-[11px] font-black uppercase tracking-[0.25em] text-amber-800/80 leading-none font-mono">
                                     What's Included
                                   </p>
-                                  <h3 className="text-lg font-heading font-black text-white leading-tight mt-0.5">
+                                  <h3 className="text-lg font-heading font-bold text-neutral-900 leading-tight mt-0.5">
                                     {selectedTier?.name || "Selected Set"}
                                   </h3>
                                 </div>
                               </div>
 
                               <div className="flex items-center gap-2 shrink-0">
-                                <span className="text-[9px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-gold/15 text-gold border border-gold/30 font-mono shadow-2xs">
+                                <span className="text-[11.5px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-900 border border-amber-300/70 font-mono shadow-2xs">
                                   {(selectedTier?.highlights || selectedTier?.inclusions || []).length} Inclusions
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => setStep(2)}
-                                  className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-neutral-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                                  className="w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 flex items-center justify-center border border-amber-200 transition-colors cursor-pointer"
                                   title="Change set"
                                 >
                                   <Edit3 size={13} />
@@ -3608,88 +4643,154 @@ export default function BookingPage() {
                               </div>
                             </div>
 
-                            {/* Inclusions 2-Column Grid (Photo 1) */}
-                            <div className="p-4 flex-1 flex flex-col justify-between">
+                            {/* Inclusions 2-Column Grid (Matching User Photo Format) */}
+                            <div className="p-3.5 flex-1 flex flex-col justify-between">
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 {(selectedTier?.highlights || selectedTier?.inclusions || []).map((h, i) => {
-                                  const cfg = getInclusionConfig(h);
+                                  const p = parseInclusionDetails(h, selectedService?.tiers);
+                                  const totalCount = (selectedTier?.highlights || []).length;
+                                  const isLastOdd = !p.isComplimentary && totalCount % 2 === 1 && i === totalCount - 1;
+                                  const shouldSpanFull = p.isComplimentary || isLastOdd;
+                                  const isTopRow = i < 2;
+                                  const isItemHovered = hoveredInclusionIndexReview === i;
+
                                   return (
                                     <div
                                       key={i}
-                                      className={`flex items-center gap-2 p-2 px-2.5 rounded-xl border shadow-2xs transition-all ${cfg.cardBg} ${
-                                        cfg.isFullWidth ? "sm:col-span-2" : "sm:col-span-1"
-                                      } ${cfg.isExclusion ? "opacity-45" : ""}`}
+                                      onMouseEnter={() => setHoveredInclusionIndexReview(i)}
+                                      onMouseLeave={() => setHoveredInclusionIndexReview(null)}
+                                      className={`relative ${shouldSpanFull ? "col-span-full" : ""}`}
                                     >
-                                      {/* Micro icon squircle */}
-                                      <div className={`w-5 h-5 rounded-md ${cfg.iconBg} border flex items-center justify-center shrink-0 shadow-2xs`}>
-                                        {cfg.icon}
-                                      </div>
+                                      <motion.div
+                                        whileHover={{ scale: 1.02, x: 2 }}
+                                        transition={{ type: "spring", stiffness: 420, damping: 26 }}
+                                        className={`group relative px-3 py-2 rounded-xl border transition-all duration-200 flex items-center justify-between gap-2.5 shadow-2xs select-none cursor-pointer ${
+                                          isItemHovered
+                                            ? "bg-[#FFFDF7] border-amber-500/90 ring-1 ring-amber-400/40 shadow-md"
+                                            : p.isComplimentary
+                                            ? "bg-[#FCF5F6] hover:bg-[#FFF0F3] border-[#F6DCE2] hover:border-[#F2B5C3] shadow-xs"
+                                            : "bg-white hover:bg-[#FFFDF9] border-[#E7DFD3] hover:border-amber-400/80 hover:shadow-xs"
+                                        }`}
+                                      >
+                                        {/* Left: Icon + Direct Inclusion Name */}
+                                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                          <div
+                                            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border transition-transform duration-200 group-hover:scale-105 shadow-2xs ${
+                                              p.isComplimentary
+                                                ? "bg-[#FAE8EC] border-[#F3CED6] text-[#D8496E]"
+                                                : "bg-[#FAF5EB] border-[#EFE4D2] text-[#B5883F]"
+                                            }`}
+                                          >
+                                            {p.icon}
+                                          </div>
 
-                                      {/* Content with Spec Badge */}
-                                      <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
-                                        {cfg.specBadge && !cfg.isExclusion && (
-                                          <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-gold/20 text-gold border border-gold/40 font-mono shrink-0">
-                                            {cfg.specBadge}
+                                          <span className="font-heading font-bold text-xs sm:text-[12.5px] text-neutral-900 leading-snug whitespace-nowrap group-hover:text-amber-950 transition-colors truncate">
+                                            {p.title}
                                           </span>
-                                        )}
-                                        <p className={`text-[11px] font-medium leading-snug break-words ${cfg.textColor} ${cfg.isExclusion ? "line-through" : ""}`}>
-                                          {cfg.mainText}
-                                        </p>
-                                      </div>
+                                        </div>
 
-                                      {/* Complimentary Perk Badge */}
-                                      {cfg.badge && !cfg.isExclusion && (
-                                        <span className="text-[8px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-2xs shrink-0">
-                                          {cfg.badge}
-                                        </span>
-                                      )}
+                                        {/* Right: Quantity (Pieces) + Check Circle */}
+                                        <div className="flex items-center gap-2 shrink-0 pl-1">
+                                          {p.isComplimentary ? (
+                                            <span className="font-heading font-bold text-[11px] text-[#C23B60] bg-[#FDEEF2] px-2 py-0.5 rounded-full border border-[#F7CCD7]">
+                                              FREE
+                                            </span>
+                                          ) : (
+                                            <span className="font-heading font-bold text-xs sm:text-[12px] text-neutral-900 whitespace-nowrap">
+                                              {p.quantity}
+                                            </span>
+                                          )}
+
+                                          <div className="w-5.5 h-5.5 rounded-full flex items-center justify-center bg-[#E5A83B] text-neutral-950 shadow-xs border border-amber-300 shrink-0 group-hover:scale-105 transition-transform">
+                                            <Check size={11} className="stroke-[3]" />
+                                          </div>
+                                        </div>
+                                      </motion.div>
+
+                                      {/* ─── COMPACT HOVER TOOLTIP: INCLUSION NAME & PHOTO SIZE (STEP 3) ─── */}
+                                      <AnimatePresence>
+                                        {isItemHovered && (() => {
+                                          const displaySize = (() => {
+                                            if (p.size) {
+                                              if (p.size === '2R') return '2R (2.5×3.5\")';
+                                              return p.size.replace(/X/g, '×');
+                                            }
+                                            return p.isComplimentary ? 'Complimentary' : 'Standard';
+                                          })();
+
+                                          return (
+                                          <motion.div
+                                            initial={{ opacity: 0, y: isTopRow ? 6 : -6, scale: 0.95 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: isTopRow ? 4 : -4, scale: 0.95 }}
+                                            transition={{ duration: 0.15, ease: "easeOut" }}
+                                            className="absolute z-[120] rounded-xl p-1 shadow-2xl pointer-events-none whitespace-nowrap w-max max-w-[calc(100vw-32px)]"
+                                            style={{
+                                              [isTopRow ? "top" : "bottom"]: "calc(100% + 6px)",
+                                              [shouldSpanFull ? "left" : i % 2 === 0 ? "left" : "right"]: 0,
+                                              background: "linear-gradient(160deg, #1C1917 0%, #0F0E0C 100%)",
+                                              border: "1.5px solid rgba(212, 175, 55, 0.65)",
+                                              boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.85), 0 0 14px rgba(212, 175, 55, 0.2)",
+                                            }}
+                                          >
+                                            <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-amber-400/15 border border-amber-400/35 text-white">
+                                              {/* Name of the Inclusion */}
+                                              <span className="font-heading font-black text-amber-300 text-xs tracking-tight">
+                                                {p.title}
+                                              </span>
+
+                                              {/* Divider */}
+                                              <div className="w-[1px] h-3.5 bg-amber-400/30 shrink-0" />
+
+                                              {/* Photo Size */}
+                                              <div className="flex items-center gap-1.5 font-mono text-xs shrink-0">
+                                                <span className="text-[11px] uppercase tracking-wider text-amber-400/90 font-bold">
+                                                  SIZE:
+                                                </span>
+                                                <span className="text-white font-black">
+                                                  {displaySize}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          </motion.div>
+                                          );
+                                        })()}
+                                      </AnimatePresence>
                                     </div>
                                   );
                                 })}
                               </div>
-
-                              {/* Bottom Studio Authenticity Bar (Photo 1) */}
-                              <div className="mt-4 pt-2 border-t border-white/10 flex items-center justify-between text-[8.5px] uppercase tracking-wider font-mono text-gold/70 font-bold">
-                                <span className="flex items-center gap-1">
-                                  <Sparkles size={9} className="text-gold" />
-                                  All Inclusions Guaranteed
-                                </span>
-                                <span className="text-neutral-400">
-                                  Studio Quality Prints
-                                </span>
-                              </div>
                             </div>
                           </div>
 
-                          {/* ── 3. OPTIONAL ADD-ONS OBSIDIAN CARD (ONLY IF SELECTED) ── */}
+                          {/* ── 3. OPTIONAL ADD-ONS WHITE LUXURY CARD (ONLY IF SELECTED) ── */}
                           {selectedAddOns.length > 0 && (
                             <div
-                              className="relative w-full lg:w-[280px] rounded-3xl overflow-hidden shadow-2xl border border-gold/45 flex flex-col justify-between shrink-0"
+                              className="relative w-full lg:w-[280px] rounded-3xl overflow-hidden shadow-2xl border border-amber-300/60 flex flex-col justify-between shrink-0"
                               style={{
-                                background: "linear-gradient(165deg, rgba(24, 22, 20, 0.97) 0%, rgba(12, 11, 10, 0.98) 100%)",
-                                boxShadow: "0 25px 60px -10px rgba(0,0,0,0.85), 0 0 30px rgba(201,169,110,0.22)",
+                                background: "linear-gradient(165deg, #FFFFFF 0%, #FAF8F5 50%, #F5F0E8 100%)",
+                                boxShadow: "0 25px 50px -12px rgba(44, 34, 22, 0.16), 0 0 30px rgba(212,175,55,0.12), inset 0 1px 0 rgba(255,255,255,1)",
                                 minHeight: 390
                               }}
                             >
-                              <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-gold to-amber-500" />
+                              <div className="h-1.5 w-full bg-gradient-to-r from-amber-400 via-[#D4AF37] to-amber-500" />
 
                               {/* Header */}
                               <div
-                                className="px-4 py-3.5 flex items-center justify-between gap-2"
+                                className="px-4 py-3.5 flex items-center justify-between gap-2 border-b border-amber-200/60"
                                 style={{
-                                  background: "linear-gradient(90deg, rgba(201,169,110,0.14) 0%, rgba(255,255,255,0.02) 100%)",
-                                  borderBottom: "1px solid rgba(255,255,255,0.08)",
+                                  background: "linear-gradient(90deg, rgba(212,175,55,0.12) 0%, rgba(255,255,255,0.7) 100%)",
                                 }}
                               >
                                 <div className="flex items-center gap-2">
-                                  <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold flex items-center justify-center border border-gold/30">
-                                    <Sparkles size={14} />
+                                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-100 via-amber-50 to-white border border-amber-300/80 flex items-center justify-center shadow-xs text-amber-900 shrink-0">
+                                    <Sparkles size={14} className="text-amber-700" />
                                   </div>
                                   <div>
-                                    <p className="text-[9px] font-black uppercase tracking-[0.25em] text-gold/70 leading-none font-mono">
+                                    <p className="text-[11px] font-black uppercase tracking-[0.25em] text-amber-800/80 leading-none font-mono">
                                       Upgrades
                                     </p>
-                                    <h3 className="text-sm font-heading font-bold text-white mt-0.5">
+                                    <h3 className="text-sm font-heading font-bold text-neutral-900 mt-0.5">
                                       Add-ons ({selectedAddOns.length})
                                     </h3>
                                   </div>
@@ -3698,7 +4799,7 @@ export default function BookingPage() {
                                 <button
                                   type="button"
                                   onClick={() => setStep(3)}
-                                  className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-neutral-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                                  className="w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 flex items-center justify-center border border-amber-200 transition-colors cursor-pointer"
                                   title="Edit add-ons"
                                 >
                                   <Edit3 size={13} />
@@ -3712,18 +4813,18 @@ export default function BookingPage() {
                                   return (
                                     <div
                                       key={idx}
-                                      className="p-2.5 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-between gap-2 transition-all"
+                                      className="p-2.5 rounded-xl bg-white border border-[#E7DFD3] flex items-center justify-between gap-2 shadow-2xs transition-all"
                                     >
                                       <div className="flex items-center gap-2 min-w-0">
-                                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 border ${visuals.iconBg}`}>
+                                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 border ${visuals.lightIconBg || visuals.iconBg}`}>
                                           {visuals.icon}
                                         </div>
-                                        <span className="text-xs font-medium text-white truncate">
+                                        <span className="text-xs font-semibold text-neutral-900 truncate">
                                           {visuals.cleanName}
                                         </span>
                                       </div>
                                       {visuals.specBadge && (
-                                        <span className="px-1.5 py-0.2 rounded text-[8.5px] font-bold uppercase tracking-wider bg-gold/20 text-gold border border-gold/40 font-mono shrink-0">
+                                        <span className="px-1.5 py-0.2 rounded text-[10.5px] font-bold uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-300 font-mono shrink-0">
                                           {visuals.specBadge}
                                         </span>
                                       )}
@@ -3732,13 +4833,235 @@ export default function BookingPage() {
                                 })}
                               </div>
 
-                              <div className="p-3 pt-2 border-t border-white/10 text-center text-[8.5px] uppercase tracking-wider font-mono text-gold/70 font-bold">
+                              <div className="p-3 pt-2 border-t border-amber-200/60 text-center text-[10.5px] uppercase tracking-wider font-mono text-amber-800/80 font-bold">
                                 Studio Quality Prints
                               </div>
                             </div>
                           )}
                         </div>
                       </div>
+                    </div>
+
+                    {/* ─────────────────────────────────────────────────────────────
+                        RECIPIENT & BENEFICIARY SELECTION: "WHO IS THIS BOOKING FOR?"
+                    ───────────────────────────────────────────────────────────── */}
+                    <div className="p-5 sm:p-7 rounded-3xl bg-white border border-neutral-200/90 shadow-2xs space-y-5 transition-all">
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-100 pb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-2xl bg-gold/15 text-gold flex items-center justify-center border border-gold/30 shadow-xs">
+                            <UserCheck size={20} />
+                          </div>
+                          <div>
+                            <span className="text-xs uppercase font-bold tracking-wider text-neutral-400 flex items-center gap-1.5">
+                              <Sparkles size={11} className="text-gold" /> Recipient Verification
+                            </span>
+                            <h4 className="font-heading font-extrabold text-primary text-base sm:text-lg leading-tight mt-0.5">
+                              Who is this booking for?
+                            </h4>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowBookingForModal(true)}
+                          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border border-gold/30 bg-gold/10 text-gold hover:bg-gold/20 transition-all cursor-pointer shadow-2xs"
+                        >
+                          <HelpCircle size={13} /> Review Options
+                        </button>
+                      </div>
+
+                      {/* Recipient Radio Toggle Buttons */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        {/* Option A: Myself */}
+                        <div
+                          onClick={() => handleSelectBookingFor("myself")}
+                          className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3.5 ${
+                            bookingFor === "myself"
+                              ? "border-gold bg-gradient-to-br from-amber-500/10 via-amber-50/50 to-white shadow-md shadow-gold/5 ring-1 ring-gold/40"
+                              : "border-neutral-200/80 bg-neutral-50/50 hover:bg-white hover:border-neutral-300"
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
+                            bookingFor === "myself" ? "border-gold bg-gold" : "border-neutral-300 bg-white"
+                          }`}>
+                            {bookingFor === "myself" && <div className="w-2 h-2 rounded-full bg-neutral-950" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <h5 className="font-heading font-bold text-sm text-primary">
+                                Myself
+                              </h5>
+                              <span className="text-gold font-bold text-xs sm:text-sm">
+                                — {activeProfile?.first_name || user?.user_metadata?.first_name || "Mark June"} {activeProfile?.last_name || user?.user_metadata?.last_name || "Repunte"}
+                              </span>
+                              <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                Account Owner
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-neutral-500 font-body mt-1 leading-snug">
+                              Photoshoot session, regalia sizing, and studio outputs will be issued in your own name.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Option B: Someone else */}
+                        <div
+                          onClick={() => handleSelectBookingFor("someone_else")}
+                          className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3.5 ${
+                            bookingFor === "someone_else"
+                              ? "border-gold bg-gradient-to-br from-amber-500/10 via-amber-50/50 to-white shadow-md shadow-gold/5 ring-1 ring-gold/40"
+                              : "border-neutral-200/80 bg-neutral-50/50 hover:bg-white hover:border-neutral-300"
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
+                            bookingFor === "someone_else" ? "border-gold bg-gold" : "border-neutral-300 bg-white"
+                          }`}>
+                            {bookingFor === "someone_else" && <div className="w-2 h-2 rounded-full bg-neutral-950" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <h5 className="font-heading font-bold text-sm text-primary">
+                                Someone else
+                              </h5>
+                              <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                                Participant / Beneficiary
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-neutral-500 font-body mt-1 leading-snug">
+                              Book on behalf of another person. Your account profile stays safe and untouched.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* When "Someone else" is selected: Participant Personal Information Form */}
+                      {bookingFor === "someone_else" && (
+                        <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/40 border border-amber-300/60 space-y-4 animate-fade-in">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/60 pb-3">
+                            <div>
+                              <h5 className="font-heading font-bold text-sm text-amber-950 flex items-center gap-1.5">
+                                <User size={15} className="text-gold" /> Participant Personal Information
+                              </h5>
+                              <p className="text-[11px] text-amber-800/80 font-body mt-0.5">
+                                Enter the information of the person who will be attending this photoshoot.
+                              </p>
+                            </div>
+                            <span className="text-xs font-bold uppercase tracking-wider text-amber-900 bg-amber-200/50 px-2.5 py-0.5 rounded-full border border-amber-300 font-mono">
+                              Distinct Booking Record
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
+                            <div>
+                              <label className="block text-xs font-bold text-primary mb-1">
+                                Participant First Name <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={participantFirstName}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setParticipantFirstName(val);
+                                  if (isAcademicService) setStudentFirstName(val);
+                                }}
+                                placeholder="e.g. Jude Lawrence"
+                                required
+                                className="w-full h-10 px-3 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs font-semibold text-primary outline-none transition-all shadow-2xs"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-primary mb-1">
+                                Middle Name
+                              </label>
+                              <input
+                                type="text"
+                                value={participantMiddleName}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setParticipantMiddleName(val);
+                                  if (isAcademicService) setStudentMiddleName(val);
+                                }}
+                                placeholder="e.g. Marie"
+                                className="w-full h-10 px-3 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs font-medium text-primary outline-none transition-all shadow-2xs"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-primary mb-1">
+                                Participant Last Name <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={participantLastName}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setParticipantLastName(val);
+                                  if (isAcademicService) setStudentLastName(val);
+                                }}
+                                placeholder="e.g. Sinugbuhan"
+                                required
+                                className="w-full h-10 px-3 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs font-semibold text-primary outline-none transition-all shadow-2xs"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-primary mb-1">
+                                Relationship to You
+                              </label>
+                              <select
+                                value={participantRelationship}
+                                onChange={(e) => setParticipantRelationship(e.target.value)}
+                                className="w-full h-10 px-3 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs font-medium text-primary outline-none transition-all shadow-2xs cursor-pointer"
+                              >
+                                <option value="Friend">Friend</option>
+                                <option value="Classmate">Classmate</option>
+                                <option value="Sibling">Sibling (Brother / Sister)</option>
+                                <option value="Child">Child (Son / Daughter)</option>
+                                <option value="Spouse / Partner">Spouse / Partner</option>
+                                <option value="Parent">Parent (Mother / Father)</option>
+                                <option value="Colleague">Colleague / Workmate</option>
+                                <option value="Relative">Other Relative</option>
+                                <option value="Other">Other</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-primary mb-1">
+                                Participant Contact Phone
+                              </label>
+                              <input
+                                type="tel"
+                                value={participantPhone}
+                                onChange={(e) => setParticipantPhone(e.target.value)}
+                                placeholder="e.g. 09171234567"
+                                className="w-full h-10 px-3 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs font-medium text-primary outline-none transition-all shadow-2xs"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-primary mb-1">
+                                Participant Email (Optional)
+                              </label>
+                              <input
+                                type="email"
+                                value={participantEmail}
+                                onChange={(e) => setParticipantEmail(e.target.value)}
+                                placeholder="e.g. participant@example.com"
+                                className="w-full h-10 px-3 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs font-medium text-primary outline-none transition-all shadow-2xs"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Distinction Context Bar */}
+                          <div className="p-3 rounded-xl bg-white/80 border border-amber-200 text-[11px] text-neutral-600 flex items-start gap-2.5">
+                            <ShieldCheck size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                            <div className="leading-relaxed">
+                              <span className="font-bold text-primary">Account Owner Protection:</span> You are currently logged in as <strong className="text-primary font-semibold">{activeProfile?.first_name || user?.user_metadata?.first_name || "Mark June"} {activeProfile?.last_name || user?.user_metadata?.last_name || "Repunte"}</strong>. You will hold ownership of the billing and order tracking, but this session will be recorded and personalized for <strong className="text-gold font-bold">{participantFirstName || "the participant"} {participantLastName || ""}</strong>.
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* ─────────────────────────────────────────────────────────────
@@ -3760,7 +5083,7 @@ export default function BookingPage() {
                             </div>
                           )}
                           <div>
-                            <span className="text-[10px] uppercase font-bold tracking-wider text-neutral-400 flex items-center gap-1.5">
+                            <span className="text-xs uppercase font-bold tracking-wider text-neutral-400 flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                               Client Profile
                             </span>
@@ -3773,7 +5096,7 @@ export default function BookingPage() {
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/70 px-2.5 py-1 rounded-full shadow-2xs">
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/70 px-2.5 py-1 rounded-full shadow-2xs">
                             <ShieldCheck size={12} className="text-emerald-600" /> Verified Account
                           </span>
                           <button
@@ -3814,7 +5137,7 @@ export default function BookingPage() {
                             <div className="flex items-center justify-between text-neutral-400 mb-1">
                               <div className="flex items-center gap-1.5">
                                 <User size={13} className="text-gold" />
-                                <span className="text-[10px] uppercase font-bold tracking-wider">Client Name</span>
+                                <span className="text-xs uppercase font-bold tracking-wider">Client Name</span>
                               </div>
                               <Edit3 size={11} className="opacity-0 group-hover:opacity-100 text-gold transition-opacity" />
                             </div>
@@ -3823,7 +5146,7 @@ export default function BookingPage() {
                                 ? `${activeProfile?.first_name || ""} ${activeProfile?.last_name || ""}`.trim()
                                 : <span className="text-neutral-400 italic">Click to set</span>}
                             </span>
-                            <span className="text-[9px] text-neutral-400 mt-1">Full legal name</span>
+                            <span className="text-[11px] text-neutral-400 mt-1">Full legal name</span>
                           </div>
 
                           {/* Card 2: Email */}
@@ -3831,14 +5154,14 @@ export default function BookingPage() {
                             <div className="flex items-center justify-between text-neutral-400 mb-1">
                               <div className="flex items-center gap-1.5">
                                 <Mail size={13} className="text-gold" />
-                                <span className="text-[10px] uppercase font-bold tracking-wider">Email</span>
+                                <span className="text-xs uppercase font-bold tracking-wider">Email</span>
                               </div>
                               <Lock size={10} className="text-neutral-400" title="Account login email" />
                             </div>
                             <span className="font-medium text-neutral-700 truncate text-xs" title={activeProfile?.email || user?.email}>
                               {activeProfile?.email || user?.email || "No email on file"}
                             </span>
-                            <span className="text-[9px] text-emerald-600 font-medium mt-1 flex items-center gap-0.5">
+                            <span className="text-[11px] text-emerald-600 font-medium mt-1 flex items-center gap-0.5">
                               <Check size={9} /> Verified email
                             </span>
                           </div>
@@ -3852,7 +5175,7 @@ export default function BookingPage() {
                             <div className="flex items-center justify-between text-neutral-400 mb-1">
                               <div className="flex items-center gap-1.5">
                                 <Phone size={13} className="text-gold" />
-                                <span className="text-[10px] uppercase font-bold tracking-wider">Phone</span>
+                                <span className="text-xs uppercase font-bold tracking-wider">Phone</span>
                               </div>
                               <Edit3 size={11} className="opacity-0 group-hover:opacity-100 text-gold transition-opacity" />
                             </div>
@@ -3860,24 +5183,24 @@ export default function BookingPage() {
                               {activeProfile?.phone ? (
                                 activeProfile.phone
                               ) : (
-                                <span className="text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded text-[10px] font-bold inline-block">
+                                <span className="text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded text-xs font-bold inline-block">
                                   + Add Phone
                                 </span>
                               )}
                             </span>
-                            <span className="text-[9px] text-neutral-400 mt-1">SMS & Studio Alerts</span>
+                            <span className="text-[11px] text-neutral-400 mt-1">SMS & Studio Alerts</span>
                           </div>
 
                           {/* Card 4: Account Role */}
                           <div className="p-3 rounded-2xl bg-neutral-50/80 border border-neutral-200/70 flex flex-col justify-between shadow-2xs">
                             <div className="flex items-center gap-1.5 text-neutral-400 mb-1">
                               <Sparkles size={13} className="text-gold" />
-                              <span className="text-[10px] uppercase font-bold tracking-wider">Account Role</span>
+                              <span className="text-xs uppercase font-bold tracking-wider">Account Role</span>
                             </div>
                             <span className="font-semibold text-gold capitalize truncate text-xs">
                               {activeProfile?.role || "Customer"}
                             </span>
-                            <span className="text-[9px] text-neutral-400 mt-1">Member Account</span>
+                            <span className="text-[11px] text-neutral-400 mt-1">Member Account</span>
                           </div>
                         </div>
                       ) : (
@@ -3892,7 +5215,7 @@ export default function BookingPage() {
                                 Changes are saved directly to your account in the database.
                               </p>
                             </div>
-                            <span className="text-[10px] font-mono text-neutral-400">Live DB Sync</span>
+                            <span className="text-xs font-mono text-neutral-400">Live DB Sync</span>
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
@@ -4011,33 +5334,41 @@ export default function BookingPage() {
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/70 px-2.5 py-1 rounded-full shadow-2xs">
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/70 px-2.5 py-1 rounded-full shadow-2xs">
                             <ShieldCheck size={12} className="text-emerald-600" /> Active Student Profile
                           </span>
                         </div>
                       </div>
 
-                      {/* ── 1. CLIENT PROFILE SECTION ─────────────────────────────────── */}
+                      {/* ── 1. STUDENT / GRADUATE DETAILS ─────────────────────────────────── */}
                       <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-lg bg-gold/10 text-gold flex items-center justify-center">
-                            <User size={13} />
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-lg bg-gold/10 text-gold flex items-center justify-center">
+                              <User size={13} />
+                            </div>
+                            <span className="font-heading text-xs sm:text-sm font-bold text-primary">
+                              1. Student / Graduate Information
+                            </span>
                           </div>
-                          <span className="font-heading text-xs sm:text-sm font-bold text-primary">
-                            1. Client Profile &amp; Contact Information
+                          <span className="text-[11px] text-neutral-500 font-body">
+                            Account Holder: <strong className="text-primary font-semibold">{activeProfile?.first_name || user?.user_metadata?.first_name || "Client"} {activeProfile?.last_name || user?.user_metadata?.last_name || ""}</strong>
                           </span>
                         </div>
+                        <p className="text-[11px] text-neutral-500 font-body">
+                          Enter the full name of the student or graduate appearing in this photoshoot. Booking on behalf of another person will not change your account profile.
+                        </p>
 
-                        {/* Name Fields (Row 1): First Name, Middle Name, Last Name */}
+                        {/* Name Fields (Row 1): Student First Name, Middle Name, Last Name */}
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <div>
                             <label className="block text-xs font-bold text-primary mb-1">
-                              First Name <span className="text-red-500">*</span>
+                              Student First Name <span className="text-red-500">*</span>
                             </label>
                             <input
                               type="text"
-                              value={editFirstName}
-                              onChange={(e) => setEditFirstName(e.target.value)}
+                              value={studentFirstName}
+                              onChange={(e) => setStudentFirstName(e.target.value)}
                               placeholder="First Name"
                               className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-primary font-semibold outline-none transition-all shadow-2xs"
                             />
@@ -4049,8 +5380,8 @@ export default function BookingPage() {
                             </label>
                             <input
                               type="text"
-                              value={editMiddleName}
-                              onChange={(e) => setEditMiddleName(e.target.value)}
+                              value={studentMiddleName}
+                              onChange={(e) => setStudentMiddleName(e.target.value)}
                               placeholder="Middle Name / Initial"
                               className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-primary font-semibold outline-none transition-all shadow-2xs"
                             />
@@ -4058,12 +5389,12 @@ export default function BookingPage() {
 
                           <div>
                             <label className="block text-xs font-bold text-primary mb-1">
-                              Last Name
+                              Student Last Name
                             </label>
                             <input
                               type="text"
-                              value={editLastName}
-                              onChange={(e) => setEditLastName(e.target.value)}
+                              value={studentLastName}
+                              onChange={(e) => setStudentLastName(e.target.value)}
                               placeholder="Last Name"
                               className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-primary font-semibold outline-none transition-all shadow-2xs"
                             />
@@ -4088,7 +5419,7 @@ export default function BookingPage() {
                           <div>
                             <label className="block text-xs font-bold text-primary mb-1 flex items-center justify-between">
                               <span>Email Address</span>
-                              <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5"><Check size={10} /> Verified</span>
+                              <span className="text-xs text-emerald-600 font-bold flex items-center gap-0.5"><Check size={10} /> Verified</span>
                             </label>
                             <div className="relative flex items-center">
                               <Mail size={15} className="absolute left-3.5 text-neutral-400 pointer-events-none" />
@@ -4162,7 +5493,7 @@ export default function BookingPage() {
                                   <button
                                     type="button"
                                     onClick={() => setUnivDropdownOpen(false)}
-                                    className="text-[10px] text-neutral-400 hover:text-primary font-semibold"
+                                    className="text-xs text-neutral-400 hover:text-primary font-semibold"
                                   >
                                     Hide ✕
                                   </button>
@@ -4210,12 +5541,12 @@ export default function BookingPage() {
                               {/* Predictive Campus Menu */}
                               {univDropdownOpen && filteredCampuses.length > 0 && (
                                 <div className="absolute left-0 right-0 top-full mt-1.5 z-30 bg-white rounded-2xl border border-neutral-200 shadow-2xl max-h-64 overflow-y-auto divide-y divide-neutral-100 animate-fade-in">
-                                  <div className="p-2.5 text-[10px] font-bold text-neutral-500 uppercase tracking-wider bg-neutral-50 sticky top-0 flex items-center justify-between border-b border-neutral-100 z-10 backdrop-blur-sm">
+                                  <div className="p-2.5 text-xs font-bold text-neutral-500 uppercase tracking-wider bg-neutral-50 sticky top-0 flex items-center justify-between border-b border-neutral-100 z-10 backdrop-blur-sm">
                                     <span>Campuses &amp; Branches ({filteredCampuses.length})</span>
                                     <button
                                       type="button"
                                       onClick={() => setUnivDropdownOpen(false)}
-                                      className="text-neutral-400 hover:text-primary font-bold px-1.5 py-0.5 rounded hover:bg-neutral-200 text-[10px]"
+                                      className="text-neutral-400 hover:text-primary font-bold px-1.5 py-0.5 rounded hover:bg-neutral-200 text-xs"
                                     >
                                       Close ✕
                                     </button>
@@ -4231,11 +5562,11 @@ export default function BookingPage() {
                                         <div className="flex items-center gap-1.5 flex-wrap">
                                           <span className="font-semibold text-primary text-xs">{item.univName}</span>
                                           {item.isExtension ? (
-                                            <span className="text-[9px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                                            <span className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
                                               Extension
                                             </span>
                                           ) : (
-                                            <span className="text-[9px] font-medium text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded-full">
+                                            <span className="text-[11px] font-medium text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded-full">
                                               Main / Branch
                                             </span>
                                           )}
@@ -4315,7 +5646,7 @@ export default function BookingPage() {
                                   <button
                                     type="button"
                                     onClick={() => setDegreeDropdownOpen(false)}
-                                    className="text-[10px] text-neutral-400 hover:text-primary font-semibold"
+                                    className="text-xs text-neutral-400 hover:text-primary font-semibold"
                                   >
                                     Hide ✕
                                   </button>
@@ -4352,12 +5683,12 @@ export default function BookingPage() {
                               {/* Floating Suggestions */}
                               {degreeDropdownOpen && filteredPrograms.length > 0 && (
                                 <div className="absolute left-0 right-0 top-full mt-1.5 z-30 bg-white rounded-xl border border-neutral-200 shadow-xl max-h-48 overflow-y-auto divide-y divide-neutral-100">
-                                  <div className="p-2 text-[10px] font-bold text-neutral-500 uppercase tracking-wider bg-neutral-50 sticky top-0 flex items-center justify-between border-b border-neutral-100 z-10">
+                                  <div className="p-2 text-xs font-bold text-neutral-500 uppercase tracking-wider bg-neutral-50 sticky top-0 flex items-center justify-between border-b border-neutral-100 z-10">
                                     <span>Popular Academic Programs</span>
                                     <button
                                       type="button"
                                       onClick={() => setDegreeDropdownOpen(false)}
-                                      className="text-neutral-400 hover:text-primary font-bold px-1.5 py-0.5 rounded hover:bg-neutral-200 text-[10px]"
+                                      className="text-neutral-400 hover:text-primary font-bold px-1.5 py-0.5 rounded hover:bg-neutral-200 text-xs"
                                     >
                                       Close ✕
                                     </button>
@@ -4402,7 +5733,7 @@ export default function BookingPage() {
                               type="text"
                               value={studentSection}
                               onChange={e => setStudentSection(e.target.value)}
-                              placeholder={isSeniorHighService ? "e.g., Grade 12 - STEM A" : "e.g., BSIT 4-1"}
+                              placeholder={isSeniorHighService ? "e.g., Alcala, Duterte, A, or 1" : "e.g., A, B, 1, or 4-1"}
                               className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs font-semibold"
                             />
                           </div>
@@ -4428,7 +5759,7 @@ export default function BookingPage() {
                                 <Sparkles size={13} className="text-gold" />
                                 Motto for Yearbook
                               </span>
-                              <span className="text-[10px] text-neutral-400 font-normal">Official graduation album print</span>
+                              <span className="text-xs text-neutral-400 font-normal">Official graduation album print</span>
                             </label>
                             <div className="relative flex items-center">
                               <Edit3 size={15} className="absolute left-3.5 text-neutral-400 pointer-events-none" />
@@ -4790,7 +6121,7 @@ export default function BookingPage() {
                       <div>
                         <label className="block text-xs font-bold text-primary mb-2 flex items-center justify-between">
                           <span>Preferred Photoshoot Date <span className="text-red-500">*</span></span>
-                          <span className="text-[10px] text-neutral-400 font-normal">Interactive Calendar View</span>
+                          <span className="text-xs text-neutral-400 font-normal">Interactive Calendar View</span>
                         </label>
 
                         <div className="grid md:grid-cols-2 gap-4 items-start">
@@ -4819,7 +6150,7 @@ export default function BookingPage() {
                       <div>
                         <label className="block text-xs font-bold text-primary mb-2 flex items-center justify-between">
                           <span>Select Appointment Time Slot <span className="text-red-500">*</span></span>
-                          <span className="text-[10px] text-neutral-400 font-normal">8:00 AM – 5:00 PM Operating Hours</span>
+                          <span className="text-xs text-neutral-400 font-normal">8:00 AM – 5:00 PM Operating Hours</span>
                         </label>
 
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -4836,7 +6167,7 @@ export default function BookingPage() {
                                     : "border-neutral-200 bg-white hover:border-gold/50 text-neutral-700"
                                 }`}
                               >
-                                <span className="text-[10px] uppercase font-bold opacity-75">{slot.period}</span>
+                                <span className="text-xs uppercase font-bold opacity-75">{slot.period}</span>
                                 <span className="text-xs font-bold font-body mt-0.5">{slot.label}</span>
                               </button>
                             );
@@ -4870,7 +6201,7 @@ export default function BookingPage() {
                               <div className="flex items-center gap-2 font-heading font-bold text-sm sm:text-base text-neutral-950">
                                 <GraduationCap size={18} className="text-amber-800" /> School Campus (On-site)
                               </div>
-                              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-neutral-900 text-gold border border-gold/40 shadow-2xs">
+                              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-neutral-900 text-gold border border-gold/40 shadow-2xs">
                                 Selected
                               </span>
                             </div>
@@ -4890,7 +6221,7 @@ export default function BookingPage() {
                               <div className="flex items-center gap-2 font-heading font-bold text-sm sm:text-base text-neutral-950">
                                 <Building size={17} className="text-amber-800" /> E-Kodak Studio
                               </div>
-                              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-neutral-900 text-gold border border-gold/40 shadow-2xs">
+                              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-neutral-900 text-gold border border-gold/40 shadow-2xs">
                                 Selected
                               </span>
                             </div>
@@ -4952,7 +6283,7 @@ export default function BookingPage() {
                             <div className="overflow-x-auto">
                               <table className="w-full text-left text-xs font-body divide-y divide-neutral-200/80">
                                 <thead>
-                                  <tr className="bg-neutral-50/80 text-[10px] uppercase font-bold text-neutral-500 tracking-wider">
+                                  <tr className="bg-neutral-50/80 text-xs uppercase font-bold text-neutral-500 tracking-wider">
                                     <th className="py-2.5 px-4 w-1/3">Record Parameter</th>
                                     <th className="py-2.5 px-4">Verified Details</th>
                                   </tr>
@@ -4996,7 +6327,7 @@ export default function BookingPage() {
                                     </td>
                                     <td className="py-3 px-4 font-bold text-neutral-950">
                                       <span className="bg-gold/20 text-neutral-950 px-2 py-0.5 rounded-md border border-gold/40">
-                                        {studentSection || "GRADE 12- STEM-A"}
+                                        {normalizedStudentSection ? (normalizedStudentSection.toLowerCase().startsWith('section') ? normalizedStudentSection : `Section ${normalizedStudentSection}`) : "Section A"}
                                       </span>
                                     </td>
                                   </tr>
@@ -5268,126 +6599,11 @@ export default function BookingPage() {
                       Photo style &amp; creative references
                     </h2>
                     <p className="text-xs sm:text-sm text-neutral-600 font-body mt-1 max-w-md mx-auto">
-                      Select preferred photographic styles or upload sample reference photos for our studio lighting team.
+                      Upload sample reference photos or provide special instructions for our studio lighting and camera team.
                     </p>
                   </div>
 
-                  {/* ── CARD 1: CURATED PHOTOGRAPHIC STYLES ── */}
-                  <div className="p-5 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-neutral-200/90 shadow-2xs space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 pb-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0">
-                          <Palette size={16} />
-                        </div>
-                        <div>
-                          <h3 className="font-heading text-sm sm:text-base font-bold text-primary">
-                            Curated Photography Styles
-                          </h3>
-                          <p className="text-[11px] text-neutral-500 font-body">
-                            Select lighting setups and aesthetic tones for our studio crew
-                          </p>
-                        </div>
-                      </div>
-                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200/70">
-                        Optional · Multi-select
-                      </span>
-                    </div>
-
-                    {/* Responsive Style Grid: 3 or 4 cards with visual previews */}
-                    {(() => {
-                      const currentPegs = (isCollegeService || isSeniorHighService)
-                        ? PRESET_STYLE_PEGS.graduation
-                        : isWeddingService
-                        ? PRESET_STYLE_PEGS.wedding
-                        : isCorporateService
-                        ? PRESET_STYLE_PEGS.corporate
-                        : PRESET_STYLE_PEGS.general;
-
-                      const gridColsClass = currentPegs.length === 4
-                        ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
-                        : "grid grid-cols-1 sm:grid-cols-3 gap-4";
-
-                      return (
-                        <div className={gridColsClass}>
-                          {currentPegs.map((peg) => {
-                            const isPegSelected = selectedPresetPegs.includes(peg.title);
-                            return (
-                              <div
-                                key={peg.id}
-                                onClick={() => togglePresetPeg(peg)}
-                                className={`group relative rounded-2xl overflow-hidden border-2 cursor-pointer transition-all duration-200 flex flex-col justify-between ${
-                                  isPegSelected
-                                    ? "border-primary bg-neutral-900 text-white shadow-md ring-2 ring-gold/40"
-                                    : "border-neutral-200/90 bg-white hover:border-gold/60 hover:shadow-warm-xs text-neutral-900"
-                                }`}
-                              >
-                                {/* Media Thumbnail */}
-                                <div className="relative h-36 sm:h-40 w-full overflow-hidden bg-neutral-100">
-                                  <img 
-                                    src={peg.image} 
-                                    alt={peg.title} 
-                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                  />
-                                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-
-                                  {/* Tag Badge */}
-                                  {peg.tag && (
-                                    <span className="absolute top-2.5 left-2.5 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-xs text-gold border border-gold/40">
-                                      {peg.tag}
-                                    </span>
-                                  )}
-
-                                  {/* Selection Check Circle */}
-                                  <div className={`absolute top-2.5 right-2.5 w-6 h-6 rounded-full flex items-center justify-center transition-all shadow-xs ${
-                                    isPegSelected
-                                      ? "bg-gold text-neutral-950 font-bold ring-2 ring-white/60 scale-105"
-                                      : "bg-black/50 backdrop-blur-xs text-white/50 border border-white/40 group-hover:border-white"
-                                  }`}>
-                                    <Check size={13} className={isPegSelected ? "stroke-[3]" : "opacity-0 group-hover:opacity-60"} />
-                                  </div>
-
-                                  {/* Full Image Preview Trigger */}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setActivePegModal(peg);
-                                    }}
-                                    className="absolute bottom-2.5 right-2.5 px-2 py-1 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-xs text-[11px] font-medium text-white flex items-center gap-1 transition-colors border border-white/20"
-                                    title="View full reference image"
-                                  >
-                                    <Eye size={12} />
-                                    <span>Preview</span>
-                                  </button>
-                                </div>
-
-                                {/* Text Details */}
-                                <div className="p-3.5 flex flex-col justify-between flex-1 space-y-2">
-                                  <div>
-                                    <h4 className={`font-heading text-sm font-bold leading-snug ${isPegSelected ? "text-white" : "text-primary"}`}>
-                                      {peg.title}
-                                    </h4>
-                                    <p className={`text-xs font-body leading-relaxed mt-1 line-clamp-2 ${isPegSelected ? "text-neutral-300" : "text-neutral-600"}`}>
-                                      {peg.desc}
-                                    </p>
-                                  </div>
-
-                                  <div className={`pt-2 border-t flex items-center justify-between text-[11px] font-semibold ${
-                                    isPegSelected ? "border-white/10 text-gold" : "border-neutral-100 text-neutral-500"
-                                  }`}>
-                                    <span>{isPegSelected ? "Selected for shoot" : "Click to select"}</span>
-                                    {isPegSelected && <CheckCircle size={14} className="text-gold" />}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </div>
-
-                  {/* ── CARD 2: UPLOAD REFERENCE PHOTOS & VISUAL PEGS ── */}
+                  {/* ── CARD 1: UPLOAD REFERENCE PHOTOS & VISUAL PEGS ── */}
                   <div className="p-5 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-neutral-200/90 shadow-2xs space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 pb-3">
                       <div className="flex items-center gap-2.5">
@@ -5403,7 +6619,7 @@ export default function BookingPage() {
                           </p>
                         </div>
                       </div>
-                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200/70">
+                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200/70">
                         Max 3 Photos · 3MB each
                       </span>
                     </div>
@@ -5443,7 +6659,7 @@ export default function BookingPage() {
                             <Trash2 size={12} /> Clear text
                           </button>
                         )}
-                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200/70">
+                        <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200/70">
                           Optional
                         </span>
                       </div>
@@ -5456,7 +6672,7 @@ export default function BookingPage() {
                           <span className="text-xs font-bold text-neutral-700 block">
                             Quick Add Suggestions:
                           </span>
-                          <span className="text-[10px] text-neutral-400 font-body">Click to insert note</span>
+                          <span className="text-xs text-neutral-400 font-body">Click to insert note</span>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           {activeSpecialTemplates.map((tmpl, idx) => (
@@ -5509,412 +6725,451 @@ export default function BookingPage() {
                       Review &amp; confirm your reservation
                     </h2>
                     <p className="text-xs sm:text-sm text-neutral-600 font-body mt-1 max-w-md mx-auto">
-                      Review all session data below. You can open, collapse, or directly click &quot;Edit&quot; on any section.
+                      Review all session data below. Move cursor over any section to auto-inspect, click to lock open, or click &quot;Edit&quot; to change details.
                     </p>
+                  </div>
+
+                  {/* Quick Action: Expand All */}
+                  <div className="flex justify-end px-1 pb-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPinnedAccordions({ pkg: true, client: true, schedule: true, addons: true, pegs: true });
+                      }}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold text-neutral-600 hover:text-neutral-900 bg-neutral-100/90 hover:bg-neutral-200/90 transition-colors border border-neutral-200/80 shadow-2xs"
+                    >
+                      Expand All
+                    </button>
                   </div>
 
                   <div className="space-y-3.5">
                     
                     {/* Accordion A: Service & Package */}
-                    <div className="border border-neutral-200/90 rounded-2xl overflow-hidden bg-white shadow-xs transition-all">
-                      <div 
-                        onClick={() => setReviewAccordions(prev => ({ ...prev, pkg: !prev.pkg }))}
-                        className="p-4 bg-gradient-to-r from-neutral-50/90 to-amber-50/30 flex items-center justify-between cursor-pointer hover:bg-neutral-100/70 transition-colors"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
-                            <Package size={16} />
+                    <ReviewAccordionItem
+                      id="pkg"
+                      isOpen={isAccordionOpen("pkg")}
+                      isPinned={pinnedAccordions.pkg}
+                      icon={<Package size={16} />}
+                      title="Service & Package Tier"
+                      subtitle={
+                        <>
+                          {selectedService?.name} • <span className="font-semibold text-gold">{selectedTier?.name || "Standard"}</span>
+                        </>
+                      }
+                      onEdit={() => setStep(2)}
+                      onMouseEnter={() => handleAccordionMouseEnter("pkg")}
+                      onMouseMove={() => handleAccordionMouseEnter("pkg")}
+                      onMouseLeave={() => handleAccordionMouseLeave("pkg")}
+                      onTogglePin={() => toggleAccordionPin("pkg")}
+                    >
+                      <div className="p-4 pt-3 text-xs font-body space-y-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                          <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
+                            <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Service</span>
+                            <span className="font-bold text-primary text-xs mt-0.5 block truncate" title={selectedService?.name}>{selectedService?.name}</span>
                           </div>
-                          <div>
-                            <span className="font-heading text-sm font-bold text-primary block leading-tight">Service &amp; Package Tier</span>
-                            <span className="text-[11px] text-neutral-500 font-body">
-                              {selectedService?.name} • <span className="font-semibold text-gold">{selectedTier?.name || "Standard"}</span>
-                            </span>
+                          <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
+                            <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Package Tier</span>
+                            <span className="font-bold text-gold text-xs mt-0.5 block">{selectedTier?.name || "Standard"}</span>
+                          </div>
+                          <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60 col-span-2 sm:col-span-1">
+                            <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Base Price</span>
+                            <span className="font-extrabold text-primary text-xs mt-0.5 block">₱{basePrice.toLocaleString()}</span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setStep(2); }}
-                            className="text-xs font-bold text-gold hover:underline bg-gold/10 px-2.5 py-1 rounded-lg border border-gold/20"
-                          >
-                            Edit
-                          </button>
-                          {reviewAccordions.pkg ? <ChevronUp size={16} className="text-neutral-400" /> : <ChevronDown size={16} className="text-neutral-400" />}
-                        </div>
-                      </div>
-                      {reviewAccordions.pkg && (
-                        <div className="p-4 pt-3 border-t border-neutral-100 text-xs font-body space-y-3">
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                            <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                              <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">Service</span>
-                              <span className="font-bold text-primary text-xs mt-0.5 block truncate" title={selectedService?.name}>{selectedService?.name}</span>
-                            </div>
-                            <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                              <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">Package Tier</span>
-                              <span className="font-bold text-gold text-xs mt-0.5 block">{selectedTier?.name || "Standard"}</span>
-                            </div>
-                            <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60 col-span-2 sm:col-span-1">
-                              <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">Base Price</span>
-                              <span className="font-extrabold text-primary text-xs mt-0.5 block">₱{basePrice.toLocaleString()}</span>
-                            </div>
-                          </div>
 
-                          {selectedTier?.duration && (
-                            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50/60 border border-amber-200/50 text-amber-900 text-xs">
-                              <Clock size={14} className="text-gold shrink-0" />
-                              <span>Estimated Session Duration: <strong className="font-bold">{selectedTier.duration}</strong></span>
-                            </div>
-                          )}
-
-                          {/* Complete Inclusions List */}
-                          {tierInclusions.length > 0 && (
-                            <div className="mt-3 pt-3 border-t border-neutral-100">
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1.5">
-                                  <Sparkles size={12} className="text-gold" /> Included in This Package
-                                </span>
-                                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
-                                  {tierInclusions.length} Inclusions Included
-                                </span>
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                {tierInclusions.map((item, idx) => (
-                                  <div key={idx} className="flex items-start gap-2 p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60 text-xs text-neutral-800">
-                                    <Check size={14} className="text-emerald-600 mt-0.5 shrink-0 stroke-[2.5]" />
-                                    <span className="font-medium leading-relaxed">{item}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Accordion B: Client & Institutional Information */}
-                    <div className="border border-neutral-200/90 rounded-2xl overflow-hidden bg-white shadow-xs transition-all">
-                      <div 
-                        onClick={() => setReviewAccordions(prev => ({ ...prev, client: !prev.client }))}
-                        className="p-4 bg-gradient-to-r from-neutral-50/90 to-amber-50/30 flex items-center justify-between cursor-pointer hover:bg-neutral-100/70 transition-colors"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
-                            {isAcademicService ? <GraduationCap size={16} /> : isWeddingService ? <Heart size={16} className="text-rose-500" /> : <User size={16} className="text-blue-500" />}
-                          </div>
-                          <div>
-                            <span className="font-heading text-sm font-bold text-primary block leading-tight">
-                              {isAcademicService ? "Student Details" : isWeddingService ? "Wedding Information" : "Client Details"}
-                            </span>
-                            <span className="text-[11px] text-neutral-500 font-body">
-                              {isAcademicService 
-                                ? ([editFirstName, editMiddleName, editLastName].filter(Boolean).join(" ") || "Student Profile")
-                                : isWeddingService ? `${brideName || 'Bride'} & ${groomName || 'Groom'}`
-                                : [editFirstName, editLastName].filter(Boolean).join(" ") || "Client Profile"}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setStep(4); }}
-                            className="text-xs font-bold text-gold hover:underline bg-gold/10 px-2.5 py-1 rounded-lg border border-gold/20"
-                          >
-                            Edit
-                          </button>
-                          {reviewAccordions.client ? <ChevronUp size={16} className="text-neutral-400" /> : <ChevronDown size={16} className="text-neutral-400" />}
-                        </div>
-                      </div>
-                      {reviewAccordions.client && (
-                        <div className="p-4 pt-3 border-t border-neutral-100 text-xs font-body space-y-3">
-                          {isAcademicService && (
-                            <>
-                              {/* Student Profile Top Banner */}
-                              <div className="p-3 rounded-xl bg-amber-50/40 border border-amber-200/50 flex flex-wrap items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-7 h-7 rounded-lg bg-gold/20 text-gold flex items-center justify-center shrink-0">
-                                    <User size={14} />
-                                  </div>
-                                  <div>
-                                    <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider leading-none">Student Name</span>
-                                    <span className="font-heading font-extrabold text-primary text-sm">
-                                      {[editFirstName, editMiddleName, editLastName].filter(Boolean).join(" ") || "Student Name"}
-                                    </span>
-                                  </div>
-                                </div>
-                                {studentIdNumber && (
-                                  <span className="text-[11px] font-mono font-bold text-primary bg-white px-2.5 py-1 rounded-lg border border-neutral-200 shadow-2xs">
-                                    ID: {studentIdNumber}
-                                  </span>
+                        {/* Detected Session Arrangement & Estimated Duration (School vs Studio) */}
+                        <div className="mt-3.5 p-3.5 rounded-2xl bg-gradient-to-br from-amber-50/80 via-white to-neutral-50/80 border border-amber-200/80 shadow-2xs">
+                          <div className="flex items-center justify-between gap-2 mb-2.5 pb-2 border-b border-amber-200/50 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 ${
+                                detectedSessionInfo.isSchool
+                                  ? "bg-amber-100 text-amber-900 border-amber-300"
+                                  : detectedSessionInfo.isStudio
+                                  ? "bg-emerald-50 text-emerald-900 border-emerald-300"
+                                  : "bg-blue-50 text-blue-900 border-blue-300"
+                              }`}>
+                                {detectedSessionInfo.isSchool ? (
+                                  <GraduationCap size={12} className="text-amber-800" />
+                                ) : detectedSessionInfo.isStudio ? (
+                                  <Building size={12} className="text-emerald-800" />
+                                ) : (
+                                  <MapPin size={12} className="text-blue-800" />
                                 )}
-                              </div>
-
-                              {/* Core Academic Details Grid */}
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                  <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">Institution / School</span>
-                                  <div className="flex items-center gap-1.5 mt-0.5">
-                                    {activeUnivId && <SchoolLogo univId={activeUnivId} name={studentSchool} size="xs" />}
-                                    <span className="font-bold text-primary text-xs truncate" title={studentSchool}>{studentSchool || "N/A"}</span>
-                                  </div>
-                                </div>
-
-                                <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                  <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">
-                                    {studentType === "COLLEGE" ? "Degree / Course" : "Academic Strand"}
-                                  </span>
-                                  <span className="font-semibold text-neutral-800 text-xs mt-0.5 block truncate">
-                                    {studentType === "COLLEGE" ? (studentCourse || "N/A") : (selectedShsStrand || "N/A")}
-                                  </span>
-                                </div>
-
-                                <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                  <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">Class Section &amp; Batch</span>
-                                  <div className="flex items-center gap-1.5 mt-0.5">
-                                    <span className="font-bold text-gold bg-gold/10 px-2 py-0.5 rounded text-[11px]">{studentSection || "N/A"}</span>
-                                    <span className="text-neutral-400">•</span>
-                                    <span className="font-medium text-neutral-700 text-xs">{studentBatch || "Batch 2026"}</span>
-                                  </div>
-                                </div>
-
-                                <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                  <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">Arrangement Protocol</span>
-                                  <span className={`inline-block font-semibold px-2 py-0.5 rounded text-[10px] mt-0.5 ${
-                                    academicBookingMode === "SCHOOL_PARTNER"
-                                      ? "bg-amber-100 text-amber-900 border border-amber-300"
-                                      : "bg-emerald-100 text-emerald-900 border border-emerald-300"
-                                  }`}>
-                                    {academicBookingMode === "SCHOOL_PARTNER" ? "School Campus (Date set by school)" : "Individual Booking"}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Yearbook Motto Card (if provided) */}
-                              {yearbookMotto && (
-                                <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-200/60 flex items-start gap-2.5">
-                                  <Sparkles size={14} className="text-gold shrink-0 mt-0.5" />
-                                  <div className="min-w-0">
-                                    <span className="text-[10px] font-bold text-amber-900/70 uppercase tracking-wider block">Yearbook Motto</span>
-                                    <p className="text-xs font-serif italic text-neutral-800 mt-0.5">&quot;{yearbookMotto}&quot;</p>
-                                  </div>
-                                </div>
-                              )}
-
-                              {schoolScheduleNote && (
-                                <div className="p-2.5 rounded-xl bg-neutral-100 border border-neutral-200 text-neutral-700 text-xs">
-                                  <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">Schedule Note:</span>
-                                  <p className="italic mt-0.5">{schoolScheduleNote}</p>
-                                </div>
-                              )}
-                            </>
-                          )}
-
-                          {isWeddingService && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                              <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">Couple</span>
-                                <span className="font-bold text-primary text-xs mt-0.5 block">{brideName} &amp; {groomName}</span>
-                              </div>
-                              {weddingTheme && (
-                                <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                  <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">Wedding Theme</span>
-                                  <span className="font-medium text-neutral-800 text-xs mt-0.5 block">{weddingTheme}</span>
-                                </div>
-                              )}
+                                <span>{detectedSessionInfo.badge}</span>
+                              </span>
+                              <span className="text-[11px] font-semibold text-neutral-600">
+                                {detectedSessionInfo.isSchool ? "At School Campus" : detectedSessionInfo.isStudio ? "At Studio Bay" : "At Custom Venue"}
+                              </span>
                             </div>
-                          )}
 
-                          {!isAcademicService && !isWeddingService && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                              <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">Client Full Name</span>
-                                <span className="font-bold text-primary text-xs mt-0.5 block">
-                                  {[editFirstName, editLastName].filter(Boolean).join(" ") || "Client"}
+                            <button
+                              type="button"
+                              onClick={() => setStep(5)}
+                              className="text-[11px] font-bold text-gold hover:underline flex items-center gap-1 cursor-pointer"
+                              title="Change between Studio and School session in Step 5"
+                            >
+                              <Edit3 size={11} /> Change Venue
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            {/* Venue / Location Details */}
+                            <div className="flex items-start gap-2.5">
+                              <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-900 border border-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                                {detectedSessionInfo.isSchool ? <GraduationCap size={15} /> : detectedSessionInfo.isStudio ? <Building size={15} /> : <MapPin size={15} />}
+                              </div>
+                              <div className="min-w-0">
+                                <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 block">
+                                  Session Location / Venue:
+                                </span>
+                                <span className="font-bold text-neutral-900 block truncate">
+                                  {detectedSessionInfo.venue}
+                                </span>
+                                <span className="text-[11px] text-neutral-500 line-clamp-1">
+                                  {detectedSessionInfo.venueAddress}
                                 </span>
                               </div>
-                              {editPhone && (
-                                <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                  <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">Contact Phone</span>
-                                  <span className="font-medium text-neutral-800 text-xs mt-0.5 block">{editPhone}</span>
-                                </div>
-                              )}
                             </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
 
-                    {/* Accordion C: Schedule & Studio Location */}
-                    <div className="border border-neutral-200/90 rounded-2xl overflow-hidden bg-white shadow-xs transition-all">
-                      <div 
-                        onClick={() => setReviewAccordions(prev => ({ ...prev, schedule: !prev.schedule }))}
-                        className="p-4 bg-gradient-to-r from-neutral-50/90 to-amber-50/30 flex items-center justify-between cursor-pointer hover:bg-neutral-100/70 transition-colors"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
-                            <Calendar size={16} />
-                          </div>
-                          <div>
-                            <span className="font-heading text-sm font-bold text-primary block leading-tight">Schedule &amp; Studio Location</span>
-                            <span className="text-[11px] text-neutral-500 font-body">
-                              {isAcademicService && academicBookingMode === "SCHOOL_PARTNER" ? "Official School Batch Schedule" : `${eventDate || "Date TBD"} • ${preferredTime || "Time TBD"}`}
-                            </span>
+                            {/* Estimated Duration & Schedule Mode */}
+                            <div className="flex items-start gap-2.5 sm:border-l sm:border-neutral-200 sm:pl-3">
+                              <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold border border-gold/30 flex items-center justify-center shrink-0 mt-0.5">
+                                <Clock size={15} />
+                              </div>
+                              <div className="min-w-0">
+                                <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 block">
+                                  Estimated Session Duration:
+                                </span>
+                                <span className="font-bold text-primary block">
+                                  {detectedSessionInfo.duration}
+                                </span>
+                                <span className="text-[11px] text-amber-800 font-medium line-clamp-1">
+                                  {detectedSessionInfo.scheduleTitle}
+                                </span>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setStep(5); }}
-                            className="text-xs font-bold text-gold hover:underline bg-gold/10 px-2.5 py-1 rounded-lg border border-gold/20"
-                          >
-                            Edit
-                          </button>
-                          {reviewAccordions.schedule ? <ChevronUp size={16} className="text-neutral-400" /> : <ChevronDown size={16} className="text-neutral-400" />}
-                        </div>
-                      </div>
-                      {reviewAccordions.schedule && (
-                        <div className="p-4 pt-3 border-t border-neutral-100 text-xs font-body space-y-2.5">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                              <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">Date &amp; Time</span>
-                              <span className="font-bold text-primary text-xs mt-0.5 block">
-                                {isAcademicService && academicBookingMode === "SCHOOL_PARTNER"
-                                  ? "Official School Batch Schedule (Agreed with School)"
-                                  : `${eventDate || "Date not selected"} at ${STUDIO_TIME_SLOTS.find(s => s.time === preferredTime)?.label || preferredTime || "TBD"}`}
+
+                        {/* Complete Inclusions List */}
+                        {tierInclusions.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-neutral-100">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1.5">
+                                <Sparkles size={12} className="text-gold" /> Included in This Package
+                              </span>
+                              <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                                {tierInclusions.length} Inclusions Included
                               </span>
                             </div>
-                            <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                              <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">Designated Venue</span>
-                              <span className="font-bold text-primary text-xs mt-0.5 block truncate" title={resolvedLocation}>
-                                {isAcademicService && academicBookingMode === "SCHOOL_PARTNER" && locationType === "CAMPUS"
-                                  ? `On-Campus (${studentSchool || "School Campus"})`
-                                  : resolvedLocation}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Accordion D: Add-ons */}
-                    <div className="border border-neutral-200/90 rounded-2xl overflow-hidden bg-white shadow-xs transition-all">
-                      <div 
-                        onClick={() => setReviewAccordions(prev => ({ ...prev, addons: !prev.addons }))}
-                        className="p-4 bg-gradient-to-r from-neutral-50/90 to-amber-50/30 flex items-center justify-between cursor-pointer hover:bg-neutral-100/70 transition-colors"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
-                            <PlusCircle size={16} />
-                          </div>
-                          <div>
-                            <span className="font-heading text-sm font-bold text-primary block leading-tight">
-                              Selected Add-ons ({selectedAddOns.length})
-                            </span>
-                            <span className="text-[11px] text-neutral-500 font-body">
-                              {selectedAddOns.length === 0 ? "Base package only" : `${selectedAddOns.length} extra item(s) chosen`}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setStep(3); }}
-                            className="text-xs font-bold text-gold hover:underline bg-gold/10 px-2.5 py-1 rounded-lg border border-gold/20"
-                          >
-                            Edit
-                          </button>
-                          {reviewAccordions.addons ? <ChevronUp size={16} className="text-neutral-400" /> : <ChevronDown size={16} className="text-neutral-400" />}
-                        </div>
-                      </div>
-                      {reviewAccordions.addons && (
-                        <div className="p-4 pt-3 border-t border-neutral-100 text-xs font-body space-y-2">
-                          {selectedAddOns.length === 0 ? (
-                            <div className="p-3 rounded-xl bg-neutral-50/70 border border-neutral-200/50 text-neutral-500 italic flex items-center gap-2 text-xs">
-                              <Package size={14} className="text-neutral-400 shrink-0" />
-                              No add-ons selected (Base package only).
-                            </div>
-                          ) : (
-                            <div className="space-y-1.5">
-                              {selectedAddOns.map((a, i) => (
-                                <div key={i} className="flex justify-between items-center p-2 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                  <span className="font-medium text-neutral-800">• {a.name}</span>
-                                  <span className="font-bold text-gold">+₱{parsePrice(a.price).toLocaleString()}</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {tierInclusions.map((item, idx) => (
+                                <div key={idx} className="flex items-start gap-2 p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60 text-xs text-neutral-800">
+                                  <Check size={14} className="text-emerald-600 mt-0.5 shrink-0 stroke-[2.5]" />
+                                  <span className="font-medium leading-relaxed">{item}</span>
                                 </div>
                               ))}
                             </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                          </div>
+                        )}
+                      </div>
+                    </ReviewAccordionItem>
 
-                    {/* Accordion E: Pegs & Uploaded References */}
-                    {(selectedPresetPegs.length > 0 || referenceFiles.length > 0 || notes) && (
-                      <div className="border border-neutral-200/90 rounded-2xl overflow-hidden bg-white shadow-xs transition-all">
-                        <div 
-                          onClick={() => setReviewAccordions(prev => ({ ...prev, pegs: !prev.pegs }))}
-                          className="p-4 bg-gradient-to-r from-neutral-50/90 to-amber-50/30 flex items-center justify-between cursor-pointer hover:bg-neutral-100/70 transition-colors"
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
-                              <Camera size={16} />
-                            </div>
-                            <div>
-                              <span className="font-heading text-sm font-bold text-primary block leading-tight">
-                                Style Directives &amp; Requests
-                              </span>
-                              <span className="text-[11px] text-neutral-500 font-body">
-                                {selectedPresetPegs.length} tone(s) • {referenceFiles.length} photo(s)
-                              </span>
-                            </div>
+                    {/* Accordion B: Client & Institutional Information */}
+                    <ReviewAccordionItem
+                      id="client"
+                      isOpen={isAccordionOpen("client")}
+                      isPinned={pinnedAccordions.client}
+                      icon={isAcademicService ? <GraduationCap size={16} /> : isWeddingService ? <Heart size={16} className="text-rose-500" /> : <User size={16} className="text-blue-500" />}
+                      title={
+                        bookingFor === "someone_else" 
+                          ? "Participant & Account Owner Details"
+                          : (isAcademicService ? "Student Details" : isWeddingService ? "Wedding Information" : "Client Details")
+                      }
+                      subtitle={
+                        bookingFor === "someone_else"
+                          ? `For: ${[participantFirstName, participantLastName].filter(Boolean).join(" ") || "Participant"} · By: ${activeProfile?.first_name || "Account Owner"}`
+                          : isAcademicService 
+                          ? ([studentFirstName, studentMiddleName, studentLastName].filter(Boolean).join(" ") || "Student Profile")
+                          : isWeddingService ? `${brideName || 'Bride'} & ${groomName || 'Groom'}`
+                          : [editFirstName, editLastName].filter(Boolean).join(" ") || "Client Profile"
+                      }
+                      onEdit={() => setStep(4)}
+                      onMouseEnter={() => handleAccordionMouseEnter("client")}
+                      onMouseMove={() => handleAccordionMouseEnter("client")}
+                      onMouseLeave={() => handleAccordionMouseLeave("client")}
+                      onTogglePin={() => toggleAccordionPin("client")}
+                    >
+                      <div className="p-4 pt-3 text-xs font-body space-y-3">
+                        {/* Booking Recipient & Account Distinction Card */}
+                        <div className="p-3.5 rounded-2xl bg-neutral-50/90 border border-neutral-200/80 space-y-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200/60 pb-2">
+                            <span className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+                              Booking Recipient &amp; Account Distinction
+                            </span>
+                            <span className={`text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                              bookingFor === "someone_else"
+                                ? "bg-amber-100 text-amber-900 border-amber-300 font-semibold"
+                                : "bg-emerald-100 text-emerald-900 border-emerald-300 font-semibold"
+                            }`}>
+                              {bookingFor === "someone_else" ? `Someone Else · ${participantRelationship || 'Participant'}` : "Myself (Account Owner)"}
+                            </span>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setStep(6); }}
-                              className="text-xs font-bold text-gold hover:underline bg-gold/10 px-2.5 py-1 rounded-lg border border-gold/20"
-                            >
-                              Edit
-                            </button>
-                            {reviewAccordions.pegs ? <ChevronUp size={16} className="text-neutral-400" /> : <ChevronDown size={16} className="text-neutral-400" />}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                            <div className="p-2.5 rounded-xl bg-white border border-neutral-200/70">
+                              <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">
+                                Participant / Beneficiary
+                              </span>
+                              <span className="font-bold text-primary text-xs mt-0.5 block truncate">
+                                {[participantFirstName, participantLastName].filter(Boolean).join(" ") || "Valued Participant"}
+                              </span>
+                              {participantPhone && (
+                                <span className="text-xs text-neutral-500 font-mono mt-0.5 block">{participantPhone}</span>
+                              )}
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-white border border-neutral-200/70">
+                              <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">
+                                Account Owner (Payer)
+                              </span>
+                              <span className="font-bold text-neutral-700 text-xs mt-0.5 block truncate">
+                                {activeProfile?.first_name || user?.user_metadata?.first_name || "Client"} {activeProfile?.last_name || user?.user_metadata?.last_name || ""}
+                              </span>
+                              <span className="text-xs text-neutral-500 font-mono mt-0.5 block truncate">
+                                {activeProfile?.email || user?.email || "Account Holder"}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                        {reviewAccordions.pegs && (
-                          <div className="p-4 pt-3 border-t border-neutral-100 text-xs font-body space-y-2.5">
-                            {selectedPresetPegs.length > 0 && (
-                              <div>
-                                <span className="text-neutral-400 block mb-1 text-[10px] font-bold uppercase tracking-wider">Aesthetic Tones:</span>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {selectedPresetPegs.map((peg, i) => (
-                                    <span key={i} className="bg-gold/10 text-gold px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-gold/25">
-                                      {peg}
-                                    </span>
-                                  ))}
+                        {isAcademicService && (
+                          <>
+                            {/* Student Profile Top Banner */}
+                            <div className="p-3 rounded-xl bg-amber-50/40 border border-amber-200/50 flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-lg bg-gold/20 text-gold flex items-center justify-center shrink-0">
+                                  <User size={14} />
+                                </div>
+                                <div>
+                                  <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider leading-none">Student Name</span>
+                                  <span className="font-heading font-extrabold text-primary text-sm">
+                                    {[studentFirstName, studentMiddleName, studentLastName].filter(Boolean).join(" ") || "Student Name"}
+                                  </span>
+                                </div>
+                              </div>
+                              {studentIdNumber && (
+                                <span className="text-[11px] font-mono font-bold text-primary bg-white px-2.5 py-1 rounded-lg border border-neutral-200 shadow-2xs">
+                                  ID: {studentIdNumber}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Core Academic Details Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
+                                <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Institution / School</span>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  {activeUnivId && <SchoolLogo univId={activeUnivId} name={studentSchool} size="xs" />}
+                                  <span className="font-bold text-primary text-xs truncate" title={studentSchool}>{studentSchool || "N/A"}</span>
+                                </div>
+                              </div>
+
+                              <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
+                                <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">
+                                  {studentType === "COLLEGE" ? "Degree / Course" : "Academic Strand"}
+                                </span>
+                                <span className="font-semibold text-neutral-800 text-xs mt-0.5 block truncate">
+                                  {studentType === "COLLEGE" ? (studentCourse || "N/A") : (selectedShsStrand || "N/A")}
+                                </span>
+                              </div>
+
+                              <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
+                                <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Class Section &amp; Batch</span>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="font-bold text-gold bg-gold/10 px-2 py-0.5 rounded text-[11px]">
+                                    {normalizedStudentSection ? (normalizedStudentSection.toLowerCase().startsWith('section') ? normalizedStudentSection : `Section ${normalizedStudentSection}`) : "N/A"}
+                                  </span>
+                                  <span className="text-neutral-400">•</span>
+                                  <span className="font-medium text-neutral-700 text-xs">{studentBatch || "Batch 2026"}</span>
+                                </div>
+                              </div>
+
+                              <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
+                                <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Arrangement Protocol</span>
+                                <span className={`inline-block font-semibold px-2 py-0.5 rounded text-xs mt-0.5 ${
+                                  academicBookingMode === "SCHOOL_PARTNER"
+                                    ? "bg-amber-100 text-amber-900 border border-amber-300"
+                                    : "bg-emerald-100 text-emerald-900 border border-emerald-300"
+                                }`}>
+                                  {academicBookingMode === "SCHOOL_PARTNER" ? "School Campus (Date set by school)" : "Individual Booking"}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Yearbook Motto Card (if provided) */}
+                            {yearbookMotto && (
+                              <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-200/60 flex items-start gap-2.5">
+                                <Sparkles size={14} className="text-gold shrink-0 mt-0.5" />
+                                <div className="min-w-0">
+                                  <span className="text-xs font-bold text-amber-900/70 uppercase tracking-wider block">Yearbook Motto</span>
+                                  <p className="text-xs font-serif italic text-neutral-800 mt-0.5">&quot;{yearbookMotto}&quot;</p>
                                 </div>
                               </div>
                             )}
-                            {referenceFiles.length > 0 && (
-                              <div className="text-neutral-700">
-                                <span className="text-neutral-400 block mb-0.5 text-[10px] font-bold uppercase tracking-wider">Uploaded Photos:</span>
-                                <span className="font-semibold text-primary">{referenceFiles.length} reference file(s) attached</span>
+
+                            {schoolScheduleNote && (
+                              <div className="p-2.5 rounded-xl bg-neutral-100 border border-neutral-200 text-neutral-700 text-xs">
+                                <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider block">Schedule Note:</span>
+                                <p className="italic mt-0.5">{schoolScheduleNote}</p>
                               </div>
                             )}
-                            {notes && (
-                              <div className="p-2.5 rounded-xl bg-neutral-50 border border-neutral-200">
-                                <span className="text-neutral-400 block mb-0.5 text-[10px] font-bold uppercase tracking-wider">Special Requests:</span>
-                                <p className="text-neutral-700 italic">{notes}</p>
+                          </>
+                        )}
+
+                        {isWeddingService && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
+                              <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Couple</span>
+                              <span className="font-bold text-primary text-xs mt-0.5 block">{brideName} &amp; {groomName}</span>
+                            </div>
+                            {weddingTheme && (
+                              <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
+                                <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Wedding Theme</span>
+                                <span className="font-medium text-neutral-800 text-xs mt-0.5 block">{weddingTheme}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {!isAcademicService && !isWeddingService && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
+                              <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Client Full Name</span>
+                              <span className="font-bold text-primary text-xs mt-0.5 block">
+                                {[editFirstName, editLastName].filter(Boolean).join(" ") || "Client"}
+                              </span>
+                            </div>
+                            {editPhone && (
+                              <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
+                                <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Contact Phone</span>
+                                <span className="font-medium text-neutral-800 text-xs mt-0.5 block">{editPhone}</span>
                               </div>
                             )}
                           </div>
                         )}
                       </div>
-                    )}
+                    </ReviewAccordionItem>
 
+                    {/* Accordion C: Schedule & Studio Location */}
+                    <ReviewAccordionItem
+                      id="schedule"
+                      isOpen={isAccordionOpen("schedule")}
+                      isPinned={pinnedAccordions.schedule}
+                      icon={<Calendar size={16} />}
+                      title="Schedule & Studio Location"
+                      subtitle={
+                        isAcademicService && academicBookingMode === "SCHOOL_PARTNER" 
+                          ? "Official School Batch Schedule" 
+                          : `${eventDate || "Date TBD"} • ${preferredTime || "Time TBD"}`
+                      }
+                      onEdit={() => setStep(5)}
+                      onMouseEnter={() => handleAccordionMouseEnter("schedule")}
+                      onMouseMove={() => handleAccordionMouseEnter("schedule")}
+                      onMouseLeave={() => handleAccordionMouseLeave("schedule")}
+                      onTogglePin={() => toggleAccordionPin("schedule")}
+                    >
+                      <div className="p-4 pt-3 text-xs font-body space-y-2.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
+                            <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Date &amp; Time</span>
+                            <span className="font-bold text-primary text-xs mt-0.5 block">
+                              {isAcademicService && academicBookingMode === "SCHOOL_PARTNER"
+                                ? "Official School Batch Schedule (Agreed with School)"
+                                : `${eventDate || "Date not selected"} at ${STUDIO_TIME_SLOTS.find(s => s.time === preferredTime)?.label || preferredTime || "TBD"}`}
+                            </span>
+                          </div>
+                          <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
+                            <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Designated Venue</span>
+                            <span className="font-bold text-primary text-xs mt-0.5 block truncate" title={resolvedLocation}>
+                              {isAcademicService && academicBookingMode === "SCHOOL_PARTNER" && locationType === "CAMPUS"
+                                ? `On-Campus (${studentSchool || "School Campus"})`
+                                : resolvedLocation}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </ReviewAccordionItem>
+
+                    {/* Accordion D: Add-ons */}
+                    <ReviewAccordionItem
+                      id="addons"
+                      isOpen={isAccordionOpen("addons")}
+                      isPinned={pinnedAccordions.addons}
+                      icon={<PlusCircle size={16} />}
+                      title={`Selected Add-ons (${selectedAddOns.length})`}
+                      subtitle={selectedAddOns.length === 0 ? "Base package only" : `${selectedAddOns.length} extra item(s) chosen`}
+                      onEdit={() => setStep(3)}
+                      onMouseEnter={() => handleAccordionMouseEnter("addons")}
+                      onMouseMove={() => handleAccordionMouseEnter("addons")}
+                      onMouseLeave={() => handleAccordionMouseLeave("addons")}
+                      onTogglePin={() => toggleAccordionPin("addons")}
+                    >
+                      <div className="p-4 pt-3 text-xs font-body space-y-2">
+                        {selectedAddOns.length === 0 ? (
+                          <div className="p-3 rounded-xl bg-neutral-50/70 border border-neutral-200/50 text-neutral-500 italic flex items-center gap-2 text-xs">
+                            <Package size={14} className="text-neutral-400 shrink-0" />
+                            No add-ons selected (Base package only).
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {selectedAddOns.map((a, i) => (
+                              <div key={i} className="flex justify-between items-center p-2 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
+                                <span className="font-medium text-neutral-800">• {a.name}</span>
+                                <span className="font-bold text-gold">+₱{parsePrice(a.price).toLocaleString()}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </ReviewAccordionItem>
+
+                    {/* Accordion E: Uploaded References & Instructions */}
+                    {(referenceFiles.length > 0 || notes) && (
+                      <ReviewAccordionItem
+                        id="pegs"
+                        isOpen={isAccordionOpen("pegs")}
+                        isPinned={pinnedAccordions.pegs}
+                        icon={<Camera size={16} />}
+                        title="Creative References & Instructions"
+                        subtitle={`${referenceFiles.length} reference photo(s) ${notes ? '• Special notes included' : ''}`}
+                        onEdit={() => setStep(6)}
+                        onMouseEnter={() => handleAccordionMouseEnter("pegs")}
+                        onMouseMove={() => handleAccordionMouseEnter("pegs")}
+                        onMouseLeave={() => handleAccordionMouseLeave("pegs")}
+                        onTogglePin={() => toggleAccordionPin("pegs")}
+                      >
+                        <div className="p-4 pt-3 text-xs font-body space-y-2.5">
+                          {referenceFiles.length > 0 && (
+                            <div className="text-neutral-700">
+                              <span className="text-neutral-400 block mb-0.5 text-xs font-bold uppercase tracking-wider">Uploaded Photos:</span>
+                              <span className="font-semibold text-primary">{referenceFiles.length} reference file(s) attached</span>
+                            </div>
+                          )}
+                          {notes && (
+                            <div className="p-2.5 rounded-xl bg-neutral-50 border border-neutral-200">
+                              <span className="text-neutral-400 block mb-0.5 text-xs font-bold uppercase tracking-wider">Special Requests:</span>
+                              <p className="text-neutral-700 italic">{notes}</p>
+                            </div>
+                          )}
+                        </div>
+                      </ReviewAccordionItem>
+                    )}
                   </div>
+
 
                   {/* Pricing Breakdown Summary */}
                   <div className="p-5 rounded-3xl bg-gradient-to-br from-neutral-900 via-primary to-neutral-950 text-white border border-gold/30 shadow-lg space-y-3 font-body">
                     <div className="flex items-center justify-between pb-2 border-b border-white/10">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-gold font-mono flex items-center gap-1.5">
+                      <span className="text-xs font-bold uppercase tracking-widest text-gold font-mono flex items-center gap-1.5">
                         <Sparkles size={11} className="text-gold" /> Total Package Breakdown
                       </span>
                       <span className="text-xs px-2.5 py-0.5 rounded-full bg-gold/20 text-gold border border-gold/40 font-semibold">
@@ -5941,14 +7196,14 @@ export default function BookingPage() {
 
                     <div className="grid grid-cols-2 gap-2.5 pt-1">
                       <div className="bg-white/10 backdrop-blur-xs rounded-2xl p-3 text-center border border-white/10">
-                        <p className="text-[10px] text-neutral-300 uppercase font-medium">50% Down Payment</p>
+                        <p className="text-xs text-neutral-300 uppercase font-medium">50% Down Payment</p>
                         <p className="font-bold text-gold text-base mt-0.5">{formattedDownPayment}</p>
-                        <p className="text-[9px] text-neutral-400 mt-0.5">Due upon confirmation</p>
+                        <p className="text-[11px] text-neutral-400 mt-0.5">Due upon confirmation</p>
                       </div>
                       <div className="bg-white/10 backdrop-blur-xs rounded-2xl p-3 text-center border border-white/10">
-                        <p className="text-[10px] text-neutral-300 uppercase font-medium">Remaining at Studio</p>
+                        <p className="text-xs text-neutral-300 uppercase font-medium">Remaining at Studio</p>
                         <p className="font-bold text-white text-base mt-0.5">{formattedRemaining}</p>
-                        <p className="text-[9px] text-neutral-400 mt-0.5">Payable on session day</p>
+                        <p className="text-[11px] text-neutral-400 mt-0.5">Payable on session day</p>
                       </div>
                     </div>
                   </div>

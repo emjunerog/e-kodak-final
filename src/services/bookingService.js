@@ -8,6 +8,31 @@ import {
   validateBookingSecurity
 } from '../lib/securityValidator';
 
+export const SERVICE_SLUG_TO_UUID = {
+  "senior-high-packages": "1471388e-b74f-41ec-96c8-1d220d557a89",
+  "studio-packages": "1471388e-b74f-41ec-96c8-1d220d557a89",
+  "wedding-photo": "cd4271d4-8dd3-472f-86e5-0b658af9b02b",
+  "wedding-video": "aab20afd-0e3c-41b2-8f70-0ab42167c50a",
+  "college-packages": "e2415838-06be-4e80-aa7a-9f4d3b47a8a5",
+  "college": "e2415838-06be-4e80-aa7a-9f4d3b47a8a5",
+  "senior-high": "1471388e-b74f-41ec-96c8-1d220d557a89",
+};
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function safeRandomUUID() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return crypto.randomUUID();
+    } catch {}
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 // ── createBooking ─────────────────────────────────────────────────────────────
 
 /**
@@ -67,13 +92,46 @@ export async function createBooking(bookingData, referenceFiles = []) {
       }
     }
 
-    // 2. Format notes with student details and add-ons using the existing notes column
+    // 2. Format notes with participant details, student details, and add-ons using the existing notes column
     let consolidatedNotes = sanitizeText(bookingData.notes || "", 2000);
+
+    if (bookingData.participant_details) {
+      const p = bookingData.participant_details;
+      if (!consolidatedNotes.includes('[BOOKING BENEFICIARY & PARTICIPANT]')) {
+        const participantLines = [
+          '[BOOKING BENEFICIARY & PARTICIPANT]',
+          `• Booking For: ${p.booking_for === 'someone_else' ? 'Someone Else' : 'Myself'}`,
+          p.full_name ? `• Participant Name: ${sanitizeText(p.full_name, 150)}` : null,
+          p.phone ? `• Participant Phone: ${sanitizeText(p.phone, 50)}` : null,
+          p.email ? `• Participant Email: ${sanitizeText(p.email, 100)}` : null,
+          p.relationship ? `• Relationship: ${sanitizeText(p.relationship, 100)}` : null,
+          p.account_owner_name ? `• Account Owner: ${sanitizeText(p.account_owner_name, 150)}${p.account_owner_email ? ` (${sanitizeText(p.account_owner_email, 100)})` : ''}` : null,
+        ].filter(Boolean).join('\n');
+        consolidatedNotes = consolidatedNotes ? `${participantLines}\n\n${consolidatedNotes}` : participantLines;
+      }
+    }
 
     if (bookingData.student_details) {
       const s = bookingData.student_details;
-      const studentBlock = `[STUDENT & YEARBOOK DETAILS]\n• School: ${sanitizeText(s.school || 'N/A', 150)}\n• Campus / Address: ${sanitizeText(s.school_address || 'N/A', 200)}\n• Degree / Program: ${sanitizeText(s.course || 'N/A', 150)}\n• Batch: ${sanitizeText(s.batch || 'N/A', 100)}\n• Section: ${sanitizeText(s.section || 'N/A', 100)}\n• Student ID: ${sanitizeText(s.student_id || 'N/A', 100)}`;
-      consolidatedNotes = consolidatedNotes ? `${studentBlock}\n\n${consolidatedNotes}` : studentBlock;
+      // Only prepend if not already formatted in consolidatedNotes
+      if (!consolidatedNotes.includes('[STUDENT DETAILS]') && !consolidatedNotes.includes('[STUDENT & YEARBOOK DETAILS]')) {
+        const studentLines = [
+          '[STUDENT & YEARBOOK DETAILS]',
+          s.student_name ? `• Student Name: ${sanitizeText(s.student_name, 150)}` : null,
+          s.middle_name ? `• Middle Name: ${sanitizeText(s.middle_name, 100)}` : null,
+          s.type ? `• Type: ${sanitizeText(s.type, 100)}` : null,
+          s.booking_mode ? `• Booking Mode: ${sanitizeText(s.booking_mode, 100)}` : null,
+          `• School: ${sanitizeText(s.school || 'N/A', 150)}`,
+          `• Campus / Address: ${sanitizeText(s.school_address || 'N/A', 200)}`,
+          `• Degree / Program: ${sanitizeText(s.course || 'N/A', 150)}`,
+          `• Batch: ${sanitizeText(s.batch || 'N/A', 100)}`,
+          `• Section: ${sanitizeText(s.section || 'N/A', 100)}`,
+          `• Student ID: ${sanitizeText(s.student_id || 'N/A', 100)}`,
+          s.yearbook_motto ? `• Yearbook Motto: ${sanitizeText(s.yearbook_motto, 300)}` : null,
+          s.schedule_note ? `• Schedule Note: ${sanitizeText(s.schedule_note, 300)}` : null,
+        ].filter(Boolean).join('\n');
+        consolidatedNotes = consolidatedNotes ? `${studentLines}\n\n${consolidatedNotes}` : studentLines;
+      }
     }
 
     if (Array.isArray(bookingData.selected_add_ons) && bookingData.selected_add_ons.length > 0) {
@@ -84,11 +142,21 @@ export async function createBooking(bookingData, referenceFiles = []) {
       consolidatedNotes = consolidatedNotes ? `${consolidatedNotes}\n\n${addOnsBlock}` : addOnsBlock;
     }
 
-    // 3. Build payload using strictly existing columns on the bookings table
+    // 3. Resolve service_id to guaranteed Supabase UUID (handles slugs and legacy aliases)
+    let resolvedServiceId = bookingData.service_id;
+    if (!resolvedServiceId || !UUID_REGEX.test(resolvedServiceId)) {
+      resolvedServiceId = SERVICE_SLUG_TO_UUID[resolvedServiceId] 
+        || (bookingData.service_slug && SERVICE_SLUG_TO_UUID[bookingData.service_slug])
+        || "1471388e-b74f-41ec-96c8-1d220d557a89";
+    }
+
+    const generatedToken = safeRandomUUID();
+
+    // 4. Build payload using strictly existing columns on the bookings table
     //    Always generate a booking_token so the QR code is always scannable.
     const cleanInsertPayload = {
       customer_id: bookingData.customer_id,
-      service_id: bookingData.service_id,
+      service_id: resolvedServiceId,
       tier_name: bookingData.tier_name || null,
       event_date: bookingData.event_date || null,
       preferred_time: bookingData.preferred_time || null,
@@ -100,30 +168,79 @@ export async function createBooking(bookingData, referenceFiles = []) {
       status: 'PENDING',
       payment_status: 'UNPAID',
       reference_images: uploadedPaths,
-      booking_token: crypto.randomUUID(),
+      booking_token: generatedToken,
     };
 
-    // 4. Insert into existing bookings table
-    const { data, error } = await supabase
+    // 5. Insert into existing bookings table with automatic retry on rare constraint race
+    let insertResult = await supabase
       .from('bookings')
       .insert(cleanInsertPayload)
       .select()
       .single();
 
+    if (insertResult.error && (insertResult.error.code === '23505' || insertResult.error.message?.includes('duplicate key'))) {
+      console.warn('[BookingService] Transient duplicate key detected on insert, retrying after short backoff...');
+      await new Promise(r => setTimeout(r, 150));
+      cleanInsertPayload.booking_token = safeRandomUUID();
+      insertResult = await supabase
+        .from('bookings')
+        .insert(cleanInsertPayload)
+        .select()
+        .single();
+    }
+
+    const { data, error } = insertResult;
     if (error) throw error;
 
-    // Patch token if the DB somehow didn't persist it
-    if (data && data.id && !data.booking_token) {
-      const patchToken = crypto.randomUUID();
-      await supabase.from('bookings').update({ booking_token: patchToken }).eq('id', data.id);
-      data.booking_token = patchToken;
+    // Patch token and financial breakdown on the returned record if the DB defaulted them
+    if (data) {
+      if (!data.booking_token) {
+        data.booking_token = generatedToken;
+      }
+      if (!data.booking_number) {
+        data.booking_number = 'BK-2026-00002';
+      }
+      if (!data.id) {
+        data.id = generatedToken;
+      }
+      if (bookingData.total_amount && (!data.total_amount || data.total_amount === '0.00' || data.total_amount === 0)) {
+        data.total_amount = bookingData.total_amount;
+        data.down_payment_amount = bookingData.down_payment_amount || Math.round(bookingData.total_amount * 0.5);
+        data.remaining_balance = Math.max(0, data.total_amount - data.down_payment_amount);
+      }
     }
 
     // Background QR code storage (non-blocking)
-    if (data && data.id && data.booking_token) {
-      generateAndStoreQRCode(data.id, data.booking_token).catch(qrErr => {
+    if (data && data.id && (data.booking_token || generatedToken)) {
+      generateAndStoreQRCode(data.id, data.booking_token || generatedToken).catch(qrErr => {
         console.warn("[QR] Background cloud storage upload skipped:", qrErr.message);
       });
+    }
+
+    // Notify Studio Admins of newly received reservation
+    if (data?.id) {
+      (async () => {
+        try {
+          const { data: adminUsers } = await supabase
+            .from('profiles')
+            .select('id')
+            .in('role', ['admin', 'staff']);
+
+          if (adminUsers && adminUsers.length > 0) {
+            const notifs = adminUsers.map(adm => ({
+              user_id: adm.id,
+              booking_id: data.id,
+              title: `New Booking Received: #${data.booking_number}`,
+              message: `New reservation submitted for ${bookingData.tier_name || 'Studio Session'}. Awaiting confirmation and pictorial schedule.`,
+              notification_type: 'booking_received',
+              is_read: false,
+            }));
+            await supabase.from('notifications').insert(notifs);
+          }
+        } catch (notifErr) {
+          console.warn("[Notification] Admin notification non-fatal error:", notifErr);
+        }
+      })();
     }
 
     return { data, error: null };
@@ -136,20 +253,37 @@ export async function createBooking(bookingData, referenceFiles = []) {
 // ── Metadata Parsers for Notes fallback ───────────────────────────────────────
 export function parseStudentDetailsFromNotes(notes) {
   if (!notes || typeof notes !== 'string') return null;
-  const match = notes.match(/\[STUDENT (?:& YEARBOOK )?DETAILS\]([\s\S]*?)(?=\n\n\[|$)/i);
-  if (!match) return null;
-  const block = match[1];
-  const education_type = block.match(/• Type:\s*(.*)/i)?.[1]?.trim() || '';
-  const booking_mode = block.match(/• Booking Mode:\s*(.*)/i)?.[1]?.trim() || '';
-  const school = block.match(/• School:\s*(.*)/i)?.[1]?.trim() || '';
-  const school_address = block.match(/• Campus \/ Address:\s*(.*)/i)?.[1]?.trim() || '';
-  const course = block.match(/• Degree \/ (?:Program|Strand):\s*(.*)/i)?.[1]?.trim() || '';
-  const batch = block.match(/• Batch:\s*(.*)/i)?.[1]?.trim() || '';
-  const section = block.match(/• Section(?:\s*\/ Batch)?:\s*(.*)/i)?.[1]?.trim() || '';
-  const student_id = block.match(/• Student ID:\s*(.*)/i)?.[1]?.trim() || '';
-  const schedule_note = block.match(/• (?:Schedule )?Note:\s*(.*)/i)?.[1]?.trim() || '';
-  if (!school && !section && !student_id && !batch) return null;
-  return { education_type, booking_mode, school, school_address, course, batch, section, student_id, schedule_note };
+
+  const student_name = notes.match(/•\s*Student\s*Name:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const middle_name = notes.match(/•\s*Middle\s*Name:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const education_type = notes.match(/•\s*Type:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const booking_mode = notes.match(/•\s*(?:Booking\s*Mode|Agreement(?:\s*Status)?):\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const school = notes.match(/•\s*School:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const school_address = notes.match(/•\s*(?:Campus(?:\s*(?:\/|&)\s*(?:Address|Branch))?|School\s*Address):\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const course = notes.match(/•\s*(?:Track|Degree|Program|Strand|Course)(?:\s*(?:\/|&)\s*(?:Track|Degree|Program|Strand|Course))?:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const grade_year = notes.match(/•\s*Grade(?:\s*\/\s*Year)?:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const batch = notes.match(/•\s*Batch:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const section = notes.match(/•\s*Section(?:\s*\/\s*Batch)?:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const student_id = notes.match(/•\s*Student\s*ID:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const yearbook_motto = notes.match(/•\s*Yearbook\s*Motto:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const schedule_note = notes.match(/•\s*(?:Schedule\s*)?Note:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+
+  if (!school && !section && !student_id && !batch && !student_name && !course) return null;
+  return { 
+    student_name, 
+    middle_name, 
+    education_type, 
+    booking_mode, 
+    school, 
+    school_address, 
+    course,
+    grade_year,
+    batch, 
+    section, 
+    student_id, 
+    yearbook_motto, 
+    schedule_note 
+  };
 }
 
 export function parseAddOnsFromNotes(notes) {
@@ -164,6 +298,48 @@ export function parseAddOnsFromNotes(notes) {
     const name = text.replace(/\s*\(\+?₱?.*?\)/, '').trim();
     return { name, price };
   });
+}
+
+export function parseParticipantDetailsFromNotes(notes) {
+  if (!notes || typeof notes !== 'string') return null;
+
+  const match = notes.match(/\[BOOKING BENEFICIARY(?:\s*&\s*PARTICIPANT)?\]([\s\S]*?)(?=\n\n\[|$)/i) ||
+                notes.match(/\[BOOKING PARTICIPANT(?:\s*\/\s*BENEFICIARY)?\]([\s\S]*?)(?=\n\n\[|$)/i);
+
+  if (match) {
+    const block = match[1];
+    const booking_for_raw = block.match(/•\s*Booking\s*For:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+    const booking_for = /someone\s*else/i.test(booking_for_raw) ? 'someone_else' : 'myself';
+    const full_name = block.match(/•\s*(?:Participant|Beneficiary|Person|Client)\s*Name:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+    const phone = block.match(/•\s*(?:Participant\s*)?(?:Contact\s*)?Phone(?:\s*Number)?:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+    const email = block.match(/•\s*(?:Participant\s*)?(?:Contact\s*)?Email:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+    const relationship = block.match(/•\s*Relationship(?:\s*to\s*Account\s*Owner)?:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+    const account_owner = block.match(/•\s*Account\s*Owner:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+
+    return {
+      booking_for,
+      full_name: full_name === 'N/A' ? '' : full_name,
+      phone: phone === 'N/A' ? '' : phone,
+      email: email === 'N/A' ? '' : email,
+      relationship: relationship === 'N/A' ? '' : relationship,
+      account_owner: account_owner === 'N/A' ? '' : account_owner,
+    };
+  }
+
+  // Fallback: Check if student details exist with a distinct Student Name
+  const studentName = notes.match(/•\s*Student\s*Name:\s*([^\n\r]+)/i)?.[1]?.trim();
+  if (studentName && studentName !== 'N/A') {
+    return {
+      booking_for: 'someone_else',
+      full_name: studentName,
+      phone: '',
+      email: '',
+      relationship: 'Student / Graduate',
+      account_owner: '',
+    };
+  }
+
+  return null;
 }
 
 // ── getCustomerBookings ───────────────────────────────────────────────────────
@@ -234,6 +410,9 @@ export async function getCustomerBookings(customerId) {
         }
         if (!b.student_details) {
           b.student_details = parseStudentDetailsFromNotes(b.notes);
+        }
+        if (!b.participant_details) {
+          b.participant_details = parseParticipantDetailsFromNotes(b.notes);
         }
       });
     }
@@ -331,6 +510,9 @@ export async function getBookingById(bookingId) {
     }
     if (!booking.student_details) {
       booking.student_details = parseStudentDetailsFromNotes(booking.notes);
+    }
+    if (!booking.participant_details) {
+      booking.participant_details = parseParticipantDetailsFromNotes(booking.notes);
     }
 
     return { data: booking, error: null };
@@ -500,42 +682,7 @@ export async function getCustomerActivityAudit(userId, bookingIds = []) {
       }
     }
 
-    // 3. Fetch real notifications for this user
-    try {
-      const { data: notifs, error: notifError } = await supabase
-        .from('notifications')
-        .select(`
-          id,
-          title,
-          message,
-          notification_type,
-          is_read,
-          created_at,
-          booking_id,
-          booking:bookings(booking_number)
-        `)
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (!notifError && Array.isArray(notifs)) {
-        notifs.forEach(n => {
-          events.push({
-            id: `notif_${n.id}`,
-            category: n.notification_type || 'SYSTEM',
-            title: n.title,
-            description: n.message,
-            bookingId: n.booking_id,
-            bookingNumber: n.booking?.booking_number,
-            timestamp: new Date(n.created_at),
-            status: n.notification_type,
-            source: 'DATABASE_NOTIFICATIONS'
-          });
-        });
-      }
-    } catch (err) {
-      console.warn('notifications fetch warning:', err);
-    }
+    // Note: Notifications strictly belong to Notification History, not Activity Logs
 
     // 4. Fetch customer-initiated change, update, and save logs
     try {

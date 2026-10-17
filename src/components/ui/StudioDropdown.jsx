@@ -96,6 +96,7 @@ export default function StudioDropdown({
     setIsOpen(false);
     setSearchQuery('');
   };
+  const TriggerIcon = selectedOption?.icon || LeadingIcon;
 
   return (
     <div ref={dropdownRef} className={`relative ${className.includes('inline') ? 'inline-block' : 'w-full block'} ${className}`}>
@@ -116,8 +117,8 @@ export default function StudioDropdown({
         } ${triggerClassName}`}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          {LeadingIcon && (
-            <LeadingIcon size={16} className="text-gold shrink-0" />
+          {TriggerIcon && (
+            <TriggerIcon size={16} className="text-gold shrink-0" />
           )}
 
           {/* Color swatch if option has one */}

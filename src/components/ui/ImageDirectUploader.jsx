@@ -166,7 +166,7 @@ export default function ImageDirectUploader({
             placeholder="https://images.unsplash.com/... or cloud image URL"
             className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-xs focus:border-gold focus:outline-none bg-neutral-50/60 focus:bg-white transition-colors"
           />
-          <p className="text-[10px] text-neutral-400">{helperText}</p>
+          <p className="text-xs text-neutral-400">{helperText}</p>
         </div>
       )}
 
@@ -207,8 +207,8 @@ export default function ImageDirectUploader({
               </button>
             </div>
           </div>
-          <div className="p-2 flex items-center justify-between text-[10px] text-neutral-500">
-            <span className="truncate max-w-[240px] font-mono text-[9px]">{value}</span>
+          <div className="p-2 flex items-center justify-between text-xs text-neutral-500">
+            <span className="truncate max-w-[240px] font-mono text-[11px]">{value}</span>
             <span className="shrink-0 text-emerald-700 font-bold flex items-center gap-1">
               <Check size={11} /> Ready
             </span>

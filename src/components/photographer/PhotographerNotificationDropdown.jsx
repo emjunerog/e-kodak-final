@@ -162,7 +162,7 @@ export default function PhotographerNotificationDropdown() {
       >
         <Bell size={18} />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-gradient-to-r from-red-500 to-rose-600 text-white text-[10px] font-bold font-body px-1 rounded-full flex items-center justify-center border-2 border-white shadow-xs animate-pulse">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-gradient-to-r from-red-500 to-rose-600 text-white text-xs font-bold font-body px-1 rounded-full flex items-center justify-center border-2 border-white shadow-xs animate-pulse">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
@@ -181,7 +181,7 @@ export default function PhotographerNotificationDropdown() {
                 Photographer Notices
               </h3>
               {unreadCount > 0 && (
-                <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded-full">
+                <span className="text-[11px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded-full">
                   {unreadCount} new
                 </span>
               )}
@@ -191,7 +191,7 @@ export default function PhotographerNotificationDropdown() {
               <button
                 type="button"
                 onClick={handleMarkAllRead}
-                className="text-[10px] text-neutral-500 hover:text-primary font-semibold flex items-center gap-1"
+                className="text-xs text-neutral-500 hover:text-primary font-semibold flex items-center gap-1"
               >
                 <CheckCheck size={12} />
                 <span>Mark all read</span>
@@ -222,7 +222,7 @@ export default function PhotographerNotificationDropdown() {
                       <h4 className="text-xs font-bold text-primary truncate">
                         {notif.title}
                       </h4>
-                      <span className="text-[9px] text-neutral-400 shrink-0">
+                      <span className="text-[11px] text-neutral-400 shrink-0">
                         {timeAgo(notif.created_at)}
                       </span>
                     </div>

@@ -11,6 +11,8 @@ import {
   Dimensions
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import PremiumIcon from './PremiumIcon';
 import * as Haptics from 'expo-haptics';
 import {
   QrCode, FileText, Sparkles, X, Camera,
@@ -85,6 +87,7 @@ export default function ScanInstructionsModal({ visible, onClose, onOpenScanner 
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
+        <BlurView intensity={isDark ? 60 : 40} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         <TouchableOpacity
           style={StyleSheet.absoluteFill}
           activeOpacity={1}
@@ -96,9 +99,7 @@ export default function ScanInstructionsModal({ visible, onClose, onOpenScanner 
             {/* Header row */}
             <View style={styles.headerRow}>
               <View style={styles.headerLeft}>
-                <View style={styles.headerIconBox}>
-                  <Camera size={20} color={colors.gold.light} />
-                </View>
+                <PremiumIcon icon={Camera} size={20} box={40} tone="soft" glow />
                 <View>
                   <View style={styles.headerBadge}>
                     <Text style={styles.headerBadgeText}>CLIENT QUICK GUIDE</Text>
@@ -107,14 +108,14 @@ export default function ScanInstructionsModal({ visible, onClose, onOpenScanner 
                 </View>
               </View>
 
-              <TouchableOpacity
+              <PremiumIcon
+                icon={X}
+                size={16}
+                box={32}
+                tone="glass"
+                accessibilityLabel="Close guide"
                 onPress={onClose}
-                style={styles.closeBtn}
-                activeOpacity={0.7}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <X size={18} color={colors.neutral[400]} />
-              </TouchableOpacity>
+              />
             </View>
 
             {/* Mascot Camera Animation Area */}
@@ -176,13 +177,14 @@ export default function ScanInstructionsModal({ visible, onClose, onOpenScanner 
             {/* Bottom Actions */}
             <View style={styles.actionsGroup}>
               {currentStep > 0 && (
-                <TouchableOpacity
+                <PremiumIcon
+                  icon={ArrowLeft}
+                  size={20}
+                  box={48}
+                  tone="glass"
+                  accessibilityLabel="Previous step"
                   onPress={handlePrev}
-                  style={styles.prevBtn}
-                  activeOpacity={0.7}
-                >
-                  <ArrowLeft size={20} color={colors.text.primary} />
-                </TouchableOpacity>
+                />
               )}
               
               <View style={{ flex: 1 }}>
@@ -205,7 +207,7 @@ export default function ScanInstructionsModal({ visible, onClose, onOpenScanner 
 const getStyles = (colors, isDark) => StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(5, 4, 3, 0.88)',
+    backgroundColor: 'rgba(5, 4, 3, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: Spacing[4],
@@ -313,7 +315,9 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     letterSpacing: 0.8,
   },
   tagPill: {
-    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
+    backgroundColor: 'rgba(127, 127, 140, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,

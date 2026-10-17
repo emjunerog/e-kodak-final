@@ -114,8 +114,11 @@ export default function HistoryActivityTabs({
       }
     });
 
-    // 2. Real database events from booking_status_history, payments, notifications & customer action audits
+    // 2. Real database events from booking_status_history, payments, & customer action audits
     dbAuditEvents.forEach((ev) => {
+      // Notifications strictly belong to Notification History, not Activity Logs
+      if (ev.source === "DATABASE_NOTIFICATIONS" || ev.category === "NOTIFICATION") return;
+
       let icon = FileText;
       let category = ev.category || "ACTIVITY";
 
@@ -125,9 +128,6 @@ export default function HistoryActivityTabs({
       } else if (ev.source === "DATABASE_PAYMENTS") {
         category = "PAYMENT";
         icon = CreditCard;
-      } else if (ev.source === "DATABASE_NOTIFICATIONS") {
-        category = "NOTIFICATION";
-        icon = Bell;
       } else if (ev.source === "CUSTOMER_ACTION") {
         category = "UPDATES";
         if (ev.category === 'PROFILE_UPDATE') icon = UserCheck;
@@ -203,7 +203,7 @@ export default function HistoryActivityTabs({
           >
             <Calendar size={14} className={activeTab === "active" ? "text-gold" : ""} />
             <span>Active Sessions</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-body ${
+            <span className={`px-1.5 py-0.2 rounded-full text-xs font-body ${
               activeTab === "active" ? "bg-gold/15 text-gold-dark" : "bg-neutral-300 text-neutral-600"
             }`}>
               {activeBookings.length}
@@ -220,7 +220,7 @@ export default function HistoryActivityTabs({
           >
             <History size={14} className={activeTab === "records" ? "text-gold" : ""} />
             <span>Booking Records</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-body ${
+            <span className={`px-1.5 py-0.2 rounded-full text-xs font-body ${
               activeTab === "records" ? "bg-gold/15 text-gold-dark" : "bg-neutral-300 text-neutral-600"
             }`}>
               {bookings.length}
@@ -236,8 +236,8 @@ export default function HistoryActivityTabs({
             }`}
           >
             <FileText size={14} className={activeTab === "logs" ? "text-gold" : ""} />
-            <span>Activity Trail</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-body ${
+            <span>Activity Logs</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-xs font-body ${
               activeTab === "logs" ? "bg-gold/15 text-gold-dark" : "bg-neutral-300 text-neutral-600"
             }`}>
               {activityLogs.length}
@@ -337,7 +337,7 @@ export default function HistoryActivityTabs({
 
                     <div className="bg-neutral-50 p-3.5 rounded-2xl border border-neutral-100 flex flex-col justify-between">
                       <div>
-                        <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1">
+                        <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider block mb-1">
                           Assigned Photographer
                         </span>
                         {b.photographer ? (
@@ -349,7 +349,7 @@ export default function HistoryActivityTabs({
                               <p className="text-xs font-semibold text-primary">
                                 {b.photographer.profile?.first_name} {b.photographer.profile?.last_name}
                               </p>
-                              <p className="text-[10px] text-neutral-400">
+                              <p className="text-xs text-neutral-400">
                                 {b.photographer.specialization || "Studio Specialist"}
                               </p>
                             </div>
@@ -378,7 +378,7 @@ export default function HistoryActivityTabs({
                     <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1">
                       {steps.map((step, idx) => (
                         <div key={idx} className="flex items-center gap-2 shrink-0">
-                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
                             step.completed
                               ? "bg-emerald-500 text-white shadow-xs"
                               : step.current
@@ -483,7 +483,7 @@ export default function HistoryActivityTabs({
                         <span className="font-semibold text-xs text-primary font-heading">
                           {b.service?.name || "Session"}
                         </span>
-                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${getStatusBadge(b.status)}`}>
+                        <span className={`px-2 py-0.5 text-xs font-bold rounded-full border ${getStatusBadge(b.status)}`}>
                           {getStatusLabel(b.status)}
                         </span>
                       </div>
@@ -498,7 +498,7 @@ export default function HistoryActivityTabs({
                       <p className="text-xs font-bold text-primary font-body">
                         ₱{Number(b.total_amount || 0).toLocaleString()}
                       </p>
-                      <p className="text-[10px] text-neutral-400">
+                      <p className="text-xs text-neutral-400">
                         {b.event_date ? new Date(b.event_date).toLocaleDateString() : "Date TBD"}
                       </p>
                     </div>
@@ -555,7 +555,6 @@ export default function HistoryActivityTabs({
                 { id: "BOOKING", label: "Bookings" },
                 { id: "STATUS", label: "Status" },
                 { id: "PAYMENT", label: "Payments" },
-                { id: "NOTIFICATION", label: "Bulletins" }
               ].map(cat => (
                 <button
                   key={cat.id}
@@ -598,7 +597,7 @@ export default function HistoryActivityTabs({
                           <span className="font-semibold text-xs text-primary">
                             {log.title}
                           </span>
-                          <span className="text-[9px] font-bold text-neutral-500 bg-neutral-100 px-1.5 py-0.2 rounded uppercase font-body">
+                          <span className="text-[11px] font-bold text-neutral-500 bg-neutral-100 px-1.5 py-0.2 rounded uppercase font-body">
                             {log.category === 'UPDATES' ? (log.rawCategory?.replace('_', ' ') || 'CLIENT UPDATE') : log.category}
                           </span>
                         </div>
@@ -617,7 +616,7 @@ export default function HistoryActivityTabs({
                           {log.changes.map((ch, idx) => (
                             <span
                               key={idx}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-[10px] font-medium"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-xs font-medium"
                             >
                               <Check size={10} className="text-amber-600 dark:text-amber-400 shrink-0" />
                               <span>{ch}</span>

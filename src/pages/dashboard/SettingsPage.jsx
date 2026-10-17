@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Moon, Sun, Bell, MessageSquare, Shield, Smartphone, LogOut, Trash2, 
-  AlertTriangle, Database, Activity, RefreshCw, Download, Eye, FileText, 
-  CheckCircle, Clock, Server, HardDrive, Key, Lock, Sparkles, Sliders, 
-  Info, Zap, HelpCircle, Check, ChevronRight, Laptop, Globe, Cpu,
-  ShieldCheck, EyeOff, Award, Bookmark, ArrowUpRight,
-  Building, Truck, Phone, User, MapPin, Package, Loader2, Save
+  AlertTriangle, CheckCircle, Clock, Server, HardDrive, Key, Lock, Sparkles, Sliders, 
+  Info, Zap, Check, ChevronRight, Eye, EyeOff, Award, Download,
+  Building, Truck, Phone, User, MapPin, Package, Loader2, Save, RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -18,14 +16,14 @@ const FULFILLMENT_MODES = [
   {
     id: 'STUDIO_PICKUP',
     name: 'Studio In-Person Claiming',
-    subtitle: 'Claim directly at Cebu Studio counter',
+    subtitle: 'Claim directly at Cebu Studio counter (No delivery fee)',
     badge: 'Studio Pickup',
     icon: Building,
   },
   {
     id: 'STUDIO_DELIVERY',
     name: 'Studio Direct Delivery',
-    subtitle: 'Personally delivered by our studio team',
+    subtitle: 'Personally delivered by our studio team in protective packaging',
     badge: 'Studio Dispatch',
     icon: Truck,
   },
@@ -60,14 +58,22 @@ export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState('section-appearance');
   const [isSavingFulfillment, setIsSavingFulfillment] = useState(false);
 
-  // Delivery & Claiming State (No 3rd party carriers)
+  // Delivery & Claiming State
   const [fulfillmentData, setFulfillmentData] = useState({
-    fulfillmentMode: 'STUDIO_PICKUP', // 'STUDIO_PICKUP' | 'STUDIO_DELIVERY'
+    fulfillmentMode: 'STUDIO_PICKUP',
     contactName: '',
     contactPhone: '',
     deliveryAddress: '',
     deliveryInstructions: '',
   });
+
+  // Password Update State
+  const [passwordData, setPasswordData] = useState({
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [showPassword, setShowPassword] = useState(false);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   // Sync fulfillment preferences from profile studio_specs
   useEffect(() => {
@@ -98,18 +104,14 @@ export default function SettingsPage() {
 
   const [settings, setSettings] = useState({
     darkMode:             loadSetting('darkMode', true),
-    compactView:          loadSetting('compactView', true),
+    compactView:          loadSetting('compactView', false),
     motionEffects:        loadSetting('motionEffects', true),
     emailBookingAlerts:   loadSetting('emailBookingAlerts', true),
     emailProofingAlerts:  loadSetting('emailProofingAlerts', true),
     smsReminders:         loadSetting('smsReminders', true),
     marketingNewsletter:  loadSetting('marketingNewsletter', false),
-    twoFactorAuth:        loadSetting('twoFactorAuth', false),
   });
 
-  // Diagnostics state
-  const [apiLatency, setApiLatency] = useState(null);
-  const [isPinging, setIsPinging] = useState(false);
   const [cacheSizeKb, setCacheSizeKb] = useState(0);
 
   // Calculate local storage size
@@ -144,29 +146,24 @@ export default function SettingsPage() {
     }
   }, [settings.compactView]);
 
-  // Track active section on scroll
+  // Synchronize when changed from Header or external components
   useEffect(() => {
-    const handleScroll = () => {
-      const sections = [
-        'section-appearance',
-        'section-fulfillment',
-        'section-notifications',
-        'section-sla',
-        'section-privacy',
-        'section-diagnostics',
-        'section-security',
-      ];
-      const scrollY = window.scrollY + 180;
-      for (let i = sections.length - 1; i >= 0; i--) {
-        const el = document.getElementById(sections[i]);
-        if (el && el.offsetTop <= scrollY) {
-          setActiveSection(sections[i]);
-          break;
-        }
+    const handleThemeUpdate = (e) => {
+      if (typeof e.detail?.darkMode === 'boolean') {
+        setSettings(prev => ({ ...prev, darkMode: e.detail.darkMode }));
       }
     };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    const handleCompactUpdate = (e) => {
+      if (typeof e.detail?.compactView === 'boolean') {
+        setSettings(prev => ({ ...prev, compactView: e.detail.compactView }));
+      }
+    };
+    window.addEventListener('ekodak_theme_changed', handleThemeUpdate);
+    window.addEventListener('ekodak_compact_changed', handleCompactUpdate);
+    return () => {
+      window.removeEventListener('ekodak_theme_changed', handleThemeUpdate);
+      window.removeEventListener('ekodak_compact_changed', handleCompactUpdate);
+    };
   }, []);
 
   const toggleSetting = (key) => {
@@ -175,14 +172,21 @@ export default function SettingsPage() {
       const next = { ...prev, [key]: nextVal };
       localStorage.setItem(`ekodak_${key}`, JSON.stringify(nextVal));
 
+      if (key === 'darkMode') {
+        window.dispatchEvent(new CustomEvent('ekodak_theme_changed', { detail: { darkMode: nextVal } }));
+      } else if (key === 'compactView') {
+        window.dispatchEvent(new CustomEvent('ekodak_compact_changed', { detail: { compactView: nextVal } }));
+      }
+
       if (user?.id) {
         const readableNames = {
           darkMode: 'Theme Dark Mode',
-          compactView: 'High-Density Display Mode',
-          emailBookingAlerts: 'Email Session Confirmations',
-          emailProofingAlerts: 'Proofing Gallery Email Alerts',
-          smsStatusUpdates: 'SMS Production Status Bulletins',
-          smsShootReminders: 'SMS 24h Shoot Day Reminders'
+          compactView: 'Compact Density Mode',
+          motionEffects: 'Micro-Animations',
+          emailBookingAlerts: 'Email Confirmations',
+          emailProofingAlerts: 'Soft Copy Proof Alerts',
+          smsReminders: 'SMS Pictorial Reminders',
+          marketingNewsletter: 'Season Announcements'
         };
         const titleLabel = readableNames[key] || key;
         recordCustomerAction({
@@ -196,43 +200,6 @@ export default function SettingsPage() {
 
       return next;
     });
-  };
-
-  // Ping Supabase DB for live latency measurement
-  const handlePingDiagnostics = async () => {
-    setIsPinging(true);
-    const start = performance.now();
-    try {
-      if (isSupabaseConfigured) {
-        await supabase.from('profiles').select('id').limit(1);
-      } else {
-        await new Promise(r => setTimeout(r, 45));
-      }
-      const duration = Math.round(performance.now() - start);
-      setApiLatency(duration);
-      setToast({ type: 'success', message: `Database response measured: ${duration}ms (Operational)` });
-    } catch (err) {
-      setApiLatency(999);
-      setToast({ type: 'error', message: 'API ping failed: ' + err.message });
-    } finally {
-      setIsPinging(false);
-    }
-  };
-
-  // Clear Studio Local Cache
-  const handleClearCache = () => {
-    try {
-      const keysToKeep = ['sb-', 'supabase', 'ekodak_darkMode', 'ekodak_compactView'];
-      Object.keys(localStorage).forEach(key => {
-        if (!keysToKeep.some(k => key.includes(k))) {
-          localStorage.removeItem(key);
-        }
-      });
-      calculateCacheSize();
-      setToast({ type: 'success', message: 'Local studio cache cleared successfully.' });
-    } catch {
-      setToast({ type: 'error', message: 'Could not clear cache.' });
-    }
   };
 
   // Save Delivery / Claiming Customization
@@ -263,18 +230,17 @@ export default function SettingsPage() {
           userId: user.id,
           category: 'DELIVERY_UPDATE',
           title: fulfillmentData.fulfillmentMode === 'STUDIO_DELIVERY' ? 'Studio Direct Delivery Preferences Saved' : 'Studio In-Person Counter Claiming Selected',
-          description: `Customer configured fulfillment settings in profile.`,
+          description: `Customer configured fulfillment settings.`,
           changes: [
             `Mode: ${fulfillmentData.fulfillmentMode === 'STUDIO_DELIVERY' ? 'Studio Direct Delivery' : 'Studio In-Person Counter Claiming'}`,
             `Recipient: ${fulfillmentData.contactName || 'Client'}`,
             `Phone: ${fulfillmentData.contactPhone || 'Recorded'}`,
             fulfillmentData.fulfillmentMode === 'STUDIO_DELIVERY' && fulfillmentData.deliveryAddress ? `Address: ${fulfillmentData.deliveryAddress}` : null,
-            fulfillmentData.deliveryInstructions ? `Instructions: ${fulfillmentData.deliveryInstructions}` : null
           ].filter(Boolean)
         });
       }
 
-      setToast({ type: 'success', message: 'Studio fulfillment preferences saved.' });
+      setToast({ type: 'success', message: 'Studio fulfillment preferences saved successfully!' });
     } catch (err) {
       console.error('Save fulfillment error:', err);
       setToast({ type: 'error', message: 'Failed to update preferences. Try again.' });
@@ -283,7 +249,68 @@ export default function SettingsPage() {
     }
   };
 
-  // Export Full Customer Data Transcript (GDPR / Data Privacy Takeout)
+  // Handle Real Password Update via Supabase Auth
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    if (!passwordData.newPassword) {
+      setToast({ type: 'error', message: 'Please enter a new password.' });
+      return;
+    }
+    if (passwordData.newPassword.length < 6) {
+      setToast({ type: 'error', message: 'Password must be at least 6 characters.' });
+      return;
+    }
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setToast({ type: 'error', message: 'Passwords do not match.' });
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    try {
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.auth.updateUser({
+          password: passwordData.newPassword
+        });
+        if (error) throw error;
+      }
+
+      setPasswordData({ newPassword: '', confirmPassword: '' });
+      setToast({ type: 'success', message: 'Password updated successfully!' });
+
+      if (user?.id) {
+        recordCustomerAction({
+          userId: user.id,
+          category: 'SECURITY_UPDATE',
+          title: 'Account Password Changed',
+          description: 'Customer updated their account authentication password.',
+          changes: ['Password: Modified']
+        });
+      }
+    } catch (err) {
+      console.error('Password update error:', err);
+      setToast({ type: 'error', message: err.message || 'Failed to update password.' });
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
+
+  // Clear Studio Local Cache
+  const handleClearCache = () => {
+    try {
+      const keysToKeep = ['sb-', 'supabase', 'ekodak_darkMode', 'ekodak_compactView'];
+      Object.keys(localStorage).forEach(key => {
+        if (!keysToKeep.some(k => key.includes(k))) {
+          localStorage.removeItem(key);
+        }
+      });
+      calculateCacheSize();
+      setToast({ type: 'success', message: 'Local studio temporary cache cleared.' });
+    } catch {
+      setToast({ type: 'error', message: 'Could not clear cache.' });
+    }
+  };
+
+  // Export Full Customer Data Transcript (.json)
   const handleDownloadDataTakeout = () => {
     const takeoutData = {
       exportTimestamp: new Date().toISOString(),
@@ -294,31 +321,25 @@ export default function SettingsPage() {
         profile: profile,
       },
       clientPreferences: settings,
-      privacyDeclarations: {
-        modelReleaseConsented: profile?.studio_specs?.agreedModelRelease ?? true,
-        archivalRetentionDays: 365,
-        personalReproductionRights: "Perpetual personal printing & digital license granted",
-      },
-      localStorageKeysSaved: Object.keys(localStorage).filter(k => k.startsWith('ekodak_')),
     };
 
     const dataBlob = new Blob([JSON.stringify(takeoutData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `ekodak_customer_data_takeout_${user?.id?.slice(0, 8) || 'client'}.json`;
+    link.download = `ekodak_account_data_${user?.id?.slice(0, 6) || 'client'}.json`;
     link.click();
     URL.revokeObjectURL(url);
-    setToast({ type: 'success', message: 'Complete data takeout archive exported to your device!' });
+    setToast({ type: 'success', message: 'Account data archive exported to your device!' });
   };
 
   // Sign out all devices
   const handleSignOutAll = () => {
     setDialog({
       title:        'Sign Out of All Devices?',
-      message:      'Warning: You will be logged out of all active browser sessions. Please ensure any unsaved updates to your shoot specifications, toga sizing, or delivery address are saved before proceeding.',
+      message:      'You will be signed out of all active browser sessions. You will need to log in again on your devices.',
       confirmLabel: 'Sign Out Everywhere',
-      cancelLabel:  'Stay Logged In',
+      cancelLabel:  'Cancel',
       confirmClass: 'bg-red-600 text-white hover:bg-red-700',
       icon:         LogOut,
       iconColor:    'text-red-500',
@@ -330,6 +351,14 @@ export default function SettingsPage() {
     });
   };
 
+  const navItems = [
+    { id: 'section-appearance', label: 'Theme & Appearance', icon: Sun },
+    { id: 'section-fulfillment', label: 'Deliverables & Fulfillment', icon: Package },
+    { id: 'section-notifications', label: 'Notification Channels', icon: Bell },
+    { id: 'section-security', label: 'Security & Password', icon: Lock },
+    { id: 'section-privacy', label: 'Data & Privacy', icon: Shield },
+  ];
+
   const scrollToSection = (id) => {
     setActiveSection(id);
     const el = document.getElementById(id);
@@ -338,66 +367,41 @@ export default function SettingsPage() {
     }
   };
 
-  const navItems = [
-    { id: 'section-appearance', label: 'Appearance & Display', icon: Sun, badge: settings.darkMode ? 'Dark' : 'Light' },
-    { id: 'section-fulfillment', label: 'Studio Fulfillment', icon: Package, badge: fulfillmentData.fulfillmentMode === 'STUDIO_PICKUP' ? 'Pickup' : 'Delivery' },
-    { id: 'section-notifications', label: 'Notification Channels', icon: Bell, badge: '4 Active' },
-    { id: 'section-sla', label: 'Studio SLA Transparency', icon: Eye, badge: 'Guaranteed' },
-    { id: 'section-privacy', label: 'Data Privacy & Rights', icon: ShieldCheck, badge: 'RA 10173' },
-    { id: 'section-diagnostics', label: 'Diagnostics & Cache', icon: Cpu, badge: apiLatency !== null ? `${apiLatency}ms` : 'Ready' },
-    { id: 'section-security', label: 'Security & Sessions', icon: AlertTriangle, badge: 'Standard' },
-  ];
-
   return (
-    <div className="max-w-6xl mx-auto animate-fade-in pb-24 space-y-6">
-
+    <div className="max-w-screen-2xl mx-auto w-full animate-fade-in pb-20 space-y-6">
       <Toast toast={toast} onClose={() => setToast(null)} />
       <ConfirmDialog dialog={dialog} onClose={() => setDialog(null)} />
 
       {/* ── Top Header Banner ────────────────────────────────────────────── */}
-      <div className="bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 rounded-3xl p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 rounded-3xl p-6 sm:p-7 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-[10px] font-body font-bold uppercase tracking-wider text-gold bg-gold/15 px-2.5 py-0.5 rounded-full border border-gold/30">
-              CLIENT CONFIGURATIONS & TOOLS
-            </span>
-            <span className="text-[10px] font-body text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
-              All Systems Operational
-            </span>
-          </div>
+          <span className="text-xs font-body font-bold uppercase tracking-wider text-gold bg-gold/15 px-2.5 py-0.5 rounded-full border border-gold/30 inline-block mb-1.5">
+            CLIENT SETTINGS
+          </span>
           <h1 className="text-2xl sm:text-3xl font-heading text-primary dark:text-neutral-100 font-bold">
-            Settings & Transparency Tools
+            Settings & Preferences
           </h1>
           <p className="text-xs sm:text-sm text-neutral-500 font-body mt-1">
-            Personalize display preferences, review studio SLA turnarounds, inspect privacy guarantees, and run diagnostics.
+            Customize display mode, deliverable claiming preferences, notifications, and security.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={handleDownloadDataTakeout}
-            className="btn-outline py-2 px-3.5 text-xs flex items-center gap-1.5 whitespace-nowrap shadow-xs"
-          >
-            <Download size={13} className="text-gold" />
-            <span>Data Takeout (.json)</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleDownloadDataTakeout}
+          className="btn-outline py-2 px-3.5 text-xs flex items-center gap-1.5 whitespace-nowrap self-start sm:self-auto cursor-pointer"
+        >
+          <Download size={13} className="text-gold" />
+          <span>Export Data (.json)</span>
+        </button>
       </div>
 
-      {/* ── Main Two-Column Layout (Sticky Left Nav + Clean Right Content) ── */}
+      {/* ── Main Two-Column Layout ────────────────────────────────────────── */}
       <div className="grid lg:grid-cols-12 gap-6 items-start">
         
-        {/* LEFT COLUMN: Sticky Navigation & Quick Status Rail (4 cols) */}
-        <div className="lg:col-span-4 xl:col-span-3 lg:sticky lg:top-20 space-y-4">
-          
-          {/* Section Navigation Card */}
-          <div className="bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 rounded-2xl p-3 shadow-xs">
-            <div className="px-3 py-2 border-b border-neutral-100 dark:border-neutral-800 mb-1">
-              <span className="text-[10px] font-body uppercase tracking-wider text-neutral-400 font-bold">
-                Table of Contents
-              </span>
-            </div>
+        {/* LEFT COLUMN: Sticky Navigation Rail (3 cols) */}
+        <div className="lg:col-span-4 xl:col-span-3 lg:sticky lg:top-20 space-y-3">
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 rounded-2xl p-2.5 shadow-xs">
             <nav className="space-y-1">
               {navItems.map(item => {
                 const isActive = activeSection === item.id;
@@ -407,74 +411,38 @@ export default function SettingsPage() {
                     key={item.id}
                     type="button"
                     onClick={() => scrollToSection(item.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-left ${
+                    className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium transition-all text-left cursor-pointer ${
                       isActive
                         ? 'bg-neutral-900 text-white dark:bg-gold dark:text-neutral-950 font-bold shadow-xs'
                         : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/60'
                     }`}
                   >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <Icon size={15} className={isActive ? 'text-gold dark:text-neutral-950' : 'text-neutral-400'} />
-                      <span className="truncate">{item.label}</span>
-                    </div>
-                    {item.badge && (
-                      <span className={`text-[10px] font-body px-2 py-0.2 rounded-full shrink-0 ml-1.5 ${
-                        isActive 
-                          ? 'bg-white/20 text-white dark:bg-neutral-950/20 dark:text-neutral-950 font-bold' 
-                          : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500'
-                      }`}>
-                        {item.badge}
-                      </span>
-                    )}
+                    <Icon size={15} className={isActive ? 'text-gold dark:text-neutral-950' : 'text-neutral-400'} />
+                    <span className="truncate">{item.label}</span>
                   </button>
                 );
               })}
             </nav>
           </div>
 
-          {/* Quick Diagnostics Mini Widget */}
-          <div className="bg-gradient-to-br from-neutral-900 to-neutral-950 text-white rounded-2xl p-4 border border-neutral-800 shadow-md space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-body uppercase tracking-wider text-gold font-bold">Cloud Latency</span>
-              <button 
-                type="button" 
-                onClick={handlePingDiagnostics} 
-                disabled={isPinging}
-                className="text-[10px] text-neutral-400 hover:text-white flex items-center gap-1 font-body transition-colors"
-              >
-                <RefreshCw size={10} className={isPinging ? 'animate-spin text-gold' : ''} />
-                <span>Test</span>
-              </button>
-            </div>
-            <div className="flex items-baseline justify-between">
-              <span className="text-2xl font-body font-bold text-white">
-                {apiLatency !== null ? `${apiLatency}ms` : '42ms'}
-              </span>
-              <span className="text-[10px] text-emerald-400 font-body flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Optimal
-              </span>
-            </div>
-            <p className="text-[11px] text-neutral-400 font-body">
-              Direct connection to E-Kodak Studio private cloud vault (Tokyo ap-northeast-1).
+          <div className="p-4 bg-gradient-to-br from-neutral-900 to-neutral-950 text-white rounded-2xl border border-neutral-800 shadow-xs space-y-1.5 text-xs font-body">
+            <span className="text-xs uppercase font-bold text-gold tracking-wider block">Studio Support</span>
+            <p className="text-neutral-300 text-[11px] leading-relaxed">
+              Need assistance with your booking or photoshoot package? Reach us at <span className="text-gold">support@ekodak.com</span>.
             </p>
           </div>
-
         </div>
 
-        {/* RIGHT COLUMN: Content Sections (8 cols) */}
-        <div className="lg:col-span-8 xl:col-span-9 space-y-8">
+        {/* RIGHT COLUMN: Settings Content Sections (9 cols) */}
+        <div className="lg:col-span-8 xl:col-span-9 space-y-6">
 
-          {/* ── 1. SECTION: APPEARANCE & DISPLAY DENSITY ──────────────────── */}
+          {/* ── 1. THEME & DISPLAY ─────────────────────────────────────────── */}
           <section id="section-appearance" className="space-y-3 scroll-mt-24">
-            <div className="flex items-center justify-between pb-1">
-              <div className="flex items-center gap-2">
-                <Sun className="text-gold" size={18} />
-                <h2 className="font-heading text-lg font-bold text-primary dark:text-neutral-100">
-                  Appearance & Display Density
-                </h2>
-              </div>
-              <span className="text-xs text-neutral-400 font-body">Theme Preferences</span>
+            <div className="flex items-center gap-2 pb-1">
+              <Sun className="text-gold" size={18} />
+              <h2 className="font-heading text-lg font-bold text-primary dark:text-neutral-100">
+                Theme & Appearance
+              </h2>
             </div>
 
             <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs divide-y divide-neutral-100 dark:divide-neutral-800 overflow-hidden">
@@ -486,14 +454,9 @@ export default function SettingsPage() {
                     <Moon size={16} />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">Dark Mode Theme</h3>
-                      <span className="text-[10px] font-body text-gold bg-gold/15 px-2 py-0.2 rounded-full font-bold">
-                        {settings.darkMode ? 'Active' : 'Off'}
-                      </span>
-                    </div>
+                    <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">Dark Mode Theme</h3>
                     <p className="text-xs text-neutral-500 font-body mt-0.5">
-                      Switches dashboard and viewer backgrounds to deep obsidian tones for comfortable night editing.
+                      Switches dashboard and viewer backgrounds to deep obsidian tones for comfortable viewing.
                     </p>
                   </div>
                 </div>
@@ -513,14 +476,9 @@ export default function SettingsPage() {
                     <Sliders size={16} />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">Compact Layout Density</h3>
-                      <span className="text-[10px] font-body text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.2 rounded-full font-bold">
-                        {settings.compactView ? 'Active' : 'Standard'}
-                      </span>
-                    </div>
+                    <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">Compact Density View</h3>
                     <p className="text-xs text-neutral-500 font-body mt-0.5">
-                      Streamlines list paddings and card heights for efficient multi-booking browsing.
+                      Streamlines card padding and row heights for efficient viewing on smaller displays.
                     </p>
                   </div>
                 </div>
@@ -528,19 +486,19 @@ export default function SettingsPage() {
                   enabled={settings.compactView}
                   onClick={() => {
                     toggleSetting('compactView');
-                    setToast({ type: 'info', message: `Compact layout ${!settings.compactView ? 'activated' : 'deactivated'}.` });
+                    setToast({ type: 'info', message: `Compact density ${!settings.compactView ? 'activated' : 'deactivated'}.` });
                   }}
                 />
               </div>
 
-              {/* Micro-Animations */}
+              {/* Fluid Motion */}
               <div className="p-4 sm:p-5 flex items-center justify-between gap-4">
                 <div className="flex items-start gap-3">
                   <div className="w-9 h-9 rounded-xl bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 flex items-center justify-center shrink-0 mt-0.5">
                     <Zap size={16} />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">Micro-Interactions & Fluid Motion</h3>
+                    <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">Fluid Micro-Animations</h3>
                     <p className="text-xs text-neutral-500 font-body mt-0.5">
                       Smooth gallery transitions, zoom reveals, and responsive hover highlights.
                     </p>
@@ -555,31 +513,24 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {/* ── 1.5. SECTION: STUDIO FULFILLMENT ──────────────────── */}
+          {/* ── 2. STUDIO FULFILLMENT & DELIVERABLES ────────────────────────── */}
           <section id="section-fulfillment" className="space-y-3 scroll-mt-24">
-            <div className="flex items-center justify-between pb-1">
-              <div className="flex items-center gap-2">
-                <Package className="text-gold" size={18} />
-                <h2 className="font-heading text-lg font-bold text-primary dark:text-neutral-100">
-                  Studio Deliverables Fulfillment
-                </h2>
-              </div>
-              <span className="text-xs text-neutral-400 font-body">Delivery Options</span>
+            <div className="flex items-center gap-2 pb-1">
+              <Package className="text-gold" size={18} />
+              <h2 className="font-heading text-lg font-bold text-primary dark:text-neutral-100">
+                Deliverables & Fulfillment
+              </h2>
             </div>
 
-            <div className="bg-white dark:bg-neutral-900 rounded-2xl p-4 sm:p-5 border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-4">
-              <p className="text-[12px] text-neutral-500 font-body">
-                Direct studio delivery or in-person claiming (no 3rd-party carriers).
-              </p>
-
-              <form onSubmit={handleSaveFulfillment} className="space-y-4 text-xs font-body max-w-2xl">
+            <div className="bg-white dark:bg-neutral-900 rounded-2xl p-5 border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-4">
+              <form onSubmit={handleSaveFulfillment} className="space-y-4 text-xs font-body">
                 
-                {/* Fulfillment Mode Switcher (2 Studio Options) */}
+                {/* Fulfillment Mode Selector */}
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-body uppercase text-neutral-400 block font-bold">
-                    Fulfillment Option
+                  <label className="text-xs font-body uppercase text-neutral-400 block font-bold">
+                    Claiming / Delivery Method
                   </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {FULFILLMENT_MODES.map((mode) => {
                       const isSelected = fulfillmentData.fulfillmentMode === mode.id;
                       const ModeIcon = mode.icon;
@@ -589,23 +540,23 @@ export default function SettingsPage() {
                           type="button"
                           onClick={() => setFulfillmentData({ ...fulfillmentData, fulfillmentMode: mode.id })}
                           className={`
-                            p-3 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer font-body
+                            p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer font-body
                             ${isSelected 
-                              ? 'bg-gold/10 border-gold ring-1 ring-gold text-primary dark:text-gold font-bold shadow-2xs' 
+                              ? 'bg-gold/10 border-gold ring-1 ring-gold text-primary dark:text-gold font-bold shadow-xs' 
                               : 'bg-neutral-50 dark:bg-neutral-800/60 border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100'}
                           `}
                         >
-                          <div className="flex items-center justify-between mb-1.5">
-                            <ModeIcon size={16} className={isSelected ? 'text-gold' : 'text-neutral-400'} />
-                            <span className={`text-[9px] font-body uppercase px-1.5 py-0.5 rounded font-bold ${
+                          <div className="flex items-center justify-between mb-2">
+                            <ModeIcon size={18} className={isSelected ? 'text-gold' : 'text-neutral-400'} />
+                            <span className={`text-[11px] uppercase px-1.5 py-0.5 rounded font-bold ${
                               isSelected ? 'bg-gold text-primary' : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300'
                             }`}>
                               {mode.badge}
                             </span>
                           </div>
                           <div>
-                            <p className="text-xs font-bold leading-tight font-body">{mode.name}</p>
-                            <p className="text-[10px] text-neutral-400 leading-tight mt-0.5 font-body">{mode.subtitle}</p>
+                            <p className="text-xs font-bold leading-tight">{mode.name}</p>
+                            <p className="text-xs text-neutral-400 leading-tight mt-0.5 font-normal">{mode.subtitle}</p>
                           </div>
                         </button>
                       );
@@ -613,93 +564,78 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* Mode-Specific Banner / Details */}
+                {/* Mode-Specific Information Banner */}
                 {fulfillmentData.fulfillmentMode === 'STUDIO_PICKUP' ? (
-                  /* Studio In-Person Claiming Info */
-                  <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 space-y-1.5 text-[11px] text-neutral-600 dark:text-neutral-300 font-body">
+                  <div className="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 text-[11px] text-neutral-600 dark:text-neutral-300 space-y-1">
                     <div className="flex items-center gap-1.5 text-primary dark:text-neutral-100 font-bold">
                       <MapPin size={14} className="text-gold shrink-0" />
-                      <span>Studio Counter Pick-up Location</span>
+                      <span>Studio Pickup Location</span>
                     </div>
-                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400 pl-5 leading-normal font-body">
-                      E-Kodak Studio<br />
-                      311 Rizal Street, City of Naga, Cebu<br />
-                      <span className="text-gold font-medium">Claiming Hours: Mon - Sat (8:00 AM – 6:00 PM)</span>
+                    <p className="pl-5 text-neutral-500 dark:text-neutral-400">
+                      E-Kodak Studio: 311 Rizal Street, City of Naga, Cebu<br />
+                      <span className="text-gold font-semibold">Hours: Monday – Saturday (8:00 AM – 6:00 PM)</span>
                     </p>
                   </div>
                 ) : (
-                  /* Studio Direct Delivery Notice */
-                  <div className="p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/20 border border-blue-200/80 dark:border-blue-800/40 space-y-1.5 text-[11px] text-neutral-600 dark:text-neutral-300 font-body">
+                  <div className="p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/20 border border-blue-200/80 dark:border-blue-800/40 text-[11px] text-neutral-600 dark:text-neutral-300 space-y-1">
                     <div className="flex items-center gap-1.5 text-primary dark:text-neutral-100 font-bold">
-                      <Truck size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                      <Truck size={14} className="text-blue-500 shrink-0" />
                       <span>Studio Direct Dispatch</span>
                     </div>
-                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400 pl-5 leading-normal font-body">
-                      Our studio delivery personnel will personally deliver your framed package directly to your destination. No 3rd-party logistics.
+                    <p className="pl-5 text-neutral-500 dark:text-neutral-400">
+                      Our studio dispatch personnel will personally deliver your framed package and prints directly to your address.
                     </p>
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Contact / Recipient Name */}
-                  <div className="space-y-1.5 font-body">
-                    <label className="text-[10px] font-body uppercase text-neutral-400 block font-bold">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider block">
                       {fulfillmentData.fulfillmentMode === 'STUDIO_PICKUP' ? 'Claimer Full Name' : 'Recipient Full Name'}
                     </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        required
-                        value={fulfillmentData.contactName}
-                        onChange={(e) => setFulfillmentData({ ...fulfillmentData, contactName: e.target.value })}
-                        placeholder="Full name"
-                        className="w-full py-2 pl-8 pr-3 bg-neutral-50 dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs focus:ring-1 focus:ring-gold font-body"
-                      />
-                      <User size={14} className="absolute left-2.5 top-2.5 text-neutral-400" />
-                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={fulfillmentData.contactName}
+                      onChange={(e) => setFulfillmentData({ ...fulfillmentData, contactName: e.target.value })}
+                      placeholder="e.g. Maria Santos"
+                      className="w-full py-2 px-3 bg-neutral-50 dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700 text-xs focus:ring-1 focus:ring-gold outline-none"
+                    />
                   </div>
 
-                  {/* Contact Mobile Phone */}
-                  <div className="space-y-1.5 font-body">
-                    <label className="text-[10px] font-body uppercase text-neutral-400 block font-bold">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider block">
                       Contact Mobile Phone
                     </label>
-                    <div className="relative">
-                      <input
-                        type="tel"
-                        required
-                        value={fulfillmentData.contactPhone}
-                        onChange={(e) => setFulfillmentData({ ...fulfillmentData, contactPhone: e.target.value })}
-                        placeholder="0917 000 0000"
-                        className="w-full py-2 pl-8 pr-3 bg-neutral-50 dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs focus:ring-1 focus:ring-gold font-body"
-                      />
-                      <Phone size={14} className="absolute left-2.5 top-2.5 text-neutral-400" />
-                    </div>
+                    <input
+                      type="tel"
+                      required
+                      value={fulfillmentData.contactPhone}
+                      onChange={(e) => setFulfillmentData({ ...fulfillmentData, contactPhone: e.target.value })}
+                      placeholder="0917 123 4567"
+                      className="w-full py-2 px-3 bg-neutral-50 dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700 text-xs focus:ring-1 focus:ring-gold outline-none"
+                    />
                   </div>
                 </div>
 
-                {/* Delivery Address & Landmark (Only if STUDIO_DELIVERY) */}
                 {fulfillmentData.fulfillmentMode === 'STUDIO_DELIVERY' && (
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="space-y-1.5 font-body">
-                      <label className="text-[10px] font-body uppercase text-neutral-400 block font-bold">
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider block">
                         Direct Delivery Address
                       </label>
-                      <div className="relative">
-                        <textarea
-                          rows={2}
-                          required
-                          value={fulfillmentData.deliveryAddress}
-                          onChange={(e) => setFulfillmentData({ ...fulfillmentData, deliveryAddress: e.target.value })}
-                          placeholder="Unit / House No., Street, Barangay, City"
-                          className="w-full py-2 pl-8 pr-3 bg-neutral-50 dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs focus:ring-1 focus:ring-gold resize-none font-body"
-                        />
-                        <MapPin size={14} className="absolute left-2.5 top-2.5 text-neutral-400" />
-                      </div>
+                      <textarea
+                        rows={2}
+                        required
+                        value={fulfillmentData.deliveryAddress}
+                        onChange={(e) => setFulfillmentData({ ...fulfillmentData, deliveryAddress: e.target.value })}
+                        placeholder="House/Unit No., Street, Barangay, City/Municipality, Province"
+                        className="w-full py-2 px-3 bg-neutral-50 dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700 text-xs focus:ring-1 focus:ring-gold outline-none resize-none"
+                      />
                     </div>
 
-                    <div className="space-y-1.5 font-body">
-                      <label className="text-[10px] font-body uppercase text-neutral-400 block font-bold">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider block">
                         Gate / Landmark Instructions (Optional)
                       </label>
                       <input
@@ -707,7 +643,7 @@ export default function SettingsPage() {
                         value={fulfillmentData.deliveryInstructions}
                         onChange={(e) => setFulfillmentData({ ...fulfillmentData, deliveryInstructions: e.target.value })}
                         placeholder="e.g. Near blue gate, call upon arrival"
-                        className="w-full py-2 px-3 bg-neutral-50 dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs focus:ring-1 focus:ring-gold font-body"
+                        className="w-full py-2 px-3 bg-neutral-50 dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700 text-xs focus:ring-1 focus:ring-gold outline-none"
                       />
                     </div>
                   </div>
@@ -717,31 +653,27 @@ export default function SettingsPage() {
                   <button
                     type="submit"
                     disabled={isSavingFulfillment}
-                    className="w-auto py-2.5 px-5 rounded-xl bg-gold hover:bg-gold-light text-primary font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-2xs disabled:opacity-50 font-body"
+                    className="btn-primary py-2 px-5 text-xs font-bold flex items-center gap-2 shadow-sm cursor-pointer"
                   >
-                    {isSavingFulfillment ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
-                    <span>Save Fulfillment Settings</span>
+                    {isSavingFulfillment ? <Loader2 className="animate-spin" size={13} /> : <Save size={13} />}
+                    <span>Save Fulfillment Preferences</span>
                   </button>
                 </div>
               </form>
             </div>
           </section>
 
-          {/* ── 2. SECTION: NOTIFICATIONS & COMMUNICATIONS ────────────────── */}
+          {/* ── 3. NOTIFICATION CHANNELS ───────────────────────────────────── */}
           <section id="section-notifications" className="space-y-3 scroll-mt-24">
-            <div className="flex items-center justify-between pb-1">
-              <div className="flex items-center gap-2">
-                <Bell className="text-gold" size={18} />
-                <h2 className="font-heading text-lg font-bold text-primary dark:text-neutral-100">
-                  Studio Notification Channels
-                </h2>
-              </div>
-              <span className="text-xs text-neutral-400 font-body">Alert Dispatch</span>
+            <div className="flex items-center gap-2 pb-1">
+              <Bell className="text-gold" size={18} />
+              <h2 className="font-heading text-lg font-bold text-primary dark:text-neutral-100">
+                Notification Channels
+              </h2>
             </div>
 
             <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs divide-y divide-neutral-100 dark:divide-neutral-800 overflow-hidden">
               
-              {/* Email Booking Confirmations */}
               <div className="p-4 sm:p-5 flex items-center justify-between gap-4">
                 <div className="flex items-start gap-3">
                   <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
@@ -750,7 +682,7 @@ export default function SettingsPage() {
                   <div>
                     <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">Email Session Confirmations & Invoices</h3>
                     <p className="text-xs text-neutral-500 font-body mt-0.5">
-                      Electronic booking receipt, schedule details, and downloadable calendar (.ics) invite.
+                      Electronic booking receipt, schedule details, and calendar invite.
                     </p>
                   </div>
                 </div>
@@ -760,16 +692,15 @@ export default function SettingsPage() {
                 />
               </div>
 
-              {/* Soft Copy Proofs Alert */}
               <div className="p-4 sm:p-5 flex items-center justify-between gap-4">
                 <div className="flex items-start gap-3">
                   <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 mt-0.5">
                     <Sparkles size={16} />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">Soft Copy Proofs Ready Notification</h3>
+                    <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">Soft Copy Proofs Ready Alert</h3>
                     <p className="text-xs text-neutral-500 font-body mt-0.5">
-                      Instant ping when colorists upload your uncompressed soft copy proofs for final selection.
+                      Instant notification when proofing photos are ready for your shot selection.
                     </p>
                   </div>
                 </div>
@@ -779,19 +710,13 @@ export default function SettingsPage() {
                 />
               </div>
 
-              {/* SMS Call-Time Reminders */}
               <div className="p-4 sm:p-5 flex items-center justify-between gap-4">
                 <div className="flex items-start gap-3">
                   <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
                     <Smartphone size={16} />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">SMS Call-Time Reminders</h3>
-                      <span className="text-[10px] font-body text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.2 rounded-full font-bold">
-                        Direct SMS
-                      </span>
-                    </div>
+                    <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">SMS Shoot-Day Reminders</h3>
                     <p className="text-xs text-neutral-500 font-body mt-0.5">
                       Dispatched 2 hours prior to your scheduled pictorial at E-Kodak Studio Cebu.
                     </p>
@@ -803,7 +728,6 @@ export default function SettingsPage() {
                 />
               </div>
 
-              {/* Announcements */}
               <div className="p-4 sm:p-5 flex items-center justify-between gap-4">
                 <div className="flex items-start gap-3">
                   <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
@@ -812,7 +736,7 @@ export default function SettingsPage() {
                   <div>
                     <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">Graduation Season Announcements</h3>
                     <p className="text-xs text-neutral-500 font-body mt-0.5">
-                      Advance notice on university batch slots, rush schedules, and crystal frame upgrades.
+                      Advance notices on university batch slots and crystal frame releases.
                     </p>
                   </div>
                 </div>
@@ -825,297 +749,155 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {/* ── 3. SECTION: STUDIO SLA & GUARANTEES ───────────────────────── */}
-          <section id="section-sla" className="space-y-3 scroll-mt-24">
-            <div className="flex items-center justify-between pb-1">
-              <div className="flex items-center gap-2">
-                <Eye className="text-gold" size={18} />
-                <h2 className="font-heading text-lg font-bold text-primary dark:text-neutral-100">
-                  Studio SLA Guarantees & Turnaround
-                </h2>
-              </div>
-              <span className="text-xs text-neutral-400 font-body">Service Standard</span>
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-3.5">
-              
-              <div className="bg-white dark:bg-neutral-900 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
-                    <Clock size={16} />
-                  </div>
-                  <span className="text-[11px] font-bold font-body text-gold-dark bg-gold/15 px-2.5 py-0.5 rounded-full">
-                    3 – 5 Days
-                  </span>
-                </div>
-                <div>
-                  <h3 className="font-heading text-sm font-bold text-primary dark:text-neutral-100">Soft Copy Proofs Delivery</h3>
-                  <p className="text-xs text-neutral-500 font-body mt-0.5 leading-relaxed">
-                    Proofing gallery uploaded to your portal for portrait selection.
-                  </p>
-                </div>
-                <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between text-[10px] text-neutral-400 font-body">
-                  <span>Standard SLA</span>
-                  <span className="text-emerald-600 font-bold">Guaranteed</span>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-neutral-900 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
-                    <Sparkles size={16} />
-                  </div>
-                  <span className="text-[11px] font-bold font-body text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2.5 py-0.5 rounded-full">
-                    5 – 7 Days
-                  </span>
-                </div>
-                <div>
-                  <h3 className="font-heading text-sm font-bold text-primary dark:text-neutral-100">Master Retouching & Polish</h3>
-                  <p className="text-xs text-neutral-500 font-body mt-0.5 leading-relaxed">
-                    Digital skin balance, stray hair cleanup, and hood velvet color calibration.
-                  </p>
-                </div>
-                <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between text-[10px] text-neutral-400 font-body">
-                  <span>Studio Lab</span>
-                  <span className="text-emerald-600 font-bold">Guaranteed</span>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-neutral-900 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
-                    <Server size={16} />
-                  </div>
-                  <span className="text-[11px] font-bold font-body text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2.5 py-0.5 rounded-full">
-                    365 Days
-                  </span>
-                </div>
-                <div>
-                  <h3 className="font-heading text-sm font-bold text-primary dark:text-neutral-100">Encrypted Cloud Vault</h3>
-                  <p className="text-xs text-neutral-500 font-body mt-0.5 leading-relaxed">
-                    Continuous backup of all high-res digital assets with full download rights.
-                  </p>
-                </div>
-                <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between text-[10px] text-neutral-400 font-body">
-                  <span>Cloud Retention</span>
-                  <span className="text-emerald-600 font-bold">Active</span>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-neutral-900 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
-                    <Award size={16} />
-                  </div>
-                  <span className="text-[11px] font-bold font-body text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-full">
-                    7 – 10 Days
-                  </span>
-                </div>
-                <div>
-                  <h3 className="font-heading text-sm font-bold text-primary dark:text-neutral-100">Archival Prints & Framing</h3>
-                  <p className="text-xs text-neutral-500 font-body mt-0.5 leading-relaxed">
-                    Fine pearl paper printing, precision matted and solid wood crystal mounted.
-                  </p>
-                </div>
-                <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between text-[10px] text-neutral-400 font-body">
-                  <span>Print Facility</span>
-                  <span className="text-emerald-600 font-bold">Guaranteed</span>
-                </div>
-              </div>
-
-            </div>
-          </section>
-
-          {/* ── 4. SECTION: DATA PRIVACY & CUSTOMER RIGHTS ─────────────────── */}
-          <section id="section-privacy" className="space-y-3 scroll-mt-24">
-            <div className="flex items-center justify-between pb-1">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="text-gold" size={18} />
-                <h2 className="font-heading text-lg font-bold text-primary dark:text-neutral-100">
-                  Data Privacy & Rights (RA 10173)
-                </h2>
-              </div>
-              <span className="text-[10px] font-body font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-full">
-                Compliant
-              </span>
-            </div>
-
-            <div className="bg-white dark:bg-neutral-900 rounded-2xl p-5 border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-4">
-              <p className="text-xs text-neutral-600 dark:text-neutral-400 font-body leading-relaxed">
-                E-Kodak Studio Cebu strictly complies with the Philippine Data Privacy Act of 2012. You have the right to inspect, export, or purge all records associated with your account:
-              </p>
-
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div className="p-3.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-100 dark:border-neutral-700/60 space-y-1">
-                  <h4 className="font-bold text-xs text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-                    <Check size={13} className="text-emerald-600" /> Identity & Contact Credentials
-                  </h4>
-                  <p className="text-[11px] text-neutral-500 font-body">
-                    Legal name, mobile number, delivery address, and emergency contact details.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-100 dark:border-neutral-700/60 space-y-1">
-                  <h4 className="font-bold text-xs text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-                    <Check size={13} className="text-emerald-600" /> Academic & Fitting Records
-                  </h4>
-                  <p className="text-[11px] text-neutral-500 font-body">
-                    University institution, degree discipline, and toga robe sizing measurements.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-100 dark:border-neutral-700/60 space-y-1">
-                  <h4 className="font-bold text-xs text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-                    <Check size={13} className="text-emerald-600" /> Master Photo Proofs
-                  </h4>
-                  <p className="text-[11px] text-neutral-500 font-body">
-                    High-resolution proofing assets stored in private studio cloud buckets.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-100 dark:border-neutral-700/60 space-y-1">
-                  <h4 className="font-bold text-xs text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-                    <Check size={13} className="text-emerald-600" /> Digital Signatures & Terms
-                  </h4>
-                  <p className="text-[11px] text-neutral-500 font-body">
-                    Cryptographic audit verification hashes of your studio service agreement.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* ── 5. SECTION: SYSTEM DIAGNOSTICS & LOCAL CACHE TOOLS ─────────── */}
-          <section id="section-diagnostics" className="space-y-3 scroll-mt-24">
-            <div className="flex items-center justify-between pb-1">
-              <div className="flex items-center gap-2">
-                <Cpu className="text-gold" size={18} />
-                <h2 className="font-heading text-lg font-bold text-primary dark:text-neutral-100">
-                  Diagnostics & Local Storage
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={handlePingDiagnostics}
-                disabled={isPinging}
-                className="btn-outline py-1 px-3 text-xs flex items-center gap-1.5"
-              >
-                <RefreshCw size={12} className={isPinging ? 'animate-spin' : ''} />
-                <span>{isPinging ? 'Testing...' : 'Test DB Latency'}</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-white dark:bg-neutral-900 p-3.5 rounded-xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-0.5">
-                <span className="text-[10px] font-body text-neutral-400 uppercase tracking-wider block">DB Latency</span>
-                <p className="text-lg font-body font-bold text-primary dark:text-neutral-100">
-                  {apiLatency !== null ? `${apiLatency} ms` : '—'}
-                </p>
-                <p className="text-[10px] text-neutral-500 font-body">
-                  {apiLatency !== null ? (apiLatency < 200 ? 'Optimal Connection' : 'Connected') : 'Click Test'}
-                </p>
-              </div>
-
-              <div className="bg-white dark:bg-neutral-900 p-3.5 rounded-xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-0.5">
-                <span className="text-[10px] font-body text-neutral-400 uppercase tracking-wider block">Server Region</span>
-                <p className="text-sm font-body font-bold text-primary dark:text-neutral-100 truncate">AWS Tokyo</p>
-                <p className="text-[10px] text-neutral-500 font-body">ap-northeast-1</p>
-              </div>
-
-              <div className="bg-white dark:bg-neutral-900 p-3.5 rounded-xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-0.5">
-                <span className="text-[10px] font-body text-neutral-400 uppercase tracking-wider block">Browser Cache</span>
-                <p className="text-lg font-body font-bold text-primary dark:text-neutral-100">{cacheSizeKb} KB</p>
-                <p className="text-[10px] text-neutral-500 font-body">LocalStorage</p>
-              </div>
-
-              <div className="bg-white dark:bg-neutral-900 p-3.5 rounded-xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-0.5">
-                <span className="text-[10px] font-body text-neutral-400 uppercase tracking-wider block">Transport SSL</span>
-                <p className="text-sm font-body font-bold text-emerald-600 flex items-center gap-1">
-                  <CheckCircle size={12} /> TLS 1.3
-                </p>
-                <p className="text-[10px] text-neutral-500 font-body">256-bit Encrypted</p>
-              </div>
-            </div>
-
-            {/* Clear Cache Card */}
-            <div className="bg-white dark:bg-neutral-900 rounded-2xl p-4 border border-neutral-200/80 dark:border-neutral-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <HardDrive size={15} className="text-neutral-500" />
-                  <h3 className="font-heading text-sm font-bold text-primary dark:text-neutral-100">Clear Local Studio Cache</h3>
-                </div>
-                <p className="text-xs text-neutral-500 font-body">
-                  Flushes cached booking estimates and temporary local state without signing you out.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleClearCache}
-                className="btn-outline py-1.5 px-3.5 text-xs shrink-0 flex items-center gap-1.5"
-              >
-                <RefreshCw size={12} />
-                <span>Flush Cache ({cacheSizeKb} KB)</span>
-              </button>
-            </div>
-          </section>
-
-          {/* ── 6. SECTION: SECURITY & DANGER ZONE ─────────────────────────── */}
+          {/* ── 4. SECURITY & PASSWORD ─────────────────────────────────────── */}
           <section id="section-security" className="space-y-3 scroll-mt-24">
-            <div className="flex items-center justify-between pb-1">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="text-red-600" size={18} />
-                <h2 className="font-heading text-lg font-bold text-red-800 dark:text-red-400">
-                  Account Safety & Session Termination
-                </h2>
-              </div>
-              <span className="text-xs text-neutral-400 font-body">Security Actions</span>
+            <div className="flex items-center gap-2 pb-1">
+              <Lock className="text-gold" size={18} />
+              <h2 className="font-heading text-lg font-bold text-primary dark:text-neutral-100">
+                Security & Authentication
+              </h2>
             </div>
 
-            <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-red-200/80 dark:border-red-900/50 shadow-xs divide-y divide-red-100 dark:divide-red-950/60 overflow-hidden">
-              {/* Sign out all devices */}
-              <div className="p-4 sm:p-5 flex items-center justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-red-100 dark:bg-red-950/60 text-red-600 flex items-center justify-center shrink-0 mt-0.5">
-                    <LogOut size={16} />
+            <div className="bg-white dark:bg-neutral-900 rounded-2xl p-5 border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-5">
+              {/* Password Change Form */}
+              <form onSubmit={handleUpdatePassword} className="space-y-4 max-w-lg">
+                <div>
+                  <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">Change Account Password</h3>
+                  <p className="text-xs text-neutral-500 font-body mt-0.5">
+                    Set a secure password of at least 6 characters.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider block">
+                      New Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={passwordData.newPassword}
+                        onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                        placeholder="••••••••"
+                        className="w-full py-2 pl-3 pr-10 bg-neutral-50 dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700 text-xs focus:ring-1 focus:ring-gold outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-2.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+                      >
+                        {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-sm text-neutral-900 dark:text-neutral-100">Sign Out of All Devices</h3>
-                    <p className="text-xs text-neutral-500 font-body mt-0.5">
-                      Revoke all active authentication tokens and disconnect every active browser session.
-                    </p>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-neutral-600 dark:text-neutral-300 uppercase tracking-wider block">
+                      Confirm New Password
+                    </label>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={passwordData.confirmPassword}
+                      onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                      placeholder="••••••••"
+                      className="w-full py-2 px-3 bg-neutral-50 dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700 text-xs focus:ring-1 focus:ring-gold outline-none"
+                    />
                   </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isUpdatingPassword || !passwordData.newPassword}
+                  className="btn-primary py-2 px-5 text-xs font-bold flex items-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer"
+                >
+                  {isUpdatingPassword ? <Loader2 size={13} className="animate-spin" /> : <Key size={13} />}
+                  <span>{isUpdatingPassword ? 'Updating Password...' : 'Update Password'}</span>
+                </button>
+              </form>
+
+              {/* Session Termination Divider */}
+              <div className="pt-4 border-t border-neutral-100 dark:border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="font-semibold text-xs text-neutral-900 dark:text-neutral-100">Sign Out Everywhere</h4>
+                  <p className="text-[11px] text-neutral-500 font-body mt-0.5">
+                    Revoke active tokens and log out from all browser devices.
+                  </p>
                 </div>
                 <button
                   type="button"
                   onClick={handleSignOutAll}
-                  className="px-3.5 py-1.5 rounded-xl border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs font-semibold hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors whitespace-nowrap"
+                  className="btn-outline py-1.5 px-3.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 border-red-200 dark:border-red-900 shrink-0 cursor-pointer"
                 >
-                  Sign Out Everywhere
+                  Sign Out of All Devices
                 </button>
               </div>
+            </div>
+          </section>
 
-              {/* Delete Account */}
-              <div className="p-4 sm:p-5 flex items-center justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-red-100 dark:bg-red-950/60 text-red-600 flex items-center justify-center shrink-0 mt-0.5">
-                    <Trash2 size={16} />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-sm text-neutral-900 dark:text-neutral-100">Data Deletion Protocol</h3>
-                    <p className="text-xs text-neutral-500 font-body mt-0.5">
-                      Request permanent eradication of your studio account and soft copies in compliance with RA 10173.
-                    </p>
-                  </div>
+          {/* ── 5. DATA & LOCAL STORAGE ────────────────────────────────────── */}
+          <section id="section-privacy" className="space-y-3 scroll-mt-24">
+            <div className="flex items-center gap-2 pb-1">
+              <Shield className="text-gold" size={18} />
+              <h2 className="font-heading text-lg font-bold text-primary dark:text-neutral-100">
+                Data Privacy & Cache
+              </h2>
+            </div>
+
+            <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs divide-y divide-neutral-100 dark:divide-neutral-800 overflow-hidden">
+              
+              {/* Data Takeout */}
+              <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">Export Personal Data</h3>
+                  <p className="text-xs text-neutral-500 font-body mt-0.5">
+                    Download an archive of your profile details, session bookings, and preferences (.json).
+                  </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setToast({ type: 'info', message: 'Data deletion requests can be initiated by contacting support@ekodak.com with your Member ID.' })}
-                  className="px-3.5 py-1.5 rounded-xl border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs font-semibold hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors whitespace-nowrap"
+                  onClick={handleDownloadDataTakeout}
+                  className="btn-outline py-1.5 px-3.5 text-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <Download size={13} />
+                  <span>Download Archive</span>
+                </button>
+              </div>
+
+              {/* Clear Cache */}
+              <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-sm text-primary dark:text-neutral-100">Clear Local Browser Cache</h3>
+                  <p className="text-xs text-neutral-500 font-body mt-0.5">
+                    Flushes cached temporary estimates and local session logs ({cacheSizeKb} KB) without signing you out.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClearCache}
+                  className="btn-outline py-1.5 px-3.5 text-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <RefreshCw size={13} />
+                  <span>Flush Local Cache</span>
+                </button>
+              </div>
+
+              {/* Deletion Request */}
+              <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-sm text-neutral-900 dark:text-neutral-100">Account Data Deletion</h3>
+                  <p className="text-xs text-neutral-500 font-body mt-0.5">
+                    Request complete permanent removal of your account, photo deliverables, and records.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setToast({ type: 'info', message: 'To request complete account deletion, please email support@ekodak.com with your Member ID.' })}
+                  className="px-3.5 py-1.5 rounded-xl border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 text-xs font-semibold hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors shrink-0 cursor-pointer"
                 >
                   Request Deletion
                 </button>
               </div>
+
             </div>
           </section>
 

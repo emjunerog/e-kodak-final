@@ -106,31 +106,51 @@ export async function getServices() {
           (s) => s.slug === canonicalSlug || s.id === canonicalSlug || s.slug === row.slug
         );
 
+        const SERVICE_SLUG_TO_UUID = {
+          "senior-high-packages": "1471388e-b74f-41ec-96c8-1d220d557a89",
+          "studio-packages": "1471388e-b74f-41ec-96c8-1d220d557a89",
+          "wedding-photo": "cd4271d4-8dd3-472f-86e5-0b658af9b02b",
+          "wedding-video": "aab20afd-0e3c-41b2-8f70-0ab42167c50a",
+          "college-packages": "e2415838-06be-4e80-aa7a-9f4d3b47a8a5",
+        };
+
+        const resolvedId = row.id || fallback?.id || SERVICE_SLUG_TO_UUID[canonicalSlug] || canonicalSlug;
+
+        const effectiveCover = row.cover_image || fallback?.coverImage || fallback?.cover_image || "";
+
         results.push({
-          id: row.id || fallback?.id || canonicalSlug,
+          id: resolvedId,
           slug: canonicalSlug,
           category: row.category || fallback?.category || "general",
           name: row.name || fallback?.name || "Photography Service",
           tagline: row.tagline || fallback?.tagline || "",
           description: row.description || fallback?.description || "",
-          coverImage: row.cover_image || fallback?.coverImage || "",
+          coverImage: effectiveCover,
+          cover_image: effectiveCover,
           galleryImages: (Array.isArray(row.gallery_images) && row.gallery_images.length > 0)
+            ? row.gallery_images
+            : (fallback?.galleryImages || []),
+          gallery_images: (Array.isArray(row.gallery_images) && row.gallery_images.length > 0)
             ? row.gallery_images
             : (fallback?.galleryImages || []),
           inclusions: (Array.isArray(row.inclusions) && row.inclusions.length > 0)
             ? row.inclusions
             : (fallback?.inclusions || []),
-          // Database tiers are the single source of truth; fallback only if DB array is empty
           tiers: (Array.isArray(row.tiers) && row.tiers.length > 0)
             ? row.tiers
             : (fallback?.tiers || []),
           paymentPolicy: row.payment_policy || fallback?.paymentPolicy || "Mode of Payment: 50% Down payment upon booking. Full payment on the day of the event.",
+          payment_policy: row.payment_policy || fallback?.paymentPolicy || "Mode of Payment: 50% Down payment upon booking. Full payment on the day of the event.",
           turnaround: row.turnaround || fallback?.turnaround || "5–7 business days",
           location: row.location || fallback?.location || "Studio",
           sortOrder: row.sort_order ?? fallback?.sortOrder ?? 0,
+          sort_order: row.sort_order ?? fallback?.sortOrder ?? 0,
           isActive: row.is_active ?? true,
-          basePrice: row.base_price,
-          downPaymentAmount: row.down_payment_amount,
+          is_active: row.is_active ?? true,
+          basePrice: row.base_price ?? fallback?.basePrice ?? 0,
+          base_price: row.base_price ?? fallback?.basePrice ?? 0,
+          downPaymentAmount: row.down_payment_amount ?? fallback?.downPaymentAmount ?? 0,
+          down_payment_amount: row.down_payment_amount ?? fallback?.downPaymentAmount ?? 0,
         });
       }
 
@@ -169,17 +189,19 @@ export async function getAddOns() {
           const numericString = row.price.replace(/[^\d.]/g, "");
           parsedPrice = parseFloat(numericString) || 0;
         }
-        const formattedPrice = typeof row.price === "string" 
-          ? row.price 
+        const formattedPrice = typeof row.price === "string"
+          ? row.price
           : `+₱${Number(row.price || 0).toLocaleString("en-PH")}`;
 
-        return { 
+        return {
           id: row.id,
-          name: row.name, 
+          name: row.name,
           category: row.category || "General Extras",
           description: row.description || "",
-          price: parsedPrice,
-          rawPrice: formattedPrice,
+          // Display string matching the static ADD_ONS shape (e.g. "+₱1,500")
+          price: formattedPrice,
+          // Numeric value for math (booking totals, etc.)
+          priceValue: parsedPrice,
         };
       });
     },
@@ -256,14 +278,28 @@ export async function getFaqs() {
         .select("*")
         .order("sort_order", { ascending: true }),
     fallbackData: FAQS,
-    transform: (rows) =>
-      rows.map((row) => ({
-        id:       row.id,
-        question: row.question,
-        answer:   row.answer,
-        topic:    row.category || row.topic || 'General',
-        category: row.category || row.topic || 'General',
-      })),
+    transform: (rows) => {
+      // 1) The `category` column defaults to 'General' for every row and used to
+      //    mask the real topic — prefer the dedicated `topic` column.
+      // 2) Deduplicate repeated rows (same question seeded multiple times).
+      const seen = new Set();
+      const items = [];
+      for (const row of rows) {
+        const question = (row.question || "").trim();
+        const key = question.toLowerCase();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        const topic = (row.topic || row.category || "general").trim().toLowerCase();
+        items.push({
+          id:       row.id,
+          question,
+          answer:   row.answer,
+          topic,
+          category: topic,
+        });
+      }
+      return items;
+    },
   });
 }
 

@@ -2,7 +2,62 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      (function() {
+        try {
+          const path = window.location.pathname;
+          // Admin portal is strictly light theme — never affected by photographer station
+          if (path.startsWith('/admin')) {
+            document.documentElement.classList.remove('dark');
+            return;
+          }
+
+          // Photographer station portal
+          if (path.startsWith('/photographer')) {
+            const photoTheme = localStorage.getItem('ekodak_photographer_theme_mode');
+            if (photoTheme === 'system') {
+              const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+              if (prefersDark) {
+                document.documentElement.classList.add('dark');
+              } else {
+                document.documentElement.classList.remove('dark');
+              }
+            } else if (photoTheme === 'light') {
+              document.documentElement.classList.remove('dark');
+            } else {
+              // Default photographer station is dark
+              document.documentElement.classList.add('dark');
+            }
+
+            const photoCompact = localStorage.getItem('ekodak_photographer_compactView');
+            if (photoCompact !== null && (photoCompact === 'true' || JSON.parse(photoCompact) === true)) {
+              document.documentElement.classList.add('compact-layout');
+            }
+            const photoMotion = localStorage.getItem('ekodak_photographer_motionEffects');
+            if (photoMotion !== null && JSON.parse(photoMotion) === false) {
+              document.documentElement.classList.add('reduce-motion');
+            }
+            return;
+          }
+
+          // Customer portal
+          const darkPref = localStorage.getItem('ekodak_darkMode');
+          if (darkPref === 'true' || (darkPref && JSON.parse(darkPref) === true)) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+          const compactPref = localStorage.getItem('ekodak_compactView');
+          if (compactPref !== null && (compactPref === 'true' || JSON.parse(compactPref) === true)) {
+            document.documentElement.classList.add('compact-layout');
+          }
+        } catch (e) {
+          document.documentElement.classList.remove('dark');
+        }
+      })();
+    </script>
+    <link rel="icon" type="image/png" href="/logo-mark.png" />
+    <link rel="apple-touch-icon" href="/logo-mark.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <!-- SEO Meta Tags -->

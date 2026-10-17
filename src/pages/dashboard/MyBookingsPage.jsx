@@ -3,6 +3,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import { 
   Camera, 
   Calendar as CalendarIcon, 
+  CalendarDays,
+  CheckCircle,
   Loader2, 
   ArrowUpDown, 
   Search, 
@@ -16,7 +18,9 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import { getCustomerBookings } from "../../services/bookingService";
 import BookingCard from "../../components/booking/BookingCard";
+import ClientHeroBanner from "../../components/dashboard/ClientHeroBanner";
 import StudioDropdown from "../../components/ui/StudioDropdown";
+import StatCard from "../../components/admin/StatCard";
 
 const FILTER_TABS = ["All", "Pending", "Confirmed", "Completed", "Cancelled"];
 
@@ -124,8 +128,10 @@ export default function MyBookingsPage() {
         const tierMatch = b.tier_name?.toLowerCase().includes(q);
         const schoolMatch = b.student_details?.school?.toLowerCase().includes(q);
         const batchMatch = b.student_details?.section?.toLowerCase().includes(q);
+        const participantMatch = b.participant_details?.full_name?.toLowerCase().includes(q);
+        const studentMatch = b.student_details?.student_name?.toLowerCase().includes(q);
         const notesMatch = b.notes?.toLowerCase().includes(q);
-        return numMatch || svcMatch || tierMatch || schoolMatch || batchMatch || notesMatch;
+        return numMatch || svcMatch || tierMatch || schoolMatch || batchMatch || participantMatch || studentMatch || notesMatch;
       });
     }
 
@@ -169,169 +175,80 @@ export default function MyBookingsPage() {
   }
 
   return (
-    <div className="animate-fade-in max-w-6xl mx-auto pb-12 space-y-6">
+    <div className="animate-fade-in max-w-screen-2xl mx-auto w-full pb-12 space-y-6">
 
-      {/* ── Header with StudioDropdown Layout ──────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-neutral-200 dark:border-neutral-800 pb-5 relative z-30">
-        <div className="flex items-start gap-3">
-          <div className="mt-1 w-10 h-10 rounded-xl bg-gold/10 border border-gold/30 flex items-center justify-center shrink-0">
-            <CalendarIcon className="text-gold" size={20} />
-          </div>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-heading font-black text-primary dark:text-white tracking-tight leading-none mb-1">
-              My Studio Bookings
-            </h1>
-            <p className="text-[13px] text-neutral-500 dark:text-neutral-400 font-body">
-              Welcome back, <strong className="text-primary dark:text-neutral-200">{profile?.first_name || user?.email}</strong> · You have <strong className="text-gold font-bold">{bookings.length}</strong> registered session{bookings.length !== 1 ? 's' : ''}.
-            </p>
-          </div>
-        </div>
-
-        {/* StudioDropdown and Action buttons */}
-        <div className="flex flex-wrap items-center gap-3">
-          {bookings.length > 0 && (
-            <div className="flex items-center gap-2.5 bg-[#faf9f6] dark:bg-neutral-900 p-1.5 pr-2 pl-3.5 rounded-full border border-gold/20 shadow-xs shrink-0">
-              <span className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 font-body uppercase tracking-wider">Order:</span>
-              <div className="relative z-30">
-                <StudioDropdown
-                  value={selectedOrder}
-                  onChange={(val) => setSelectedOrder(val)}
-                  options={[
-                    { value: "all", label: `All Orders (${bookings.length})` },
-                    ...bookings.map(b => {
-                      const customerName = profile?.first_name 
-                        ? `${profile.first_name} ${profile.last_name || ''}`.trim() 
-                        : (profile?.full_name || user?.user_metadata?.full_name || 'Customer');
-                      return {
-                        value: b.id,
-                        label: `#${b.booking_number} · ${customerName}`
-                      };
-                    })
-                  ]}
-                  align="right"
-                  triggerClassName="text-xs font-semibold text-neutral-800 dark:text-neutral-200 bg-[#fdfbf7] dark:bg-neutral-800 hover:bg-white transition-colors py-1.5 pl-3 pr-7 rounded-xl border-2 border-gold/20 focus:outline-none focus:border-gold/40 cursor-pointer font-body w-full sm:w-auto min-w-[260px] sm:min-w-[290px] shadow-xs"
-                />
-              </div>
-            </div>
-          )}
-
+      {/* -- Unified Luxury Dark Hero Banner with Live Philippine Time & Quick Tools -- */}
+      <ClientHeroBanner 
+        bookings={bookings} 
+        extraActions={
           <Link
             to="/dashboard/progress"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gold/10 hover:bg-gold/20 text-gold font-body text-xs font-bold transition-colors border border-gold/30 shadow-2xs"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gold/15 hover:bg-gold/25 text-gold text-xs font-bold transition-all border border-gold/40 shadow-xs shrink-0"
+            title="Open Studio Progress Tracker"
           >
-            <Layers size={14} />
+            <Layers size={15} />
             <span>Progress Tracker</span>
           </Link>
+        }
+      />
 
-          <Link 
-            to="/dashboard/book" 
-            className="btn-primary py-2 px-4 text-xs inline-flex items-center gap-1.5 shadow-xs whitespace-nowrap font-body rounded-xl font-bold"
-          >
-            <Plus size={14} />
-            <span>Book New Session</span>
-          </Link>
-        </div>
-      </div>
-
-      {/* ── Space-Efficient KPI Stat Bar (Uniform Bootstrap Sizing) ──────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 text-xs font-body">
-        
-        {/* Card 1: Total Bookings */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-gold/30 transition-all flex items-center gap-3.5 w-full min-h-[84px] group/kpi">
-          <div 
-            className="has-tooltip w-11 h-11 rounded-xl bg-gold/10 border border-gold/20 text-gold flex items-center justify-center shrink-0 cursor-pointer group-hover/kpi:scale-110 group-hover/kpi:rotate-6 transition-all duration-300"
-            title="Total Bookings: All registered sessions"
-          >
-            <Camera size={20} />
-            <div className="tooltip-bubble">
-              <span className="font-semibold block text-gold">Total Portfolio</span>
-              <span className="block text-[10px] text-neutral-300 font-normal leading-tight mt-0.5">
-                All booked sessions across your account
-              </span>
-            </div>
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block truncate">
-              Total Bookings
-            </span>
-            <span className="font-heading font-black text-2xl text-primary dark:text-white leading-tight mt-0.5 block">
-              {stats.total}
-            </span>
+      {/* -- Order Selector (Rendered compactly only when active orders exist) -- */}
+      {bookings.length > 0 && (
+        <div className="flex items-center gap-2.5 bg-[#faf9f6] dark:bg-neutral-900 p-2 pr-3 pl-4 rounded-2xl border border-gold/20 shadow-xs w-fit">
+          <span className="text-[11px] font-bold text-neutral-500 dark:text-neutral-400 font-body uppercase tracking-wider">Filtered Order:</span>
+          <div className="relative z-30">
+            <StudioDropdown
+              value={selectedOrder}
+              onChange={(val) => setSelectedOrder(val)}
+              options={[
+                { value: "all", label: `All Orders (${bookings.length})` },
+                ...bookings.map(b => {
+                  const isSomeoneElse = b.participant_details?.booking_for === 'someone_else';
+                  const targetName = b.participant_details?.full_name || b.student_details?.student_name || (
+                    profile?.first_name 
+                      ? `${profile.first_name} ${profile.last_name || ''}`.trim() 
+                      : (profile?.full_name || user?.user_metadata?.full_name || 'Customer')
+                  );
+                  const labelSuffix = isSomeoneElse ? ` (For: ${b.participant_details.full_name})` : '';
+                  return {
+                    value: b.id,
+                    label: `#${b.booking_number} · ${targetName}${labelSuffix}`
+                  };
+                })
+              ]}
+              align="left"
+              triggerClassName="text-xs font-semibold text-neutral-800 dark:text-neutral-200 bg-white dark:bg-neutral-800 hover:bg-neutral-50 transition-colors py-1.5 pl-3 pr-7 rounded-xl border border-neutral-300 dark:border-neutral-700 focus:outline-none focus:border-gold cursor-pointer font-body min-w-[260px] sm:min-w-[290px] shadow-2xs"
+            />
           </div>
         </div>
+      )}
 
-        {/* Card 2: Pending Review */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-amber-500/30 transition-all flex items-center gap-3.5 w-full min-h-[84px] group/kpi">
-          <div 
-            className="has-tooltip w-11 h-11 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/40 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 cursor-pointer group-hover/kpi:scale-110 group-hover/kpi:-rotate-12 transition-all duration-300"
-            title="Pending Review: Sessions awaiting admin review or schedule announcement"
-          >
-            <Clock size={20} />
-            <div className="tooltip-bubble">
-              <span className="font-semibold block text-amber-300">Pending Review</span>
-              <span className="block text-[10px] text-neutral-300 font-normal leading-tight mt-0.5">
-                Awaiting staff review or date announcement
-              </span>
-            </div>
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block truncate">
-              Pending Review
-            </span>
-            <span className="font-heading font-black text-2xl text-amber-600 dark:text-amber-400 leading-tight mt-0.5 block">
-              {stats.pending}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 3: Photographer Assigned (Formerly Confirmed Bay) */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-emerald-500/30 transition-all flex items-center gap-3.5 w-full min-h-[84px] group/kpi">
-          <div 
-            className="has-tooltip w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 cursor-pointer group-hover/kpi:scale-110 group-hover/kpi:rotate-6 transition-all duration-300"
-            title="Photographer Assigned: Confirmed sessions with assigned personnel"
-          >
-            <CheckCircle2 size={20} />
-            <div className="tooltip-bubble">
-              <span className="font-semibold block text-emerald-300">Staff Assigned</span>
-              <span className="block text-[10px] text-neutral-300 font-normal leading-tight mt-0.5">
-                Camera bay and studio photographer confirmed
-              </span>
-            </div>
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block truncate">
-              Photographer Assigned
-            </span>
-            <span className="font-heading font-black text-2xl text-emerald-600 dark:text-emerald-400 leading-tight mt-0.5 block">
-              {stats.photographerAssigned}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 4: Completed */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-blue-500/30 transition-all flex items-center gap-3.5 w-full min-h-[84px] group/kpi">
-          <div 
-            className="has-tooltip w-11 h-11 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200/60 dark:border-blue-800/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 cursor-pointer group-hover/kpi:scale-110 group-hover/kpi:-rotate-6 transition-all duration-300"
-            title="Completed: Finalized sessions and claimed portrait packages"
-          >
-            <Layers size={20} />
-            <div className="tooltip-bubble">
-              <span className="font-semibold block text-blue-300">Completed Sessions</span>
-              <span className="block text-[10px] text-neutral-300 font-normal leading-tight mt-0.5">
-                Shoot & post-production successfully completed
-              </span>
-            </div>
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block truncate">
-              Completed
-            </span>
-            <span className="font-heading font-black text-2xl text-blue-600 dark:text-blue-400 leading-tight mt-0.5 block">
-              {stats.completed}
-            </span>
-          </div>
-        </div>
-
+      {/* ── Overview Metrics Strip (Matching DashboardHome Standard) ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard
+          label="Total Sessions"
+          value={stats.total}
+          icon={CalendarDays}
+          color="blue"
+        />
+        <StatCard
+          label="Pending Review"
+          value={stats.pending}
+          icon={Clock}
+          color="amber"
+        />
+        <StatCard
+          label="Confirmed Shoots"
+          value={stats.confirmed}
+          icon={Camera}
+          color="gold"
+        />
+        <StatCard
+          label="Completed"
+          value={stats.completed}
+          icon={CheckCircle}
+          color="green"
+        />
       </div>
 
       {/* ── Search + Filter + Sort Bar ───────────────────────────────────────── */}
@@ -351,7 +268,7 @@ export default function MyBookingsPage() {
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-body text-neutral-400 hover:text-primary dark:hover:text-white"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-body text-neutral-400 hover:text-primary dark:hover:text-white"
               >
                 Clear
               </button>
@@ -400,7 +317,7 @@ export default function MyBookingsPage() {
             >
               <span>{f}</span>
               {counts[f] > 0 && (
-                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                <span className={`text-xs font-bold px-1.5 py-0.2 rounded-full ${
                   filter === f
                     ? "bg-white/20 dark:bg-black/20 text-white dark:text-primary"
                     : "bg-neutral-200/80 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300"

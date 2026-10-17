@@ -171,14 +171,14 @@ export default function PhotographerBookingCard({
                 />
 
                 {booking.tier_name && (
-                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-gold/10 text-gold-dark border border-gold/25 flex items-center gap-1">
+                  <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-gold/10 text-gold-dark border border-gold/25 flex items-center gap-1">
                     <Package size={11} />
                     <span>{booking.tier_name}</span>
                   </span>
                 )}
 
                 {academicSpecs?.isSchoolPartner && (
-                  <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                  <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
                     <GraduationCap size={11} />
                     <span>School Partner</span>
                   </span>
@@ -265,11 +265,11 @@ export default function PhotographerBookingCard({
               <div className="flex items-center gap-2">
                 <span className="font-heading font-bold text-primary">₱{totalAmount.toLocaleString()}</span>
                 {remainingBalance > 0 ? (
-                  <span className="text-[10px] font-mono font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                  <span className="text-xs font-mono font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
                     Due: ₱{remainingBalance.toLocaleString()}
                   </span>
                 ) : (
-                  <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                  <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
                     Paid
                   </span>
                 )}
@@ -309,7 +309,7 @@ export default function PhotographerBookingCard({
                       {isDone ? <Check size={14} className="stroke-[3]" /> : <step.Icon size={14} />}
                     </div>
                     <span
-                      className={`text-[10px] font-semibold transition-colors ${
+                      className={`text-xs font-semibold transition-colors ${
                         isCurrent ? 'text-primary font-bold' : isDone ? 'text-emerald-700' : 'text-neutral-400'
                       }`}
                     >
@@ -326,7 +326,7 @@ export default function PhotographerBookingCard({
             
             {/* Box 1: Customer & Studio Bay */}
             <div className="p-3.5 rounded-xl bg-white border border-neutral-200/80 space-y-2.5">
-              <div className="flex items-center gap-1.5 text-neutral-400 text-[10px] font-bold uppercase tracking-wider border-b border-neutral-100 pb-1.5">
+              <div className="flex items-center gap-1.5 text-neutral-400 text-xs font-bold uppercase tracking-wider border-b border-neutral-100 pb-1.5">
                 <User size={12} className="text-gold" />
                 <span>Customer & Studio Bay</span>
               </div>
@@ -370,7 +370,7 @@ export default function PhotographerBookingCard({
                       href={cleanLocation.mapUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[10px] font-bold text-gold hover:text-gold-dark bg-gold/10 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 shrink-0"
+                      className="text-xs font-bold text-gold hover:text-gold-dark bg-gold/10 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 shrink-0"
                     >
                       <span>Map</span>
                       <ExternalLink size={9} />
@@ -382,7 +382,7 @@ export default function PhotographerBookingCard({
 
             {/* Box 2: Payment & Balance */}
             <div className="p-3.5 rounded-xl bg-white border border-neutral-200/80 space-y-2.5">
-              <div className="flex items-center gap-1.5 text-neutral-400 text-[10px] font-bold uppercase tracking-wider border-b border-neutral-100 pb-1.5">
+              <div className="flex items-center gap-1.5 text-neutral-400 text-xs font-bold uppercase tracking-wider border-b border-neutral-100 pb-1.5">
                 <Wallet size={12} className="text-gold" />
                 <span>Payment & Balance</span>
               </div>
@@ -419,12 +419,12 @@ export default function PhotographerBookingCard({
             {/* Box 3: Session & Academic Specifications */}
             <div className="p-3.5 rounded-xl bg-white border border-neutral-200/80 space-y-2.5">
               <div className="flex items-center justify-between border-b border-neutral-100 pb-1.5">
-                <span className="text-neutral-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <span className="text-neutral-400 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
                   <GraduationCap size={13} className="text-gold" />
                   <span>Session Specifications</span>
                 </span>
                 {academicSpecs?.type && (
-                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-gold/10 text-gold-dark">
+                  <span className="px-1.5 py-0.2 rounded text-[11px] font-bold bg-gold/10 text-gold-dark">
                     {academicSpecs.type}
                   </span>
                 )}
@@ -440,7 +440,7 @@ export default function PhotographerBookingCard({
                           {academicSpecs.school}
                         </span>
                         {academicSpecs.campus && (
-                          <span className="text-[10px] text-neutral-500 block truncate">{academicSpecs.campus}</span>
+                          <span className="text-xs text-neutral-500 block truncate">{academicSpecs.campus}</span>
                         )}
                       </div>
                     </div>
@@ -498,11 +498,11 @@ export default function PhotographerBookingCard({
           {(tierHighlights.length > 0 || serviceInclusions.length > 0) && (
             <div className="p-3.5 sm:p-4 rounded-xl bg-white border border-neutral-200/80 space-y-2">
               <div className="flex items-center justify-between border-b border-neutral-100 pb-1.5">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
                   <CheckSquare size={13} className="text-gold" />
                   <span>Session Deliverables ({booking.tier_name || 'Standard'})</span>
                 </span>
-                <span className="text-[10px] text-neutral-500 font-medium">
+                <span className="text-xs text-neutral-500 font-medium">
                   {tierHighlights.length > 0 ? `${tierHighlights.length} items` : `${serviceInclusions.length} items`}
                 </span>
               </div>
@@ -524,7 +524,7 @@ export default function PhotographerBookingCard({
           {/* ── Customer Instructions & Style Pegs (If any exist) ── */}
           {(cleanNotes || stylePegs.length > 0 || booking.reference_images?.length > 0) && (
             <div className="p-3.5 rounded-xl bg-white border border-neutral-200/80 space-y-2.5">
-              <div className="flex items-center gap-1.5 text-neutral-400 text-[10px] font-bold uppercase tracking-wider border-b border-neutral-100 pb-1.5">
+              <div className="flex items-center gap-1.5 text-neutral-400 text-xs font-bold uppercase tracking-wider border-b border-neutral-100 pb-1.5">
                 <Palette size={12} className="text-gold" />
                 <span>Client Notes & Style Pegs</span>
               </div>
@@ -553,7 +553,7 @@ export default function PhotographerBookingCard({
                 {/* Reference Photo Thumbnails (Only rendered if images actually exist) */}
                 {booking.reference_images?.length > 0 && (
                   <div className="pt-1">
-                    <div className="text-[10px] text-neutral-400 font-semibold mb-1.5 flex items-center gap-1">
+                    <div className="text-xs text-neutral-400 font-semibold mb-1.5 flex items-center gap-1">
                       <FileImage size={11} className="text-gold" />
                       <span>Reference Photos ({booking.reference_images.length})</span>
                     </div>

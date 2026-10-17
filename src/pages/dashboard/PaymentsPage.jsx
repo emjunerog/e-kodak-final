@@ -28,10 +28,14 @@ import {
   Coins,
   FileCheck,
   Percent,
-  Camera
+  Camera,
+  Wifi
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Toast from '../../components/ui/Toast';
 import { recordCustomerAction } from '../../services/customerAuditService';
+import DashboardHero from '../../components/dashboard/DashboardHero';
+import StatCard from '../../components/admin/StatCard';
 
 // ── Animated Vectorized Financial Art Illustration ──────────────────────────────
 function AnimatedPaymentArt({ className = "w-44 h-32" }) {
@@ -182,7 +186,7 @@ function ExpandableBadge({
         <Icon size={12} className={`shrink-0 transition-transform duration-300 ${isExpanded ? 'scale-110' : 'group-hover/pill:scale-110'} ${dotColor ? 'ml-1' : ''} ${iconClassName}`} />
       )}
       <span
-        className={`overflow-hidden whitespace-nowrap text-[10px] font-body font-bold uppercase tracking-wider transition-all duration-300 ease-in-out ${
+        className={`overflow-hidden whitespace-nowrap text-xs font-body font-bold uppercase tracking-wider transition-all duration-300 ease-in-out ${
           isExpanded
             ? 'max-w-[300px] opacity-100 ml-1.5'
             : 'max-w-0 opacity-0 ml-0 group-hover/pill:max-w-[300px] group-hover/pill:opacity-100 group-hover/pill:ml-1.5'
@@ -245,6 +249,49 @@ export default function PaymentsPage() {
   useEffect(() => {
     loadBilling();
   }, [user?.id]);
+
+  const [submissionTimeElapsed, setSubmissionTimeElapsed] = useState(0);
+  const [networkQuality, setNetworkQuality] = useState({
+    isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+    isLowSignal: false,
+    effectiveType: '4g',
+    rtt: 0
+  });
+
+  useEffect(() => {
+    const updateNetworkInfo = () => {
+      const conn = typeof navigator !== 'undefined' ? (navigator.connection || navigator.mozConnection || navigator.webkitConnection) : null;
+      const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+      const effectiveType = conn?.effectiveType || '4g';
+      const rtt = conn?.rtt || 0;
+      const isLowSignal = !isOnline || effectiveType === 'slow-2g' || effectiveType === '2g' || effectiveType === '3g' || rtt > 400;
+      setNetworkQuality({ isOnline, isLowSignal, effectiveType, rtt });
+    };
+
+    updateNetworkInfo();
+    window.addEventListener('online', updateNetworkInfo);
+    window.addEventListener('offline', updateNetworkInfo);
+    const conn = typeof navigator !== 'undefined' ? (navigator.connection || navigator.mozConnection || navigator.webkitConnection) : null;
+    if (conn) conn.addEventListener('change', updateNetworkInfo);
+    return () => {
+      window.removeEventListener('online', updateNetworkInfo);
+      window.removeEventListener('offline', updateNetworkInfo);
+      if (conn) conn.removeEventListener('change', updateNetworkInfo);
+    };
+  }, []);
+
+  useEffect(() => {
+    let timer;
+    if (submitting) {
+      setSubmissionTimeElapsed(0);
+      timer = setInterval(() => {
+        setSubmissionTimeElapsed(prev => prev + 1);
+      }, 1000);
+    } else {
+      setSubmissionTimeElapsed(0);
+    }
+    return () => clearInterval(timer);
+  }, [submitting]);
 
   const copyToClipboard = (text, key) => {
     navigator.clipboard.writeText(text);
@@ -349,122 +396,56 @@ export default function PaymentsPage() {
   };
 
   return (
-    <div className="space-y-6 pb-12 font-body max-w-6xl mx-auto animate-fade-in">
+    <div className="space-y-6 pb-12 font-body max-w-screen-2xl mx-auto w-full animate-fade-in">
       
       {/* ── Premium Luxury Header Banner with Animated Vector Art ───────────────── */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1c1917] via-[#141210] to-[#0c0a09] border border-gold/25 p-6 sm:p-7 shadow-xl">
-        <div className="absolute -right-16 -top-16 w-72 h-72 bg-gold/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute left-1/3 bottom-0 w-64 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gold/10 border border-gold/30 text-gold text-xs font-semibold uppercase tracking-wider">
-              <CreditCard className="w-3.5 h-3.5 text-gold" />
-              <span>Studio Billing & Settlements</span>
-            </div>
-            
-            <h1 className="text-2xl sm:text-3xl font-heading font-black text-white tracking-tight leading-tight">
-              Payments & Invoices
-            </h1>
-            
-            <p className="text-neutral-300 text-xs sm:text-sm leading-relaxed font-body">
-              Establish your preferred payment schedule, deposit your reservation downpayment, settle remaining balances, and access official verified receipts.
-            </p>
-
-            <div className="pt-2 flex items-center gap-3">
-              <button
-                onClick={loadBilling}
-                disabled={loading}
-                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700 text-neutral-200 text-xs font-semibold transition-all shadow-xs"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 text-gold ${loading ? 'animate-spin' : ''}`} />
-                <span>Refresh Records</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Animated Vectorized Art */}
+      <DashboardHero
+        role="client"
+        badgeLabel="Studio Billing & Settlements"
+        badgeIcon={CreditCard}
+        title="Payments & Invoices"
+        subtitle="Establish your preferred payment schedule, deposit your reservation downpayment, settle remaining balances, and access official verified receipts."
+        showStudioStatus={true}
+        primaryAction={{
+          label: 'Refresh Records',
+          onClick: loadBilling,
+          icon: RefreshCw,
+          disabled: loading,
+          className: loading ? 'opacity-80 pointer-events-none' : '',
+        }}
+        extraActions={
           <div className="hidden md:flex shrink-0 items-center justify-center">
-            <AnimatedPaymentArt className="w-48 h-32" />
+            <AnimatedPaymentArt className="w-36 h-20" />
           </div>
-        </div>
-      </div>
+        }
+      />
 
-      {/* ── Space-Efficient Uniform KPI Cards Grid (Bootstrap Style) ──────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 font-body">
-        
-        {/* Card 1: Total Invoiced */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-gold/30 transition-all flex items-center gap-3.5 w-full min-h-[88px] group">
-          <div className="w-11 h-11 rounded-xl bg-gold/10 border border-gold/20 text-gold flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-            <Receipt className="w-5 h-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block truncate">
-              Total Invoiced
-            </span>
-            <span className="font-heading font-black text-2xl text-primary dark:text-neutral-100 leading-tight mt-0.5 block truncate">
-              ₱{billingData.summary.totalInvoiced.toLocaleString()}
-            </span>
-            <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-medium block truncate mt-0.5">
-              Across {billingData.bookings.length} studio session{billingData.bookings.length === 1 ? '' : 's'}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 2: Total Paid */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-emerald-500/30 transition-all flex items-center gap-3.5 w-full min-h-[88px] group">
-          <div className="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-            <CheckCircle2 className="w-5 h-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block truncate">
-              Total Paid to Date
-            </span>
-            <span className="font-heading font-black text-2xl text-emerald-600 dark:text-emerald-400 leading-tight mt-0.5 block truncate">
-              ₱{billingData.summary.totalPaid.toLocaleString()}
-            </span>
-            <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-medium block truncate mt-0.5">
-              {billingData.summary.paidCount} verified transaction{billingData.summary.paidCount === 1 ? '' : 's'}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 3: Outstanding Balance */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-amber-500/30 transition-all flex items-center gap-3.5 w-full min-h-[88px] group">
-          <div className="w-11 h-11 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/40 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-            <Clock className="w-5 h-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block truncate">
-              Outstanding Balance
-            </span>
-            <span className="font-heading font-black text-2xl text-amber-600 dark:text-amber-400 leading-tight mt-0.5 block truncate">
-              ₱{billingData.summary.totalBalance.toLocaleString()}
-            </span>
-            <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-medium block truncate mt-0.5">
-              {billingData.summary.pendingCount > 0 ? `${billingData.summary.pendingCount} pending balance(s)` : 'All cleared'}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 4: Verification Status */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-blue-500/30 transition-all flex items-center gap-3.5 w-full min-h-[88px] group">
-          <div className="w-11 h-11 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200/60 dark:border-blue-800/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block truncate">
-              Verification Status
-            </span>
-            <span className="font-heading font-bold text-lg text-primary dark:text-neutral-100 leading-tight mt-0.5 block truncate">
-              Instant Audit Log
-            </span>
-            <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-medium block truncate mt-0.5">
-              Official OR issued upon payment
-            </span>
-          </div>
-        </div>
-
+      {/* ── Overview Metrics Strip (Matching DashboardHome Standard) ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard
+          label="Total Invoiced"
+          value={`₱${billingData.summary.totalInvoiced.toLocaleString()}`}
+          icon={Receipt}
+          color="gold"
+        />
+        <StatCard
+          label="Total Paid"
+          value={`₱${billingData.summary.totalPaid.toLocaleString()}`}
+          icon={CheckCircle2}
+          color="green"
+        />
+        <StatCard
+          label="Outstanding Balance"
+          value={`₱${billingData.summary.totalBalance.toLocaleString()}`}
+          icon={Clock}
+          color="amber"
+        />
+        <StatCard
+          label="Verification Status"
+          value={billingData.summary.pendingCount > 0 ? `${billingData.summary.pendingCount} Pending` : 'Verified'}
+          icon={ShieldCheck}
+          color={billingData.summary.pendingCount > 0 ? 'amber' : 'blue'}
+        />
       </div>
 
       {/* ── Navigation Tabs ─────────────────────────────────────────────────── */}
@@ -479,7 +460,7 @@ export default function PaymentsPage() {
             }`}
           >
             <span>Pending Invoices & Balance</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
               activeTab === 'pending'
                 ? 'bg-gold/20 text-gold'
                 : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
@@ -497,7 +478,7 @@ export default function PaymentsPage() {
             }`}
           >
             <span>Payment Receipts & History</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
               activeTab === 'history'
                 ? 'bg-gold/20 text-gold'
                 : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
@@ -527,7 +508,7 @@ export default function PaymentsPage() {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200">Studio Downpayment Policy</span>
-                  <span className="px-2 py-0.5 rounded-full bg-gold/10 text-gold text-[9px] font-bold uppercase tracking-wider border border-gold/25">
+                  <span className="px-2 py-0.5 rounded-full bg-gold/10 text-gold text-[11px] font-bold uppercase tracking-wider border border-gold/25">
                     50% Required
                   </span>
                 </div>
@@ -582,7 +563,7 @@ export default function PaymentsPage() {
                               #{b.booking_number || b.booking_reference || `BK-${b.id.slice(0, 8)}`}
                             </span>
                             {b.tier_name && (
-                              <span className="px-2 py-0.5 rounded-md bg-gold/10 border border-gold/25 text-gold text-[10px] font-bold">
+                              <span className="px-2 py-0.5 rounded-md bg-gold/10 border border-gold/25 text-gold text-xs font-bold">
                                 {b.tier_name}
                               </span>
                             )}
@@ -601,10 +582,10 @@ export default function PaymentsPage() {
                             <ExpandableBadge
                               icon={Clock}
                               dotColor="bg-amber-500 animate-pulse"
-                              text="Pending Downpayment"
+                              text={b.status === 'PENDING' ? "Awaiting Admin Confirmation" : "Order Confirmed · Ready to Pay"}
                               className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30 hover:border-amber-500/60 hover:bg-amber-500/20"
                               iconClassName="text-amber-600 dark:text-amber-400"
-                              title="Pending Downpayment · 50% deposit required"
+                              title={b.status === 'PENDING' ? "Awaiting Admin Confirmation · Customer can pay downpayment directly once confirmed" : "Order Confirmed by Admin · Settle 50% deposit to lock in your photographer"}
                             />
                           )}
                         </div>
@@ -621,7 +602,7 @@ export default function PaymentsPage() {
                             ) : (
                               <div className="w-full h-full flex flex-col items-center justify-center text-neutral-300 dark:text-neutral-600">
                                 <Camera size={20} className="text-gold/60 mb-0.5" />
-                                <span className="text-[8px] font-body uppercase text-neutral-400 font-bold">Studio</span>
+                                <span className="text-[10px] font-body uppercase text-neutral-400 font-bold">Studio</span>
                               </div>
                             )}
                           </div>
@@ -648,25 +629,25 @@ export default function PaymentsPage() {
                         {/* ── Unified Financial Strip (Zero Clutter) ─────────── */}
                         <div className="rounded-xl bg-[#faf9f6] dark:bg-neutral-800/40 border border-neutral-200/70 dark:border-neutral-700/60 p-2.5 grid grid-cols-4 divide-x divide-neutral-200/70 dark:divide-neutral-700/60 font-body text-center">
                           <div className="px-1">
-                            <span className="text-[9px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block">Total</span>
+                            <span className="text-[11px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block">Total</span>
                             <span className="text-xs sm:text-sm font-bold text-neutral-800 dark:text-neutral-100 mt-0.5 block tabular-nums">
                               ₱{total.toLocaleString()}
                             </span>
                           </div>
                           <div className="px-1">
-                            <span className="text-[9px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block">Deposit</span>
+                            <span className="text-[11px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block">Deposit</span>
                             <span className="text-xs sm:text-sm font-bold text-neutral-800 dark:text-neutral-100 mt-0.5 block tabular-nums">
                               ₱{suggestedDown.toLocaleString()}
                             </span>
                           </div>
                           <div className="px-1">
-                            <span className="text-[9px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block">Paid</span>
+                            <span className="text-[11px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block">Paid</span>
                             <span className="text-xs sm:text-sm font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 block tabular-nums">
                               ₱{downPaid.toLocaleString()}
                             </span>
                           </div>
                           <div className="px-1">
-                            <span className="text-[9px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block">Balance</span>
+                            <span className="text-[11px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block">Balance</span>
                             <span className={`text-xs sm:text-sm font-bold mt-0.5 block tabular-nums ${remaining > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600'}`}>
                               ₱{remaining.toLocaleString()}
                             </span>
@@ -675,8 +656,8 @@ export default function PaymentsPage() {
 
                         {/* ── Settlement Progress Bar ─────────────────────── */}
                         <div className="space-y-1.5 pt-0.5">
-                          <div className="flex justify-between items-center text-[10px] font-body">
-                            <span className="text-neutral-400 dark:text-neutral-500 font-bold uppercase tracking-wider text-[9px] flex items-center gap-1.5">
+                          <div className="flex justify-between items-center text-xs font-body">
+                            <span className="text-neutral-400 dark:text-neutral-500 font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5">
                               <Layers size={11} className="text-gold" />
                               <span>Settlement Progress</span>
                             </span>
@@ -702,7 +683,7 @@ export default function PaymentsPage() {
                           <span>
                             {isDownPaid 
                               ? `Establish Balance Settlement · ₱${remaining.toLocaleString()}` 
-                              : `Establish Downpayment · ₱${suggestedDown.toLocaleString()}`}
+                              : `Pay 50% Downpayment Directly · ₱${suggestedDown.toLocaleString()}`}
                           </span>
                           <ArrowRight size={13} className="group-hover/btn:translate-x-0.5 transition-transform" />
                         </button>
@@ -739,7 +720,7 @@ export default function PaymentsPage() {
             <div className="overflow-x-auto rounded-3xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm">
               <table className="w-full text-left text-xs font-body">
                 <thead>
-                  <tr className="border-b border-neutral-200/80 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/40 text-neutral-500 dark:text-neutral-400 uppercase tracking-wider font-bold text-[10px]">
+                  <tr className="border-b border-neutral-200/80 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/40 text-neutral-500 dark:text-neutral-400 uppercase tracking-wider font-bold text-xs">
                     <th className="p-4">Reference No.</th>
                     <th className="p-4">Package & Session</th>
                     <th className="p-4">Payment Method</th>
@@ -778,7 +759,7 @@ export default function PaymentsPage() {
                         </td>
 
                         <td className="p-4">
-                          <span className="capitalize px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 text-[10px] font-bold inline-flex items-center gap-1 border border-neutral-200 dark:border-neutral-700">
+                          <span className="capitalize px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 text-xs font-bold inline-flex items-center gap-1 border border-neutral-200 dark:border-neutral-700">
                             {p.payment_method === 'gcash' && <Smartphone className="w-3 h-3 text-blue-500" />}
                             {p.payment_method === 'maya' && <Smartphone className="w-3 h-3 text-emerald-500" />}
                             {p.payment_method === 'bank_transfer' && <Building2 className="w-3 h-3 text-amber-500" />}
@@ -833,7 +814,7 @@ export default function PaymentsPage() {
             {/* Modal Header */}
             <div className="flex items-start justify-between border-b border-neutral-100 dark:border-neutral-800 pb-4">
               <div>
-                <span className="text-[10px] font-bold text-gold uppercase tracking-wider block mb-1">
+                <span className="text-xs font-bold text-gold uppercase tracking-wider block mb-1">
                   Establish Payment
                 </span>
                 <h3 className="text-xl font-heading font-black text-primary dark:text-white leading-tight">
@@ -872,7 +853,7 @@ export default function PaymentsPage() {
                     }`}
                   >
                     <div className="flex justify-between items-center mb-1">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                      <span className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
                         Downpayment
                       </span>
                       <Percent className="w-3.5 h-3.5 text-amber-500" />
@@ -883,7 +864,7 @@ export default function PaymentsPage() {
                         Math.max(500, Math.round((parseFloat(selectedBooking.total_amount) || 0) * 0.5))
                       ).toLocaleString()}
                     </div>
-                    <p className="text-[9px] text-neutral-400 dark:text-neutral-500 mt-1 leading-tight">
+                    <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-1 leading-tight">
                       50% deposit to lock in camera bay & wardrobe
                     </p>
                   </button>
@@ -899,7 +880,7 @@ export default function PaymentsPage() {
                     }`}
                   >
                     <div className="flex justify-between items-center mb-1">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-gold">
+                      <span className="text-xs font-bold uppercase tracking-wider text-gold">
                         Full Settlement
                       </span>
                       <CheckCircle2 className="w-3.5 h-3.5 text-gold" />
@@ -911,7 +892,7 @@ export default function PaymentsPage() {
                           : parseFloat(selectedBooking.total_amount) - (parseFloat(selectedBooking.down_payment_amount) || 0)
                       ).toLocaleString()}
                     </div>
-                    <p className="text-[9px] text-neutral-400 dark:text-neutral-500 mt-1 leading-tight">
+                    <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-1 leading-tight">
                       100% full payment, zero balance on shoot day
                     </p>
                   </button>
@@ -927,7 +908,7 @@ export default function PaymentsPage() {
                     }`}
                   >
                     <div className="flex justify-between items-center mb-1">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-blue-500">
+                      <span className="text-xs font-bold uppercase tracking-wider text-blue-500">
                         Custom Amount
                       </span>
                       <Coins className="w-3.5 h-3.5 text-blue-500" />
@@ -935,7 +916,7 @@ export default function PaymentsPage() {
                     <div className="text-base font-black text-primary dark:text-white">
                       {customAmount ? `₱${Number(customAmount).toLocaleString()}` : 'Flexible'}
                     </div>
-                    <p className="text-[9px] text-neutral-400 dark:text-neutral-500 mt-1 leading-tight">
+                    <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-1 leading-tight">
                       Enter any partial installment amount
                     </p>
                   </button>
@@ -944,7 +925,7 @@ export default function PaymentsPage() {
                 {/* Custom Amount Field Input if selected */}
                 {paymentPlan === 'custom' && (
                   <div className="mt-2.5 p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700 animate-fade-in space-y-2">
-                    <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider block">
+                    <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider block">
                       Enter Installment Amount (₱)
                     </label>
                     <div className="relative">
@@ -966,7 +947,7 @@ export default function PaymentsPage() {
                           key={amt}
                           type="button"
                           onClick={() => setCustomAmount(String(amt))}
-                          className="px-2.5 py-1 rounded-lg bg-neutral-200/80 dark:bg-neutral-700 hover:bg-gold/20 hover:text-gold text-[10px] font-bold text-neutral-700 dark:text-neutral-300 transition-colors"
+                          className="px-2.5 py-1 rounded-lg bg-neutral-200/80 dark:bg-neutral-700 hover:bg-gold/20 hover:text-gold text-xs font-bold text-neutral-700 dark:text-neutral-300 transition-colors"
                         >
                           +₱{amt.toLocaleString()}
                         </button>
@@ -974,7 +955,7 @@ export default function PaymentsPage() {
                       <button
                         type="button"
                         onClick={() => setCustomAmount(String(parseFloat(selectedBooking.remaining_balance || selectedBooking.total_amount)))}
-                        className="px-2.5 py-1 rounded-lg bg-gold/15 text-gold text-[10px] font-bold transition-colors"
+                        className="px-2.5 py-1 rounded-lg bg-gold/15 text-gold text-xs font-bold transition-colors"
                       >
                         Max Balance
                       </button>
@@ -1011,7 +992,7 @@ export default function PaymentsPage() {
                       >
                         <Icon className={`w-5 h-5 ${m.color}`} />
                         <span className="text-xs font-bold leading-tight">{m.name}</span>
-                        <span className="text-[9px] text-neutral-400 font-normal leading-none">{m.tag}</span>
+                        <span className="text-[11px] text-neutral-400 font-normal leading-none">{m.tag}</span>
                       </button>
                     );
                   })}
@@ -1044,7 +1025,7 @@ export default function PaymentsPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-neutral-600 dark:text-neutral-300 text-xs">
                       <div className="p-2 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 flex justify-between items-center">
                         <div>
-                          <span className="text-[9px] text-neutral-400 block uppercase">GCash Mobile No.</span>
+                          <span className="text-[11px] text-neutral-400 block uppercase">GCash Mobile No.</span>
                           <span className="font-bold text-primary dark:text-white">0917-555-5632</span>
                         </div>
                         <button
@@ -1057,7 +1038,7 @@ export default function PaymentsPage() {
                       </div>
 
                       <div className="p-2 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
-                        <span className="text-[9px] text-neutral-400 block uppercase">Account Name</span>
+                        <span className="text-[11px] text-neutral-400 block uppercase">Account Name</span>
                         <span className="font-bold text-primary dark:text-white truncate block">E-KODAK PHOTO STUDIO CORP</span>
                       </div>
                     </div>
@@ -1067,7 +1048,7 @@ export default function PaymentsPage() {
                         <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 mb-2">
                           <QrCode className="w-36 h-36 text-blue-600" />
                         </div>
-                        <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Scan with any bank or e-wallet via QR Ph</p>
+                        <p className="text-xs text-neutral-500 font-bold uppercase tracking-wider">Scan with any bank or e-wallet via QR Ph</p>
                       </div>
                     )}
                   </div>
@@ -1087,7 +1068,7 @@ export default function PaymentsPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-neutral-600 dark:text-neutral-300 text-xs">
                       <div className="p-2 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 flex justify-between items-center">
                         <div>
-                          <span className="text-[9px] text-neutral-400 block uppercase">Maya Mobile No.</span>
+                          <span className="text-[11px] text-neutral-400 block uppercase">Maya Mobile No.</span>
                           <span className="font-bold text-primary dark:text-white">0928-888-5632</span>
                         </div>
                         <button
@@ -1100,7 +1081,7 @@ export default function PaymentsPage() {
                       </div>
 
                       <div className="p-2 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
-                        <span className="text-[9px] text-neutral-400 block uppercase">Account Name</span>
+                        <span className="text-[11px] text-neutral-400 block uppercase">Account Name</span>
                         <span className="font-bold text-primary dark:text-white truncate block">E-KODAK STUDIOS PH</span>
                       </div>
                     </div>
@@ -1132,13 +1113,13 @@ export default function PaymentsPage() {
 
                     <div className="p-2.5 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 flex justify-between items-center">
                       <div>
-                        <span className="text-[9px] text-neutral-400 block uppercase">
+                        <span className="text-[11px] text-neutral-400 block uppercase">
                           {selectedBank === 'bdo' ? 'BDO Current Account' : 'BPI Checking Account'}
                         </span>
                         <span className="font-bold text-primary dark:text-white font-mono text-sm">
                           {selectedBank === 'bdo' ? '0048-2801-9921' : '3021-9942-12'}
                         </span>
-                        <span className="text-[10px] text-neutral-400 block">E-Kodak Digital Services Inc.</span>
+                        <span className="text-xs text-neutral-400 block">E-Kodak Digital Services Inc.</span>
                       </div>
                       <button
                         type="button"
@@ -1186,7 +1167,7 @@ export default function PaymentsPage() {
                     placeholder="e.g. 100293849182, MP-99238, or Transfer Ref #"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-primary dark:text-white text-xs font-bold focus:border-gold focus:outline-none"
                   />
-                  <span className="text-[10px] text-neutral-400 mt-1 block">
+                  <span className="text-xs text-neutral-400 mt-1 block">
                     Found on your GCash/Maya confirmation SMS or bank mobile receipt.
                   </span>
                 </div>
@@ -1320,6 +1301,65 @@ export default function PaymentsPage() {
           </div>
         </div>
       )}
+
+      {/* ── Low Network Signal Safeguard & Safe Payment Processing Overlay ── */}
+      <AnimatePresence>
+        {submitting && (networkQuality.isLowSignal || submissionTimeElapsed >= 1) && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="fixed inset-0 z-[99999] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.92, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: -10 }}
+              transition={{ type: "spring", damping: 26, stiffness: 320 }}
+              className="bg-neutral-900 border border-gold/40 shadow-2xl rounded-3xl p-6 sm:p-8 max-w-md w-full text-center relative overflow-hidden"
+            >
+              <div className="absolute -top-16 -right-16 w-36 h-36 bg-gold/15 rounded-full blur-2xl pointer-events-none" />
+              <div className="absolute -bottom-16 -left-16 w-36 h-36 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+
+              <div className="relative w-20 h-20 mx-auto mb-5 flex items-center justify-center">
+                <span className="absolute inset-0 rounded-full bg-gold/15 animate-ping" />
+                <span className="absolute inset-2 rounded-full bg-amber-400/20 animate-pulse" />
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-gold flex items-center justify-center text-neutral-950 shadow-lg relative z-10">
+                  <Wifi size={28} className="animate-pulse" />
+                </div>
+              </div>
+
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-semibold mb-3">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                <span>Safe Payment Protection Active</span>
+              </div>
+
+              <h3 className="font-heading font-extrabold text-xl text-white tracking-tight mb-2">
+                Processing Secure Payment
+              </h3>
+
+              <p className="text-neutral-300 text-xs sm:text-sm leading-relaxed mb-5">
+                Low or fluctuating network connection detected. We are holding your transaction state securely to avoid duplicate charges or unissued payment receipts.
+              </p>
+
+              <div className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden mb-3 border border-neutral-700/60 shadow-inner">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-amber-400 via-gold to-amber-300 rounded-full"
+                  animate={{ x: ["-100%", "100%"] }}
+                  transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}
+                  style={{ width: "65%" }}
+                />
+              </div>
+
+              <div className="flex items-center justify-center gap-2 text-[11px] text-neutral-400">
+                <ShieldCheck size={14} className="text-gold" />
+                <span>Please do not close or refresh this page.</span>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Local Toast Component */}
       <Toast toast={toast} onClose={() => setToast(null)} />

@@ -18,6 +18,7 @@
  */
 
 import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { X, Sparkles, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { getAnnouncements } from "../../services/contentService";
@@ -93,63 +94,91 @@ export default function AnnouncementBar() {
   const isPromo = current?.type === "promo";
 
   return (
-    <div
+    <motion.div
       className={`
-        w-full z-50 relative transition-all duration-500
+        w-full z-50 relative overflow-hidden
         ${isPromo
-          ? "bg-gradient-to-r from-gold-dark via-gold to-gold-dark"
+          ? "bg-gradient-to-r from-gold-dark via-gold to-gold-dark animate-gradient-drift"
           : "bg-primary"
         }
-        ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-full"}
       `}
+      initial={{ y: "-100%", opacity: 0 }}
+      animate={isVisible ? { y: "0%", opacity: 1 } : { y: "-100%", opacity: 0 }}
+      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
       role="banner"
       aria-label="Announcements"
     >
       <div className="container-custom py-2 flex items-center justify-between gap-4">
-        {/* Sparkle icon */}
-        <Sparkles
-          size={14}
+        {/* Sparkle icon — gentle twinkle */}
+        <motion.span
           className={`shrink-0 ${isPromo ? "text-primary/70" : "text-gold"}`}
+          animate={{ rotate: [0, 18, 0, -18, 0], scale: [1, 1.18, 1] }}
+          transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
           aria-hidden="true"
-        />
+        >
+          <Sparkles size={14} />
+        </motion.span>
 
         {/* Announcement text */}
         <div className="flex-1 flex items-center justify-center gap-3 min-w-0 text-center">
-          <p
-            className={`font-body text-xs sm:text-sm leading-snug line-clamp-1 ${
-              isPromo ? "text-primary font-medium" : "text-white"
-            }`}
-            key={currentIndex} // re-triggers CSS fade on change
-            style={{ animation: "fadeIn 0.4s ease-out" }}
-          >
-            {current?.text}
-          </p>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.p
+              className={`font-body text-xs sm:text-sm leading-snug line-clamp-1 ${
+                isPromo ? "text-primary font-medium" : "text-white"
+              }`}
+              key={currentIndex}
+              initial={{ opacity: 0, y: 12, filter: "blur(3px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+              exit={{ opacity: 0, y: -12, filter: "blur(3px)" }}
+              transition={{ duration: 0.34, ease: [0.25, 0.46, 0.45, 0.94] }}
+            >
+              {current?.text}
+            </motion.p>
+          </AnimatePresence>
 
           {current?.ctaText && current?.ctaLink && (
-            <Link
-              to={current.ctaLink}
-              className={`shrink-0 hidden sm:inline-flex items-center gap-1 text-xs font-body font-semibold underline-offset-2 hover:underline ${
-                isPromo ? "text-primary" : "text-gold"
-              }`}
+            <motion.span
+              className="shrink-0 hidden sm:inline-flex"
+              initial={false}
+              animate={{ opacity: 1 }}
             >
-              {current.ctaText}
-              <ArrowRight size={11} />
-            </Link>
+              <Link
+                to={current.ctaLink}
+                className={`inline-flex items-center gap-1 text-xs font-body font-semibold underline-offset-2 hover:underline ${
+                  isPromo ? "text-primary" : "text-gold"
+                }`}
+              >
+                {current.ctaText}
+                <motion.span
+                  className="inline-flex"
+                  whileHover={{ x: 3 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 18 }}
+                >
+                  <ArrowRight size={11} />
+                </motion.span>
+              </Link>
+            </motion.span>
           )}
         </div>
 
         {/* Dot indicators (only if >1 announcements) */}
         {announcements.length > 1 && (
-          <div className="hidden sm:flex items-center gap-1 shrink-0" aria-hidden="true">
+          <div className="hidden sm:flex items-center gap-1.5 shrink-0" aria-hidden="true">
             {announcements.map((_, i) => (
-              <button
+              <motion.button
                 key={i}
                 onClick={() => setCurrentIndex(i)}
-                className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
+                className={`h-1.5 rounded-full ${
                   i === currentIndex
                     ? isPromo ? "bg-primary" : "bg-gold"
                     : "bg-white/30"
                 }`}
+                animate={{
+                  width: i === currentIndex ? 18 : 6,
+                  opacity: i === currentIndex ? 1 : 0.65,
+                }}
+                whileHover={{ scale: 1.3 }}
+                transition={{ type: "spring", stiffness: 420, damping: 26 }}
                 aria-label={`Announcement ${i + 1}`}
               />
             ))}
@@ -157,7 +186,7 @@ export default function AnnouncementBar() {
         )}
 
         {/* Dismiss button */}
-        <button
+        <motion.button
           onClick={handleDismiss}
           className={`shrink-0 p-1 rounded-full transition-colors duration-200 ${
             isPromo
@@ -165,10 +194,13 @@ export default function AnnouncementBar() {
               : "text-white/60 hover:text-white hover:bg-white/10"
           }`}
           aria-label="Dismiss announcement"
+          whileHover={{ rotate: 90, scale: 1.1 }}
+          whileTap={{ scale: 0.88 }}
+          transition={{ type: "spring", stiffness: 420, damping: 18 }}
         >
           <X size={14} />
-        </button>
+        </motion.button>
       </div>
-    </div>
+    </motion.div>
   );
 }

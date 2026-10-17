@@ -9,29 +9,86 @@
  *  - Clean Markdown parsing without duplicated asterisks or bullet clutter
  *  - High-contrast card typography and vibrant icon badges
  *  - Persona-aware for Public, Admin, Photographer, and Customer portals
- *  - Powered by Google Gemini API (gemini-2.5-flash)
+ *  - Powered by Groq AI Engine (qwen/qwen3.8-27b) with Gemini Fallback
  */
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { siteConfig } from "../../config/siteConfig";
 import { getServices, getFaqs } from "../../services/contentService";
-import { getAiClient } from "../../lib/ai";
+import { getAiClient, isAiConfigured, getActiveAiProvider } from "../../lib/ai";
+import { shortServiceLabel } from "../../lib/sectionNav";
 import "./AIAssistant.bootstrap.css";
 
 const aiClient = getAiClient();
 
+/** Conversation caps: total messages kept, and how much history the model sees. */
+const MAX_MESSAGES = 30;
+const HISTORY_WINDOW = 12;
+
+/** Clipboard with a fallback for browsers/contexts without the async API. */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through to the legacy path */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Per-category icon for the live package lists. */
+const CATEGORY_ICONS = {
+  college: "bi-mortarboard",
+  "senior-high": "bi-person-badge",
+  "wedding-video": "bi-camera-video",
+  "wedding-photo": "bi-camera",
+};
+
+const iconForService = (service) =>
+  CATEGORY_ICONS[service?.category] || "bi-camera2";
+
+/** Lowest tier price of a package, or null when nothing parses. */
+function fromPriceOf(service) {
+  const prices = (service?.tiers || [])
+    .map((t) => parseFloat(String(t.price || "").replace(/[^\d.]/g, "")))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return prices.length ? Math.min(...prices) : null;
+}
+
+/** "₱4,875.00" -> "₱4,875" so compact cards stay readable. */
+function trimPrice(price) {
+  const n = parseFloat(String(price || "").replace(/[^\d.]/g, ""));
+  if (!Number.isFinite(n)) return price || "";
+  return `₱${n.toLocaleString("en-PH", { maximumFractionDigits: 0 })}`;
+}
+
 // ── Markdown Formatter with Clean Bullets & Copy ───────────────────────────────
 
 function FormatMessage({ text }) {
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState("idle");
 
   if (!text) return null;
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const ok = await copyText(text);
+    setCopyState(ok ? "ok" : "fail");
+    setTimeout(() => setCopyState("idle"), 2000);
   };
 
   const renderInlineFormatted = (str) => {
@@ -111,10 +168,20 @@ function FormatMessage({ text }) {
         <button
           onClick={handleCopy}
           title="Copy response"
-          className={`ai-bubble-copy-btn ${copied ? "copied" : ""}`}
+          className={`ai-bubble-copy-btn ${copyState === "ok" ? "copied" : ""}`}
         >
-          <i className={copied ? "bi bi-check2 text-success" : "bi bi-clipboard"}></i>
-          <span>{copied ? "Copied" : "Copy"}</span>
+          <i
+            className={
+              copyState === "ok"
+                ? "bi bi-check2 text-success"
+                : copyState === "fail"
+                  ? "bi bi-exclamation-circle text-danger"
+                  : "bi bi-clipboard"
+            }
+          ></i>
+          <span>
+            {copyState === "ok" ? "Copied" : copyState === "fail" ? "Copy failed" : "Copy"}
+          </span>
         </button>
       </div>
     </div>
@@ -196,25 +263,33 @@ const PORTAL_CONFIGS = {
 
 // ── Preset Knowledge ──────────────────────────────────────────────────────────
 
-const PACKAGE_MATCH = {
-  portrait:          { name: "Portrait Photography",    price: "from ₱3,500",   link: "/services", icon: "bi bi-person-badge" },
-  "college-packages":{ name: "College Packages",        price: "from ₱3,575",   link: "/services", icon: "bi bi-mortarboard" },
-  "studio-packages": { name: "Studio & Toga Packages",  price: "from ₱795",     link: "/services", icon: "bi bi-camera" },
-  event:             { name: "Event Photography",        price: "from ₱8,000",   link: "/services", icon: "bi bi-calendar2-event" },
-  family:            { name: "Family Photography",       price: "from ₱4,000",   link: "/services", icon: "bi bi-people" },
-  couple:            { name: "Couple Photography",       price: "from ₱6,000",   link: "/services", icon: "bi bi-heart" },
-  commercial:        { name: "Commercial & Branding",    price: "from ₱8,000",   link: "/services", icon: "bi bi-building" },
-};
+/**
+ * Live catalog → plain-text context for the model, built from the same
+ * services/FAQs the site renders (never a hard-coded price list that can drift).
+ */
+function buildCatalogContext(services, faqs) {
+  const parts = [];
 
-const PRICING_INFO = [
-  { type: "Portrait",              badge: "Studio Session", note: "Basic: ₱3,500 · Standard: ₱5,500 · Premium: ₱8,500" },
-  { type: "College Packages",      badge: "Best Seller",    note: "Set A: ₱4,875 · Set B: ₱3,575 (Free makeup & hair)" },
-  { type: "Studio & Toga",         badge: "Quick Shoot",    note: "Set A: ₱1,750 · Set B: ₱1,425 · Set C: ₱1,100 · Set D: ₱795" },
-  { type: "Event Photography",     badge: "Coverage",       note: "Half-Day: ₱8,000 · Full-Day: ₱14,000 · Full-Day Duo: ₱20,000" },
-  { type: "Family Photography",    badge: "Group Session",  note: "Mini: ₱4,000 · Standard: ₱6,000 · Extended: ₱9,000" },
-  { type: "Couple / Prenuptial",   badge: "Romantic",       note: "Classic: ₱6,000 · Signature: ₱10,000 · Cinematic: ₱16,000" },
-  { type: "Commercial & Branding", badge: "Brand Shoot",    note: "Starter: ₱8,000 · Pro: ₱15,000 · Campaign: Custom" },
-];
+  if (services?.length) {
+    const lines = services.map((service) => {
+      const tiers = (service.tiers || [])
+        .map((tier) => `${tier.name} ${tier.price}`)
+        .join(", ");
+      return `${shortServiceLabel(service)} [${service.category}] — ${tiers || "no sets listed"}`;
+    });
+    parts.push(`Live package catalog (name [category] — sets): ${lines.join(" | ")}`);
+  }
+
+  if (faqs?.length) {
+    const top = faqs
+      .slice(0, 12)
+      .map((f) => `Q: ${f.question} A: ${f.answer}`)
+      .join(" | ");
+    parts.push(`FAQs: ${top}`);
+  }
+
+  return parts.join("\n").slice(0, 4000);
+}
 
 const PREP_TIPS = [
   { title: "What to wear", tip: "Wear solid colors that complement your skin tone. Avoid busy patterns and loud stripes.", icon: "bi bi-palette" },
@@ -224,7 +299,8 @@ const PREP_TIPS = [
   { title: "Photo delivery", tip: "Edited photos are delivered within 5–7 business days via your private online client gallery.", icon: "bi bi-cloud-arrow-down" },
 ];
 
-const FAQS = [
+/** Static fallback when the live FAQ feed returns nothing. */
+const STATIC_FAQS = [
   { q: "How do I confirm my booking?", a: "A 50% down payment is required to confirm your slot. Once paid, our staff verifies your payment and assigns a photographer." },
   { q: "When is the remaining balance due?", a: "The remaining balance is due on or before the day of your photo session." },
   { q: "Can I reschedule my session?", a: "Yes, you can request a reschedule at least 48 hours prior to your session date, subject to slot availability." },
@@ -256,155 +332,53 @@ const ADMIN_PRESET_MESSAGES = [
 
 // ── Interactive Screen Components ─────────────────────────────────────────────
 
-function ChatScreen({ portal, initialPrompt, onResetChatRef }) {
-  const MAX_MESSAGES = 30;
+function ChatScreen({ portal, messages, isTyping, onSend }) {
   const config = PORTAL_CONFIGS[portal] || PORTAL_CONFIGS.public;
 
-  const [messages, setMessages] = useState([
-    {
-      role: "model",
-      text: config.greeting + (portal === 'admin'
-        ? " Ask me to draft client messages, check booking rules, or give photographer dispatch advice."
-        : " Ask me anything about our packages, shoot preparation, or studio services!"),
-    },
-  ]);
+  const streamRef = useRef(null);
+  const endRef = useRef(null);
+  const inputRef = useRef(null);
   const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [dbContext, setDbContext] = useState("");
-  const endOfMessagesRef = useRef(null);
+  const [showJump, setShowJump] = useState(false);
 
-  // Allow parent header to reset chat
+  // Focus the composer when the chat screen opens.
   useEffect(() => {
-    if (onResetChatRef) {
-      onResetChatRef.current = () => {
-        setMessages([
-          {
-            role: "model",
-            text: config.greeting + " Chat session refreshed. How can I help you next?",
-          },
-        ]);
-      };
-    }
-  }, [onResetChatRef, config.greeting]);
-
-  // Fetch live context from database
-  useEffect(() => {
-    async function loadContext() {
-      try {
-        const [servicesRes, faqsRes] = await Promise.all([getServices(), getFaqs()]);
-        let ctx = "Studio Services: ";
-        if (servicesRes.data) {
-          ctx += servicesRes.data.map(s => `${s.name} (${s.category})`).join(", ");
-        }
-        if (faqsRes.data) {
-          ctx += " | FAQs: " + faqsRes.data.map(f => `Q: ${f.question} A: ${f.answer}`).join(" | ");
-        }
-        setDbContext(ctx);
-      } catch (err) {
-        console.error("Failed to load AI context", err);
-      }
-    }
-    loadContext();
+    inputRef.current?.focus();
   }, []);
 
+  // Follow new replies — but never yank the view while reading older messages.
   useEffect(() => {
-    endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = streamRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+    if (atBottom) {
+      endRef.current?.scrollIntoView({ behavior: isTyping ? "auto" : "smooth", block: "end" });
+    }
   }, [messages, isTyping]);
 
-  const sendMessage = async (userMessage) => {
-    if (!userMessage.trim() || !aiClient || messages.length >= MAX_MESSAGES) return;
-
-    setInput("");
-    setMessages(prev => [...prev, { role: "user", text: userMessage }]);
-    setIsTyping(true);
-
-    try {
-      const history = messages.map(m => ({
-        role: m.role,
-        parts: [{ text: m.text }],
-      }));
-
-      let systemInstruction = "";
-
-      if (portal === "admin") {
-        systemInstruction = `You are Koda Admin Co-Pilot, the specialized AI operations assistant for E-Kodak Photography Studio staff and administrators.
-You assist with:
-1. Drafting polite, professional, and clear SMS or email templates for customers (down payment reminders, call times, venue directions, photos ready notices).
-2. Photographer Dispatch: Explaining photographer matching (Studio/Barong/Toga -> Portrait specialists; Events/Weddings -> Event documentary specialists; Commercial -> Lighting/Product specialists).
-3. Lifecycle & Workflow Rules:
-   - Status Flow: PENDING -> CONFIRMED -> PHOTOGRAPHER_ASSIGNED -> CAPTURE -> EDITING -> PRINTING -> READY -> COMPLETED.
-   - Financial Policy: 50% non-refundable down payment required to confirm. Remaining balance due on shoot day.
-   - Reassignment: Bookings can be reassigned or unassigned back to CONFIRMED.
-4. Keep answers sharp, structured, actionable, and formatted with clean bullet points and bold highlights.
-Context: ${dbContext}`;
-      } else if (portal === "photographer") {
-        systemInstruction = `You are Koda Photographer Field Assistant for E-Kodak studio photographers.
-You help photographers on shoot day with:
-1. Posing & Lighting: Guidance on toga/barong graduation poses, formal corporate portraits, and family grouping.
-2. Equipment & Prep: Pre-shoot checklists (lenses, lighting triggers, memory cards).
-3. Session Workflow: Progressing status to CAPTURE during shoot, then EDITING, then READY.
-Keep advice practical, encouraging, and professional.`;
-      } else if (portal === "dashboard") {
-        systemInstruction = `You are Koda Client Concierge for booked E-Kodak customers.
-You guide customers with their existing bookings:
-- What to bring on shoot day (wardrobe, graduation collars).
-- Remaining balance payment policies (due on shoot day).
-- Turnaround time for photo outputs (5-7 business days).
-Be warm, reassuring, and concise.`;
-      } else {
-        systemInstruction = `You are Koda, E-Kodak Photography Studio's friendly AI concierge for prospective clients.
-You help clients choose packages, compare graduation sets (Set A vs Set B), explain pricing, and guide them to book.
-Core products:
-- College Packages (Set A ₱4,875, Set B ₱3,575 - includes free hair and makeup)
-- Studio & Toga Packages (Set A ₱1,750, Set B ₱1,425, Set C ₱1,100, Set D ₱795)
-- Other: Portrait ₱3,500-₱8,500 | Event ₱8,000-₱20,000 | Family ₱4,000-₱9,000
-Payment rule: 50% down payment required.
-Context: ${dbContext}`;
-      }
-
-      const response = await aiClient.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [
-          ...history,
-          { role: "user", parts: [{ text: userMessage }] },
-        ],
-        config: {
-          systemInstruction,
-        },
-      });
-
-      setMessages(prev => [...prev, { role: "model", text: response.text }]);
-    } catch (error) {
-      console.error("AI Assistant Error:", error);
-      setMessages(prev => [
-        ...prev,
-        {
-          role: "model",
-          text: "I encountered a connection hiccup with the AI service. Please verify your internet connection or API settings.",
-        },
-      ]);
-    } finally {
-      setIsTyping(false);
-    }
+  const handleStreamScroll = () => {
+    const el = streamRef.current;
+    if (!el) return;
+    setShowJump(el.scrollHeight - el.scrollTop - el.clientHeight >= 96);
   };
 
-  const sendMessageRef = useRef(sendMessage);
-  useEffect(() => {
-    sendMessageRef.current = sendMessage;
-  });
+  const scrollToBottom = (behavior = "smooth") => {
+    endRef.current?.scrollIntoView({ behavior, block: "end" });
+  };
 
-  // Auto-send initial prompt if triggered from outside
-  const initialSentRef = useRef(false);
-  useEffect(() => {
-    if (initialPrompt && !initialSentRef.current) {
-      initialSentRef.current = true;
-      sendMessageRef.current(initialPrompt);
-    }
-  }, [initialPrompt]);
+  const autoGrow = (el) => {
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 116)}px`;
+  };
 
-  const handleSubmit = (e) => {
-    e?.preventDefault();
-    sendMessage(input);
+  const submit = (event) => {
+    event?.preventDefault();
+    const text = input.trim();
+    if (!text) return;
+    setInput("");
+    if (inputRef.current) inputRef.current.style.height = "auto";
+    onSend(text);
+    requestAnimationFrame(() => scrollToBottom());
   };
 
   return (
@@ -414,8 +388,8 @@ Context: ${dbContext}`;
         {config.quickChips.map((chip, idx) => (
           <button
             key={idx}
-            onClick={() => sendMessage(chip)}
-            disabled={isTyping}
+            onClick={() => onSend(chip)}
+            disabled={isTyping || !aiClient}
             className="ai-chip-pill"
           >
             <i className="bi bi-stars text-warning" style={{ fontSize: "0.68rem" }}></i>
@@ -425,10 +399,25 @@ Context: ${dbContext}`;
       </div>
 
       {/* Messages Scroll Area */}
-      <div className="ai-msg-stream">
+      <div
+        className="ai-msg-stream"
+        ref={streamRef}
+        onScroll={handleStreamScroll}
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+        aria-label="Conversation with Koda AI"
+      >
         {messages.map((msg, i) => (
           <div key={i}>
-            {msg.role === "user" ? (
+            {msg.notice ? (
+              <div className="ai-notice-row">
+                <div className="ai-bubble-notice">
+                  <i className="bi bi-info-circle me-1"></i>
+                  {msg.text}
+                </div>
+              </div>
+            ) : msg.role === "user" ? (
               <div className="ai-user-row">
                 <div className="ai-bubble-user">
                   {msg.text}
@@ -455,33 +444,69 @@ Context: ${dbContext}`;
               <i className="bi bi-robot"></i>
             </div>
             <div className="ai-bubble-bot d-flex align-items-center gap-2 py-2 px-3">
-              <span className="spinner-grow spinner-grow-sm text-warning" style={{ width: "0.55rem", height: "0.55rem" }} role="status"></span>
-              <span className="small ms-1" style={{ color: "#d1cdc7", fontSize: "0.78rem" }}>Koda is thinking...</span>
+              <span className="ai-typing-dots" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </span>
+              <span style={{ color: "#d1cdc7", fontSize: "0.75rem" }}>Koda is thinking…</span>
             </div>
           </div>
         )}
-        <div ref={endOfMessagesRef} />
+        <div ref={endRef} />
       </div>
 
-      {/* Docked Input Field */}
-      <form onSubmit={handleSubmit} className="pt-2 border-top border-secondary-subtle flex-shrink-0 mt-auto">
+      {/* Jump to latest — only when the user scrolled up */}
+      {showJump && (
+        <button
+          type="button"
+          className="ai-jump-latest"
+          onClick={() => {
+            scrollToBottom();
+            setShowJump(false);
+          }}
+        >
+          <i className="bi bi-arrow-down"></i>
+          <span>Latest</span>
+        </button>
+      )}
+
+      {/* Docked Composer */}
+      <form onSubmit={submit} className="pt-2 border-top border-secondary-subtle flex-shrink-0 mt-auto">
         <div className="ai-input-wrapper">
-          <input
-            type="text"
+          <textarea
+            ref={inputRef}
+            rows={1}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={aiClient ? "Message Koda AI..." : "Gemini API key missing"}
+            onChange={(e) => {
+              setInput(e.target.value);
+              autoGrow(e.target);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder={aiClient ? "Message Koda AI…" : "AI key not configured"}
             disabled={!aiClient || isTyping}
-            className="ai-input-field"
+            aria-label="Message Koda AI"
+            className="ai-input-field ai-input-textarea"
           />
           <button
             type="submit"
             disabled={!aiClient || !input.trim() || isTyping}
             className="ai-input-send-btn"
             title="Send message"
+            aria-label="Send message"
           >
             <i className="bi bi-send-fill"></i>
           </button>
+        </div>
+        <div className="ai-composer-hint">
+          {aiClient ? (
+            <span>⚡ Ultra-fast Groq AI online · Enter to send</span>
+          ) : (
+            <span>Studio Assistant online · Enter to send</span>
+          )}
         </div>
       </form>
     </div>
@@ -493,8 +518,9 @@ Context: ${dbContext}`;
 function AdminDraftsScreen({ onSendToChat }) {
   const [copiedIdx, setCopiedIdx] = useState(null);
 
-  const handleCopy = (text, idx) => {
-    navigator.clipboard.writeText(text);
+  const handleCopy = async (text, idx) => {
+    const ok = await copyText(text);
+    if (!ok) return;
     setCopiedIdx(idx);
     setTimeout(() => setCopiedIdx(null), 2000);
   };
@@ -750,24 +776,40 @@ function PhotographerChecklistScreen() {
 
 // ── Public Preset Screens ─────────────────────────────────────────────────────
 
-function MatchScreen() {
+function MatchScreen({ services = [] }) {
   const [chosen, setChosen] = useState(null);
-  const rec = chosen ? PACKAGE_MATCH[chosen] : null;
+
+  const rec = chosen ? services.find((s) => s.slug === chosen) : null;
+  const recPrice = rec ? fromPriceOf(rec) : null;
+
+  if (!services.length) {
+    return (
+      <div className="d-flex flex-column h-100 overflow-hidden" style={{ minHeight: 0 }}>
+        <div className="ai-action-card p-3">
+          <span className="small" style={{ color: "#d1cdc7", fontSize: "0.76rem" }}>
+            <i className="bi bi-arrow-repeat me-2"></i>
+            Loading live packages…
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="d-flex flex-column h-100 overflow-hidden" style={{ minHeight: 0 }}>
       <p className="small my-1 flex-shrink-0" style={{ color: "#d1cdc7", fontSize: "0.76rem" }}>
-        Select your shoot occasion to find the recommended package:
+        Select what you're shooting to find the recommended package:
       </p>
 
       <div className="row g-2 mb-2 flex-shrink-0">
-        {Object.keys(PACKAGE_MATCH).map((key) => {
-          const isSelected = chosen === key;
-          const pkg = PACKAGE_MATCH[key];
+        {services.map((service) => {
+          const slug = service.slug;
+          const isSelected = chosen === slug;
           return (
-            <div key={key} className="col-6">
+            <div key={slug} className="col-6">
               <button
-                onClick={() => setChosen(key)}
+                onClick={() => setChosen(slug)}
+                title={shortServiceLabel(service)}
                 className={`btn btn-sm w-100 py-2 d-flex align-items-center gap-2 rounded-3 text-start ${
                   isSelected
                     ? "btn-warning text-dark fw-bold border-warning shadow-sm"
@@ -775,8 +817,8 @@ function MatchScreen() {
                 }`}
                 style={{ fontSize: "0.75rem" }}
               >
-                <i className={`bi ${pkg.icon}`}></i>
-                <span className="text-capitalize text-truncate">{key.replace("-", " ")}</span>
+                <i className={`bi ${iconForService(service)} flex-shrink-0`}></i>
+                <span className="text-truncate">{shortServiceLabel(service)}</span>
               </button>
             </div>
           );
@@ -789,14 +831,18 @@ function MatchScreen() {
             <span className="badge bg-warning text-dark fw-bold text-uppercase" style={{ fontSize: "0.62rem" }}>
               Best Match Found
             </span>
-            <span className="fw-bold text-warning small">{rec.price}</span>
+            {recPrice != null && (
+              <span className="fw-bold text-warning small">from {trimPrice(recPrice)}</span>
+            )}
           </div>
-          <p className="fw-bold text-white small mb-1">{rec.name}</p>
-          <p className="small mb-2" style={{ color: "#d1cdc7", fontSize: "0.73rem" }}>
-            Includes high-definition edited digital files & professional studio lighting.
-          </p>
+          <p className="fw-bold text-white small mb-1">{shortServiceLabel(rec)}</p>
+          {rec.tagline && (
+            <p className="small mb-2" style={{ color: "#d1cdc7", fontSize: "0.73rem" }}>
+              {rec.tagline}
+            </p>
+          )}
           <Link
-            to={rec.link}
+            to={`${siteConfig.routes.services}#sets-${rec.slug}`}
             className="btn btn-warning w-100 py-1.5 rounded-pill text-dark fw-bold small d-flex align-items-center justify-content-center gap-1"
             style={{ fontSize: "0.78rem" }}
           >
@@ -809,23 +855,48 @@ function MatchScreen() {
   );
 }
 
-function PricingScreen() {
+function PricingScreen({ services = [] }) {
   return (
     <div className="d-flex flex-column h-100 overflow-hidden" style={{ minHeight: 0 }}>
       <div className="flex-grow-1 overflow-y-auto pe-1 my-1" style={{ minHeight: 0, scrollbarWidth: "thin" }}>
-        {PRICING_INFO.map((row) => (
-          <div key={row.type} className="ai-action-card mb-2" style={{ padding: "0.7rem 0.95rem" }}>
-            <div className="d-flex align-items-center justify-content-between w-100 mb-0.5">
-              <span className="fw-bold text-white small">{row.type}</span>
-              <span className="badge bg-secondary-subtle text-light small py-0.5 px-1.5" style={{ fontSize: "0.62rem" }}>
-                {row.badge}
-              </span>
-            </div>
-            <span className="text-warning small" style={{ fontSize: "0.76rem" }}>
-              {row.note}
+        {services.length ? (
+          services.map((service) => {
+            const tiers = service.tiers || [];
+            const from = fromPriceOf(service);
+            return (
+              <div key={service.slug} className="ai-action-card mb-2" style={{ padding: "0.7rem 0.95rem" }}>
+                <div className="d-flex align-items-center justify-content-between w-100 mb-0.5">
+                  <span className="fw-bold text-white small">{shortServiceLabel(service)}</span>
+                  <span
+                    className="badge bg-secondary-subtle text-light small py-0.5 px-1.5 text-capitalize"
+                    style={{ fontSize: "0.62rem" }}
+                  >
+                    {String(service.category || "").replace(/-/g, " ")}
+                  </span>
+                </div>
+                <span className="text-warning small" style={{ fontSize: "0.76rem" }}>
+                  {tiers.length
+                    ? tiers.map((t) => `${t.name}: ${t.price}`).join(" · ")
+                    : "Rates available on request"}
+                </span>
+                {from != null && (
+                  <div className="mt-1">
+                    <span className="badge bg-dark border border-secondary text-light" style={{ fontSize: "0.6rem" }}>
+                      from {trimPrice(from)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        ) : (
+          <div className="ai-action-card p-3">
+            <span className="small" style={{ color: "#d1cdc7", fontSize: "0.76rem" }}>
+              <i className="bi bi-arrow-repeat me-2"></i>
+              Loading live rates…
             </span>
           </div>
-        ))}
+        )}
       </div>
 
       <div className="pt-2 border-top border-secondary-subtle mt-auto flex-shrink-0">
@@ -864,13 +935,24 @@ function PrepScreen() {
   );
 }
 
-function FAQScreen() {
+function FAQScreen({ faqs = [] }) {
   const [open, setOpen] = useState(0);
+
+  const items = useMemo(() => {
+    const live = (faqs || [])
+      .filter((f) => {
+        const topic = String(f.topic || f.category || "").toLowerCase();
+        return !topic || ["booking", "pricing", "delivery"].includes(topic);
+      })
+      .slice(0, 10)
+      .map((f) => ({ q: f.question, a: f.answer }));
+    return live.length ? live : STATIC_FAQS;
+  }, [faqs]);
 
   return (
     <div className="d-flex flex-column h-100 overflow-hidden" style={{ minHeight: 0 }}>
       <div className="flex-grow-1 overflow-y-auto pe-1 my-1" style={{ minHeight: 0, scrollbarWidth: "thin" }}>
-        {FAQS.map((item, i) => (
+        {items.map((item, i) => (
           <div key={i} className="ai-accordion-card">
             <button
               onClick={() => setOpen(open === i ? null : i)}
@@ -909,16 +991,181 @@ const SCREEN_META = {
   faq: { title: "Booking FAQs", subtitle: "Helpful Answers" },
 };
 
+// ── Conversation Bootstrap & Model Instructions ───────────────────────────────
+
+function initialMessages(portal) {
+  const config = PORTAL_CONFIGS[portal] || PORTAL_CONFIGS.public;
+  const tail =
+    portal === "admin"
+      ? " Ask me to draft client messages, check booking rules, or give photographer dispatch advice."
+      : " Ask me anything about our packages, shoot preparation, or studio services!";
+
+  const list = [{ role: "model", text: config.greeting + tail }];
+
+  if (!isAiConfigured()) {
+    list.push({
+      role: "model",
+      notice: true,
+      text: "Live AI engine is in offline mode. The interactive catalog, packages, shoot prep, and FAQ tools are fully active.",
+    });
+  }
+  return list;
+}
+
+function buildSystemInstruction(portal, catalog) {
+  const context = buildCatalogContext(catalog.services, catalog.faqs);
+
+  if (portal === "admin") {
+    return `You are Koda Admin Co-Pilot, the specialized AI operations assistant for E-Kodak Photography Studio staff and administrators.
+You assist with:
+1. Drafting polite, professional, and clear SMS or email templates for customers (down payment reminders, call times, venue directions, photos ready notices).
+2. Photographer Dispatch: Explaining photographer matching (Studio/Barong/Toga -> Portrait specialists; Events/Weddings -> Event documentary specialists; Commercial -> Lighting/Product specialists).
+3. Lifecycle & Workflow Rules:
+   - Status Flow: PENDING -> CONFIRMED -> PHOTOGRAPHER_ASSIGNED -> CAPTURE -> EDITING -> PRINTING -> READY -> COMPLETED.
+   - Financial Policy: 50% non-refundable down payment required to confirm. Remaining balance due on shoot day.
+   - Reassignment: Bookings can be reassigned or unassigned back to CONFIRMED.
+4. Keep answers sharp, structured, actionable, and formatted with clean bullet points and bold highlights.
+Context:
+${context}`;
+  }
+
+  if (portal === "photographer") {
+    return `You are Koda Photographer Field Assistant for E-Kodak studio photographers.
+You help photographers on shoot day with:
+1. Posing & Lighting: Guidance on toga/barong graduation poses, formal corporate portraits, and family grouping.
+2. Equipment & Prep: Pre-shoot checklists (lenses, lighting triggers, memory cards).
+3. Session Workflow: Progressing status to CAPTURE during shoot, then EDITING, then READY.
+Keep advice practical, encouraging, and professional.
+Context:
+${context}`;
+  }
+
+  if (portal === "dashboard") {
+    return `You are Koda Client Concierge for booked E-Kodak customers.
+You guide customers with their existing bookings:
+- What to bring on shoot day (wardrobe, graduation collars).
+- Remaining balance payment policies (due on shoot day).
+- Turnaround time for photo outputs (5-7 business days).
+Be warm, reassuring, and concise.
+Context:
+${context}`;
+  }
+
+  return `You are Koda, E-Kodak Photography Studio's friendly AI concierge for prospective clients.
+You help clients choose packages, compare sets, explain pricing, and guide them to book.
+Core products: College graduation packages, Senior High packages, Wedding videography and wedding photography.
+Always quote set prices from the live catalog in the context below — never invent amounts.
+Payment rule: 50% down payment required to confirm; remaining balance due on shoot day.
+Context:
+${context}`;
+}
+
+// ── Intelligent Studio Concierge Knowledge Fallback Engine ───────────────────
+function getStudioConciergeResponse(query, portal, catalog) {
+  const q = (query || "").toLowerCase();
+  const services = catalog?.services || [];
+  const faqs = catalog?.faqs || [];
+
+  // 1. FAQ exact/keyword matching
+  const matchedFaq = faqs.find((f) => {
+    const qLower = (f.question || "").toLowerCase();
+    const words = q.split(/\s+/).filter((w) => w.length > 3);
+    const matches = words.filter((w) => qLower.includes(w));
+    return matches.length >= 2 || qLower.includes(q);
+  });
+  if (matchedFaq && matchedFaq.answer) {
+    return `**${matchedFaq.question}**\n\n${matchedFaq.answer}`;
+  }
+
+  // 2. Package rates, pricing, sets
+  if (
+    q.includes("rate") ||
+    q.includes("price") ||
+    q.includes("package") ||
+    q.includes("cost") ||
+    q.includes("how much") ||
+    q.includes("tier")
+  ) {
+    if (services.length > 0) {
+      let reply = `Here are our official studio photography packages:\n\n`;
+      services.forEach((s) => {
+        reply += `• **${s.name}**: Starting from ₱${Number(s.base_price || 0).toLocaleString()}\n`;
+        if (s.tiers && s.tiers.length > 0) {
+          s.tiers.forEach((t) => {
+            reply += `   - ${t.name}: ₱${Number(t.price || 0).toLocaleString()}\n`;
+          });
+        }
+      });
+      reply += `\n*A 50% downpayment confirms your session schedule. The remaining balance is settled on your shoot day.*`;
+      return reply;
+    }
+    return `Our signature offerings include **College Graduation Packages**, **Senior High Sets**, and **Wedding Photo & Video** packages starting from ₱850. A 50% reservation downpayment secures your date.`;
+  }
+
+  // 3. Downpayment, payment methods, settlement
+  if (
+    q.includes("payment") ||
+    q.includes("deposit") ||
+    q.includes("downpayment") ||
+    q.includes("balance") ||
+    q.includes("pay") ||
+    q.includes("gcash")
+  ) {
+    return `**E-Kodak Studio Payment Policy**\n\n• **50% Downpayment:** Required upon booking to reserve your photographer and studio bay.\n• **Remaining Balance:** Settle anytime before or directly during your shoot day at the studio.\n• **Accepted Channels:** GCash, Online Bank Transfer (BDO / BPI), or Cash at our studio counter.`;
+  }
+
+  // 4. Wardrobe, what to bring, attire, toga
+  if (
+    q.includes("bring") ||
+    q.includes("wear") ||
+    q.includes("attire") ||
+    q.includes("toga") ||
+    q.includes("clothes") ||
+    q.includes("prep") ||
+    q.includes("dress")
+  ) {
+    return `**Shoot Preparation & Wardrobe Guidelines**\n\n• **Graduation Shoots:** Bring your school-prescribed collared shirt or white button-down. Studio togas, academic hoods, and caps across standard sizes are steam-sanitized in the dressing rooms.\n• **Grooming:** Arrive with clean, moisturized skin. Dedicated vanity stations with studio mirrors and touch-up tables are ready for you.\n• **Arrival:** Please arrive 15 minutes before your booked bay schedule for seamless fitting.`;
+  }
+
+  // 5. Deliverables, photo outputs, claiming, proofs
+  if (
+    q.includes("photo") ||
+    q.includes("deliver") ||
+    q.includes("copy") ||
+    q.includes("proof") ||
+    q.includes("when") ||
+    q.includes("ready") ||
+    q.includes("claim")
+  ) {
+    return `**Photo Outputs & Claiming Timeline**\n\n• **Digital Proofing:** Available in your Client Portal within 2–3 business days post-photoshoot.\n• **Master Prints & Framed Outputs:** Completed within 5–7 business days.\n• **Fulfillment Modes:** Claim at our studio reception or select Studio Direct Delivery to your address.`;
+  }
+
+  // 6. Location, studio hours, address
+  if (
+    q.includes("location") ||
+    q.includes("where") ||
+    q.includes("address") ||
+    q.includes("hour") ||
+    q.includes("open") ||
+    q.includes("contact") ||
+    q.includes("phone")
+  ) {
+    return `**E-Kodak Studio Details**\n\n📍 **Location:** Colon Heritage Bldg, Colon Street, Cebu City\n⏰ **Operating Hours:** Monday–Saturday, 8:00 AM – 5:00 PM PHT (Closed Sundays)\n📞 **Studio Phone:** (032) 412-8921 / 0910-294-9414`;
+  }
+
+  // 7. Rescheduling policy
+  if (q.includes("reschedule") || q.includes("cancel") || q.includes("change date") || q.includes("change time")) {
+    return `**Studio Rescheduling Policy**\n\n• You may request rescheduling directly from your **Booking Records** dashboard at least **48 hours prior** to your appointment.\n• Your 50% reservation deposit automatically transfers to your newly selected schedule without penalty.`;
+  }
+
+  // 8. General friendly concierge guidance
+  return `Hello! I'm Koda, your E-Kodak Studio concierge. I can guide you through:\n\n• **Package rates & tier inclusions**\n• **50% reservation downpayment & payment channels**\n• **Wardrobe fitting & shoot preparation**\n• **Photo deliverables & studio claiming**\n\nFeel free to ask any specific studio question!`;
+}
+
 // ── Main AIAssistant Component ────────────────────────────────────────────────
 
 export default function AIAssistant() {
   const location = useLocation();
-
-  const [isOpen, setIsOpen] = useState(false);
-  const [screen, setScreen] = useState("chat");
-  const [pendingPrompt, setPendingPrompt] = useState("");
-  const panelRef = useRef(null);
-  const resetChatRef = useRef(null);
 
   // Determine active portal based on URL pathname
   const portal = useMemo(() => {
@@ -929,21 +1176,38 @@ export default function AIAssistant() {
     return "public";
   }, [location.pathname]);
 
+  // Open state lives above the portal-keyed panel so the assistant stays open
+  // across portal switches; the panel remounts with a fresh conversation.
+  const [isOpen, setIsOpen] = useState(false);
+
+  return <AIAssistantPanel key={portal} portal={portal} isOpen={isOpen} setIsOpen={setIsOpen} />;
+}
+
+function AIAssistantPanel({ portal, isOpen, setIsOpen }) {
   const config = PORTAL_CONFIGS[portal] || PORTAL_CONFIGS.public;
 
-  // Listen for programmatic open events (e.g. from AdminHeader or buttons)
+  const [screen, setScreen] = useState("chat");
+  const [messages, setMessages] = useState(() => initialMessages(portal));
+  const [isTyping, setIsTyping] = useState(false);
+  const [hasActivity, setHasActivity] = useState(false);
+  const [catalog, setCatalog] = useState({ services: [], faqs: [] });
+  const panelRef = useRef(null);
+  // Bumped whenever the conversation is discarded (reset / portal switch) so
+  // in-flight replies from the previous conversation are dropped.
+  const epochRef = useRef(0);
+
+  // Live catalog + FAQs power the matcher, rates, FAQ screen and model context.
   useEffect(() => {
-    const handleCustomOpen = (e) => {
-      setIsOpen(true);
-      if (e.detail?.screen) {
-        setScreen(e.detail.screen);
-      }
-      if (e.detail?.prompt) {
-        setPendingPrompt(e.detail.prompt);
-      }
+    let alive = true;
+    Promise.all([getServices(), getFaqs()])
+      .then(([svcRes, faqRes]) => {
+        if (!alive) return;
+        setCatalog({ services: svcRes.data || [], faqs: faqRes.data || [] });
+      })
+      .catch((err) => console.error("AI context load failed:", err));
+    return () => {
+      alive = false;
     };
-    window.addEventListener("open-ai-assistant", handleCustomOpen);
-    return () => window.removeEventListener("open-ai-assistant", handleCustomOpen);
   }, []);
 
   // Close when clicking outside
@@ -955,7 +1219,7 @@ export default function AIAssistant() {
     }
     if (isOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen]);
+  }, [isOpen, setIsOpen]);
 
   // Close on Escape
   useEffect(() => {
@@ -964,18 +1228,114 @@ export default function AIAssistant() {
     }
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
-  }, []);
+  }, [setIsOpen]);
 
-  const handleOpenToChat = (prompt = "") => {
-    setPendingPrompt(prompt);
-    setScreen("chat");
-    setIsOpen(true);
+  const sendMessage = useCallback(async (rawText) => {
+    const text = (rawText || "").trim();
+    if (!text || isTyping) return;
+
+    if (messages.length >= MAX_MESSAGES) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "model",
+          notice: true,
+          text: "That's the end of this conversation. Use ↺ in the header to start a fresh one.",
+        },
+      ]);
+      return;
+    }
+
+    const epoch = epochRef.current;
+    setHasActivity(true);
+    setMessages((prev) => [...prev, { role: "user", text }]);
+    setIsTyping(true);
+
+    try {
+      const history = messages
+        .filter((m) => !m.notice)
+        .slice(-HISTORY_WINDOW)
+        .map((m) => ({ role: m.role, parts: [{ text: m.text }] }));
+
+      let replyText = null;
+
+      // 1. Query the studio AI engine (prioritizes Groq, falls back to Gemini)
+      if (aiClient) {
+        try {
+          const response = await aiClient.models.generateContent({
+            contents: [...history, { role: "user", parts: [{ text }] }],
+            config: {
+              systemInstruction: buildSystemInstruction(portal, catalog),
+              temperature: 0.6,
+              maxTokens: 850,
+            },
+          });
+          if (response?.text) {
+            replyText = response.text;
+          }
+        } catch (apiErr) {
+          console.warn("[AIAssistant] Studio AI engine error:", apiErr?.message || apiErr);
+        }
+      }
+
+      // 2. If AI engine was unavailable or errored, seamlessly provide Studio Concierge Answer
+      if (!replyText) {
+        replyText = getStudioConciergeResponse(text, portal, catalog);
+      }
+
+      if (epoch !== epochRef.current) return;
+      setMessages((prev) => [...prev, { role: "model", text: replyText }]);
+    } catch (error) {
+      console.warn("AI Assistant Fallback:", error);
+      if (epoch !== epochRef.current) return;
+      const fallback = getStudioConciergeResponse(text, portal, catalog);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "model",
+          text: fallback,
+        },
+      ]);
+    } finally {
+      if (epoch === epochRef.current) setIsTyping(false);
+    }
+  }, [messages, isTyping, portal, catalog]);
+
+  // Listen for programmatic open events (e.g. from OrderSummarySidebar)
+  useEffect(() => {
+    const handleCustomOpen = (e) => {
+      setIsOpen(true);
+      if (e.detail?.screen) {
+        setScreen(e.detail.screen);
+      }
+      if (e.detail?.prompt) {
+        sendMessage(e.detail.prompt);
+      }
+    };
+    window.addEventListener("open-ai-assistant", handleCustomOpen);
+    return () => window.removeEventListener("open-ai-assistant", handleCustomOpen);
+  }, [sendMessage, setIsOpen]);
+
+  const resetChat = () => {
+    epochRef.current += 1;
+    setMessages(initialMessages(portal));
+    setHasActivity(false);
+    setIsTyping(false);
   };
 
-  const handleResetChatClick = () => {
-    if (resetChatRef.current) {
-      resetChatRef.current();
+  const handleOpenToChat = (prompt = "") => {
+    setScreen("chat");
+    setIsOpen(true);
+    if (prompt) sendMessage(prompt);
+  };
+
+  const handleLauncher = () => {
+    if (isOpen) {
+      setIsOpen(false);
+      return;
     }
+    setScreen(hasActivity ? "chat" : "home");
+    setIsOpen(true);
   };
 
   return (
@@ -990,6 +1350,7 @@ export default function AIAssistant() {
           className="ai-modal-card shadow-2xl"
           role="dialog"
           aria-modal="true"
+          aria-labelledby="ai-dialog-title"
         >
           {/* Universal Single Header */}
           <div className="ai-modal-header">
@@ -1004,11 +1365,17 @@ export default function AIAssistant() {
                   <i className="bi bi-arrow-left"></i>
                 </button>
               )}
-              <div className="ai-brand-badge flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setScreen("home")}
+                className="ai-brand-badge flex-shrink-0"
+                title="Menu"
+                aria-label="Go to menu"
+              >
                 <i className="bi bi-stars"></i>
-              </div>
+              </button>
               <div className="text-truncate">
-                <h4 className="ai-header-title text-truncate">
+                <h4 id="ai-dialog-title" className="ai-header-title text-truncate">
                   {screen === "home" ? config.title : (SCREEN_META[screen]?.title || config.title)}
                 </h4>
                 <div className="d-flex align-items-center gap-1.5 mt-0.5">
@@ -1023,7 +1390,7 @@ export default function AIAssistant() {
             <div className="ai-header-actions flex-shrink-0">
               {screen === "chat" && (
                 <button
-                  onClick={handleResetChatClick}
+                  onClick={resetChat}
                   className="ai-header-btn"
                   title="Clear chat history"
                   aria-label="Clear chat history"
@@ -1091,8 +1458,9 @@ export default function AIAssistant() {
             {screen === "chat" && (
               <ChatScreen
                 portal={portal}
-                initialPrompt={pendingPrompt}
-                onResetChatRef={resetChatRef}
+                messages={messages}
+                isTyping={isTyping}
+                onSend={sendMessage}
               />
             )}
 
@@ -1116,17 +1484,17 @@ export default function AIAssistant() {
             )}
 
             {/* Public Screens */}
-            {screen === "match" && <MatchScreen />}
-            {screen === "pricing" && <PricingScreen />}
+            {screen === "match" && <MatchScreen services={catalog.services} />}
+            {screen === "pricing" && <PricingScreen services={catalog.services} />}
             {screen === "prep" && <PrepScreen />}
-            {screen === "faq" && <FAQScreen />}
+            {screen === "faq" && <FAQScreen faqs={catalog.faqs} />}
           </div>
         </div>
       )}
 
       {/* ── Floating Trigger Button (Bootstrap Styled) ────────────────────── */}
       <button
-        onClick={isOpen ? () => setIsOpen(false) : () => { setScreen("chat"); setIsOpen(true); }}
+        onClick={handleLauncher}
         className={`ai-launcher-btn ${isOpen ? 'is-active' : ''}`}
         aria-label="Toggle AI Assistant"
         title={isOpen ? "Close AI Assistant" : "Chat with Koda AI"}

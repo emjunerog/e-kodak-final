@@ -87,7 +87,7 @@ export default function ScheduleProgressSidebar({ isOpen, onClose, bookings = []
               <h3 className="text-xs font-bold text-primary dark:text-neutral-100 font-heading">
                 Status & Schedule
               </h3>
-              <p className="text-[10px] text-neutral-400 font-body">
+              <p className="text-xs text-neutral-400 font-body">
                 Order tracking and calendar
               </p>
             </div>
@@ -110,7 +110,7 @@ export default function ScheduleProgressSidebar({ isOpen, onClose, bookings = []
 
               <div className="flex justify-between items-start gap-2">
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-gold mb-1 block">
+                  <span className="text-xs font-bold uppercase tracking-widest text-gold mb-1 block">
                     Status
                   </span>
                   <h4 className="text-sm font-bold font-heading text-primary dark:text-neutral-100">
@@ -123,7 +123,7 @@ export default function ScheduleProgressSidebar({ isOpen, onClose, bookings = []
                     {latestBooking.event_date ? new Date(latestBooking.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date TBD'}
                   </div>
                   {latestBooking.preferred_time && (
-                    <p className="text-[10px] text-neutral-400 mt-0.5 font-mono">{latestBooking.preferred_time.substring(0, 5)}</p>
+                    <p className="text-xs text-neutral-400 mt-0.5 font-mono">{latestBooking.preferred_time.substring(0, 5)}</p>
                   )}
                 </div>
               </div>
@@ -132,22 +132,22 @@ export default function ScheduleProgressSidebar({ isOpen, onClose, bookings = []
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-100 dark:border-neutral-800">
                   <Layers size={14} className="text-gold mb-2" />
-                  <p className="text-[9px] text-neutral-400 uppercase tracking-widest font-bold">Package</p>
+                  <p className="text-[11px] text-neutral-400 uppercase tracking-widest font-bold">Package</p>
                   <p className="text-xs font-bold text-primary dark:text-neutral-200 truncate mt-0.5" title={latestBooking.service?.name}>
                     {latestBooking.service?.name || 'Studio Session'}
                   </p>
-                  <p className="text-[10px] font-semibold text-gold mt-1">
+                  <p className="text-xs font-semibold text-gold mt-1">
                     {(latestBooking.items?.reduce((sum, i) => sum + (i.quantity || 1), 0) || (latestBooking.package_name ? 1 : 0))} Sets
                   </p>
                 </div>
 
                 <div className="p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-100 dark:border-neutral-800">
                   <CreditCard size={14} className={remBalance > 0 ? 'text-amber-500' : 'text-emerald-500'} mb={8} />
-                  <p className="text-[9px] text-neutral-400 uppercase tracking-widest font-bold">Payment</p>
+                  <p className="text-[11px] text-neutral-400 uppercase tracking-widest font-bold">Payment</p>
                   <p className="text-xs font-bold text-primary dark:text-neutral-200 mt-0.5">
                     ₱{Number(latestBooking.total_amount || 0).toLocaleString()}
                   </p>
-                  <p className={`text-[10px] font-semibold mt-1 ${remBalance > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                  <p className={`text-xs font-semibold mt-1 ${remBalance > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                     {remBalance > 0 ? `₱${remBalance.toLocaleString()} Balance` : 'Fully Paid'}
                   </p>
                 </div>
@@ -155,7 +155,7 @@ export default function ScheduleProgressSidebar({ isOpen, onClose, bookings = []
 
               {/* Icon-based Status Tracker */}
               <div className="pt-2">
-                <p className="text-[10px] font-bold text-neutral-400 mb-3 text-center uppercase tracking-widest">
+                <p className="text-xs font-bold text-neutral-400 mb-3 text-center uppercase tracking-widest">
                   {stageInfo.stageText}
                 </p>
                 <div className="flex items-center justify-between relative px-1">
@@ -177,7 +177,7 @@ export default function ScheduleProgressSidebar({ isOpen, onClose, bookings = []
                           <Icon size={14} className={isActive ? 'animate-pulse' : ''} />
                         </div>
                         {/* Hover Tooltip */}
-                        <div className="pointer-events-none absolute bottom-full mb-1.5 opacity-0 group-hover/step:opacity-100 transition-opacity bg-neutral-900 text-white text-[10px] font-bold px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap z-50 border border-neutral-700">
+                        <div className="pointer-events-none absolute bottom-full mb-1.5 opacity-0 group-hover/step:opacity-100 transition-opacity bg-neutral-900 text-white text-xs font-bold px-2.5 py-1 rounded-md shadow-xl whitespace-nowrap z-50 border border-neutral-700">
                           {step.label}
                         </div>
                       </div>
@@ -251,7 +251,7 @@ export default function ScheduleProgressSidebar({ isOpen, onClose, bookings = []
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold mb-0.5">Assigned Photographer</p>
+                    <p className="text-[11px] uppercase tracking-widest text-neutral-400 font-bold mb-0.5">Assigned Photographer</p>
                     <p className="text-xs font-bold text-primary dark:text-neutral-200 truncate">
                       {latestBooking.photographer.profile?.first_name} {latestBooking.photographer.profile?.last_name}
                     </p>
@@ -281,7 +281,7 @@ export default function ScheduleProgressSidebar({ isOpen, onClose, bookings = []
                         <h5 className="font-heading font-bold text-sm text-primary dark:text-neutral-100">
                           {latestBooking.photographer.profile?.first_name} {latestBooking.photographer.profile?.last_name}
                         </h5>
-                        <p className="text-[10px] uppercase tracking-wider text-gold font-bold mt-0.5">
+                        <p className="text-xs uppercase tracking-wider text-gold font-bold mt-0.5">
                           {latestBooking.photographer.specialization || 'Lead Photographer'}
                         </p>
                       </div>

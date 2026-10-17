@@ -19,6 +19,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Camera, Heart, Award } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 import Navbar from "../components/layout/Navbar";
 import Footer from "../components/layout/Footer";
@@ -27,7 +28,14 @@ import GalleryLightbox from "../components/gallery/GalleryLightbox";
 
 import { GALLERY_CATEGORIES } from "../data/galleryData";
 import { siteConfig } from "../config/siteConfig";
-import { useScrollReveal } from "../lib/useScrollReveal";
+import {
+  viewport,
+  stagger,
+  staggerChild,
+  fadeUp,
+  lineReveal,
+  ease,
+} from "../lib/motion";
 import { getGalleryItems } from "../services/contentService";
 
 export default function Gallery() {
@@ -59,9 +67,6 @@ export default function Gallery() {
   const closeLightbox = useCallback(()    => setLightboxIndex(null), []);
   const navigate      = useCallback((idx) => setLightboxIndex(idx), []);
 
-  const { ref: gridRef, inView: gridIn } = useScrollReveal({ threshold: 0.03 });
-  const { ref: ctaRef,  inView: ctaIn  } = useScrollReveal({ threshold: 0.2 });
-
   return (
     <>
       <Navbar />
@@ -73,20 +78,23 @@ export default function Gallery() {
           eyebrow="Portfolio"
           title="From Our Lens"
           subtitle="A curated collection of our photography work — portraits, graduations, events, families, couples, and commercial sessions."
-          image="https://images.unsplash.com/photo-1616091093051-a4e4dff7a786?w=1920&q=85&auto=format&fit=crop"
-          imageAlt="Photography equipment and gallery prints"
+            image="https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=1920&q=85&auto=format&fit=crop"
+            imageAlt="Golden-hour portrait captured during a studio session"
         />
 
         {/* ── 2. Category Filter ────────────────────────────────────────────── */}
-        <section className="sticky top-16 md:top-20 z-30 bg-white/95 backdrop-blur-md border-b border-neutral-100 shadow-warm-sm">
+        <section className="sticky top-[var(--nav-h)] z-30 bg-white/95 backdrop-blur-md border-b border-neutral-100 shadow-warm-sm transition-[top] duration-300 ease-smooth">
           <div className="container-custom py-3">
-            <div
+            <motion.div
               className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide"
               role="tablist"
               aria-label="Gallery categories"
+              variants={stagger(0.05)}
+              initial="hidden"
+              animate="show"
             >
               {GALLERY_CATEGORIES.map((cat) => (
-                <button
+                <motion.button
                   key={cat.id}
                   role="tab"
                   aria-selected={activeCategory === cat.id}
@@ -94,16 +102,19 @@ export default function Gallery() {
                     setActiveCategory(cat.id);
                     setLightboxIndex(null);
                   }}
-                  className={`shrink-0 px-5 py-2 rounded-full text-xs font-body font-medium uppercase tracking-wider transition-all duration-200 ${
+                  variants={staggerChild}
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.96 }}
+                  className={`shrink-0 px-5 py-2 rounded-full text-xs font-body font-medium uppercase tracking-wider transition-[background-color,color,box-shadow] duration-200 ${
                     activeCategory === cat.id
                       ? "bg-primary text-white shadow-warm-sm"
                       : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-primary"
                   }`}
                 >
                   {cat.label}
-                </button>
+                </motion.button>
               ))}
-            </div>
+            </motion.div>
           </div>
         </section>
 
@@ -112,9 +123,23 @@ export default function Gallery() {
           <div className="container-custom">
 
             {/* Count + live badge */}
-            <div className="flex items-center justify-between mb-8">
+            <motion.div
+              variants={fadeUp}
+              initial="hidden"
+              whileInView="show"
+              viewport={viewport}
+              className="flex items-center justify-between mb-8"
+            >
               <p className="font-body text-neutral-400 text-sm">
-                <span className="text-primary font-medium">{filtered.length}</span>{" "}
+                <motion.span
+                  key={`gcount-${activeCategory}-${filtered.length}`}
+                  initial={{ y: 8, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ duration: 0.4, ease: ease.spring }}
+                  className="inline-block text-primary font-medium"
+                >
+                  {filtered.length}
+                </motion.span>{" "}
                 photo{filtered.length !== 1 ? "s" : ""}
                 {activeCategory !== "all" && (
                   <span className="text-neutral-400"> in {activeCategory}</span>
@@ -130,7 +155,7 @@ export default function Gallery() {
                   Click any photo to view full size
                 </p>
               </div>
-            </div>
+            </motion.div>
 
             {/* Loading skeleton */}
             {isLoading && (
@@ -147,22 +172,28 @@ export default function Gallery() {
 
             {/* Masonry-style CSS columns grid */}
             {!isLoading && (
-              <div
-                ref={gridRef}
-                className={`columns-1 sm:columns-2 lg:columns-3 transition-all duration-700 ease-smooth ${
-                  gridIn ? "opacity-100" : "opacity-0"
-                }`}
+              <motion.div
+                className="columns-1 sm:columns-2 lg:columns-3"
                 style={{ columnGap: "1rem" }}
+                variants={stagger(0.06)}
+                initial="hidden"
+                whileInView="show"
+                viewport={{ once: true, margin: "-40px" }}
               >
+                <AnimatePresence mode="popLayout" initial={false}>
                 {filtered.map((item, idx) => (
-                  <button
+                  <motion.button
                     key={item.id}
+                    variants={staggerChild}
+                    exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.28 } }}
+                    whileHover={{ y: -8 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 24 }}
                     className="block w-full mb-4 relative group overflow-hidden rounded-xl
+                      ring-0 group-hover:ring-2 group-hover:ring-gold/70 group-hover:ring-offset-2 group-hover:ring-offset-white
                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2
-                      break-inside-avoid"
+                      break-inside-avoid shadow-warm-sm hover:shadow-warm-lg transition-shadow duration-300"
                     onClick={() => openLightbox(idx)}
                     aria-label={`View photo: ${item.title}`}
-                    style={{ transitionDelay: `${(idx % 9) * 50}ms` }}
                   >
                     {/* Image */}
                     <img
@@ -212,18 +243,24 @@ export default function Gallery() {
                     >
                       <Camera size={14} className="text-white" />
                     </div>
-                  </button>
+                  </motion.button>
                 ))}
-              </div>
+                </AnimatePresence>
+              </motion.div>
             )}
 
             {!isLoading && filtered.length === 0 && (
-              <div className="text-center py-24">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, ease: ease.smooth }}
+                className="text-center py-24"
+              >
                 <p className="font-heading text-primary text-2xl mb-2">No photos found</p>
                 <p className="font-body text-neutral-400 text-sm">
                   Try a different category filter.
                 </p>
-              </div>
+              </motion.div>
             )}
 
             <p className="font-body text-neutral-300 text-xs text-center mt-10 italic">
@@ -233,36 +270,54 @@ export default function Gallery() {
         </section>
 
         {/* ── 4. Lightbox ───────────────────────────────────────────────────── */}
-        {lightboxIndex !== null && (
-          <GalleryLightbox
-            items={filtered}
-            index={lightboxIndex}
-            onClose={closeLightbox}
-            onNavigate={navigate}
-          />
-        )}
+        <AnimatePresence>
+          {lightboxIndex !== null && (
+            <GalleryLightbox
+              key="gallery-lightbox"
+              items={filtered}
+              index={lightboxIndex}
+              onClose={closeLightbox}
+              onNavigate={navigate}
+            />
+          )}
+        </AnimatePresence>
 
         {/* ── 5. Book CTA ───────────────────────────────────────────────────── */}
-        <section className="section-padding bg-white border-t border-neutral-100" ref={ctaRef}>
-          <div
-            className={`container-custom text-center max-w-2xl mx-auto transition-all duration-700 ease-smooth ${
-              ctaIn ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-            }`}
+        <section className="section-padding bg-white border-t border-neutral-100">
+          <motion.div
+            className="container-custom text-center max-w-2xl mx-auto"
+            variants={stagger(0.12)}
+            initial="hidden"
+            whileInView="show"
+            viewport={viewport}
           >
-            <p className="section-eyebrow">Like what you see?</p>
-            <h2 className="section-title mb-4">Let us capture your story.</h2>
-            <p className="section-subtitle mx-auto text-center mb-8">
-              Browse our packages and book your session — online, in minutes.
-            </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link to={siteConfig.routes.services} className="btn-primary inline-flex items-center gap-2">
-                View Packages <ArrowRight size={16} />
-              </Link>
-              <Link to={siteConfig.routes.register} className="btn-outline inline-flex items-center gap-2">
-                Book a Session
-              </Link>
+            <motion.p variants={staggerChild} className="section-eyebrow">
+              Like what you see?
+            </motion.p>
+            <div className="overflow-hidden">
+              <motion.h2 variants={lineReveal} className="section-title mb-4">
+                Let us capture your story.
+              </motion.h2>
             </div>
-          </div>
+            <motion.p variants={staggerChild} className="section-subtitle mx-auto text-center mb-8">
+              Browse our packages and book your session — online, in minutes.
+            </motion.p>
+            <motion.div
+              variants={staggerChild}
+              className="flex flex-col sm:flex-row items-center justify-center gap-4"
+            >
+              <motion.div whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }}>
+                <Link to={siteConfig.routes.services} className="btn-primary inline-flex items-center gap-2">
+                  View Packages <ArrowRight size={16} />
+                </Link>
+              </motion.div>
+              <motion.div whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }}>
+                <Link to={siteConfig.routes.register} className="btn-outline inline-flex items-center gap-2">
+                  Book a Session
+                </Link>
+              </motion.div>
+            </motion.div>
+          </motion.div>
         </section>
 
       </main>

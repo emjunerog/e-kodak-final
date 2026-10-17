@@ -8,6 +8,8 @@
 
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { generateAndStoreQRCode } from './qrService';
+import { parseStudentDetailsFromNotes, parseAddOnsFromNotes, parseParticipantDetailsFromNotes } from './bookingService';
+import { recordAdminActivity } from './workstationService';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -90,11 +92,14 @@ export async function getAdminBookings({
          deleted_at,
          deletion_reason,
          created_at,
+         updated_at,
+         confirmed_at,
+         payment_confirmed_at,
          total_amount,
          down_payment_amount,
          remaining_balance,
-         service:services(id, name, category, base_price),
-         customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, phone, address, studio_specs),
+         service:services(id, name, category, base_price, tiers, inclusions),
+         customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, email, phone, address, studio_specs),
          photographer:photographer_profiles!bookings_photographer_id_fkey(
            id,
            specialization,
@@ -136,14 +141,24 @@ export async function getAdminBookings({
     const { data, error, count } = await query;
     if (error) throw error;
 
+    if (Array.isArray(data)) {
+      data.forEach(b => {
+        b.student_details = parseStudentDetailsFromNotes(b.notes);
+        b.selected_add_ons = parseAddOnsFromNotes(b.notes);
+        b.participant_details = parseParticipantDetailsFromNotes(b.notes);
+        if (b.photographer) {
+          b.photographer.first_name = b.photographer.first_name || b.photographer.profile?.first_name || '';
+          b.photographer.last_name = b.photographer.last_name || b.photographer.profile?.last_name || '';
+        }
+      });
+    }
+
     return { data, count, error: null };
   } catch (error) {
     console.error('getAdminBookings error:', error);
     return { data: null, count: 0, error };
   }
 }
-
-import { parseStudentDetailsFromNotes, parseAddOnsFromNotes } from './bookingService';
 
 // ── Detail Query ───────────────────────────────────────────────────────────────
 
@@ -182,8 +197,11 @@ export async function getBookingDetail(id) {
         qr_code_path,
         created_at,
         updated_at,
+        tier_name,
+        confirmed_at,
+        payment_confirmed_at,
         customer:profiles!bookings_customer_id_fkey(
-          id, first_name, last_name, phone, address, studio_specs, badges, avatar_url, bio, is_active, created_at
+          id, first_name, last_name, email, phone, address, studio_specs, avatar_url, bio, is_active, created_at
         ),
         service:services(
           id, name, description, category, cover_image, inclusions, tiers
@@ -213,7 +231,7 @@ export async function getBookingDetail(id) {
       if (fallbackBooking?.customer_id) {
         const { data: cust } = await supabase
           .from('profiles')
-          .select('id, first_name, last_name, phone, address, studio_specs, badges, avatar_url, bio, is_active, created_at')
+          .select('id, first_name, last_name, email, phone, address, studio_specs, avatar_url, bio, is_active, created_at')
           .eq('id', fallbackBooking.customer_id)
           .maybeSingle();
         fallbackBooking.customer = cust;
@@ -269,9 +287,10 @@ export async function getBookingDetail(id) {
       booking.booking_status_history = [];
     }
 
-    // Parse add-ons & student details from notes
+    // Parse add-ons, student details & participant details from notes
     booking.selected_add_ons = parseAddOnsFromNotes(booking.notes);
     booking.student_details = parseStudentDetailsFromNotes(booking.notes);
+    booking.participant_details = parseParticipantDetailsFromNotes(booking.notes);
 
     return { data: booking, error: null };
   } catch (error) {
@@ -279,6 +298,8 @@ export async function getBookingDetail(id) {
     return { data: null, error };
   }
 }
+
+export const getBookingDetailsAdmin = getBookingDetail;
 
 // ── Mutation Queries ───────────────────────────────────────────────────────────
 
@@ -330,6 +351,52 @@ export async function updateBookingStatus(bookingId, newStatus, remarks = '', ch
     // 4. Generate QR code on confirmation
     if (newStatus === 'CONFIRMED' && bookingToken) {
       await generateAndStoreQRCode(bookingId, bookingToken);
+    }
+
+    // 5. Detect and log movement to admin_activity_logs
+    try {
+      const { data: bInfo } = await supabase
+        .from('bookings')
+        .select('booking_number, customer:customer_id(first_name, last_name)')
+        .eq('id', bookingId)
+        .maybeSingle();
+
+      const bNum = bInfo?.booking_number || 'Order';
+      const cName = bInfo?.customer ? `${bInfo.customer.first_name || ''} ${bInfo.customer.last_name || ''}`.trim() : '';
+
+      let actType = 'STATUS_CHANGE';
+      let cleanDesc = `Updated status of #${bNum} to ${newStatus.replace(/_/g, ' ')}`;
+      if (newStatus === 'DELETED') {
+        actType = 'BOOKING_SOFT_DELETED';
+        cleanDesc = `Moved #${bNum} to Trash`;
+      } else if (newStatus === 'CONFIRMED') {
+        cleanDesc = `Confirmed booking #${bNum}`;
+      } else if (newStatus === 'COMPLETED') {
+        cleanDesc = `Marked photoshoot #${bNum} completed`;
+      } else if (newStatus === 'IN_PROGRESS') {
+        cleanDesc = `Started photoshoot session for #${bNum}`;
+      } else if (newStatus === 'CANCELLED') {
+        cleanDesc = `Cancelled booking #${bNum}`;
+      }
+
+      await recordAdminActivity({
+        adminId: changedById,
+        actionType: actType,
+        entityType: 'booking',
+        entityId: bookingId,
+        entityLabel: bNum,
+        description: cleanDesc,
+        details: {
+          status: newStatus,
+          new_status: newStatus,
+          remarks: remarks || null,
+          booking_id: bookingId,
+          booking_number: bNum,
+          customer_name: cName,
+        },
+      });
+    } catch (logErr) {
+      console.warn('updateBookingStatus recordAdminActivity error:', logErr);
     }
 
     return { error: null };
@@ -425,10 +492,138 @@ export async function recordPayment({
       .single();
 
     if (error) throw error;
+
+    // Detect and log movement to admin_activity_logs
+    try {
+      const { data: bInfo } = await supabase
+        .from('bookings')
+        .select('booking_number')
+        .eq('id', bookingId)
+        .maybeSingle();
+      const bNum = bInfo?.booking_number || 'Order';
+
+      await recordAdminActivity({
+        adminId: recordedBy,
+        actionType: 'PAYMENT_RECORD',
+        entityType: 'payment',
+        entityId: data?.id || null,
+        entityLabel: bNum,
+        description: `Recorded ${paymentType.replace(/_/g, ' ')} of ₱${Number(amount).toLocaleString()} via ${paymentMethod} for #${bNum}`,
+        details: {
+          payment_id: data?.id,
+          booking_id: bookingId,
+          booking_number: bNum,
+          amount: Number(amount),
+          payment_type: paymentType,
+          payment_method: paymentMethod,
+          reference_number: referenceNumber,
+          notes,
+        },
+      });
+    } catch (payLogErr) {
+      console.warn('recordPayment recordAdminActivity error:', payLogErr);
+    }
+
     return { data, error: null };
   } catch (error) {
     console.error('recordPayment error:', error);
     return { data: null, error };
+  }
+}
+
+/**
+ * confirmAndScheduleBooking
+ * -------------------------
+ * Approves a reserved booking, sets its pictorial schedule (date & time) and location,
+ * records status history, generates QR pass, and dispatches customer notification
+ * instructing them to pay downpayment in the payment dashboard.
+ */
+export async function confirmAndScheduleBooking({
+  bookingId,
+  eventDate,
+  preferredTime,
+  location,
+  remarks = '',
+  changedById = null,
+}) {
+  try {
+    // 1. Fetch current booking to get token, booking number, customer ID
+    const { data: booking, error: fetchErr } = await supabase
+      .from('bookings')
+      .select('id, booking_number, booking_token, customer_id, total_amount, down_payment_amount')
+      .eq('id', bookingId)
+      .single();
+
+    if (fetchErr) throw fetchErr;
+
+    // 2. Update booking status, schedule & location
+    const updatePayload = {
+      status: 'CONFIRMED',
+      event_date: eventDate ? eventDate.split('T')[0] : null,
+      preferred_time: preferredTime || null,
+      location: location || 'E-Kodak Studio, 311 Rizal Street, City of Naga, Cebu',
+      confirmed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error: updateErr } = await supabase
+      .from('bookings')
+      .update(updatePayload)
+      .eq('id', bookingId);
+
+    if (updateErr) throw updateErr;
+
+    // 3. Append to status history
+    await supabase.from('booking_status_history').insert({
+      booking_id: bookingId,
+      status: 'CONFIRMED',
+      remarks: remarks || `Booking approved & pictorial scheduled for ${eventDate || 'confirmed date'} at ${location || 'Studio'}`,
+      changed_by: changedById || null,
+    });
+
+    // 4. Generate & store QR pass in background
+    if (booking?.booking_token) {
+      generateAndStoreQRCode(bookingId, booking?.booking_token).catch(() => {});
+    }
+
+    // 5. Create customer notification
+    if (booking?.customer_id) {
+      await createNotification({
+        userId: booking.customer_id,
+        bookingId: bookingId,
+        title: `Booking Approved & Reserved (#${booking.booking_number})`,
+        message: `Your photoshoot session has been approved and scheduled for ${eventDate || 'confirmed date'}${location ? ` at ${location}` : ''}! Please settle your downpayment in the Payment Dashboard to finalize your reservation.`,
+        notificationType: 'booking_confirmed',
+      });
+    }
+
+    // 6. Detect and log movement to admin_activity_logs
+    try {
+      await recordAdminActivity({
+        adminId: changedById,
+        actionType: 'STATUS_CHANGE',
+        entityType: 'booking',
+        entityId: bookingId,
+        entityLabel: booking.booking_number,
+        description: `Approved & scheduled #${booking.booking_number} for ${eventDate || 'confirmed date'} at ${location || 'Studio'}`,
+        details: {
+          status: 'CONFIRMED',
+          event_date: eventDate,
+          preferred_time: preferredTime,
+          location,
+          remarks,
+          booking_id: bookingId,
+          booking_number: booking.booking_number,
+        },
+      });
+    } catch (schedLogErr) {
+      console.warn('confirmAndScheduleBooking recordAdminActivity error:', schedLogErr);
+    }
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('confirmAndScheduleBooking error:', error);
+    return { success: false, error };
   }
 }
 
@@ -477,16 +672,50 @@ export async function createNotification({
  * @param {string} [eventDate]      — Target booking event_date (YYYY-MM-DD)
  * @param {string} [preferredTime]  — Target booking preferred_time
  */
+// Helper to normalize any date representation (including UTC-shifted ISO timestamps) into clean 'YYYY-MM-DD'
+function normalizeDateStr(val) {
+  if (!val) return '';
+  if (typeof val === 'string') {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+    if (val.includes('T')) {
+      const d = new Date(val);
+      if (!isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      }
+    }
+    return val.substring(0, 10);
+  }
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    const day = String(val.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  return String(val).substring(0, 10);
+}
+
+/**
+ * getPhotographersWithWorkloadAndAvailability
+ * -------------------------------------------
+ * Fetches all registered photographers (STRICTLY excluding admin accounts) with their:
+ * - Active workload count (assigned active bookings)
+ * - Conflict status for a target eventDate & preferredTime (checks both assigned bookings and availability records)
+ * - Next upcoming shoot
+ */
 export async function getPhotographersWithWorkloadAndAvailability(eventDate = null, preferredTime = null) {
   try {
-    // 1. Fetch photographer accounts with profile details
+    // 1. Fetch photographer accounts ONLY (strictly role = photographer, never admin or staff)
     const { data: profiles, error: profError } = await supabase
       .from('profiles')
       .select(`
-        id, first_name, last_name, phone, avatar_url, is_active, created_at,
+        id, first_name, last_name, phone, email, avatar_url, is_active, created_at, role,
         photographer_profile:photographer_profiles(specialization, bio, is_available)
       `)
       .eq('role', 'photographer')
+      .neq('role', 'admin')
       .order('first_name', { ascending: true });
 
     if (profError) throw profError;
@@ -505,90 +734,143 @@ export async function getPhotographersWithWorkloadAndAvailability(eventDate = nu
     // 3. Fetch availability records if an eventDate is given
     let availabilityRecords = [];
     if (eventDate) {
-      // Support both schema variants: availability_date and date
+      const cleanEventDate = normalizeDateStr(eventDate);
       const { data: avData, error: avError } = await supabase
         .from('photographer_availability')
         .select('*');
       
       if (!avError && avData) {
-        availabilityRecords = avData.filter(
-          r => (r.availability_date === eventDate || r.date === eventDate)
-        );
+        availabilityRecords = avData.filter(r => {
+          const dStr = normalizeDateStr(r.availability_date || r.date);
+          return dStr === cleanEventDate;
+        });
       }
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
 
-    // 4. Synthesize photographer workload and conflict data
-    const photographers = (profiles || []).map(p => {
-      const phProfile = p.photographer_profile?.[0] || null;
-      const isAvailable = phProfile ? phProfile.is_available : false;
-      const specialization = phProfile?.specialization || 'General Photography';
-      const bio = phProfile?.bio || '';
-
-      // All active bookings assigned to this photographer
-      const myBookings = (assignedBookings || []).filter(b => b.photographer_id === p.id);
-      const activeWorkloadCount = myBookings.length;
-
-      // Find upcoming bookings (event_date >= today) sorted by date ascending
-      const upcoming = myBookings
-        .filter(b => b.event_date && b.event_date >= todayStr)
-        .sort((a, b) => (a.event_date > b.event_date ? 1 : -1));
-      const nextUpcoming = upcoming[0] || null;
-
-      // Conflict detection for target eventDate / preferredTime
-      let hasConflict = false;
-      let conflictReason = null;
-      let sameDateBookings = [];
-
-      if (eventDate) {
-        sameDateBookings = myBookings.filter(b => b.event_date === eventDate);
-        if (sameDateBookings.length > 0) {
-          // Check if time overlaps or matches
-          const timeMatch = preferredTime
-            ? sameDateBookings.some(b => b.preferred_time && b.preferred_time.substring(0, 5) === preferredTime.substring(0, 5))
-            : false;
-
-          if (timeMatch) {
-            hasConflict = true;
-            conflictReason = `Direct conflict: Already booked on ${eventDate} at ${preferredTime}.`;
-          } else {
-            // Same date, but different or unspecified time
-            const times = sameDateBookings.map(b => b.preferred_time || 'time TBD').join(', ');
-            conflictReason = `Notice: Has ${sameDateBookings.length} other booking(s) on ${eventDate} (${times}).`;
-          }
-        }
-
-        // Check explicit availability table record
+    // 4. Synthesize photographer workload and conflict data (strictly exclude admin accounts)
+    const photographers = (profiles || [])
+      .filter(p => p.role === 'photographer' && p.role !== 'admin' && !p.email?.toLowerCase().includes('admin'))
+      .map(p => {
+        const phProfile = Array.isArray(p.photographer_profile) ? p.photographer_profile[0] : p.photographer_profile;
         const avRecord = availabilityRecords.find(r => r.photographer_id === p.id);
-        if (avRecord) {
-          const status = avRecord.status || (avRecord.is_available ? 'AVAILABLE' : 'UNAVAILABLE');
-          if (status === 'UNAVAILABLE' || status === 'BLOCKED') {
+        const specialization = phProfile?.specialization || 'Portrait & Studio Photography';
+        const bio = phProfile?.bio || '';
+
+        // All active bookings assigned to this photographer
+        const myBookings = (assignedBookings || []).filter(b => b.photographer_id === p.id);
+        const activeWorkloadCount = myBookings.length;
+
+        // Find upcoming bookings (event_date >= today) sorted by date ascending
+        const upcoming = myBookings
+          .filter(b => b.event_date && b.event_date >= todayStr)
+          .sort((a, b) => (a.event_date > b.event_date ? 1 : -1));
+        const nextUpcoming = upcoming[0] || null;
+
+        let isAvailable = false;
+        let availabilityStatus = 'UNAVAILABLE';
+        let hasConflict = false;
+        let conflictReason = null;
+        let sameDateBookings = [];
+
+        if (!eventDate) {
+          // General roster overview without a target date
+          isAvailable = p.is_active && (phProfile?.is_available !== false);
+          availabilityStatus = isAvailable ? 'AVAILABLE' : 'UNAVAILABLE';
+        } else {
+          // Specific eventDate provided: photographer MUST be active, have an explicit shift entry marked AVAILABLE for that date, and no conflicts
+          const isGeneralActive = p.is_active && (phProfile?.is_available !== false);
+          const cleanEventDate = normalizeDateStr(eventDate);
+
+          if (!isGeneralActive) {
+            isAvailable = false;
             hasConflict = true;
-            conflictReason = `Marked unavailable on ${eventDate}${avRecord.notes ? ` (${avRecord.notes})` : ''}.`;
+            conflictReason = !p.is_active ? 'Account inactive' : 'Photographer profile unavailable';
+            availabilityStatus = 'UNAVAILABLE';
+          } else if (!avRecord) {
+            // No schedule shift set for this date!
+            isAvailable = false;
+            hasConflict = true;
+            conflictReason = `No scheduled shift on ${cleanEventDate}`;
+            availabilityStatus = 'OFF_DUTY';
+          } else {
+            // Explicit schedule record exists for eventDate
+            const isOffDuty = avRecord.is_available === false || avRecord.status === 'UNAVAILABLE' || avRecord.status === 'BLOCKED';
+            if (isOffDuty) {
+              isAvailable = false;
+              hasConflict = true;
+              conflictReason = `Marked off-duty on ${cleanEventDate}${avRecord.notes ? ` (${avRecord.notes})` : ''}`;
+              availabilityStatus = 'UNAVAILABLE';
+            } else {
+              // Record is AVAILABLE or CUSTOM
+              const sTime = (avRecord.start_time || '08:00').substring(0, 5);
+              const eTime = (avRecord.end_time || '17:00').substring(0, 5);
+
+              let outsideCustomHours = false;
+              if (preferredTime && (avRecord.status === 'CUSTOM' || avRecord.start_time || avRecord.end_time)) {
+                const pTime = preferredTime.substring(0, 5);
+                if (pTime < sTime || pTime > eTime) {
+                  outsideCustomHours = true;
+                  hasConflict = true;
+                  conflictReason = `Outside shift hours (${sTime}–${eTime})`;
+                  availabilityStatus = 'CUSTOM_HOURS';
+                }
+              }
+
+              // Check existing bookings on that date
+              sameDateBookings = myBookings.filter(b => normalizeDateStr(b.event_date) === cleanEventDate);
+              if (sameDateBookings.length > 0) {
+                const timeMatch = preferredTime
+                  ? sameDateBookings.some(b => b.preferred_time && b.preferred_time.substring(0, 5) === preferredTime.substring(0, 5))
+                  : false;
+
+                if (timeMatch) {
+                  hasConflict = true;
+                  conflictReason = `Direct conflict: Already booked on ${cleanEventDate} at ${preferredTime}.`;
+                  availabilityStatus = 'BOOKED';
+                } else {
+                  const times = sameDateBookings.map(b => b.preferred_time || 'time TBD').join(', ');
+                  conflictReason = `Notice: Has ${sameDateBookings.length} other booking(s) on ${cleanEventDate} (${times}).`;
+                }
+              }
+
+              if (!outsideCustomHours && !hasConflict) {
+                isAvailable = true;
+                availabilityStatus = 'AVAILABLE';
+              } else {
+                isAvailable = false;
+              }
+            }
           }
         }
-      }
 
-      return {
-        id: p.id,
-        first_name: p.first_name,
-        last_name: p.last_name,
-        email: p.email,
-        phone: p.phone,
-        avatar_url: p.avatar_url,
-        is_active: p.is_active,
-        created_at: p.created_at,
-        specialization,
-        bio,
-        is_available: isAvailable,
-        activeWorkloadCount,
-        nextUpcoming,
-        hasConflict,
-        conflictReason,
-        sameDateBookingsCount: sameDateBookings.length,
-      };
-    });
+        const workingHours = avRecord?.start_time && avRecord?.end_time
+          ? `${avRecord.start_time.substring(0, 5)}–${avRecord.end_time.substring(0, 5)}`
+          : null;
+
+        return {
+          id: p.id,
+          first_name: p.first_name,
+          last_name: p.last_name,
+          role: p.role || 'photographer',
+          email: p.email,
+          phone: p.phone,
+          avatar_url: p.avatar_url,
+          is_active: p.is_active,
+          created_at: p.created_at,
+          specialization,
+          bio,
+          is_available: isAvailable,
+          availability_status: availabilityStatus,
+          working_hours: workingHours,
+          activeWorkloadCount,
+          nextUpcoming,
+          hasConflict,
+          conflictReason,
+          sameDateBookingsCount: sameDateBookings.length,
+        };
+      });
 
     return { data: photographers, error: null };
   } catch (error) {
@@ -665,6 +947,28 @@ export async function assignPhotographerToBooking({
         message: `You have been assigned to booking #${bookingNumber}${eventDate ? ` scheduled for ${eventDate}` : ''}.`,
         notificationType: 'booking_status',
       });
+    }
+
+    // 5. Detect and log movement to admin_activity_logs
+    try {
+      await recordAdminActivity({
+        adminId: changedById,
+        actionType: 'PHOTOGRAPHER_ASSIGNED',
+        entityType: 'booking',
+        entityId: bookingId,
+        entityLabel: bookingNumber || `Booking`,
+        description: `Assigned photographer ${photographerName || 'Studio Photographer'} to #${bookingNumber || bookingId}`,
+        details: {
+          photographer_id: photographerId,
+          photographer_name: photographerName,
+          booking_id: bookingId,
+          booking_number: bookingNumber,
+          event_date: eventDate,
+          remarks: histRemarks,
+        },
+      });
+    } catch (assignLogErr) {
+      console.warn('assignPhotographerToBooking recordAdminActivity error:', assignLogErr);
     }
 
     return { data: updatedBooking, error: null };
@@ -1364,6 +1668,7 @@ export async function adminUpdateBooking(bookingId, updates) {
 export async function batchScheduleSchoolPictorial({
   schoolName,
   sectionName = null,
+  bookingIds: explicitBookingIds = null,
   eventDate,
   preferredTime = '09:00:00',
   location,
@@ -1371,42 +1676,66 @@ export async function batchScheduleSchoolPictorial({
   announcementMessage = '',
   adminId = null,
   adminName = 'Studio Admin',
+  allowRescheduleProtection = true,
 }) {
   if (!isSupabaseConfigured) {
     return { success: false, count: 0, message: 'Database connection is not configured.' };
   }
 
   try {
-    // 1. Fetch bookings matching schoolName
-    const { data: matchedBookings, error: fetchErr } = await supabase
-      .from('bookings')
-      .select(`
-        id,
-        booking_number,
-        customer_id,
-        status,
-        event_date,
-        preferred_time,
-        location,
-        notes,
-        customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, email)
-      `)
-      .or('is_deleted.is.null,is_deleted.eq.false')
-      .ilike('notes', `%${schoolName}%`);
+    let targetBookings = [];
 
-    if (fetchErr) throw fetchErr;
+    if (explicitBookingIds && explicitBookingIds.length > 0) {
+      const { data: byIds, error: byIdsErr } = await supabase
+        .from('bookings')
+        .select(`
+          id,
+          booking_number,
+          customer_id,
+          status,
+          event_date,
+          preferred_time,
+          location,
+          notes,
+          customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, email)
+        `)
+        .in('id', explicitBookingIds);
+      if (byIdsErr) throw byIdsErr;
+      targetBookings = byIds || [];
+    } else {
+      // 1. Fetch bookings matching schoolName
+      const { data: matchedBookings, error: fetchErr } = await supabase
+        .from('bookings')
+        .select(`
+          id,
+          booking_number,
+          customer_id,
+          status,
+          event_date,
+          preferred_time,
+          location,
+          notes,
+          customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, email)
+        `)
+        .or('is_deleted.is.null,is_deleted.eq.false')
+        .ilike('notes', `%${schoolName}%`);
 
-    // Filter to those that are part of school agreement or awaiting schedule confirmation
-    const targetBookings = (matchedBookings || []).filter(b => {
-      const notes = b.notes || '';
-      const matchesSchool = notes.toLowerCase().includes(schoolName.toLowerCase());
-      const matchesSection = sectionName ? notes.toLowerCase().includes(sectionName.toLowerCase()) : true;
-      const isPendingSchedule = !b.event_date || b.status === 'PENDING' || notes.includes('SCHOOL_PARTNER') || notes.includes('School Pictorial');
-      return matchesSchool && matchesSection && isPendingSchedule;
-    });
+      if (fetchErr) throw fetchErr;
+
+      // Filter to those that are part of school agreement or awaiting schedule confirmation
+      targetBookings = (matchedBookings || []).filter(b => {
+        const notes = b.notes || '';
+        const matchesSchool = notes.toLowerCase().includes(schoolName.toLowerCase());
+        const matchesSection = sectionName && sectionName !== 'All Sections'
+          ? notes.toLowerCase().includes(sectionName.toLowerCase())
+          : true;
+        const isPendingSchedule = !b.event_date || b.status === 'PENDING' || notes.includes('SCHOOL_PARTNER') || notes.includes('School Pictorial');
+        return matchesSchool && matchesSection && isPendingSchedule;
+      });
+    }
 
     if (targetBookings.length === 0) {
-      return { success: false, count: 0, message: 'No pending student bookings found for this school batch.' };
+      return { success: false, count: 0, message: 'No student bookings found to schedule for this batch.' };
     }
 
     const bookingIds = targetBookings.map(b => b.id);
@@ -1435,7 +1764,7 @@ export async function batchScheduleSchoolPictorial({
     const historyRows = bookingIds.map(id => ({
       booking_id: id,
       status: newStatus,
-      remarks: `School pictorial schedule confirmed for ${eventDate} at ${preferredTime} (${location}). Set by ${adminName}.`,
+      remarks: `School pictorial schedule confirmed for ${eventDate} at ${preferredTime} (${location}). Set by ${adminName}.${allowRescheduleProtection ? ' [Student Reschedule Safety Protection Active: eligible for makeup/batch rollover]' : ''}`,
       changed_by: adminId,
     }));
     await supabase.from('booking_status_history').insert(historyRows);
@@ -1480,5 +1809,88 @@ export async function batchScheduleSchoolPictorial({
   }
 }
 
+/**
+ * rescheduleStudentBooking
+ * ------------------------
+ * Admin action to reschedule an individual student who cannot attend the scheduled school batch.
+ * Moves them to a makeup pictorial date, alternate batch, or studio session.
+ * Records the change in status history and notifies the student.
+ */
+export async function rescheduleStudentBooking({
+  bookingId,
+  newDate = null,
+  newTime = null,
+  newLocation = null,
+  reason = 'Unable to attend scheduled school pictorial batch',
+  adminId = null,
+  adminName = 'Studio Admin',
+}) {
+  if (!isSupabaseConfigured) {
+    return { success: false, message: 'Database connection is not configured.' };
+  }
 
+  try {
+    const { data: booking, error: fetchErr } = await supabase
+      .from('bookings')
+      .select('id, booking_number, customer_id, notes, status, event_date')
+      .eq('id', bookingId)
+      .single();
 
+    if (fetchErr || !booking) {
+      throw new Error('Student booking not found.');
+    }
+
+    const currentNotes = booking.notes || '';
+    const updatedNotes = currentNotes.includes('[RESCHEDULED_MAKEUP]')
+      ? currentNotes
+      : `${currentNotes}\n• [RESCHEDULED_MAKEUP]: ${reason} (Rescheduled by ${adminName} on ${new Date().toLocaleDateString()})`.trim();
+
+    const updates = {
+      event_date: newDate || null,
+      preferred_time: newTime || null,
+      location: newLocation || 'E-Kodak Studio, 311 Rizal Street, City of Naga, Cebu (Makeup Session)',
+      status: newDate ? 'CONFIRMED' : 'PENDING',
+      notes: updatedNotes,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error: updateErr } = await supabase
+      .from('bookings')
+      .update(updates)
+      .eq('id', bookingId);
+
+    if (updateErr) throw updateErr;
+
+    // Status audit trail
+    await supabase.from('booking_status_history').insert({
+      booking_id: bookingId,
+      status: updates.status,
+      remarks: `Student rescheduled for makeup session: ${newDate || 'Pending Alternate Batch'} (${updates.location}). Reason: ${reason}. Handled by ${adminName}.`,
+      changed_by: adminId,
+    });
+
+    // Notify student
+    if (booking.customer_id) {
+      await supabase.from('notifications').insert([{
+        user_id: booking.customer_id,
+        booking_id: bookingId,
+        title: 'Photoshoot Schedule Updated (Makeup / Reschedule)',
+        message: newDate
+          ? `Your graduation pictorial has been rescheduled to ${newDate} at ${updates.location}. Please present your updated QR pass on your new schedule.`
+          : `Your request to reschedule has been approved. You have been placed into the makeup rollover batch. Our team will notify you once the makeup date is confirmed.`,
+        notification_type: 'SCHEDULE_UPDATED',
+        is_read: false,
+      }]);
+    }
+
+    return {
+      success: true,
+      message: newDate 
+        ? `Successfully rescheduled student to ${newDate} makeup session.`
+        : `Successfully placed student into pending makeup rollover batch.`,
+    };
+  } catch (err) {
+    console.error('rescheduleStudentBooking error:', err);
+    return { success: false, message: err.message || 'Failed to reschedule student.' };
+  }
+}

@@ -8,7 +8,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  StatusBar, RefreshControl,
+  StatusBar, RefreshControl, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,19 +18,39 @@ import {
 } from 'lucide-react-native';
 
 import GlassCard from '../components/GlassCard';
+import GlassBackground from '../components/GlassBackground';
+import GlassHeader from '../components/GlassHeader';
+import PremiumIcon from '../components/PremiumIcon';
 import StatusBadge from '../components/StatusBadge';
 import GoldButton from '../components/GoldButton';
 import { useTheme } from '../context/ThemeContext';
 import {
   getCustomerProfile, getSavedBookings,
 } from '../services/storageService';
+import { fetchBookingByToken } from '../services/bookingService';
 import { Typography, Spacing, Radius, Shadow } from '../theme';
+
+function formatPeso(n) {
+  const v = Number(n);
+  if (!isFinite(v) || v <= 0) return '—';
+  try {
+    return '₱' + v.toLocaleString('en-PH', { maximumFractionDigits: 0 });
+  } catch { return `₱${v}`; }
+}
+
+function formatDateTime(str) {
+  if (!str) return '—';
+  try {
+    return new Date(str).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch { return '—'; }
+}
 
 export default function ProfileScreen({ navigation }) {
   const { isDark, colors, gradients } = useTheme();
-  const styles = getStyles(colors);
+  const styles = getStyles(colors, isDark);
   const [profile, setProfile]         = useState(null);
   const [savedBookings, setSavedBookings] = useState([]);
+  const [detailed, setDetailed]       = useState(null);
   const [refreshing, setRefreshing]   = useState(false);
 
   const loadData = async () => {
@@ -40,6 +60,14 @@ export default function ProfileScreen({ navigation }) {
     ]);
     setProfile(prof);
     setSavedBookings(bookings);
+    // Pull the full client dossier from the studio database using the
+    // most recent saved pass token (graceful offline fallback to cache).
+    try {
+      if (bookings?.length && bookings[0]?.token) {
+        const { data } = await fetchBookingByToken(bookings[0].token);
+        if (data) setDetailed(data);
+      }
+    } catch {}
   };
 
   useFocusEffect(
@@ -57,49 +85,24 @@ export default function ProfileScreen({ navigation }) {
   const hasProfile = Boolean(profile?.fullName && profile.fullName !== 'Studio Guest') || savedBookings.length > 0;
   const clientName = profile?.fullName || savedBookings[0]?.clientName || 'Studio Guest';
 
+  // Full studio-database dossier (fetched via the latest pass token)
+  const dbProfile  = detailed?.profile || {};
+  const dbService  = detailed?.services || detailed?.service || {};
+  const dossierName = dbProfile.full_name || profile?.fullName || clientName;
+
   return (
     <View style={styles.screen}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0C0A08' : '#FAF8F5'} />
 
-      {/* Full-Screen Atmospheric Atelier Luxury Gradients */}
-      <LinearGradient
-        colors={
-          isDark
-            ? ['#0C0A08', '#16120E', '#0E0C09', '#1A140E', '#090806']
-            : ['#FAF8F5', '#F5EFE6', '#EDE4D4', '#F7F3EB', '#FAF7F2']
-        }
-        locations={[0, 0.22, 0.50, 0.78, 1]}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <LinearGradient
-        colors={
-          isDark
-            ? ['rgba(212, 175, 55, 0.08)', 'transparent', 'rgba(212, 175, 55, 0.04)', 'transparent']
-            : ['rgba(212, 175, 55, 0.12)', 'transparent', 'rgba(212, 175, 55, 0.06)', 'transparent']
-        }
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-        pointerEvents="none"
-      />
+      {/* Ambient Glass Backdrop */}
+      <GlassBackground />
 
-      {/* ── Editorial Header ── */}
-      <LinearGradient
-        colors={gradients.darkStudio}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={[styles.header, { borderBottomColor: colors.gold.border }]}
-      >
-        <View style={styles.headerTop}>
-          <View style={[styles.headerIconRing, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
-            <User size={20} color={colors.gold.light} />
-          </View>
-          <View>
-            <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Client Profile</Text>
-            <Text style={[styles.headerSub, { color: colors.text.secondary }]}>Session details & order dossier</Text>
-          </View>
-        </View>
-      </LinearGradient>
+      {/* ── Frosted Editorial Header ── */}
+      <GlassHeader
+        icon={User}
+        title="Client Profile"
+        subtitle="Session details & order dossier"
+      />
 
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: 110 }]}
@@ -123,10 +126,17 @@ export default function ProfileScreen({ navigation }) {
                 end={{ x: 1, y: 1 }}
                 style={styles.avatarGradient}
               >
-                <View style={[styles.avatarInner, { backgroundColor: colors.bg.surface }]}>
-                  <Text style={[styles.avatarInitials, { color: colors.gold.DEFAULT }]}>
-                    {clientName.charAt(0).toUpperCase()}
-                  </Text>
+                <View style={styles.avatarInner}>
+                  {detailed?.profile?.avatar_url ? (
+                    <Image
+                      source={{ uri: detailed.profile.avatar_url }}
+                      style={styles.avatarPhoto}
+                    />
+                  ) : (
+                    <Text style={[styles.avatarInitials, { color: colors.gold.DEFAULT }]}>
+                      {clientName.charAt(0).toUpperCase()}
+                    </Text>
+                  )}
                 </View>
               </LinearGradient>
             </View>
@@ -168,20 +178,124 @@ export default function ProfileScreen({ navigation }) {
               <Text style={[styles.statNum, { color: colors.gold.DEFAULT }]}>{savedBookings.length}</Text>
               <Text style={[styles.statLabel, { color: colors.text.muted }]}>Saved Passes</Text>
             </View>
-            <View style={[styles.statDivider, { backgroundColor: colors.gold.border }]} />
             <View style={styles.statBox}>
               <Text style={[styles.statNum, { color: colors.gold.DEFAULT }]}>
                 {savedBookings.filter((b) => b.status === 'READY' || b.status === 'COMPLETED').length}
               </Text>
               <Text style={[styles.statLabel, { color: colors.text.muted }]}>Outputs Ready</Text>
             </View>
-            <View style={[styles.statDivider, { backgroundColor: colors.gold.border }]} />
             <View style={styles.statBox}>
               <Text style={[styles.statNum, { color: colors.gold.DEFAULT }]}>Cebu</Text>
               <Text style={[styles.statLabel, { color: colors.text.muted }]}>Studio Bay</Text>
             </View>
           </View>
         </GlassCard>
+
+        {/* ── Client Dossier — complete studio database record ── */}
+        <View style={styles.sectionBlock}>
+          <View style={styles.sectionHeader}>
+            <ShieldCheck size={14} color={colors.gold.DEFAULT} />
+            <Text style={styles.sectionLabel}>CLIENT DOSSIER · STUDIO DATABASE</Text>
+          </View>
+
+          <GlassCard highlight style={styles.dossierCard}>
+            <View style={styles.dossierRow}>
+              <Text style={[styles.dossierLabel, { color: colors.text.muted }]}>FULL NAME</Text>
+              <Text style={[styles.dossierValue, { color: colors.text.primary }]}>{dossierName}</Text>
+            </View>
+            <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
+
+            <View style={styles.dossierRow}>
+              <Text style={[styles.dossierLabel, { color: colors.text.muted }]}>EMAIL ADDRESS</Text>
+              <Text style={[styles.dossierValue, { color: colors.text.primary }]}>
+                {dbProfile.email || profile?.email || '—'}
+              </Text>
+            </View>
+            <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
+
+            <View style={styles.dossierRow}>
+              <Text style={[styles.dossierLabel, { color: colors.text.muted }]}>MOBILE NUMBER</Text>
+              <Text style={[styles.dossierValue, { color: colors.text.primary }]}>
+                {dbProfile.phone || profile?.phone || '—'}
+              </Text>
+            </View>
+            <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
+
+            <View style={styles.dossierRow}>
+              <Text style={[styles.dossierLabel, { color: colors.text.muted }]}>CLIENT SINCE</Text>
+              <Text style={[styles.dossierValue, { color: colors.text.primary }]}>
+                {formatDateTime(detailed?.created_at)}
+              </Text>
+            </View>
+            <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
+
+            <View style={styles.dossierRow}>
+              <Text style={[styles.dossierLabel, { color: colors.text.muted }]}>BOOKING REFERENCE</Text>
+              <Text style={[styles.dossierValue, { color: colors.gold.light }]}>
+                {detailed?.booking_number || savedBookings[0]?.bookingNumber || '—'}
+              </Text>
+            </View>
+            <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
+
+            <View style={styles.dossierRow}>
+              <Text style={[styles.dossierLabel, { color: colors.text.muted }]}>PASS TOKEN</Text>
+              <Text style={[styles.dossierValueMono, { color: colors.text.secondary }]} numberOfLines={1}>
+                {detailed?.booking_token || savedBookings[0]?.token || '—'}
+              </Text>
+            </View>
+            <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
+
+            <View style={styles.dossierRow}>
+              <Text style={[styles.dossierLabel, { color: colors.text.muted }]}>PACKAGE</Text>
+              <Text style={[styles.dossierValue, { color: colors.text.primary }]}>
+                {dbService.name || savedBookings[0]?.serviceName || '—'}
+                {dbService.category ? ` · ${dbService.category}` : ''}
+              </Text>
+            </View>
+            <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
+
+            <View style={styles.dossierRow}>
+              <Text style={[styles.dossierLabel, { color: colors.text.muted }]}>SESSION SCHEDULE</Text>
+              <Text style={[styles.dossierValue, { color: colors.text.primary }]}>
+                {detailed?.session_date ? formatDateTime(detailed.session_date) : '—'}
+                {detailed?.session_time ? ` · ${detailed.session_time}` : ''}
+              </Text>
+            </View>
+            <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
+
+            <View style={styles.dossierRow}>
+              <Text style={[styles.dossierLabel, { color: colors.text.muted }]}>LOCATION</Text>
+              <Text style={[styles.dossierValue, { color: colors.text.primary }]}>
+                {detailed?.location_address || detailed?.location || '—'}
+              </Text>
+            </View>
+            <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
+
+            <View style={styles.dossierRow}>
+              <Text style={[styles.dossierLabel, { color: colors.text.muted }]}>PAYMENT</Text>
+              <Text style={[styles.dossierValue, { color: colors.text.primary }]}>
+                {formatPeso(detailed?.total_amount ?? detailed?.total_price)}
+                {detailed?.payment_status ? ` · ${String(detailed.payment_status).replace(/_/g, ' ')}` : ''}
+              </Text>
+            </View>
+
+            {detailed?.notes ? (
+              <>
+                <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
+                <View style={styles.dossierRow}>
+                  <Text style={[styles.dossierLabel, { color: colors.text.muted }]}>STUDIO NOTES</Text>
+                  <Text style={[styles.dossierValue, { color: colors.text.secondary }]}>{detailed.notes}</Text>
+                </View>
+              </>
+            ) : null}
+
+            {!detailed && (
+              <Text style={[styles.dossierOffline, { color: colors.text.muted }]}>
+                Showing cached device copy — reconnect to refresh the live database record.
+              </Text>
+            )}
+          </GlassCard>
+        </View>
 
         {/* ── Active Studio Order Dossier ── */}
         {hasProfile ? (
@@ -255,9 +369,7 @@ export default function ProfileScreen({ navigation }) {
           /* Guided Profile Prompt for New Users */
           <View style={styles.sectionBlock}>
             <GlassCard highlight style={styles.emptyPromptCard}>
-              <View style={styles.promptIconWrap}>
-                <QrCode size={36} color={colors.gold.DEFAULT} strokeWidth={1.25} />
-              </View>
+              <PremiumIcon icon={QrCode} size={32} box={64} tone="soft" glow />
               <Text style={styles.promptTitle}>No Studio Pass Scanned Yet</Text>
               <Text style={styles.promptBody}>
                 Scan your booking QR pass to automatically import your client profile, session details, and live order tracking.
@@ -307,7 +419,7 @@ export default function ProfileScreen({ navigation }) {
   );
 }
 
-const getStyles = (colors) => StyleSheet.create({
+const getStyles = (colors, isDark) => StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg.base },
   content: { padding: Spacing[4], gap: Spacing[5] },
 
@@ -347,6 +459,7 @@ const getStyles = (colors) => StyleSheet.create({
   // Profile Card
   profileCard: {
     padding: Spacing[5],
+    borderRadius: Radius['2xl'],
   },
   avatarRow: {
     flexDirection: 'row',
@@ -371,7 +484,9 @@ const getStyles = (colors) => StyleSheet.create({
     width: 62,
     height: 62,
     borderRadius: 31,
-    backgroundColor: colors.bg.surface,
+    backgroundColor: 'rgba(127, 127, 140, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.14)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -379,6 +494,11 @@ const getStyles = (colors) => StyleSheet.create({
     fontFamily: Typography.fontHeading,
     fontSize: 26,
     color: colors.gold.light,
+  },
+  avatarPhoto: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
   },
   vipTagRow: {
     marginBottom: 4,
@@ -436,15 +556,21 @@ const getStyles = (colors) => StyleSheet.create({
 
   statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingTop: Spacing[4],
-    borderTopWidth: 1,
-    borderTopColor: colors.gold.border,
-    marginTop: Spacing[3],
+    marginTop: Spacing[2],
+    gap: 8,
   },
   statBox: {
+    flex: 1,
     alignItems: 'center',
+    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(255, 255, 255, 0.65)',
+    borderWidth: 1,
+    borderColor: isDark ? 'rgba(212, 175, 55, 0.16)' : 'rgba(212, 175, 55, 0.22)',
+    borderRadius: Radius.lg,
+    paddingVertical: Spacing[2] + 2,
+    paddingHorizontal: Spacing[2],
   },
   statNum: {
     fontFamily: Typography.fontHeading,
@@ -453,16 +579,11 @@ const getStyles = (colors) => StyleSheet.create({
   },
   statLabel: {
     fontFamily: Typography.fontBody,
-    fontSize: 10,
+    fontSize: 9.5,
     color: colors.text.muted,
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
     marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: colors.gold.border,
   },
 
   // Sections
@@ -484,7 +605,8 @@ const getStyles = (colors) => StyleSheet.create({
 
   // Order Card
   orderCard: {
-    padding: Spacing[4],
+    padding: Spacing[5],
+    borderRadius: Radius['2xl'],
   },
   orderTop: {
     flexDirection: 'row',
@@ -522,6 +644,7 @@ const getStyles = (colors) => StyleSheet.create({
     padding: Spacing[6],
     alignItems: 'center',
     textAlign: 'center',
+    borderRadius: Radius['2xl'],
   },
   promptIconWrap: {
     width: 64,
@@ -553,10 +676,11 @@ const getStyles = (colors) => StyleSheet.create({
 
   // Mini Pass Cards
   miniPassCard: {
-    padding: Spacing[3],
+    padding: Spacing[4],
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: Spacing[2],
+    borderRadius: Radius.xl,
   },
   miniPassNum: {
     fontFamily: Typography.fontHeadingSemi,
@@ -567,5 +691,43 @@ const getStyles = (colors) => StyleSheet.create({
     fontFamily: Typography.fontBody,
     fontSize: 11,
     color: colors.text.secondary,
+  },
+
+  // Client Dossier (studio database)
+  dossierCard: {
+    padding: Spacing[5],
+    borderRadius: Radius['2xl'],
+  },
+  dossierRow: {
+    gap: 2,
+    paddingVertical: 2,
+  },
+  dossierLabel: {
+    fontFamily: Typography.fontBodySemi,
+    fontSize: 9,
+    letterSpacing: 1.1,
+  },
+  dossierValue: {
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: Typography.size.sm,
+    lineHeight: 20,
+  },
+  dossierValueMono: {
+    fontFamily: Typography.fontMono,
+    fontSize: Typography.size.xs,
+    letterSpacing: 0.4,
+  },
+  dossierDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.gold.border,
+    opacity: 0.35,
+    marginVertical: Spacing[2],
+  },
+  dossierOffline: {
+    fontFamily: Typography.fontBody,
+    fontSize: 11,
+    fontStyle: 'italic',
+    marginTop: Spacing[3],
+    textAlign: 'center',
   },
 });

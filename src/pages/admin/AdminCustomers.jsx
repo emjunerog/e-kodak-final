@@ -7,30 +7,29 @@
  * • Seamless executive layout matching Admin Command Center & Bookings (max-w-screen-2xl)
  * • Unified luxury dark hero banner (AdminHeroBanner) with live Philippine Standard Time operations clock
  * • Real-time Customer Portal presence detection (🟢 Live Now via Supabase Presence channel)
- * • Interactive KPI overview strip (Total Clients, Live on Portal, Active Accounts, Academic Clients, Badges)
+ * • Interactive KPI overview strip (Total Clients, Live on Portal, Active Accounts, Academic Clients)
  * • Design-matched CustomDropdown filters (Presence, Status, Academic Affiliation) & live debounced search
  * • Controlled PII access toggle (Least privilege masking with audited unmasking)
  * • Full customer inspection drawer & modal (Identity, academic credentials, regalia fitting, booking history)
- * • Official Studio Recognitions (Milestone badges award & verification)
  * • Direct export to CSV
  */
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Users, Search, RefreshCw, AlertCircle, ChevronLeft, ChevronRight,
-  Lock, Eye, Award, Check, Loader2, Save, X, GraduationCap, Shirt,
+  Lock, Eye, Loader2, X, GraduationCap, Shirt,
   Sparkles, Truck, ShieldCheck, MapPin, Phone, UserCheck, Calendar,
   FileText, Store, Info, CheckCircle2, Download, ArrowRightLeft,
   Camera, CalendarDays, ExternalLink, Activity, Radio, Plus, Filter,
-  Copy, BookOpen, Layers, Trash2, AlertTriangle
+  Copy, BookOpen, Layers, Trash2, AlertTriangle, History
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { getCustomers, updateCustomerBadges, deleteCustomer } from '../../services/adminService';
+import { getCustomers, deleteCustomer } from '../../services/adminService';
 import { subscribeToCustomerPresence } from '../../services/presenceService';
 import { maskClientPII } from '../../lib/securityValidator';
-import { OFFICIAL_STUDIO_BADGES, hasBadge } from '../../data/studioBadgesData';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
+import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import CustomDropdown from '../../components/ui/CustomDropdown';
 
 const PAGE_SIZE = 20;
@@ -142,7 +141,10 @@ export default function AdminCustomers() {
   const [total, setTotal]     = useState(0);
   const [page, setPage]       = useState(1);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError]     = useState(null);
+  const rowsRef               = useRef(rows);
+  rowsRef.current             = rows;
 
   // Search & Filter state
   const [search, setSearch] = useState('');
@@ -160,10 +162,6 @@ export default function AdminCustomers() {
   // Customer Profile & Records Modal state
   const [selectedCustomerRecord, setSelectedCustomerRecord] = useState(null);
 
-  // Badge management modal state
-  const [badgeModalCustomer, setBadgeModalCustomer] = useState(null);
-  const [badgeDraft, setBadgeDraft]                 = useState([]);
-  const [savingBadges, setSavingBadges]             = useState(false);
   const [actionSuccessMsg, setActionSuccessMsg]     = useState(null);
 
   // Customer Deletion Modal & Action state
@@ -179,30 +177,44 @@ export default function AdminCustomers() {
   }, []);
 
   // ── 2. Load Customers from Database ────────────────────────────────────────
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const { data, count, error: e } = await getCustomers({ page, pageSize: PAGE_SIZE, search: query });
-    if (e) {
-      setError('Failed to load customers from database.');
+  const load = useCallback(async (forceFresh = false) => {
+    const hasData = rowsRef.current.length > 0;
+    if (forceFresh || hasData) {
+      setIsRefreshing(true);
+    } else {
+      setLoading(true);
     }
-    setRows(data || []);
-    setTotal(count || 0);
-    setLoading(false);
+    setError(null);
+    try {
+      const { data, count, error: e } = await getCustomers({ page, pageSize: PAGE_SIZE, search: query, forceFresh });
+      if (e) {
+        setError('Failed to load customers from database.');
+      } else {
+        setRows(data || []);
+        setTotal(count || 0);
+      }
+    } catch (err) {
+      console.error('Failed to load customers:', err);
+      setError('Failed to load customers from database.');
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
   }, [page, query]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  // Debounced search trigger
+  // Debounced search trigger (guarded against redundant query triggers)
   useEffect(() => {
+    if (search.trim() === query) return;
     const timer = setTimeout(() => {
       setPage(1);
       setQuery(search.trim());
-    }, 350);
+    }, 300);
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [search, query]);
 
   // ── 3. Client-Side Filtering on Rows (Presence, Status, Affiliation) ───────
   const filteredRows = useMemo(() => {
@@ -230,13 +242,11 @@ export default function AdminCustomers() {
     let onlineCount = 0;
     let activeAccounts = 0;
     let academicClients = 0;
-    let totalBadges = 0;
 
     rows.forEach((c) => {
       if (liveOnlineMap.has(c.id)) onlineCount++;
       if (c.is_active) activeAccounts++;
       if (c.studio_specs?.university || c.studio_specs?.degree) academicClients++;
-      if (Array.isArray(c.badges)) totalBadges += c.badges.length;
     });
 
     // Also consider live users from map who may be in full count
@@ -247,57 +257,17 @@ export default function AdminCustomers() {
       liveOnline: Math.max(onlineCount, totalLivePresence),
       activeAccounts,
       academicClients,
-      totalBadges,
     };
   }, [rows, total, liveOnlineMap]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  // ── 5. Badge Handlers ──────────────────────────────────────────────────────
-  const handleOpenBadgeModal = (customer) => {
-    setBadgeModalCustomer(customer);
-    const existing = Array.isArray(customer.badges) ? customer.badges : [];
-    setBadgeDraft(existing);
-  };
-
-  const handleToggleBadge = (badgeId) => {
-    setBadgeDraft((prev) => {
-      const exists = hasBadge(prev, badgeId);
-      if (exists) {
-        return prev.filter((b) => (typeof b === 'string' ? b !== badgeId : b?.id !== badgeId));
-      } else {
-        return [...prev, { id: badgeId, awarded_at: new Date().toISOString() }];
-      }
-    });
-  };
-
-  const handleSaveBadges = async () => {
-    if (!badgeModalCustomer) return;
-    setSavingBadges(true);
-    try {
-      const { error: saveErr } = await updateCustomerBadges(badgeModalCustomer.id, badgeDraft);
-      if (saveErr) throw saveErr;
-
-      // Update in local table state
-      setRows((prev) =>
-        prev.map((r) => (r.id === badgeModalCustomer.id ? { ...r, badges: badgeDraft } : r))
-      );
-      setActionSuccessMsg(`Recognitions updated for ${badgeModalCustomer.first_name || 'Customer'} ${badgeModalCustomer.last_name || ''}`);
-      setTimeout(() => setActionSuccessMsg(null), 4000);
-      setBadgeModalCustomer(null);
-    } catch (err) {
-      alert(err.message || 'Failed to update recognitions.');
-    } finally {
-      setSavingBadges(false);
-    }
-  };
-
-  // ── 6. CSV Export Function ─────────────────────────────────────────────────
+  // ── 5. CSV Export Function ─────────────────────────────────────────────────
   const handleExportCSV = () => {
     if (!rows.length) return;
     const headers = [
       'Customer ID', 'Full Name', 'Phone', 'Address', 'University / School',
-      'Degree / Program', 'Live Presence', 'Account Status', 'Bookings Count', 'Badges Count', 'Registered Date'
+      'Degree / Program', 'Live Presence', 'Account Status', 'Bookings Count', 'Registered Date'
     ];
 
     const csvRows = rows.map((c) => {
@@ -308,7 +278,6 @@ export default function AdminCustomers() {
       const school = (c.studio_specs?.university || '').replace(/"/g, '""');
       const degree = (c.studio_specs?.degree || '').replace(/"/g, '""');
       const bookingsCount = c.bookings?.length || 0;
-      const badgesCount = Array.isArray(c.badges) ? c.badges.length : 0;
       const status = c.is_active ? 'Active' : 'Inactive';
       const registered = c.created_at ? new Date(c.created_at).toISOString().split('T')[0] : '';
 
@@ -322,7 +291,6 @@ export default function AdminCustomers() {
         `"${isOnline}"`,
         `"${status}"`,
         bookingsCount,
-        badgesCount,
         `"${registered}"`
       ].join(',');
     });
@@ -339,7 +307,7 @@ export default function AdminCustomers() {
     URL.revokeObjectURL(url);
   };
 
-  // ── 5. Customer Deletion Handler ───────────────────────────────────────────
+  // ── 6. Customer Deletion Handler ──────────────────────────────────────────
   const handleConfirmDeleteCustomer = async () => {
     if (!customerToDelete) return;
     setIsDeleting(true);
@@ -365,7 +333,7 @@ export default function AdminCustomers() {
   };
 
   return (
-    <div className="w-full max-w-screen-2xl mx-auto space-y-7 pb-20 animate-fade-in font-body">
+    <div className="w-full pb-20 animate-fade-in font-body">
 
       {/* ── 1. Luxury Dark Hero Banner adapted for Customer Directory ───────── */}
       <AdminHeroBanner
@@ -373,7 +341,7 @@ export default function AdminCustomers() {
         badgeLabel="Customer Directory & Live Presence"
         badgeIcon={Users}
         title="Customer Management"
-        subtitle="Monitor live client portal presence, academic credentials, fitting custody, and studio milestone recognitions."
+        subtitle="Monitor live client portal presence, academic credentials, and fitting custody."
         statusSummary={`${total} Registered Clients · ${kpiStats.liveOnline} Live on Portal · ${kpiStats.activeAccounts} Active Accounts`}
         primaryAction={{
           label: 'New Booking',
@@ -385,117 +353,62 @@ export default function AdminCustomers() {
           icon: Download,
           onClick: handleExportCSV,
         }}
-        onRefresh={load}
-        isRefreshing={loading}
+        onRefresh={() => load(true)}
+        isRefreshing={isRefreshing || loading}
         onExport={handleExportCSV}
         extraTools={[
-          { label: 'Workstation Hub', href: '/admin/workstation', icon: ArrowRightLeft, iconColor: 'text-gold' },
+          { label: 'Activity Logs', href: '/admin/activity-logs', icon: History, iconColor: 'text-gold' },
           { label: 'Manage Bookings', href: '/admin/bookings', icon: CalendarDays, iconColor: 'text-gold' },
           { label: 'Security & Audit', href: '/admin/security', icon: ShieldCheck, iconColor: 'text-neutral-400' },
         ]}
       />
 
-      {/* ── 2. KPI Overview Metric Strip with 1-Click Filters ────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 font-body">
-        {/* Total Customers */}
-        <button
-          type="button"
-          onClick={() => {
-            setPresenceFilter('ALL');
-            setStatusFilter('ALL');
-            setAffiliationFilter('ALL');
-          }}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            presenceFilter === 'ALL' && statusFilter === 'ALL' && affiliationFilter === 'ALL'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Total Clients</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200/70 text-neutral-700 flex items-center justify-center">
-              <Users size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{total}</p>
-          <span className="text-xs text-neutral-400 font-normal mt-0.5 block truncate">Full registered database</span>
-        </button>
+      {/* ── Page Content Container (Consistent Margin & Breathing Room) ───────── */}
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
 
-        {/* Live on Customer Dashboard (Online Now) */}
-        <button
-          type="button"
-          onClick={() => setPresenceFilter(presenceFilter === 'ONLINE' ? 'ALL' : 'ONLINE')}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            presenceFilter === 'ONLINE'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Live on Portal
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-100 to-emerald-200/60 text-emerald-800 flex items-center justify-center">
-              <Radio size={15} className="animate-pulse" />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{kpiStats.liveOnline}</p>
-          <span className="text-xs text-neutral-400 font-medium mt-0.5 block truncate">Active on dashboard now</span>
-        </button>
-
-        {/* Active Accounts */}
-        <button
-          type="button"
-          onClick={() => setStatusFilter(statusFilter === 'ACTIVE' ? 'ALL' : 'ACTIVE')}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            statusFilter === 'ACTIVE'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Active Profiles</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200/70 text-neutral-700 flex items-center justify-center">
-              <CheckCircle2 size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{kpiStats.activeAccounts}</p>
-          <span className="text-xs text-neutral-400 font-normal mt-0.5 block truncate">Verified credentials</span>
-        </button>
-
-        {/* Academic / Student Clients */}
-        <button
-          type="button"
-          onClick={() => setAffiliationFilter(affiliationFilter === 'STUDENT' ? 'ALL' : 'STUDENT')}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            affiliationFilter === 'STUDENT'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Academic Clients</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-gold/25 to-gold/10 text-gold-dark flex items-center justify-center">
-              <GraduationCap size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-gold-dark">{kpiStats.academicClients}</p>
-          <span className="text-xs text-neutral-400 font-normal mt-0.5 block truncate">With university record</span>
-        </button>
-
-        {/* Total Recognitions Awarded */}
-        <div className="p-4 sm:p-5 rounded-2xl border border-neutral-200/90 shadow-xs bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Recognitions</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-gold/25 to-gold/10 text-gold-dark flex items-center justify-center">
-              <Award size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-neutral-900">{kpiStats.totalBadges}</p>
-          <span className="text-xs text-neutral-400 font-normal mt-0.5 block truncate">Studio badges verified</span>
-        </div>
-      </div>
+      {/* ── 2. Unified Luxury Studio KPI Overview Metric Strip ─────────────── */}
+      <CategorizedMetricStrip
+        loading={loading}
+        columns="grid-cols-2 lg:grid-cols-4"
+        cards={[
+          {
+            key: 'ALL',
+            label: 'TOTAL',
+            subtitle: 'Registered customer database',
+            value: total,
+            isActive: presenceFilter === 'ALL' && statusFilter === 'ALL' && affiliationFilter === 'ALL',
+            onClick: () => {
+              setPresenceFilter('ALL');
+              setStatusFilter('ALL');
+              setAffiliationFilter('ALL');
+            },
+          },
+          {
+            key: 'ONLINE',
+            label: 'LIVE PORTAL',
+            subtitle: 'Active on dashboard now',
+            value: kpiStats.liveOnline,
+            isActive: presenceFilter === 'ONLINE',
+            onClick: () => setPresenceFilter(presenceFilter === 'ONLINE' ? 'ALL' : 'ONLINE'),
+          },
+          {
+            key: 'ACTIVE',
+            label: 'ACTIVE',
+            subtitle: 'Verified credentials',
+            value: kpiStats.activeAccounts,
+            isActive: statusFilter === 'ACTIVE',
+            onClick: () => setStatusFilter(statusFilter === 'ACTIVE' ? 'ALL' : 'ACTIVE'),
+          },
+          {
+            key: 'STUDENT',
+            label: 'ACADEMIC',
+            subtitle: 'University degree records',
+            value: kpiStats.academicClients,
+            isActive: affiliationFilter === 'STUDENT',
+            onClick: () => setAffiliationFilter(affiliationFilter === 'STUDENT' ? 'ALL' : 'STUDENT'),
+          },
+        ]}
+      />
 
       {actionSuccessMsg && (
         <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl px-5 py-3.5 text-sm font-body animate-fade-in shadow-xs">
@@ -593,6 +506,18 @@ export default function AdminCustomers() {
               {maskPii ? <Lock size={14} className="text-purple-600" /> : <Eye size={14} className="text-emerald-600" />}
               <span>{maskPii ? 'Mask PII' : 'Reveal PII'}</span>
             </button>
+
+            {/* Quick 1-Click Refresh Button */}
+            <button
+              type="button"
+              onClick={() => load(true)}
+              disabled={isRefreshing}
+              className="h-10 px-3.5 border border-neutral-300/80 bg-neutral-50 hover:bg-white hover:border-gold/60 rounded-xl text-xs sm:text-sm font-semibold text-neutral-700 transition-all inline-flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer disabled:opacity-50"
+              title="Refresh Customer Directory"
+            >
+              <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-gold' : 'text-neutral-500'} />
+              <span>{isRefreshing ? 'Refreshing…' : 'Refresh'}</span>
+            </button>
           </div>
 
         </div>
@@ -600,7 +525,7 @@ export default function AdminCustomers() {
         {/* Active Filters Pill Bar */}
         {(presenceFilter !== 'ALL' || statusFilter !== 'ALL' || affiliationFilter !== 'ALL' || query) && (
           <div className="flex items-center gap-2 pt-2.5 border-t border-neutral-100 flex-wrap text-xs text-neutral-500">
-            <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[10px]">Active Filters:</span>
+            <span className="font-semibold text-neutral-400 uppercase tracking-wider text-xs">Active Filters:</span>
             {query && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
                 Keyword: "{query}"
@@ -667,7 +592,7 @@ export default function AdminCustomers() {
 
       {/* ── 4. Main Customer Records Table (Display All in One View, No Sideways Scroll) ── */}
       <div className="bg-gradient-to-b from-white to-neutral-50/30 rounded-2xl border border-neutral-200/90 shadow-warm-sm overflow-hidden">
-        {loading ? (
+        {loading && rows.length === 0 ? (
           <div className="p-8 space-y-4">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="h-16 bg-neutral-100/70 rounded-2xl animate-pulse" />
@@ -686,13 +611,13 @@ export default function AdminCustomers() {
             </p>
           </div>
         ) : (
-          <div className="w-full overflow-hidden">
+          <div className={`w-full overflow-hidden ${isRefreshing ? 'opacity-70 transition-opacity' : 'opacity-100 transition-opacity'}`}>
             <table className="w-full table-fixed text-sm font-body text-left">
               <thead>
                 <tr className="border-b border-neutral-200/80 bg-gradient-to-r from-neutral-50 via-neutral-100/40 to-neutral-50 text-[11px] sm:text-xs font-bold uppercase tracking-wider text-neutral-500">
                   <th className="w-[36%] px-5 sm:px-6 py-3.5 sm:py-4">Customer Profile</th>
                   <th className="w-[26%] px-4 sm:px-5 py-3.5 sm:py-4">Contact & Location</th>
-                  <th className="w-[18%] px-4 sm:px-5 py-3.5 sm:py-4">Bookings & Badges</th>
+                  <th className="w-[18%] px-4 sm:px-5 py-3.5 sm:py-4">Bookings</th>
                   <th className="w-[20%] px-5 sm:px-6 py-3.5 sm:py-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -700,7 +625,6 @@ export default function AdminCustomers() {
                 {filteredRows.map((c) => {
                   const isLive = liveOnlineMap.has(c.id);
                   const presenceInfo = liveOnlineMap.get(c.id);
-                  const badgeCount = Array.isArray(c.badges) ? c.badges.length : 0;
                   const bookingsCount = c.bookings?.length || 0;
                   const fullName = `${c.first_name || 'Guest'} ${c.last_name || ''}`.trim();
                   const university = c.studio_specs?.university;
@@ -726,7 +650,7 @@ export default function AdminCustomers() {
                           <div className="min-w-0 flex-1">
                             {/* Inactive Account Indicator if inactive */}
                             {isInactive && (
-                              <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full border border-rose-300 mb-1 shadow-2xs">
+                              <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full border border-rose-300 mb-1 shadow-2xs">
                                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                                 <span>Inactive Account</span>
                               </div>
@@ -776,7 +700,7 @@ export default function AdminCustomers() {
                         </div>
                       </td>
 
-                      {/* Bookings & Badges */}
+                      {/* Bookings */}
                       <td className="px-4 sm:px-5 py-4 sm:py-4.5 align-middle">
                         <div className="flex flex-wrap items-center gap-2">
                           {bookingsCount > 0 ? (
@@ -791,16 +715,6 @@ export default function AdminCustomers() {
                           ) : (
                             <span className="text-xs text-neutral-400 italic">0 Bookings</span>
                           )}
-
-                          <button
-                            type="button"
-                            onClick={() => handleOpenBadgeModal(c)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-white hover:bg-amber-50 text-neutral-700 border border-neutral-200 hover:border-gold hover:text-gold-dark transition-all shrink-0 cursor-pointer shadow-2xs"
-                            title="Award or verify studio recognitions"
-                          >
-                            <Award size={13} className={badgeCount > 0 ? "text-gold" : "text-neutral-400"} />
-                            <span>{badgeCount}</span>
-                          </button>
                         </div>
                       </td>
 
@@ -815,16 +729,6 @@ export default function AdminCustomers() {
                           >
                             <FileText size={14} className="text-gold" />
                             <span>Details</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleOpenBadgeModal(c)}
-                            className="px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-bold text-gold hover:text-gold-dark bg-white hover:bg-gold/5 border border-gold/40 hover:border-gold rounded-xl transition-all inline-flex items-center gap-1.5 cursor-pointer"
-                            title="Manage Studio Milestone Recognitions"
-                          >
-                            <Award size={14} />
-                            <span>Badges</span>
                           </button>
 
                           <button
@@ -875,115 +779,12 @@ export default function AdminCustomers() {
         )}
       </div>
 
-      {/* ── Studio Badges Award Modal ──────────────────────────────────────── */}
-      {badgeModalCustomer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-xl w-full border border-neutral-200 shadow-2xl space-y-5 animate-slide-up max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-gold/15 text-gold-dark flex items-center justify-center shadow-xs">
-                  <Award size={22} />
-                </div>
-                <div>
-                  <h3 className="font-heading text-lg font-bold text-neutral-900">Award Studio Recognitions</h3>
-                  <p className="text-xs text-neutral-500 font-body mt-0.5">
-                    {badgeModalCustomer.first_name} {badgeModalCustomer.last_name || ''} · {badgeModalCustomer.phone || 'No phone set'}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setBadgeModalCustomer(null)}
-                className="text-neutral-400 hover:text-neutral-700 p-1.5 rounded-xl border border-neutral-200 hover:bg-neutral-100 transition-colors cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <p className="text-xs sm:text-sm text-neutral-600 font-body leading-relaxed">
-              Verify and award milestone recognitions earned across client onboarding, photoshoot sessions, styling, and final handover:
-            </p>
-
-            <div className="space-y-3">
-              {OFFICIAL_STUDIO_BADGES.map((badge) => {
-                const isAwarded = hasBadge(badgeDraft, badge.id);
-                return (
-                  <div
-                    key={badge.id}
-                    onClick={() => handleToggleBadge(badge.id)}
-                    className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start justify-between gap-3 ${
-                      isAwarded
-                        ? 'bg-amber-50/40 border-gold/50 shadow-2xs ring-1 ring-gold/30'
-                        : 'bg-neutral-50 border-neutral-200 hover:border-neutral-300'
-                    }`}
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-body font-bold uppercase tracking-wider text-neutral-400">
-                          {badge.category}
-                        </span>
-                        {isAwarded && (
-                          <span className="text-[10px] font-body font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                            <Check size={10} /> Verified
-                          </span>
-                        )}
-                      </div>
-                      <h4 className={`text-sm font-bold ${isAwarded ? 'text-neutral-900' : 'text-neutral-700'}`}>
-                        {badge.title}
-                      </h4>
-                      <p className="text-xs text-neutral-500 font-body leading-relaxed">
-                        {badge.description}
-                      </p>
-                    </div>
-
-                    <div className="shrink-0 mt-1">
-                      <div className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-all ${
-                        isAwarded
-                          ? 'bg-gold border-gold text-white shadow-xs'
-                          : 'border-neutral-300 bg-white'
-                      }`}>
-                        {isAwarded && <Check size={14} className="stroke-[3]" />}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="pt-4 border-t border-neutral-100 flex items-center justify-between">
-              <span className="text-xs font-body text-neutral-500">
-                <strong className="text-neutral-900">{badgeDraft.length}</strong> of {OFFICIAL_STUDIO_BADGES.length} recognitions selected
-              </span>
-              <div className="flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setBadgeModalCustomer(null)}
-                  className="px-4 py-2.5 border border-neutral-200 rounded-xl text-xs font-semibold text-neutral-600 hover:bg-neutral-50 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={savingBadges}
-                  onClick={handleSaveBadges}
-                  className="btn-primary py-2.5 px-5 text-xs font-bold flex items-center gap-2 shadow-md shadow-gold/20 cursor-pointer disabled:opacity-50"
-                >
-                  {savingBadges ? (
-                    <><Loader2 size={14} className="animate-spin" /> Saving...</>
-                  ) : (
-                    <><Save size={14} /> Save Recognitions</>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* ── Customer Records & Specifications Modal ─────────────────────────── */}
       {selectedCustomerRecord && (() => {
         const c = selectedCustomerRecord;
         const specs = c.studio_specs || {};
-        const badgesList = Array.isArray(c.badges) ? c.badges : [];
         const bookingsList = Array.isArray(c.bookings) ? c.bookings : [];
         const isOnline = liveOnlineMap.has(c.id);
         const presenceInfo = liveOnlineMap.get(c.id);
@@ -1083,13 +884,13 @@ export default function AdminCustomers() {
                 {/* Quick Contact & Bio Bar */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 bg-neutral-50 p-4 rounded-2xl border border-neutral-200/80 text-xs">
                   <div className="space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider flex items-center gap-1">
+                    <span className="text-xs uppercase font-bold text-neutral-400 tracking-wider flex items-center gap-1">
                       <Phone size={12} className="text-gold" /> Phone Contact
                     </span>
                     <p className="font-semibold text-neutral-900 text-sm">{displayPhone}</p>
                   </div>
                   <div className="space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider flex items-center gap-1">
+                    <span className="text-xs uppercase font-bold text-neutral-400 tracking-wider flex items-center gap-1">
                       <MapPin size={12} className="text-gold" /> Profile Address
                     </span>
                     <p className="font-semibold text-neutral-900 text-sm truncate" title={c.address || 'Not provided'}>
@@ -1097,7 +898,7 @@ export default function AdminCustomers() {
                     </p>
                   </div>
                   <div className="space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider flex items-center gap-1">
+                    <span className="text-xs uppercase font-bold text-neutral-400 tracking-wider flex items-center gap-1">
                       <UserCheck size={12} className="text-gold" /> Profile Notes
                     </span>
                     <p className="font-semibold text-neutral-900 text-sm truncate" title={c.bio || 'None'}>
@@ -1182,22 +983,22 @@ export default function AdminCustomers() {
                       </div>
 
                       <div className="pt-2">
-                        <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider flex items-center gap-1 mb-2">
+                        <span className="text-xs uppercase font-bold text-neutral-400 tracking-wider flex items-center gap-1 mb-2">
                           <Shirt size={13} className="text-gold" /> Studio Wardrobe Sizing
                         </span>
                         <div className="grid grid-cols-2 gap-2">
                           <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200">
-                            <p className="text-[10px] text-neutral-400 uppercase font-semibold">Toga Robe Size</p>
+                            <p className="text-xs text-neutral-400 uppercase font-semibold">Toga Robe Size</p>
                             <p className="text-xs font-bold text-neutral-900 mt-0.5">{specs.togaSize || 'Unspecified'}</p>
                           </div>
                           <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200">
-                            <p className="text-[10px] text-neutral-400 uppercase font-semibold">Height (cm)</p>
+                            <p className="text-xs text-neutral-400 uppercase font-semibold">Height (cm)</p>
                             <p className="text-xs font-bold text-neutral-900 mt-0.5">{specs.height_cm ? `${specs.height_cm} cm` : 'Unspecified'}</p>
                           </div>
                         </div>
                         {specs.hoodDiscipline && (
                           <div className="mt-2 p-3 rounded-xl bg-neutral-50 border border-neutral-200">
-                            <p className="text-[10px] text-neutral-400 uppercase font-semibold">Hood Discipline & Trim</p>
+                            <p className="text-xs text-neutral-400 uppercase font-semibold">Hood Discipline & Trim</p>
                             <p className="text-xs font-bold text-neutral-900 mt-0.5">{specs.hoodDiscipline}</p>
                           </div>
                         )}
@@ -1227,7 +1028,7 @@ export default function AdminCustomers() {
                       </div>
 
                       <div className="pt-2">
-                        <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider flex items-center gap-1 mb-1">
+                        <span className="text-xs uppercase font-bold text-neutral-400 tracking-wider flex items-center gap-1 mb-1">
                           Photographer Custom Guidance
                         </span>
                         <div className="p-3.5 rounded-xl bg-neutral-50 border border-neutral-200 min-h-[64px]">
@@ -1323,7 +1124,7 @@ export default function AdminCustomers() {
                       </div>
 
                       <div className="pt-2">
-                        <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider block mb-1">
+                        <span className="text-xs uppercase font-bold text-neutral-400 tracking-wider block mb-1">
                           Emergency Contact Reference
                         </span>
                         <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200 flex justify-between items-center">
@@ -1334,51 +1135,11 @@ export default function AdminCustomers() {
                     </div>
                   </div>
                 </div>
-
-                {/* Card 5: Awarded Studio Recognitions */}
-                {badgesList.length > 0 && (
-                  <div className="p-5 rounded-2xl border border-neutral-200 bg-neutral-50/60 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <Award size={18} className="text-gold" />
-                      <h4 className="font-heading text-base font-bold text-neutral-900">
-                        Awarded Studio Recognitions ({badgesList.length})
-                      </h4>
-                    </div>
-                    <div className="flex flex-wrap gap-2.5">
-                      {badgesList.map((b, idx) => {
-                        const bId = typeof b === 'string' ? b : b?.id;
-                        const match = OFFICIAL_STUDIO_BADGES.find((x) => x.id === bId);
-                        return (
-                          <span
-                            key={idx}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-gold/40 rounded-full text-xs font-semibold text-neutral-900 shadow-2xs"
-                          >
-                            <Award size={14} className="text-gold" />
-                            <span>{match?.title || bId}</span>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Modal Footer */}
               <div className="p-5 px-7 border-t border-neutral-100 bg-neutral-50/80 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const custToBadge = c;
-                      setSelectedCustomerRecord(null);
-                      handleOpenBadgeModal(custToBadge);
-                    }}
-                    className="h-10 px-4 text-xs font-bold text-gold hover:text-gold-dark border border-gold/40 hover:border-gold rounded-xl transition-colors inline-flex items-center gap-2 cursor-pointer bg-white shadow-2xs"
-                  >
-                    <Award size={15} />
-                    <span>Manage Milestone Badges</span>
-                  </button>
-
                   <button
                     type="button"
                     onClick={() => {

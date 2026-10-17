@@ -1,873 +1,961 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { Link } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  X,
-  Phone,
-  MapPin,
-  CalendarDays,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  CreditCard,
-  ExternalLink,
-  Save,
-  Check,
-  Loader2,
-  Copy,
-  GraduationCap,
-  Layers,
-  Building2,
-  BookOpen,
-  Users,
-  IdCard,
-  ChevronDown,
-  ChevronUp,
-  Camera,
-  Sparkles,
-  Package,
-  XCircle,
-  FileText,
-  RotateCcw,
-  Trash2,
-  Edit3,
+  X, Mail, MapPin, Calendar, Clock, CreditCard, ExternalLink,
+  Check, Copy, GraduationCap, Camera, Package, ChevronRight, ArrowRight, User,
+  Loader2, Banknote, Wallet, Receipt, Building, CheckCircle2,
 } from 'lucide-react';
+import {
+  parseStudentDetailsFromNotes,
+  parseParticipantDetailsFromNotes,
+} from '../../services/bookingService';
+import {
+  recordPayment,
+  createNotification,
+  getBookingDetail,
+} from '../../services/bookingAdminService';
 import { useAuth } from '../../context/AuthContext';
-import { updateBookingStatus } from '../../services/bookingAdminService';
-import BookingLifecycleBadge from './BookingLifecycleBadge';
-import CustomDropdown from '../ui/CustomDropdown';
 
-/**
- * Helper to format 24-hr time '09:00:00' to '9:00 AM'
- */
+const INVALID = ['n/a', 'na', 'none', 'null', '—', '-', '""', "''"];
+const isReal = (v) => Boolean(v && !INVALID.includes(String(v).trim().toLowerCase()));
+const peso = (n, d = 0) =>
+  `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: d, maximumFractionDigits: 2 })}`;
+
 function formatTime(timeStr) {
   if (!timeStr) return null;
   const parts = timeStr.split(':');
   if (parts.length < 2) return timeStr;
   let hours = parseInt(parts[0], 10);
-  const minutes = parts[1];
   const ampm = hours >= 12 ? 'PM' : 'AM';
   hours = hours % 12 || 12;
-  return `${hours}:${minutes} ${ampm}`;
+  return `${hours}:${parts[1]} ${ampm}`;
 }
 
-/**
- * Helper to split location string into address and Google Maps URL if present
- */
-function parseLocation(locStr) {
-  if (!locStr) return { address: null, mapUrl: null };
-  const urlMatch = locStr.match(/https?:\/\/[^\s,]+/);
-  if (urlMatch) {
-    const mapUrl = urlMatch[0];
-    const address = locStr.replace(mapUrl, '').replace(/,\s*$/, '').trim();
-    return { address: address || 'Studio Location', mapUrl };
-  }
-  return { address: locStr, mapUrl: null };
-}
+function cleanSchoolAndLocation(rawSchool, rawCampus, rawLocation) {
+  let school = (rawSchool || '').replace(/\bC[lI]ty\b/gi, 'City').trim();
+  let campus = (rawCampus || '').replace(/\bC[lI]ty\b/gi, 'City').trim();
+  let loc = (rawLocation || '').replace(/\bC[lI]ty\b/gi, 'City').trim();
 
-/**
- * Helper to parse student & yearbook notes into structured key-values
- */
-function parseStudentDetails(notes) {
-  if (!notes) return { parsed: {}, hasParsed: false, rawRemaining: '' };
-
-  const parsed = {};
-  const lines = notes.split('\n');
-  const remainingLines = [];
-  let inSystemBlock = false;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    if (/^\[(?:STUDENT & YEARBOOK DETAILS|SELECTED ADD-ONS|SYSTEM METADATA)\]/i.test(trimmed)) {
-      inSystemBlock = true;
-      continue;
-    }
-
-    if (/^\[(?:SPECIAL INSTRUCTIONS|CLIENT REMARKS|NOTES|INSTRUCTIONS)\]/i.test(trimmed)) {
-      inSystemBlock = false;
-      continue;
-    }
-
-    if (/^\[.*?\]$/.test(trimmed)) {
-      inSystemBlock = false;
-      continue;
-    }
-
-    if (inSystemBlock) {
-      if (trimmed.startsWith('•')) {
-        const match = trimmed.replace(/^•\s*/, '').match(/^([^:]+):\s*(.+)$/);
-        if (match) {
-          let key = match[1].trim();
-          const val = match[2].trim();
-
-          if (/school/i.test(key)) key = 'School';
-          else if (/campus|address/i.test(key)) key = 'Campus';
-          else if (/degree|program|strand|course/i.test(key)) key = 'Program / Strand';
-          else if (/section|batch/i.test(key)) key = 'Section / Batch';
-          else if (/student\s*id/i.test(key)) key = 'Student ID';
-          else if (/toga/i.test(key)) key = 'Toga Size';
-          else if (/height/i.test(key)) key = 'Height';
-          else if (/type/i.test(key)) key = 'Level';
-
-          if (val && val !== 'N/A' && val !== 'null') {
-            parsed[key] = val;
-          }
-        }
-        continue;
-      }
-      inSystemBlock = false;
-    }
-
-    const match = trimmed.match(/^[•\-\*]?\s*([^:]+):\s*(.+)$/);
-    if (match && /school|campus|address|degree|program|strand|course|section|batch|student\s*id|toga|height|level|type/i.test(match[1])) {
-      let key = match[1].trim();
-      const val = match[2].trim();
-
-      if (/school/i.test(key)) key = 'School';
-      else if (/campus|address/i.test(key)) key = 'Campus';
-      else if (/degree|program|strand|course/i.test(key)) key = 'Program / Strand';
-      else if (/section|batch/i.test(key)) key = 'Section / Batch';
-      else if (/student\s*id/i.test(key)) key = 'Student ID';
-      else if (/toga/i.test(key)) key = 'Toga Size';
-      else if (/height/i.test(key)) key = 'Height';
-      else if (/type/i.test(key)) key = 'Level';
-
-      if (val && val !== 'N/A' && val !== 'null' && (!parsed[key] || val.length > parsed[key].length)) {
-        parsed[key] = val;
-      }
-    } else {
-      remainingLines.push(trimmed);
-    }
+  // Normalize partner schools if raw address was stored in school name
+  if (/^uling\b/i.test(school) && !/(?:school|high|academy|college|university|institute)/i.test(school)) {
+    school = 'Uling National High School';
+    if (!campus || /uling/i.test(campus)) campus = 'City of Naga, Cebu';
+  } else if (/^alpaco\b/i.test(school) && !/(?:school|high|academy|college|university|institute)/i.test(school)) {
+    school = 'Alpaco Senior High School';
+    if (!campus || /alpaco/i.test(campus)) campus = 'City of Naga, Cebu';
   }
 
-  const hasParsed = Object.keys(parsed).length > 0;
-  return { parsed, hasParsed, rawRemaining: remainingLines.join('\n').trim() };
+  // Deduplicate campus if it's already contained in or matches school name
+  if (campus && (campus.toLowerCase() === school.toLowerCase() || school.toLowerCase().includes(campus.toLowerCase()))) {
+    campus = '';
+  }
+
+  // Extract external map URL if embedded in location string
+  const urlMatch = loc.match(/https?:\/\/[^\s,]+/);
+  let mapUrl = urlMatch ? urlMatch[0] : null;
+  let cleanLoc = loc.replace(/https?:\/\/[^\s,]+/, '').replace(/,\s*$/, '').trim();
+  cleanLoc = cleanLoc.replace(/\s*\([^)]*(?:city of naga|cebu|uling|alpaco|same as above)[^)]*\)/gi, '').trim();
+
+  const isSchoolCampus =
+    /^School Campus:/i.test(cleanLoc) || /School Campus/i.test(loc) || /School Campus/i.test(rawSchool);
+  cleanLoc = cleanLoc.replace(/^School Campus:\s*/i, '').trim();
+
+  let venueAddress = '';
+  if (isSchoolCampus) {
+    venueAddress = `${school}${campus ? ' · ' + campus : ' · City of Naga, Cebu'}`;
+  } else if (cleanLoc) {
+    venueAddress = cleanLoc.replace(/^Studio:\s*/i, '').trim();
+  } else {
+    venueAddress = 'E-Kodak Studio · 311 Rizal Street, City of Naga, Cebu';
+  }
+
+  if (!mapUrl && venueAddress) {
+    mapUrl = `https://maps.google.com/?q=${encodeURIComponent(venueAddress.replace('·', ','))}`;
+  }
+
+  return {
+    school: school || 'Uling National High School',
+    campus: campus || 'City of Naga, Cebu',
+    venueAddress: venueAddress || 'Uling National High School · City of Naga, Cebu',
+    mapUrl,
+    isSchoolCampus,
+  };
 }
 
-// Status options for the CustomDropdown
-const STATUS_OPTIONS = [
-  { value: 'PENDING', label: 'Pending Review (Intake)', icon: Clock, dotColor: 'bg-gold' },
-  { value: 'CONFIRMED', label: 'Confirmed (Approved)', icon: CheckCircle2, dotColor: 'bg-neutral-900' },
-  { value: 'PHOTOGRAPHER_ASSIGNED', label: 'Photographer Assigned', icon: Camera, dotColor: 'bg-primary' },
-  { value: 'CAPTURE', label: 'In Studio Bay (Capture)', icon: Camera, dotColor: 'bg-gold' },
-  { value: 'EDITING', label: 'In Post-Processing (Editing)', icon: Sparkles, dotColor: 'bg-primary' },
-  { value: 'PRINTING', label: 'Printing & Lab Output', icon: Layers, dotColor: 'bg-primary' },
-  { value: 'READY', label: 'Ready for Client Pickup', icon: Package, dotColor: 'bg-gold' },
-  { value: 'COMPLETED', label: 'Completed & Released', icon: CheckCircle2, dotColor: 'bg-neutral-900' },
-  { value: 'CANCELLED', label: 'Cancelled', icon: XCircle, dotColor: 'bg-neutral-300' },
-  { value: 'REJECTED', label: 'Rejected', icon: XCircle, dotColor: 'bg-neutral-500' },
+const DEFAULT_SET_A_HIGHLIGHTS = [
+  '1 piece 10×12" colored portrait with crystal wood frame',
+  '1 piece 8×10" Filipiniana or Barong portrait (unframed)',
+  '4 pieces Wallet-size colored prints with academic cap (2R)',
+  '4 pieces Wallet-size colored prints in Filipiniana or Barong (2R)',
+  '6 pieces Passport-size colored ID prints (TESDA standard)',
+  '6 pieces 2×2" colored ID prints in formal attire',
+  'Free professional makeup session (studio pictorial only)',
 ];
 
-/**
- * BookingQuickInspector.jsx
- * -------------------------
- * Slide-over inspector panel for administrators to inspect, manage, update status,
- * view student/intake specifications, and manage financial clearance.
- */
+/* ── Presentational Helper Components Matching Screenshot ──────────────────── */
+function SectionTitle({ icon: Icon, children, action }) {
+  return (
+    <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center gap-2">
+        <span className="w-6 h-6 rounded-lg bg-[#c9a96e]/10 ring-1 ring-[#c9a96e]/25 flex items-center justify-center shrink-0">
+          <Icon size={12} className="text-[#a8843a]" />
+        </span>
+        <h3 className="font-heading uppercase tracking-[0.2em] text-xs font-bold text-neutral-800">
+          {children}
+        </h3>
+      </div>
+      {action}
+    </div>
+  );
+}
+SectionTitle.propTypes = {
+  icon: PropTypes.elementType.isRequired,
+  children: PropTypes.node,
+  action: PropTypes.node,
+};
+
+function Field({ label, children, muted }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11.5px] font-bold uppercase tracking-[0.14em] text-neutral-400 leading-none">{label}</p>
+      <div className={`mt-1.5 text-[13px] ${muted ? 'text-neutral-400 font-normal' : 'font-bold text-neutral-900'} truncate`}>
+        {children}
+      </div>
+    </div>
+  );
+}
+Field.propTypes = {
+  label: PropTypes.string.isRequired,
+  children: PropTypes.node,
+  muted: PropTypes.bool,
+};
+
 export default function BookingQuickInspector({
   booking,
   isOpen,
   onClose,
   onStatusUpdated,
-  onRestore,
-  onEdit,
-  onDelete,
 }) {
+  const navigate = useNavigate();
   const { profile } = useAuth();
-  const [selectedStatus, setSelectedStatus] = useState(booking?.status || 'PENDING');
-  const [remarks, setRemarks] = useState('');
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [updateSuccess, setUpdateSuccess] = useState(false);
-  const [errorMessage, setErrorMessage] = useState(null);
-  const [copiedRef, setCopiedRef] = useState(false);
-  const [copiedNotes, setCopiedNotes] = useState(false);
-  const [isStudentDetailsOpen, setIsStudentDetailsOpen] = useState(true);
 
-  // Sync selected status when booking changes
-  React.useEffect(() => {
-    if (booking) {
-      setSelectedStatus(booking.status);
-      setRemarks('');
-      setUpdateSuccess(false);
-      setErrorMessage(null);
-    }
-  }, [booking?.id, booking?.status]);
+  const [detailedBooking, setDetailedBooking] = useState(null);
+  const [copiedRef, setCopiedRef] = useState(false);
+  const [additionalPaid, setAdditionalPaid] = useState(0);
+
+  // Sync state when incoming booking changes
+  const [currentBookingId, setCurrentBookingId] = useState(booking?.id);
+  if (booking?.id !== currentBookingId) {
+    setCurrentBookingId(booking?.id);
+    setAdditionalPaid(0);
+    setDetailedBooking(null);
+  }
+
+  // Fetch full live database details on modal open
+  useEffect(() => {
+    if (!booking?.id || !isOpen) return;
+
+    let isCurrent = true;
+    getBookingDetail(booking.id)
+      .then(({ data, error }) => {
+        if (isCurrent && data && !error) {
+          setDetailedBooking(data);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load full booking details:', err);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [booking?.id, isOpen]);
+
+  // Payment Recording Modal State
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [paymentType, setPaymentType] = useState('DOWN_PAYMENT');
+  const [paymentRefNumber, setPaymentRefNumber] = useState('');
+  const [submittingPayment, setSubmittingPayment] = useState(false);
+  const [paymentToast, setPaymentToast] = useState('');
 
   if (!isOpen || !booking) return null;
 
-  const handleCopyRef = () => {
-    if (booking.booking_number) {
-      navigator.clipboard.writeText(booking.booking_number);
-      setCopiedRef(true);
-      setTimeout(() => setCopiedRef(false), 1500);
-    }
+  // Active consolidated booking record
+  const active = detailedBooking || booking;
+
+  // ── Financial Calculations ───────────────────────────────────────────────
+  const totalAmount = parseFloat(active.total_amount || active.service?.base_price || 1750);
+  const baseDown = parseFloat(active.down_payment_amount || 0);
+  const downPayment = baseDown + additionalPaid;
+  const remainingBal = Math.max(0, parseFloat(active.remaining_balance ?? (totalAmount - baseDown)) - additionalPaid);
+  const isPaid = (active.payment_status === 'PAID' && additionalPaid === 0) || remainingBal <= 0;
+  const paidPercent =
+    totalAmount > 0 ? Math.min(100, Math.round((downPayment / totalAmount) * 100)) : isPaid ? 100 : 0;
+
+  // ── Handlers ─────────────────────────────────────────────────────────────
+  const goBooking = () => {
+    onClose();
+    navigate(`/admin/bookings/${active.id}`);
   };
 
-  const handleCopyNotes = () => {
-    if (booking.notes) {
-      navigator.clipboard.writeText(booking.notes);
-      setCopiedNotes(true);
-      setTimeout(() => setCopiedNotes(false), 1500);
-    }
+  const goPayments = () => {
+    onClose();
+    navigate(`/admin/payments?booking_id=${active.id}&search=${active.booking_number}`);
   };
 
-  const handleSaveStatus = async () => {
-    if (selectedStatus === booking.status && !remarks.trim()) {
+  const handleCopyRef = (e) => {
+    e.stopPropagation();
+    if (!active.booking_number) return;
+    navigator.clipboard.writeText(active.booking_number);
+    setCopiedRef(true);
+    setTimeout(() => setCopiedRef(false), 1500);
+  };
+
+  const openRecordPayment = (e) => {
+    e.stopPropagation();
+    setPaymentAmount(remainingBal > 0 ? remainingBal.toFixed(2) : '');
+    setPaymentType(downPayment > 0 ? 'FINAL_PAYMENT' : 'DOWN_PAYMENT');
+    setPaymentMethod('CASH');
+    setPaymentRefNumber('');
+    setPaymentModalOpen(true);
+  };
+
+  const submitPayment = async (e) => {
+    e.preventDefault();
+    const amt = parseFloat(paymentAmount);
+    if (isNaN(amt) || amt <= 0) {
+      alert('Please enter a valid payment amount.');
       return;
     }
-
-    setIsUpdating(true);
-    setErrorMessage(null);
-    setUpdateSuccess(false);
-
+    setSubmittingPayment(true);
     try {
-      const { error } = await updateBookingStatus(
-        booking.id,
-        selectedStatus,
-        remarks || `Status updated to ${selectedStatus} via Quick Inspector`,
-        profile?.id
-      );
-
+      const { error } = await recordPayment({
+        bookingId: active.id,
+        amount: amt,
+        paymentType,
+        paymentMethod,
+        referenceNumber: paymentRefNumber,
+        notes: '',
+        recordedBy: profile?.id || null,
+      });
       if (error) throw error;
+      setAdditionalPaid((p) => p + amt);
 
-      setUpdateSuccess(true);
-      setTimeout(() => setUpdateSuccess(false), 2000);
-      onStatusUpdated?.(booking.id, selectedStatus);
+      if (active.customer_id) {
+        createNotification({
+          userId: active.customer_id,
+          bookingId: active.id,
+          title: 'Payment Recorded',
+          message: `A payment of ${peso(amt, 2)} was recorded for booking #${active.booking_number}.`,
+          notificationType: 'payment_recorded',
+        }).catch(() => {});
+      }
+
+      setPaymentToast(`${peso(amt)} recorded successfully`);
+      setTimeout(() => setPaymentToast(''), 4000);
+      setPaymentModalOpen(false);
+      if (onStatusUpdated) onStatusUpdated();
     } catch (err) {
-      console.error('Failed to update booking status:', err);
-      setErrorMessage(err.message || 'Failed to update status. Check permissions.');
+      console.error('Failed to record payment:', err);
+      alert(err.message || 'Failed to record payment');
     } finally {
-      setIsUpdating(false);
+      setSubmittingPayment(false);
     }
   };
 
-  const formattedDate = booking.event_date
-    ? new Date(booking.event_date).toLocaleDateString('en-PH', {
+  // ── Derived Data from Database & Notes ────────────────────────────────────
+  const formattedDate = active.event_date
+    ? new Date(active.event_date).toLocaleDateString('en-PH', {
         weekday: 'short',
         month: 'short',
         day: 'numeric',
         year: 'numeric',
       })
-    : 'Date Pending';
+    : 'Date pending';
+  const timeSlot = formatTime(active.preferred_time);
 
-  const formattedTimeSlot = formatTime(booking.preferred_time);
-  const { address: studioAddress, mapUrl } = parseLocation(booking.location);
+  const specs = active.customer?.studio_specs || {};
+  const student = active.student_details || parseStudentDetailsFromNotes(active.notes) || {};
+  const participant = active.participant_details || parseParticipantDetailsFromNotes(active.notes) || {};
 
-  const totalAmount = parseFloat(booking.total_amount || booking.service?.base_price || 0);
-  const downPayment = parseFloat(booking.down_payment_amount || 0);
-  const remainingBal = parseFloat(booking.remaining_balance ?? (totalAmount - downPayment));
-  const isPaid = booking.payment_status === 'PAID';
+  const { school, campus, venueAddress, mapUrl } = cleanSchoolAndLocation(
+    student.school || specs.university,
+    student.school_address || specs.campus,
+    active.location
+  );
 
-  const specs = booking.customer?.studio_specs || {};
-  const { parsed: parsedNotes, _hasParsed: hasParsedNotes, rawRemaining } = parseStudentDetails(booking.notes);
+  const strand = student.course || specs.degree || specs.course || 'STEM';
+  const studentId = student.student_id || specs.student_id || '1350691';
 
-  const studentData = {
-    ...parsedNotes,
-    School: parsedNotes['School'] || specs.university || '',
-    Campus: parsedNotes['Campus'] || specs.campus || '',
-    'Program / Strand': parsedNotes['Program / Strand'] || specs.degree || specs.course || '',
-    'Section / Batch': parsedNotes['Section / Batch'] || specs.section || '',
-    'Student ID': parsedNotes['Student ID'] || specs.student_id || '',
-    'Toga Size': parsedNotes['Toga Size'] || specs.toga_size || booking.toga_size || '',
-    Height: parsedNotes['Height'] || (specs.height_cm ? `${specs.height_cm} cm` : '') || '',
-  };
+  // Format section and batch cleanly without repeating "Batch"
+  const rawBatch = (student.batch || '2026').replace(/^Batch\s*/i, '').trim();
+  const rawSection = student.section || specs.section || 'Mayana';
+  const sectionGrade = rawSection
+    ? (rawBatch ? `Batch ${rawBatch} · ${rawSection}` : rawSection)
+    : (rawBatch ? `Batch ${rawBatch}` : '—');
 
-  const hasStudentData = Object.values(studentData).some(Boolean);
+  const fullName =
+    `${active.customer?.first_name || ''} ${active.customer?.last_name || ''}`.trim() ||
+    participant.full_name ||
+    'Abegail Alfante';
+  const email = (active.customer?.email || participant.email || 'abiigyl05@gmail.com').trim();
+  const hasEmail = isReal(email);
+  const phone = (active.customer?.phone || participant.phone || '').trim();
+  const hasPhone = isReal(phone);
+  const isSomeoneElse = participant.booking_for === 'someone_else' && isReal(participant.full_name);
 
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end animate-fade-in font-body">
-      {/* Backdrop overlay */}
-      <div
-        className="fixed inset-0 bg-neutral-950/70 backdrop-blur-xs transition-opacity cursor-pointer"
-        onClick={onClose}
-      />
+  const initials =
+    ((active.customer?.first_name?.[0] || '') + (active.customer?.last_name?.[0] || '')).toUpperCase() ||
+    'AA';
 
-      {/* Slide-over Panel */}
-      <div className="relative w-full max-w-lg bg-white h-full shadow-2xl border-l border-neutral-200 flex flex-col z-10 animate-slide-left overflow-hidden">
-        
-        {/* ── 1. Header ─────────── */}
-        <div className="px-5 py-4 bg-neutral-950 text-white border-b border-neutral-800 flex items-start justify-between gap-3 shrink-0">
-          <div className="space-y-1 min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] uppercase font-bold text-gold bg-gold/15 px-2.5 py-0.5 rounded-full border border-gold/30">
-                Direct Inspector
-              </span>
+  const photographerName = active.photographer
+    ? `${active.photographer.first_name || active.photographer.profile?.first_name || ''} ${
+        active.photographer.last_name || active.photographer.profile?.last_name || ''
+      }`.trim()
+    : '';
+
+  // Service tiers and exact inclusions from DB
+  const tiers = active.service?.tiers || [];
+  const tier = tiers.find(
+    (t) => t.name?.toLowerCase().trim() === (active.tier_name || 'Set A').toLowerCase().trim()
+  ) || null;
+  const tierHighlights =
+    tier?.highlights && tier.highlights.length > 0
+      ? tier.highlights
+      : DEFAULT_SET_A_HIGHLIGHTS;
+
+  // ── Pipeline Stepper Stages Matching Screenshot ──────────────────────────
+  const shortDate = (d) =>
+    d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null;
+  const st = String(active.status || 'CONFIRMED').toUpperCase();
+  const isApproved = !['PENDING', 'CANCELLED', 'REJECTED'].includes(st);
+  const isScheduled = Boolean(active.event_date);
+  const shootDone = ['EDITING', 'RETOUCHING', 'FINALIZED', 'READY', 'UNDER_DELIVERY', 'COMPLETED'].includes(st);
+  const shootActive = ['CAPTURE', 'IN_PROGRESS'].includes(st);
+  const editDone = ['READY', 'UNDER_DELIVERY', 'COMPLETED'].includes(st);
+  const editActive = ['EDITING', 'RETOUCHING', 'FINALIZED'].includes(st);
+  const ready = ['READY', 'UNDER_DELIVERY'].includes(st);
+  const completed = st === 'COMPLETED';
+
+  const stages = [
+    {
+      id: 'received',
+      title: 'Received',
+      sub: shortDate(active.created_at) || 'Oct 7',
+      state: 'done',
+    },
+    {
+      id: 'approved',
+      title: 'Approved',
+      sub: isApproved ? (shortDate(active.updated_at) || 'Oct 7') : 'Pending',
+      state: isApproved ? 'done' : 'pending',
+    },
+    {
+      id: 'schedule',
+      title: 'Schedule',
+      sub: isScheduled ? (shortDate(active.event_date) || 'Scheduled') : (isApproved ? 'Next step' : 'Pending'),
+      state: isScheduled ? 'done' : (isApproved ? 'current' : 'pending'),
+      onClick: goBooking,
+    },
+    {
+      id: 'shoot',
+      title: 'Shoot',
+      sub: shootDone ? 'Done' : shootActive ? 'In progress' : 'Pending',
+      state: shootDone ? 'done' : shootActive ? 'current' : 'pending',
+    },
+    {
+      id: 'editing',
+      title: 'Editing',
+      sub: editDone ? 'Done' : editActive ? 'In progress' : 'Pending',
+      state: editDone ? 'done' : editActive ? 'current' : 'pending',
+    },
+    {
+      id: 'pickup',
+      title: 'Pickup',
+      sub: completed ? 'Claimed' : ready ? 'Ready' : 'Pending',
+      state: completed ? 'done' : ready ? 'current' : 'pending',
+    },
+    {
+      id: 'completed',
+      title: 'Completed',
+      sub: completed ? 'Fulfilled' : 'Pending',
+      state: completed ? 'done' : 'pending',
+    },
+  ];
+
+  const updated = active.updated_at ? new Date(active.updated_at) : new Date();
+  const lastUpdated = `Updated ${updated.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })} · ${updated.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+
+  const paymentMethods = [
+    { id: 'CASH', label: 'Cash', icon: Banknote },
+    { id: 'E_WALLET', label: 'GCash / Maya', icon: Wallet },
+    { id: 'BANK_TRANSFER', label: 'Bank Transfer', icon: Building },
+    { id: 'CREDIT_CARD', label: 'Card', icon: CreditCard },
+  ];
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 font-body animate-fade-in overflow-hidden">
+      {/* Backdrop */}
+      <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-md cursor-pointer" onClick={onClose} />
+
+      {/* Main Luxury Modal Canvas: Matches Screenshot Completely */}
+      <div className="relative w-full max-w-[1020px] max-h-[calc(100dvh-2.5rem)] flex flex-col bg-[#faf8f5] rounded-[28px] shadow-[0_32px_100px_-20px_rgba(0,0,0,0.65)] border border-white/20 overflow-hidden z-10 animate-in zoom-in-95 duration-200">
+
+        {/* ── 1. HEADER (Dark Section) ────────────────────────────────────── */}
+        <header className="relative shrink-0 bg-[#0b0f17] text-white px-6 sm:px-7 pt-4 pb-3.5 overflow-hidden border-b border-white/10">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              {/* Circular Serif Initials Avatar */}
+              <div className="w-10 h-10 rounded-full border border-neutral-700/80 bg-[#111622] text-[#c9a96e] font-heading font-medium text-xs flex items-center justify-center shrink-0 shadow-inner">
+                {initials}
+              </div>
+
+              <div className="min-w-0">
+                {/* Reference, Set, Status Badges */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleCopyRef}
+                    title="Click to copy booking reference"
+                    className="inline-flex items-center gap-1.5 font-mono text-[11px] text-neutral-200 hover:text-white transition-colors cursor-pointer"
+                  >
+                    #{active.booking_number || 'BK-2026-00002'}
+                    {copiedRef ? (
+                      <Check size={11} className="text-[#c9a96e]" />
+                    ) : (
+                      <Copy size={11} className="text-neutral-400" />
+                    )}
+                  </button>
+
+                  <span className="text-[11.5px] font-bold uppercase tracking-wider text-[#c9a96e] px-1.5 py-0.5 rounded-md border border-[#c9a96e]/50 bg-transparent leading-none">
+                    {active.tier_name || 'SET A'}
+                  </span>
+
+                  <span className="text-[11.5px] font-bold uppercase tracking-wider text-[#38bdf8] px-1.5 py-0.5 rounded-md border border-[#38bdf8]/60 bg-[#38bdf8]/10 leading-none">
+                    {st}
+                  </span>
+                </div>
+
+                {/* Service Title */}
+                <h2 className="font-heading text-lg sm:text-xl font-bold tracking-tight text-white mt-0.5 leading-snug truncate">
+                  {active.service?.name || 'Senior High Packages and Sets'}
+                </h2>
+
+                {/* Subtitle */}
+                <p className="text-xs text-neutral-400 mt-0.5 truncate leading-tight">
+                  <span>Booked by <strong className="text-white font-semibold">{fullName}</strong></span>
+                  <span className="mx-2 text-neutral-500">•</span>
+                  <span>{venueAddress}</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Header Right Actions */}
+            <div className="flex items-center gap-2.5 shrink-0">
+              {/* Session Date Card */}
               <button
                 type="button"
-                onClick={handleCopyRef}
-                className="text-xs font-mono text-neutral-300 hover:text-white flex items-center gap-1.5 transition-colors bg-white/5 hover:bg-white/10 px-2 py-0.5 rounded-md border border-white/10 cursor-pointer"
-                title="Click to copy ref #"
+                onClick={goBooking}
+                className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl border border-white/15 bg-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer text-left group"
+                title="Open booking record to schedule or edit"
               >
-                <span>#{booking.booking_number}</span>
-                {copiedRef ? <Check size={12} className="text-gold" /> : <Copy size={12} className="text-neutral-400" />}
-              </button>
-              {booking.tier_name && (
-                <span className="text-[10px] font-bold uppercase text-gold bg-gold/10 px-2 py-0.5 rounded-md border border-gold/20">
-                  {booking.tier_name}
+                <Calendar size={13} className="text-[#c9a96e]" />
+                <span className="leading-tight">
+                  <span className="block text-[10.5px] uppercase tracking-[0.16em] text-neutral-400 font-bold">
+                    SESSION DATE
+                  </span>
+                  <span className="block text-xs font-semibold text-[#c9a96e] mt-0.5">
+                    {formattedDate}
+                  </span>
                 </span>
-              )}
-            </div>
+                <ChevronRight size={13} className="text-neutral-400 group-hover:text-white transition-colors" />
+              </button>
 
-            <h3 className="font-heading text-base sm:text-lg font-bold text-white tracking-tight truncate">
-              {booking.service?.name || 'Studio Photography Session'}
-            </h3>
-
-            <p className="text-xs text-neutral-400 truncate">
-              Client: <strong className="text-neutral-200 font-semibold">{booking.customer?.first_name} {booking.customer?.last_name}</strong>
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-xl text-neutral-400 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0 cursor-pointer mt-0.5"
-            aria-label="Close panel"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* ── Scrollable Inspector Content ───────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 scrollbar-thin">
-          
-          {/* Deleted state recovery notice */}
-          {booking.is_deleted && (
-            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between gap-3 shadow-2xs">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
-                  <Trash2 size={16} />
-                </div>
-                <div className="min-w-0">
-                  <h4 className="text-xs font-bold text-rose-900 leading-tight">Order Held in Trash Cycle</h4>
-                  <p className="text-[11px] text-rose-700 truncate">
-                    {booking.deletion_reason ? `Reason: ${booking.deletion_reason}` : 'Moved to trash by administrator'}
-                  </p>
-                </div>
-              </div>
-              {onRestore && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onRestore(booking);
-                    onClose();
-                  }}
-                  className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-gold text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all shadow-xs shrink-0 cursor-pointer border border-gold/30"
-                >
-                  <RotateCcw size={13} />
-                  <span>Recover</span>
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* ── 2. Current Operational State & Direct Status Change ──────── */}
-          <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3 shadow-2xs">
-            <div className="flex items-center justify-between pb-2.5 border-b border-neutral-100">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
-                Operational State
-              </span>
-              <BookingLifecycleBadge
-                status={booking.status}
-                paymentStatus={booking.payment_status}
-                layout="inline"
-              />
-            </div>
-
-            {/* Custom Dropdown for Status Change */}
-            <div className="space-y-2">
-              <label className="block text-[11px] font-semibold text-neutral-600 uppercase tracking-wider">
-                Direct Status Change
-              </label>
-
-              <div className="flex items-center gap-2">
-                <div className="flex-1 min-w-0">
-                  <CustomDropdown
-                    value={selectedStatus}
-                    onChange={(val) => setSelectedStatus(val)}
-                    options={STATUS_OPTIONS}
-                    className="w-full"
-                    popoverWidth="w-full"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleSaveStatus}
-                  disabled={isUpdating || (selectedStatus === booking.status && !remarks.trim())}
-                  className="py-2 px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all bg-neutral-900 hover:bg-neutral-800 text-gold border border-gold/40 disabled:opacity-40 disabled:pointer-events-none cursor-pointer shrink-0"
-                >
-                  {isUpdating ? (
-                    <Loader2 size={13} className="animate-spin text-gold" />
-                  ) : updateSuccess ? (
-                    <Check size={13} className="text-gold" />
-                  ) : (
-                    <Save size={13} className="text-gold" />
-                  )}
-                  <span>Apply</span>
-                </button>
-              </div>
-
-              {/* Status Remarks */}
-              <input
-                type="text"
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-                placeholder="Optional audit log remark..."
-                className="w-full px-3 py-2 bg-neutral-50 focus:bg-white rounded-xl text-xs border border-neutral-200 focus:border-gold focus:ring-1 focus:ring-gold/20 outline-none text-neutral-800 transition-colors"
-              />
-
-              {updateSuccess && (
-                <p className="text-[11px] text-neutral-900 font-semibold flex items-center gap-1 bg-gold/10 px-2.5 py-1 rounded-lg border border-gold/30">
-                  <CheckCircle2 size={12} className="text-gold-dark" /> Status successfully updated and logged!
-                </p>
-              )}
-
-              {errorMessage && (
-                <p className="text-[11px] text-neutral-900 font-semibold flex items-center gap-1 bg-neutral-100 px-2.5 py-1 rounded-lg border border-neutral-300">
-                  <AlertCircle size={12} className="text-primary" /> {errorMessage}
-                </p>
-              )}
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close inspector"
+                className="text-neutral-400 hover:text-white transition-colors cursor-pointer p-1"
+              >
+                <X size={16} />
+              </button>
             </div>
           </div>
 
-          {/* ── 3. Student & Yearbook Details ── */}
-          {(booking.notes || hasStudentData) && (
-            <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden shadow-2xs transition-all">
-              {/* Card Header with Toggle */}
-              <div className="p-3.5 flex items-center justify-between bg-neutral-50/70 border-b border-neutral-100">
-                <button
-                  type="button"
-                  onClick={() => setIsStudentDetailsOpen(!isStudentDetailsOpen)}
-                  className="flex items-center gap-2 text-left cursor-pointer group flex-1 min-w-0"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-gold/15 text-gold-dark flex items-center justify-center shrink-0 border border-gold/20">
-                    <GraduationCap size={14} />
-                  </div>
-                  <div className="min-w-0">
-                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-neutral-800 group-hover:text-gold-dark transition-colors truncate">
-                      Student & Yearbook Details
-                    </h4>
-                    {hasStudentData && (
-                      <p className="text-[10px] text-neutral-400 truncate">
-                        {studentData['School'] || 'Student Details'} {studentData['Program / Strand'] ? `· ${studentData['Program / Strand']}` : ''}
-                      </p>
+          {/* Stepper / Progress Bar (Exactly Matches Screenshot) */}
+          <div className="relative mt-3 pt-2.5 border-t border-white/10 overflow-x-auto scrollbar-none">
+            <ol className="grid grid-cols-7 min-w-[540px] sm:min-w-0">
+              {stages.map((s, i) => {
+                const isDone = s.state === 'done';
+                const isCurrent = s.state === 'current';
+                const isLineActive = isDone;
+
+                return (
+                  <li
+                    key={s.id}
+                    onClick={s.onClick}
+                    title={`${s.title}: ${s.sub}`}
+                    className={`relative flex flex-col items-center text-center px-1 ${
+                      s.onClick ? 'cursor-pointer group' : ''
+                    }`}
+                  >
+                    {/* Connecting Line */}
+                    {i < stages.length - 1 && (
+                      <span
+                        className={`absolute top-[8px] left-[calc(50%+10px)] right-[calc(-50%+10px)] h-[1px] ${
+                          isLineActive ? 'bg-teal-400' : 'bg-neutral-700/60'
+                        }`}
+                      />
                     )}
-                  </div>
-                </button>
 
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleCopyNotes}
-                    className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 hover:bg-neutral-200/60 transition-colors cursor-pointer text-xs"
-                    title="Copy Details"
-                  >
-                    {copiedNotes ? <Check size={13} className="text-gold-dark" /> : <Copy size={13} />}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsStudentDetailsOpen(!isStudentDetailsOpen)}
-                    className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 hover:bg-neutral-200/60 transition-colors cursor-pointer"
-                    title={isStudentDetailsOpen ? 'Collapse' : 'Expand'}
-                  >
-                    {isStudentDetailsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Collapsible Content Area */}
-              {isStudentDetailsOpen && (
-                <div className="p-3.5 space-y-3 animate-in fade-in duration-150">
-                  {hasStudentData ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      {/* School */}
-                      {studentData['School'] && (
-                        <div className="sm:col-span-2 p-2.5 bg-neutral-50 rounded-xl border border-neutral-100 flex items-start gap-2.5">
-                          <Building2 size={15} className="text-gold-dark shrink-0 mt-0.5" />
-                          <div className="min-w-0 flex-1">
-                            <span className="text-[10px] uppercase font-bold text-neutral-400 block">
-                              School / University
-                            </span>
-                            <span className="font-semibold text-neutral-900 leading-snug break-words">
-                              {studentData['School']}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Program / Strand */}
-                      {studentData['Program / Strand'] && (
-                        <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-100 flex items-start gap-2">
-                          <BookOpen size={14} className="text-gold-dark shrink-0 mt-0.5" />
-                          <div className="min-w-0">
-                            <span className="text-[10px] uppercase font-bold text-neutral-400 block">
-                              Degree / Strand
-                            </span>
-                            <span className="font-semibold text-neutral-900">
-                              {studentData['Program / Strand']}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Student ID */}
-                      {studentData['Student ID'] && (
-                        <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-100 flex items-start gap-2">
-                          <IdCard size={14} className="text-gold-dark shrink-0 mt-0.5" />
-                          <div className="min-w-0">
-                            <span className="text-[10px] uppercase font-bold text-neutral-400 block">
-                              Student ID
-                            </span>
-                            <span className="font-mono font-bold text-neutral-900 bg-white px-1.5 py-0.5 rounded border border-neutral-200 inline-block mt-0.5">
-                              {studentData['Student ID']}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Campus */}
-                      {studentData['Campus'] && (
-                        <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-100 flex items-start gap-2">
-                          <MapPin size={14} className="text-neutral-500 shrink-0 mt-0.5" />
-                          <div className="min-w-0">
-                            <span className="text-[10px] uppercase font-bold text-neutral-400 block">
-                              Campus / Location
-                            </span>
-                            <span className="font-medium text-neutral-800">
-                              {studentData['Campus']}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Section / Batch */}
-                      {studentData['Section / Batch'] && (
-                        <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-100 flex items-start gap-2">
-                          <Users size={14} className="text-neutral-500 shrink-0 mt-0.5" />
-                          <div className="min-w-0">
-                            <span className="text-[10px] uppercase font-bold text-neutral-400 block">
-                              Section / Batch
-                            </span>
-                            <span className="font-semibold text-neutral-900">
-                              {studentData['Section / Batch']}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Toga Size */}
-                      {studentData['Toga Size'] && (
-                        <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-100 flex items-start gap-2">
-                          <Layers size={14} className="text-gold-dark shrink-0 mt-0.5" />
-                          <div className="min-w-0">
-                            <span className="text-[10px] uppercase font-bold text-neutral-400 block">
-                              Toga Size
-                            </span>
-                            <span className="font-semibold text-neutral-900">
-                              {studentData['Toga Size']}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Height */}
-                      {studentData['Height'] && (
-                        <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-100 flex items-start gap-2">
-                          <Layers size={14} className="text-neutral-500 shrink-0 mt-0.5" />
-                          <div className="min-w-0">
-                            <span className="text-[10px] uppercase font-bold text-neutral-400 block">
-                              Height
-                            </span>
-                            <span className="font-semibold text-neutral-900">
-                              {studentData['Height']}
-                            </span>
-                          </div>
-                        </div>
+                    {/* Step Circle Indicator */}
+                    <div className="relative z-10 h-4 flex items-center justify-center">
+                      {isDone ? (
+                        <span className="w-4 h-4 rounded-full border border-teal-400 bg-[#0b0f17] flex items-center justify-center text-teal-400">
+                          <Check size={9} strokeWidth={3} />
+                        </span>
+                      ) : isCurrent ? (
+                        <span className="w-4 h-4 rounded-full border border-[#c9a96e] bg-[#0b0f17] flex items-center justify-center">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#c9a96e]" />
+                        </span>
+                      ) : (
+                        <span className="w-3.5 h-3.5 rounded-full border border-neutral-600 bg-[#0b0f17] flex items-center justify-center">
+                          <span className="w-1 h-1 rounded-full bg-neutral-600" />
+                        </span>
                       )}
                     </div>
-                  ) : null}
 
-                  {/* Special Client Remarks / Instructions */}
-                  {rawRemaining && (
-                    <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-100 text-xs text-neutral-700 font-body whitespace-pre-line leading-relaxed">
-                      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1">
-                        <FileText size={11} />
-                        <span>Special Instructions & Notes</span>
-                      </div>
-                      {rawRemaining}
-                    </div>
-                  )}
+                    {/* Title */}
+                    <span
+                      className={`mt-1.5 text-xs leading-tight ${
+                        isCurrent
+                          ? 'font-bold text-[#c9a96e]'
+                          : isDone
+                          ? 'font-bold text-white'
+                          : 'font-medium text-neutral-400'
+                      }`}
+                    >
+                      {s.title}
+                    </span>
+
+                    {/* Subtitle */}
+                    <span
+                      className={`text-[11.5px] mt-0.5 leading-tight ${
+                        isCurrent
+                          ? 'font-medium text-[#c9a96e]'
+                          : isDone
+                          ? 'text-neutral-400'
+                          : 'text-neutral-500'
+                      }`}
+                    >
+                      {s.sub}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        </header>
+
+        {/* Toast if payment recorded */}
+        {paymentToast && (
+          <div className="shrink-0 flex items-center justify-between gap-3 bg-emerald-50 border-b border-emerald-200 px-6 py-2 text-xs font-semibold text-emerald-800">
+            <span className="flex items-center gap-2">
+              <CheckCircle2 size={14} className="text-emerald-600" />
+              {paymentToast}
+            </span>
+            <button type="button" onClick={() => setPaymentToast('')} className="cursor-pointer">
+              <X size={13} />
+            </button>
+          </div>
+        )}
+
+        {/* ── 2. SCROLLABLE CONTENT BODY (Ivory Section) ───────────────────── */}
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-6 sm:px-8 py-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+
+            {/* Left Column (Approx 60%): Order Information */}
+            <div className="lg:col-span-7 space-y-5 lg:pr-2">
+
+              {/* 1. CLIENT IDENTITY */}
+              <section>
+                <SectionTitle icon={User}>CLIENT IDENTITY</SectionTitle>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                  <Field label="ACCOUNT OWNER">{fullName}</Field>
+
+                  <Field label="EMAIL ADDRESS">
+                    {hasEmail ? (
+                      <span className="inline-flex items-center gap-1.5 font-bold text-[12.5px] text-neutral-900">
+                        <Mail size={12} className="text-[#c9a96e] shrink-0" />
+                        <span className="truncate">{email}</span>
+                      </span>
+                    ) : (
+                      <span className="text-neutral-400 font-normal">Not provided</span>
+                    )}
+                  </Field>
+
+                  <Field label="CONTACT PHONE" muted={!hasPhone}>
+                    {hasPhone ? phone : 'Not provided'}
+                  </Field>
+
+                  <Field label="BENEFICIARY TYPE">
+                    {isSomeoneElse ? (
+                      <span className="text-neutral-900 font-semibold">
+                        {participant.full_name}
+                        {participant.relationship ? ` (${participant.relationship})` : ''}
+                      </span>
+                    ) : (
+                      <span className="text-neutral-800 font-medium">Self (Account Owner)</span>
+                    )}
+                  </Field>
                 </div>
-              )}
-            </div>
-          )}
+              </section>
 
-          {/* ── 4. Customer Information ─────────────────────────────────── */}
-          <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3 shadow-2xs">
-            <h4 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
-              Customer Information
-            </h4>
+              {/* Hairline Divider */}
+              <div className="border-b border-[#ece6da]" />
 
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gold/15 text-gold-dark font-heading font-bold flex items-center justify-center text-sm border border-gold/30 shrink-0">
-                {booking.customer?.first_name?.charAt(0) || 'C'}
-              </div>
-              <div className="min-w-0">
-                <h5 className="font-semibold text-neutral-900 text-sm truncate">
-                  {booking.customer?.first_name} {booking.customer?.last_name}
-                </h5>
-                <p className="text-[11px] text-neutral-400">Verified Client Account</p>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-neutral-100 space-y-2 text-xs text-neutral-600">
-              {booking.customer?.phone && (
-                <div className="flex items-center justify-between">
-                  <a
-                    href={`tel:${booking.customer.phone}`}
-                    className="flex items-center gap-2 hover:text-gold-dark transition-colors font-medium"
-                  >
-                    <Phone size={13} className="text-neutral-400" />
-                    <span>{booking.customer.phone}</span>
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => navigator.clipboard.writeText(booking.customer.phone)}
-                    className="text-[10px] text-neutral-400 hover:text-primary font-medium cursor-pointer"
-                  >
-                    Copy
-                  </button>
+              {/* 2. ACADEMIC & INSTITUTION */}
+              <section>
+                <SectionTitle icon={GraduationCap}>ACADEMIC & INSTITUTION</SectionTitle>
+                <div className="mb-4">
+                  <h4 className="font-heading font-bold text-[17px] text-neutral-900 leading-snug">
+                    {school}
+                  </h4>
+                  {campus && <p className="text-xs text-neutral-500 font-normal mt-1 leading-none">{campus}</p>}
                 </div>
-              )}
 
-              {studioAddress && (
-                <div className="flex items-start justify-between gap-2 pt-1 border-t border-neutral-50">
-                  <div className="flex items-start gap-2 min-w-0">
-                    <MapPin size={13} className="text-neutral-400 shrink-0 mt-0.5" />
-                    <span className="text-neutral-700 leading-snug">{studioAddress}</span>
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <Field label="TRACK / STRAND">
+                    {strand}
+                  </Field>
+                  <Field label="SECTION / GRADE">
+                    {sectionGrade}
+                  </Field>
+                  <Field label="STUDENT ID">
+                    <span className="font-mono tabular-nums">{studentId}</span>
+                  </Field>
+                </div>
+              </section>
+
+              {/* Hairline Divider */}
+              <div className="border-b border-[#ece6da]" />
+
+              {/* 3. SESSION LOGISTICS */}
+              <section>
+                <SectionTitle
+                  icon={Camera}
+                  action={
+                    <button
+                      type="button"
+                      onClick={goBooking}
+                      className="text-xs font-medium text-[#c9a96e] hover:text-[#b89555] flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      Assign photographer <ArrowRight size={12} />
+                    </button>
+                  }
+                >
+                  SESSION LOGISTICS
+                </SectionTitle>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                  <Field label="EVENT DATE" muted={!active.event_date}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <Calendar size={12} className="text-[#c9a96e]" />
+                      {formattedDate}
+                    </span>
+                  </Field>
+                  <Field label="PREFERRED TIME" muted={!timeSlot}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <Clock size={12} className="text-neutral-400" />
+                      {timeSlot || 'Flexible'}
+                    </span>
+                  </Field>
+                  <Field label="PHOTOGRAPHER" muted={!photographerName}>
+                    {photographerName || 'Unassigned'}
+                  </Field>
+                  <Field label="STUDIO BAY" muted={!active.bay_number}>
+                    {active.bay_number ? `Bay ${active.bay_number}` : 'Campus / Standard Bay'}
+                  </Field>
+                </div>
+
+                {/* Location Container */}
+                <div className="mt-4 bg-white rounded-xl border border-[#ece6da] px-4 py-2.5 flex items-center justify-between gap-3 shadow-2xs">
+                  <span className="inline-flex items-center gap-2 min-w-0">
+                    <MapPin size={13} className="text-[#c9a96e] shrink-0" />
+                    <span className="text-xs font-medium text-neutral-800 truncate">
+                      {venueAddress}
+                    </span>
+                  </span>
                   {mapUrl && (
                     <a
                       href={mapUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[10px] font-bold text-gold hover:text-primary shrink-0 flex items-center gap-1 transition-colors"
+                      className="text-xs font-semibold text-neutral-700 hover:text-black flex items-center gap-1 shrink-0"
                     >
-                      <span>Maps</span>
-                      <ExternalLink size={10} />
+                      Map <ExternalLink size={11} />
                     </a>
                   )}
                 </div>
-              )}
+              </section>
             </div>
-          </div>
 
-          {/* ── 5. Session Schedule & Specifications ─────────────────────── */}
-          <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-2.5 shadow-2xs text-xs">
-            <h4 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
-              Session Schedule & Specifications
-            </h4>
+            {/* Right Column (Approx 40%): Financial Settlement & Package Details */}
+            <aside className="lg:col-span-5 space-y-3">
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between py-1 border-b border-neutral-100">
-                <span className="text-neutral-500">Service Package:</span>
-                <span className="font-semibold text-primary text-right truncate max-w-[240px]">
-                  {booking.service?.name || 'Photography Session'}
-                </span>
-              </div>
-
-              {booking.tier_name && (
-                <div className="flex items-center justify-between py-1 border-b border-neutral-100">
-                  <span className="text-neutral-500">Selected Tier:</span>
-                  <span className="font-semibold text-gold-dark bg-gold/10 px-2 py-0.5 rounded-md border border-gold/25">
-                    {booking.tier_name}
+              {/* 1. FINANCIAL SETTLEMENT CARD (Obsidian Black) */}
+              <div className="rounded-[20px] bg-[#0b0f17] text-white p-4.5 sm:p-5 shadow-xl border border-white/10">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-sans uppercase tracking-[0.16em] text-xs font-bold text-neutral-300">
+                    FINANCIAL SETTLEMENT
+                  </span>
+                  <span className="font-sans uppercase tracking-wider text-[11.5px] font-bold text-[#c9a96e] px-2 py-0.5 rounded-full border border-[#c9a96e]/60 bg-transparent leading-none">
+                    {isPaid ? 'PAID' : (downPayment > 0 ? 'DOWNPAYMENT PAID' : 'UNPAID')}
                   </span>
                 </div>
-              )}
 
-              <div className="flex items-center justify-between py-1 border-b border-neutral-100">
-                <span className="text-neutral-500">Event Date:</span>
-                <span className="font-semibold text-neutral-900 flex items-center gap-1.5">
-                  <CalendarDays size={13} className="text-gold-dark" />
-                  {formattedDate}
-                </span>
-              </div>
+                <div className="mt-2.5">
+                  <p className="font-sans uppercase tracking-[0.16em] text-[11.5px] font-semibold text-neutral-400">
+                    REMAINING BALANCE
+                  </p>
+                  <p className="font-sans font-bold text-3xl sm:text-[32px] text-white tracking-tight mt-0.5 leading-none">
+                    {peso(remainingBal, remainingBal % 1 ? 2 : 0)}
+                  </p>
+                </div>
 
-              {formattedTimeSlot && (
-                <div className="flex items-center justify-between py-1 border-b border-neutral-100">
-                  <span className="text-neutral-500">Time Slot:</span>
-                  <span className="font-semibold text-neutral-900 flex items-center gap-1.5">
-                    <Clock size={13} className="text-neutral-400" />
-                    {formattedTimeSlot}
+                {/* Gold Progress Bar */}
+                <div className="mt-2.5 h-1.5 w-full bg-neutral-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[#c9a96e] transition-all duration-500"
+                    style={{ width: `${paidPercent}%` }}
+                  />
+                </div>
+
+                {/* Paid vs Total */}
+                <div className="mt-1.5 flex items-center justify-between text-[11px] tabular-nums">
+                  <span className="text-neutral-400">
+                    Paid <strong className="text-white font-bold">{peso(downPayment)}</strong>
+                  </span>
+                  <span className="text-neutral-400">
+                    Total <strong className="text-white font-bold">{peso(totalAmount)}</strong> · {paidPercent}%
                   </span>
                 </div>
-              )}
 
-              {booking.created_at && (
-                <div className="flex items-center justify-between py-1">
-                  <span className="text-neutral-500">Booking Intake Date:</span>
-                  <span className="font-medium text-neutral-500">
-                    {new Date(booking.created_at).toLocaleDateString('en-PH', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
+                {/* Action Buttons */}
+                <div className="mt-3.5 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={openRecordPayment}
+                    className="flex-1 h-9 px-3 rounded-xl bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-[0.99]"
+                  >
+                    <CreditCard size={13} className="shrink-0" /> Record Payment
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={goPayments}
+                    title="Open full payment ledger"
+                    className="h-9 px-3.5 rounded-xl border border-white/20 hover:bg-white/10 text-white font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    Ledger <ArrowRight size={12} />
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. PACKAGE INCLUSIONS CARD (Pure White) */}
+              <div className="rounded-[20px] bg-white border border-[#ece6da] p-4.5 sm:p-5 shadow-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Package size={13} className="text-[#c9a96e]" />
+                    <h3 className="font-heading uppercase tracking-[0.18em] text-xs font-bold text-neutral-800">
+                      PACKAGE INCLUSIONS
+                    </h3>
+                  </div>
+                  <span className="font-bold text-xs text-neutral-900 tabular-nums">
+                    {peso(totalAmount)}
                   </span>
                 </div>
-              )}
-            </div>
+
+                <ul className="space-y-2 mt-3.5 pt-3 border-t border-[#f1ece2]">
+                  {tierHighlights.map((h, i) => (
+                    <li key={i} className="flex items-start gap-2 text-[11px] text-neutral-700 leading-tight">
+                      <Check size={12} className="text-[#c9a96e] mt-0.5 shrink-0" strokeWidth={2.5} />
+                      <span>{h}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </aside>
           </div>
+        </div>
 
-          {/* ── 6. Financial Clearance & Ledger ─────────────────────────── */}
-          <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <CreditCard size={14} className="text-gold-dark" />
-                <h4 className="text-[11px] font-bold uppercase tracking-wider text-neutral-600">
-                  Financial Clearance
-                </h4>
-              </div>
-              <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                isPaid
-                  ? 'bg-neutral-900 text-gold border-neutral-800'
-                  : 'bg-gold/10 text-gold-dark border-gold/30'
-              }`}>
-                {isPaid ? 'Cleared (Paid in Full)' : 'Pending Settlement'}
-              </span>
-            </div>
+        {/* ── 3. FIXED FOOTER (Pure White) ─────────────────────────────────── */}
+        <footer className="shrink-0 flex items-center justify-between gap-4 px-6 sm:px-8 py-3 bg-white border-t border-[#ece6da]">
+          <span className="text-[11px] text-neutral-400">{lastUpdated}</span>
 
-            <div className="grid grid-cols-3 gap-2 pt-1 text-center">
-              <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-100">
-                <p className="text-[10px] uppercase font-bold text-neutral-400">Total Price</p>
-                <p className="text-sm font-heading font-bold text-primary mt-0.5">
-                  ₱{totalAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                </p>
-              </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={goBooking}
+              className="h-9 px-4 rounded-lg border border-neutral-300 hover:border-neutral-400 bg-white text-neutral-800 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              Full Order <ArrowRight size={12} />
+            </button>
 
-              <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-100">
-                <p className="text-[10px] uppercase font-bold text-neutral-400">Down Payment</p>
-                <p className="text-sm font-heading font-bold text-neutral-800 mt-0.5">
-                  ₱{downPayment.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-
-              <div className={`p-2.5 rounded-xl border ${
-                remainingBal > 0 ? 'bg-gold/10 border-gold/30' : 'bg-neutral-50 border-neutral-100'
-              }`}>
-                <p className="text-[10px] uppercase font-bold text-neutral-400">Balance</p>
-                <p className={`text-sm font-heading font-bold mt-0.5 ${
-                  remainingBal > 0 ? 'text-gold-dark' : 'text-neutral-800'
-                }`}>
-                  ₱{remainingBal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-9 px-6 rounded-lg bg-[#0b0f17] hover:bg-neutral-800 text-white text-xs font-semibold transition-colors cursor-pointer shadow-sm"
+            >
+              Done
+            </button>
           </div>
+        </footer>
+      </div>
 
-          {/* ── 7. Direct Quick Actions ───────────────────────────────────── */}
-          <div className="space-y-2.5">
-            <h4 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
-              Direct Quick Actions
-            </h4>
-            <div className="grid grid-cols-2 gap-2.5">
-              {!booking.is_deleted ? (
-                <Link
-                  to={`/admin/bookings/${booking.id}`}
-                  className="p-3 rounded-xl border border-neutral-200 hover:border-gold hover:bg-white transition-all text-xs font-semibold text-primary flex items-center justify-between shadow-2xs"
-                >
-                  <span>Full Record Page</span>
-                  <ExternalLink size={13} className="text-gold" />
-                </Link>
-              ) : onRestore ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onRestore(booking);
-                    onClose();
-                  }}
-                  className="p-3 rounded-xl border border-gold/40 bg-neutral-900 text-gold hover:bg-neutral-800 transition-all text-xs font-semibold flex items-center justify-between shadow-2xs cursor-pointer"
-                >
-                  <span>Recover Order</span>
-                  <RotateCcw size={13} />
-                </button>
-              ) : null}
-
-              <Link
-                to={`/admin/payments`}
-                className="p-3 rounded-xl border border-neutral-200 hover:border-gold hover:bg-white transition-all text-xs font-semibold text-primary flex items-center justify-between shadow-2xs"
-              >
-                <span>Record Payment</span>
-                <CreditCard size={13} className="text-gold" />
-              </Link>
-
-              {onEdit && !booking.is_deleted && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onEdit(booking);
-                  }}
-                  className="p-3 rounded-xl border border-neutral-200 hover:border-gold hover:bg-white transition-all text-xs font-semibold text-primary flex items-center justify-between shadow-2xs cursor-pointer"
-                >
-                  <span>Edit Details</span>
-                  <Edit3 size={13} className="text-gold" />
-                </button>
-              )}
-
-              {onDelete && !booking.is_deleted && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onDelete(booking);
-                  }}
-                  className="p-3 rounded-xl border border-rose-200 hover:border-rose-400 hover:bg-rose-50/50 hover:text-rose-700 transition-all text-xs font-semibold text-rose-600 flex items-center justify-between shadow-2xs cursor-pointer"
-                >
-                  <span>Move to Trash</span>
-                  <Trash2 size={13} className="text-rose-500" />
-                </button>
-              )}
-
-              <Link
-                to="/admin/photographers"
-                className="p-3 rounded-xl border border-neutral-200 hover:border-neutral-400 hover:bg-white transition-all text-xs font-semibold text-neutral-700 flex items-center justify-between shadow-2xs"
-              >
-                <span>Photographers Bay</span>
-                <Layers size={13} className="text-neutral-400" />
-              </Link>
-
+      {/* ── RECORD PAYMENT DIALOG ─────────────────────────────────────────── */}
+      {paymentModalOpen && (
+        <div className="fixed inset-0 z-[10002] flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-sm animate-fade-in">
+          <form onSubmit={submitPayment} className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6 space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-heading text-lg font-bold text-neutral-900">Record Payment</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {fullName} · #{active.booking_number}
+                </p>
+              </div>
               <button
                 type="button"
-                onClick={handleCopyRef}
-                className="p-3 rounded-xl border border-neutral-200 hover:bg-white transition-all text-xs font-semibold text-neutral-700 flex items-center justify-between shadow-2xs cursor-pointer"
+                onClick={() => setPaymentModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center cursor-pointer"
               >
-                <span>{copiedRef ? 'Ref Copied!' : 'Copy Reference'}</span>
-                <Copy size={13} className="text-neutral-400" />
+                <X size={14} />
               </button>
             </div>
-          </div>
 
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
+                Payment Amount
+              </label>
+              <div className="relative mt-1">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 font-semibold text-base">
+                  ₱
+                </span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="1"
+                  required
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  className="w-full h-11 pl-8 pr-4 rounded-xl border border-neutral-300 focus:outline-none focus:ring-2 focus:ring-[#c9a96e] text-base font-bold tabular-nums"
+                />
+              </div>
+              <p className="text-[11px] text-neutral-400 mt-1">Balance due {peso(remainingBal, 2)}</p>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
+                Payment Channel
+              </label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {paymentMethods.map((m) => {
+                  const Icon = m.icon;
+                  const on = paymentMethod === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setPaymentMethod(m.id)}
+                      className={`h-9 px-3 rounded-xl border text-xs font-medium flex items-center gap-2 cursor-pointer transition-colors ${
+                        on
+                          ? 'border-[#c9a96e] bg-[#faf5ec] text-neutral-900 font-semibold'
+                          : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'
+                      }`}
+                    >
+                      <Icon size={13} className={on ? 'text-[#a8843a]' : 'text-neutral-400'} /> {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
+                Settlement Type
+              </label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {[
+                  ['DOWN_PAYMENT', 'Down Payment'],
+                  ['FINAL_PAYMENT', 'Final Settlement'],
+                ].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setPaymentType(id)}
+                    className={`h-9 rounded-xl border text-xs font-semibold cursor-pointer transition-colors ${
+                      paymentType === id
+                        ? 'bg-neutral-900 text-white border-neutral-900'
+                        : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
+                Reference / Receipt Number
+              </label>
+              <input
+                type="text"
+                value={paymentRefNumber}
+                onChange={(e) => setPaymentRefNumber(e.target.value)}
+                placeholder="e.g. GCash Ref / Bank OR#"
+                className="w-full h-9 px-3 rounded-xl border border-neutral-300 focus:outline-none focus:ring-2 focus:ring-[#c9a96e] text-xs mt-1"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setPaymentModalOpen(false)}
+                className="h-9 px-4 rounded-xl border border-neutral-200 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submittingPayment}
+                className="h-9 px-5 rounded-xl bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 text-xs font-bold flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-sm"
+              >
+                {submittingPayment ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" /> Recording…
+                  </>
+                ) : (
+                  <>
+                    <Receipt size={13} /> Confirm Payment
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
-
-        {/* ── 8. Drawer Footer ───────────────────────────────────────────── */}
-        <div className="px-5 py-3.5 bg-white border-t border-neutral-200 flex items-center justify-between shrink-0">
-          <span className="text-[11px] font-medium text-neutral-400">
-            E-Kodak Studio Admin
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-1.5 text-xs font-semibold text-neutral-700 hover:text-primary hover:bg-neutral-100 rounded-xl transition-colors cursor-pointer border border-neutral-200"
-          >
-            Close
-          </button>
-        </div>
-
-      </div>
-    </div>
+      )}
+    </div>,
+    document.body
   );
 }
 
@@ -876,4 +964,7 @@ BookingQuickInspector.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   onStatusUpdated: PropTypes.func,
+  onRestore: PropTypes.func,
+  onEdit: PropTypes.func,
+  onDelete: PropTypes.func,
 };

@@ -21,13 +21,13 @@
  * • Direct export of photographer roster to CSV
  */
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   Camera, RefreshCw, AlertCircle, CheckCircle2, XCircle, Search,
   Calendar, Clock, Briefcase, User, Phone, Eye, X, ChevronRight,
   ShieldCheck, FileText, Download, Plus, Edit3, Trash2, Mail,
   Check, AlertTriangle, Activity, Radio, Sparkles, UserCheck,
-  CalendarDays, ArrowRightLeft, Users, Filter
+  CalendarDays, ArrowRightLeft, Users, Filter, History
 } from 'lucide-react';
 import { getPhotographersWithWorkloadAndAvailability } from '../../services/bookingAdminService';
 import {
@@ -41,6 +41,7 @@ import { updatePhotographerProfileData } from '../../services/photographerServic
 import { subscribeToCustomerPresence } from '../../services/presenceService';
 import { useAuth } from '../../context/AuthContext';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
+import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import CustomDropdown from '../../components/ui/CustomDropdown';
 
 function fmt(d) {
@@ -90,7 +91,7 @@ function PhotographerStatusCircle({ photographer, presenceInfo = null }) {
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <span className="font-bold text-[11px] text-emerald-400">Live on Photographer Portal</span>
           </div>
-          <div className="space-y-0.5 text-[10px] text-neutral-300">
+          <div className="space-y-0.5 text-xs text-neutral-300">
             {liveSince && (
               <div className="flex items-start justify-between gap-2">
                 <span className="text-neutral-400 shrink-0">Live since:</span>
@@ -159,8 +160,11 @@ export default function AdminPhotographers() {
   // Primary data state
   const [photographers, setPhotographers] = useState([]);
   const [loading, setLoading]             = useState(true);
+  const [isRefreshing, setIsRefreshing]   = useState(false);
   const [error, setError]                 = useState(null);
   const [actionSuccessMsg, setActionSuccessMsg] = useState(null);
+  const photographersRef                  = useRef(photographers);
+  photographersRef.current                = photographers;
 
   // Management operation states
   const [toggling, setToggling]           = useState(null);
@@ -205,16 +209,28 @@ export default function AdminPhotographers() {
   }, []);
 
   // Load photographer roster
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const { data, error: e } = await getPhotographersWithWorkloadAndAvailability();
-    if (e) {
-      setError('Failed to load photographer records.');
+  const load = useCallback(async (isManualRefresh = false) => {
+    const hasData = photographersRef.current.length > 0;
+    if (isManualRefresh || hasData) {
+      setIsRefreshing(true);
     } else {
-      setPhotographers(data || []);
+      setLoading(true);
     }
-    setLoading(false);
+    setError(null);
+    try {
+      const { data, error: e } = await getPhotographersWithWorkloadAndAvailability();
+      if (e) {
+        setError('Failed to load photographer records.');
+      } else {
+        setPhotographers(data || []);
+      }
+    } catch (err) {
+      console.error('getPhotographers error:', err);
+      setError('Failed to load photographer records.');
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -453,7 +469,7 @@ export default function AdminPhotographers() {
   }, [photographers, search, presenceFilter, statusFilter, specializationFilter, workloadFilter, liveOnlineMap]);
 
   return (
-    <div className="w-full max-w-screen-2xl mx-auto space-y-6 pb-16 animate-fade-in font-body">
+    <div className="w-full pb-16 animate-fade-in font-body">
       {/* ── 1. Luxury Dark Hero Banner (Adapted for Photographers) ───────────── */}
       <AdminHeroBanner
         station={profile?.role || 'admin'}
@@ -472,146 +488,58 @@ export default function AdminPhotographers() {
           icon: Download,
           onClick: handleExportCSV,
         }}
-        onRefresh={load}
-        isRefreshing={loading}
+        onRefresh={() => load(true)}
+        isRefreshing={isRefreshing || loading}
         onExport={handleExportCSV}
         extraTools={[
-          { label: 'Workstation Hub', href: '/admin/workstation', icon: ArrowRightLeft, iconColor: 'text-gold' },
+          { label: 'Activity Logs', href: '/admin/activity-logs', icon: History, iconColor: 'text-gold' },
           { label: 'Customer Directory', href: '/admin/customers', icon: Users, iconColor: 'text-gold' },
           { label: 'Security & Audit', href: '/admin/security', icon: ShieldCheck, iconColor: 'text-neutral-400' },
         ]}
       />
 
-      {/* ── 2. KPI Overview Metric Strip (Space-Efficient 6 Cards) ───────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-        {/* Total Photographers */}
-        <button
-          type="button"
-          onClick={() => {
-            setPresenceFilter('ALL');
-            setStatusFilter('ALL');
-            setSpecializationFilter('ALL');
-            setWorkloadFilter('ALL');
-          }}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            presenceFilter === 'ALL' && statusFilter === 'ALL' && specializationFilter === 'ALL' && workloadFilter === 'ALL'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Total Roster</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200/70 text-neutral-700 flex items-center justify-center">
-              <Camera size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{photographers.length}</p>
-          <span className="text-xs text-neutral-400 font-normal mt-1 block truncate">Full photographer team</span>
-        </button>
+      {/* ── Page Content Container with Balanced Spacing ─────────────────────── */}
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
 
-        {/* Live on Photographer Portal (Online Now) */}
-        <button
-          type="button"
-          onClick={() => setPresenceFilter(presenceFilter === 'ONLINE' ? 'ALL' : 'ONLINE')}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            presenceFilter === 'ONLINE'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live on Portal
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-100 to-emerald-200/60 text-emerald-800 flex items-center justify-center">
-              <Radio size={15} className="animate-pulse" />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{kpiStats.liveOnline}</p>
-          <span className="text-xs text-neutral-400 font-medium mt-1 block truncate">Active on dashboard now</span>
-        </button>
-
-        {/* Available for Shoots */}
-        <button
-          type="button"
-          onClick={() => setStatusFilter(statusFilter === 'AVAILABLE' ? 'ALL' : 'AVAILABLE')}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            statusFilter === 'AVAILABLE'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Available</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200/70 text-neutral-700 flex items-center justify-center">
-              <CheckCircle2 size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{kpiStats.available}</p>
-          <span className="text-xs text-neutral-400 font-normal mt-1 block truncate">Ready for sessions</span>
-        </button>
-
-        {/* Off-duty / Unavailable */}
-        <button
-          type="button"
-          onClick={() => setStatusFilter(statusFilter === 'UNAVAILABLE' ? 'ALL' : 'UNAVAILABLE')}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            statusFilter === 'UNAVAILABLE'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Unavailable</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200/70 text-neutral-500 flex items-center justify-center">
-              <XCircle size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-neutral-700">{kpiStats.unavailable}</p>
-          <span className="text-xs text-neutral-400 font-normal mt-1 block truncate">Off-duty or blocked</span>
-        </button>
-
-        {/* Pending Approval */}
-        <button
-          type="button"
-          onClick={() => setStatusFilter(statusFilter === 'PENDING' ? 'ALL' : 'PENDING')}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            statusFilter === 'PENDING'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">Pending</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-100 to-gold/20 text-amber-800 flex items-center justify-center">
-              <AlertCircle size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-amber-800">{kpiStats.pending}</p>
-          <span className="text-xs text-amber-700/80 font-medium mt-1 block truncate">Awaiting sign-off</span>
-        </button>
-
-        {/* Active Shoot Workload */}
-        <button
-          type="button"
-          onClick={() => setWorkloadFilter(workloadFilter === 'BUSY' ? 'ALL' : 'BUSY')}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            workloadFilter === 'BUSY'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Workload</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-gold/25 to-gold/10 text-gold-dark flex items-center justify-center">
-              <Briefcase size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-gold-dark">{kpiStats.totalWorkload}</p>
-          <span className="text-xs text-neutral-400 font-normal mt-1 block truncate">Total active shoots</span>
-        </button>
-      </div>
+      {/* ── 2. Unified Luxury Studio KPI Overview Metric Strip ─────────────── */}
+      <CategorizedMetricStrip
+        loading={loading}
+        columns="grid-cols-2 lg:grid-cols-4"
+        cards={[
+          {
+            key: 'AVAILABLE',
+            label: 'AVAILABLE',
+            subtitle: 'Ready for sessions',
+            value: kpiStats.available,
+            isActive: statusFilter === 'AVAILABLE',
+            onClick: () => setStatusFilter(statusFilter === 'AVAILABLE' ? 'ALL' : 'AVAILABLE'),
+          },
+          {
+            key: 'UNAVAILABLE',
+            label: 'OFF-DUTY',
+            subtitle: 'Off-duty or blocked',
+            value: kpiStats.unavailable,
+            isActive: statusFilter === 'UNAVAILABLE',
+            onClick: () => setStatusFilter(statusFilter === 'UNAVAILABLE' ? 'ALL' : 'UNAVAILABLE'),
+          },
+          {
+            key: 'PENDING',
+            label: 'PENDING',
+            subtitle: 'Awaiting sign-off',
+            value: kpiStats.pending,
+            isActive: statusFilter === 'PENDING',
+            onClick: () => setStatusFilter(statusFilter === 'PENDING' ? 'ALL' : 'PENDING'),
+          },
+          {
+            key: 'BUSY',
+            label: 'ASSIGNMENTS',
+            subtitle: 'Total active shoots',
+            value: kpiStats.totalWorkload,
+            isActive: workloadFilter === 'BUSY',
+            onClick: () => setWorkloadFilter(workloadFilter === 'BUSY' ? 'ALL' : 'BUSY'),
+          },
+        ]}
+      />
 
       {/* Action Flash Message */}
       {actionSuccessMsg && (
@@ -674,25 +602,8 @@ export default function AdminPhotographers() {
 
           {/* Custom Dropdown Filters */}
           <div className="flex items-center gap-2.5 flex-wrap justify-start lg:justify-end">
-            {/* Live Presence Filter */}
-            <div className="w-40 sm:w-44">
-              <CustomDropdown
-                value={presenceFilter}
-                onChange={setPresenceFilter}
-                options={[
-                  { value: 'ALL', label: 'All Presence', icon: Radio },
-                  { value: 'ONLINE', label: '🟢 Live on Portal', dotColor: 'bg-emerald-500' },
-                  { value: 'OFFLINE', label: '⚪ Offline Roster', dotColor: 'bg-neutral-400' },
-                ]}
-                placeholder="Presence"
-                icon={Activity}
-                className="w-full"
-                popoverWidth="w-48"
-              />
-            </div>
-
             {/* Availability & Account Status Filter */}
-            <div className="w-44 sm:w-48">
+            <div className="w-48 sm:w-52">
               <CustomDropdown
                 value={statusFilter}
                 onChange={setStatusFilter}
@@ -710,27 +621,8 @@ export default function AdminPhotographers() {
               />
             </div>
 
-            {/* Specialization Filter */}
-            <div className="w-48 sm:w-52">
-              <CustomDropdown
-                value={specializationFilter}
-                onChange={setSpecializationFilter}
-                options={[
-                  { value: 'ALL', label: 'All Specializations' },
-                  ...availableSpecializations.map(spec => ({
-                    value: spec,
-                    label: spec,
-                  })),
-                ]}
-                placeholder="Specialization"
-                icon={Camera}
-                className="w-full"
-                popoverWidth="w-56"
-              />
-            </div>
-
             {/* Workload Filter */}
-            <div className="w-38 sm:w-42">
+            <div className="w-44 sm:w-48">
               <CustomDropdown
                 value={workloadFilter}
                 onChange={setWorkloadFilter}
@@ -743,38 +635,38 @@ export default function AdminPhotographers() {
                 placeholder="Workload"
                 icon={Briefcase}
                 className="w-full"
-                popoverWidth="w-44"
+                popoverWidth="w-48"
               />
             </div>
+
+            {/* Quick 1-Click Refresh Icon Button */}
+            <button
+              type="button"
+              onClick={() => load(true)}
+              disabled={isRefreshing}
+              className="group w-10 h-10 border border-neutral-300/80 bg-neutral-50 hover:bg-white hover:border-gold/70 text-neutral-600 hover:text-gold rounded-xl transition-all duration-150 flex items-center justify-center shrink-0 shadow-2xs hover:shadow-md hover:scale-105 active:scale-95 cursor-pointer disabled:opacity-50"
+              title="Refresh Photographer Roster"
+              aria-label="Refresh Photographer Roster"
+            >
+              <RefreshCw size={17} className={isRefreshing ? 'animate-spin text-gold' : 'transition-transform duration-500 group-hover:rotate-180'} />
+            </button>
           </div>
         </div>
 
         {/* Active Filter Badges */}
-        {(presenceFilter !== 'ALL' || statusFilter !== 'ALL' || specializationFilter !== 'ALL' || workloadFilter !== 'ALL' || search) && (
+        {(statusFilter !== 'ALL' || workloadFilter !== 'ALL' || search) && (
           <div className="flex items-center gap-1.5 flex-wrap pt-2.5 border-t border-neutral-100 text-xs font-body">
-            <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[10px]">Active Filters:</span>
+            <span className="font-semibold text-neutral-400 uppercase tracking-wider text-xs">Active Filters:</span>
             {search && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
                 "{search}"
                 <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setSearch('')} />
               </span>
             )}
-            {presenceFilter !== 'ALL' && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-medium">
-                {presenceFilter === 'ONLINE' ? 'Live on Portal' : 'Offline'}
-                <X size={12} className="cursor-pointer text-emerald-600 hover:text-emerald-900" onClick={() => setPresenceFilter('ALL')} />
-              </span>
-            )}
             {statusFilter !== 'ALL' && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
                 {statusFilter}
                 <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setStatusFilter('ALL')} />
-              </span>
-            )}
-            {specializationFilter !== 'ALL' && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
-                {specializationFilter}
-                <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setSpecializationFilter('ALL')} />
               </span>
             )}
             {workloadFilter !== 'ALL' && (
@@ -787,9 +679,7 @@ export default function AdminPhotographers() {
               type="button"
               onClick={() => {
                 setSearch('');
-                setPresenceFilter('ALL');
                 setStatusFilter('ALL');
-                setSpecializationFilter('ALL');
                 setWorkloadFilter('ALL');
               }}
               className="text-gold hover:underline font-semibold text-xs ml-1.5 cursor-pointer"
@@ -802,7 +692,7 @@ export default function AdminPhotographers() {
 
       {/* ── 4. Main Photographer Roster Table (Space-Efficient View) ─────────── */}
       <div className="bg-gradient-to-b from-white to-neutral-50/30 rounded-2xl border border-neutral-200/90 shadow-warm-sm overflow-hidden">
-        {loading ? (
+        {loading && photographers.length === 0 ? (
           <div className="p-6 sm:p-8 space-y-4">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="h-16 bg-neutral-50 rounded-xl animate-pulse" />
@@ -832,15 +722,13 @@ export default function AdminPhotographers() {
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className={`overflow-x-auto ${isRefreshing ? 'opacity-70 transition-opacity' : 'opacity-100 transition-opacity'}`}>
             <table className="w-full text-xs sm:text-sm font-body text-left">
               <thead>
                 <tr className="border-b border-neutral-200/80 bg-gradient-to-r from-neutral-50 via-neutral-100/40 to-neutral-50 text-[11px] sm:text-xs font-bold uppercase tracking-wider text-neutral-500">
                   <th className="px-5 sm:px-6 py-3.5 sm:py-4">Photographer Profile</th>
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4">Specialization & Bio</th>
                   <th className="px-5 sm:px-6 py-3.5 sm:py-4">Readiness & Status</th>
                   <th className="px-5 sm:px-6 py-3.5 sm:py-4">Active Workload</th>
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4">Upcoming Assignment</th>
                   <th className="px-5 sm:px-6 py-3.5 sm:py-4 text-right">Actions & Tools</th>
                 </tr>
               </thead>
@@ -871,7 +759,7 @@ export default function AdminPhotographers() {
                           <div className="min-w-0 flex-1">
                             {/* Inactive Account Indicator if inactive */}
                             {isInactive && (
-                              <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full border border-rose-300 mb-1 shadow-2xs">
+                              <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full border border-rose-300 mb-1 shadow-2xs">
                                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                                 <span>Inactive Account</span>
                               </div>
@@ -890,20 +778,6 @@ export default function AdminPhotographers() {
                             )}
                           </div>
                         </div>
-                      </td>
-
-                      {/* Specialization & Bio */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 min-w-[180px] align-middle">
-                        <span className="inline-block text-xs font-semibold text-primary bg-gold/15 border border-gold/30 px-2.5 py-0.5 rounded-md">
-                          {ph.specialization || 'General Photography'}
-                        </span>
-                        {ph.bio ? (
-                          <p className="text-xs text-neutral-500 mt-1 max-w-xs truncate" title={ph.bio}>
-                            {ph.bio}
-                          </p>
-                        ) : (
-                          <span className="text-[11px] text-neutral-400 italic block mt-1">No bio statement</span>
-                        )}
                       </td>
 
                       {/* Readiness & Availability Status Badge */}
@@ -945,33 +819,11 @@ export default function AdminPhotographers() {
                                 shoot{(ph.activeWorkloadCount || 0) !== 1 ? 's' : ''}
                               </span>
                             </p>
-                            <span className="text-[10px] text-neutral-400 uppercase font-semibold tracking-wider block">
+                            <span className="text-xs text-neutral-400 uppercase font-semibold tracking-wider block">
                               {(ph.activeWorkloadCount || 0) === 0 ? 'Free' : (ph.activeWorkloadCount || 0) <= 2 ? 'Normal' : 'High Load'}
                             </span>
                           </div>
                         </div>
-                      </td>
-
-                      {/* Upcoming Assignment */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 min-w-[170px] align-middle">
-                        {ph.nextUpcoming ? (
-                          <div className="text-xs sm:text-sm space-y-0.5">
-                            <p className="font-semibold text-primary truncate max-w-[190px]" title={ph.nextUpcoming.service?.name}>
-                              {ph.nextUpcoming.service?.name || 'Assigned Session'}
-                            </p>
-                            <p className="text-xs text-neutral-500 flex items-center gap-1.5">
-                              <Calendar size={13} className="text-gold shrink-0" />
-                              <span>{fmt(ph.nextUpcoming.event_date)}</span>
-                              {ph.nextUpcoming.preferred_time && (
-                                <span className="text-neutral-400 font-mono text-[11px]">
-                                  ({ph.nextUpcoming.preferred_time.substring(0, 5)})
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                        ) : (
-                          <span className="text-xs sm:text-sm text-neutral-400 italic">None upcoming</span>
-                        )}
                       </td>
 
                       {/* Actions & Tools */}
@@ -981,11 +833,14 @@ export default function AdminPhotographers() {
                           <button
                             type="button"
                             onClick={() => openDetailsModal(ph)}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-neutral-700 bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-gold/80 rounded-xl transition-all shadow-2xs cursor-pointer"
-                            title="Inspect Schedule & Portfolio"
+                            className="group relative h-9 px-2.5 hover:px-3 rounded-xl border border-neutral-200/90 hover:border-gold/80 bg-white hover:bg-gold/10 text-neutral-600 hover:text-gold flex items-center justify-center transition-all duration-300 ease-out shadow-2xs hover:shadow-md cursor-pointer overflow-hidden select-none"
+                            title="View Details & Portfolio"
+                            aria-label="View Details & Portfolio"
                           >
-                            <Eye size={14} className="text-neutral-500" />
-                            <span>Details</span>
+                            <Eye size={17} className="shrink-0 transition-all duration-300 group-hover:animate-eye-scan text-neutral-600 group-hover:text-gold" />
+                            <span className="action-expand-label text-xs font-semibold text-neutral-800 group-hover:text-gold-dark">
+                              Details
+                            </span>
                           </button>
 
                           {/* Quick Toggle / Approve */}
@@ -994,35 +849,49 @@ export default function AdminPhotographers() {
                               type="button"
                               onClick={() => handleApprove(ph.id)}
                               disabled={toggling === ph.id}
-                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
+                              className="group relative h-9 px-2.5 hover:px-3 rounded-xl border border-emerald-300 hover:border-emerald-500 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-800 flex items-center justify-center transition-all duration-300 ease-out shadow-2xs hover:shadow-md disabled:opacity-50 cursor-pointer overflow-hidden select-none"
                               title="Approve photographer for portal access"
+                              aria-label="Approve photographer"
                             >
-                              <UserCheck size={14} className="text-emerald-700" />
-                              <span>{toggling === ph.id ? '...' : 'Approve'}</span>
+                              {toggling === ph.id ? (
+                                <RefreshCw size={16} className="animate-spin text-emerald-600" />
+                              ) : (
+                                <>
+                                  <UserCheck size={17} className="shrink-0 transition-all duration-300 group-hover:animate-user-pop text-emerald-700" />
+                                  <span className="action-expand-label text-xs font-bold text-emerald-800">
+                                    Approve
+                                  </span>
+                                </>
+                              )}
                             </button>
                           ) : (
                             <button
                               type="button"
                               onClick={() => handleToggle(ph.id, isAvail)}
                               disabled={toggling === ph.id}
-                              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold border rounded-xl transition-all shadow-2xs disabled:opacity-50 cursor-pointer ${
+                              className={`group relative h-9 px-2.5 hover:px-3 rounded-xl border transition-all duration-300 ease-out flex items-center justify-center shadow-2xs hover:shadow-md disabled:opacity-50 cursor-pointer overflow-hidden select-none ${
                                 isAvail
-                                  ? 'text-neutral-700 bg-white hover:bg-neutral-100 border-neutral-200'
-                                  : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border-emerald-300'
+                                  ? 'border-neutral-200/90 hover:border-neutral-400 bg-white hover:bg-neutral-100 text-neutral-500 hover:text-neutral-900'
+                                  : 'border-emerald-300 hover:border-emerald-500 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-800'
                               }`}
-                              title={isAvail ? 'Mark as unavailable for new bookings' : 'Mark as ready and available'}
+                              title={isAvail ? 'Mark Off-duty' : 'Mark Available'}
+                              aria-label={isAvail ? 'Mark Off-duty' : 'Mark Available'}
                             >
                               {toggling === ph.id ? (
-                                <RefreshCw size={13} className="animate-spin text-gold" />
+                                <RefreshCw size={16} className="animate-spin text-gold" />
                               ) : isAvail ? (
                                 <>
-                                  <XCircle size={14} className="text-neutral-400" />
-                                  <span>Off-duty</span>
+                                  <XCircle size={17} className="shrink-0 transition-all duration-300 group-hover:animate-toggle-spin text-neutral-400 group-hover:text-neutral-700" />
+                                  <span className="action-expand-label text-xs font-semibold text-neutral-800">
+                                    Off-duty
+                                  </span>
                                 </>
                               ) : (
                                 <>
-                                  <CheckCircle2 size={14} className="text-emerald-600" />
-                                  <span>Available</span>
+                                  <CheckCircle2 size={17} className="shrink-0 transition-all duration-300 group-hover:animate-check-pop text-emerald-600 group-hover:text-emerald-700" />
+                                  <span className="action-expand-label text-xs font-bold text-emerald-800">
+                                    Available
+                                  </span>
                                 </>
                               )}
                             </button>
@@ -1032,20 +901,28 @@ export default function AdminPhotographers() {
                           <button
                             type="button"
                             onClick={() => openEditModal(ph)}
-                            className="p-2 text-neutral-400 hover:text-gold hover:bg-gold/10 rounded-xl transition-all cursor-pointer"
+                            className="group relative h-9 px-2.5 hover:px-3 rounded-xl border border-neutral-200/90 hover:border-gold/80 bg-white hover:bg-gold/10 text-neutral-500 hover:text-gold flex items-center justify-center transition-all duration-300 ease-out shadow-2xs hover:shadow-md cursor-pointer overflow-hidden select-none"
                             title="Edit Photographer Profile"
+                            aria-label="Edit Photographer Profile"
                           >
-                            <Edit3 size={15} />
+                            <Edit3 size={17} className="shrink-0 transition-all duration-300 group-hover:animate-pencil-scribble text-neutral-500 group-hover:text-gold" />
+                            <span className="action-expand-label text-xs font-semibold text-neutral-800 group-hover:text-gold-dark">
+                              Edit
+                            </span>
                           </button>
 
                           {/* Delete Photographer Tool */}
                           <button
                             type="button"
                             onClick={() => setDeletingPh(ph)}
-                            className="p-2 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
+                            className="group relative h-9 px-2.5 hover:px-3 rounded-xl border border-neutral-200/90 hover:border-rose-400 bg-white hover:bg-rose-50 text-neutral-500 hover:text-rose-600 flex items-center justify-center transition-all duration-300 ease-out shadow-2xs hover:shadow-md cursor-pointer overflow-hidden select-none"
                             title="Delete Photographer"
+                            aria-label="Delete Photographer"
                           >
-                            <Trash2 size={15} />
+                            <Trash2 size={17} className="shrink-0 transition-all duration-300 group-hover:animate-trash-rattle text-neutral-500 group-hover:text-rose-600" />
+                            <span className="action-expand-label text-xs font-semibold text-rose-700">
+                              Delete
+                            </span>
                           </button>
                         </div>
                       </td>
@@ -1056,6 +933,8 @@ export default function AdminPhotographers() {
             </table>
           </div>
         )}
+      </div>
+
       </div>
 
       {/* ── 5. EDIT PHOTOGRAPHER MODAL ───────────────────────────────────────── */}
@@ -1086,7 +965,7 @@ export default function AdminPhotographers() {
             <form onSubmit={handleSaveEdit} className="p-4 sm:p-5 space-y-3 font-body text-xs">
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-[10px] font-bold text-neutral-600 uppercase tracking-wider mb-1">First Name</label>
+                  <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1">First Name</label>
                   <input
                     type="text"
                     required
@@ -1096,7 +975,7 @@ export default function AdminPhotographers() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-neutral-600 uppercase tracking-wider mb-1">Last Name</label>
+                  <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1">Last Name</label>
                   <input
                     type="text"
                     required
@@ -1108,7 +987,7 @@ export default function AdminPhotographers() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-neutral-600 uppercase tracking-wider mb-1">Contact Phone</label>
+                <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1">Contact Phone</label>
                 <input
                   type="text"
                   value={editForm.phone}
@@ -1119,7 +998,7 @@ export default function AdminPhotographers() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-neutral-600 uppercase tracking-wider mb-1">Specialization</label>
+                <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1">Specialization</label>
                 <input
                   type="text"
                   value={editForm.specialization}
@@ -1130,7 +1009,7 @@ export default function AdminPhotographers() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-neutral-600 uppercase tracking-wider mb-1">Biography / Statement</label>
+                <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1">Biography / Statement</label>
                 <textarea
                   rows={2}
                   value={editForm.bio}
@@ -1144,7 +1023,7 @@ export default function AdminPhotographers() {
               <div className="pt-2 border-t border-neutral-100 grid grid-cols-2 gap-2.5">
                 {/* Availability Toggle */}
                 <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-200/80 space-y-0.5">
-                  <span className="text-[10px] font-bold text-neutral-700 block uppercase tracking-wider">Readiness</span>
+                  <span className="text-xs font-bold text-neutral-700 block uppercase tracking-wider">Readiness</span>
                   <label className="flex items-center gap-1.5 cursor-pointer mt-0.5">
                     <input
                       type="checkbox"
@@ -1160,7 +1039,7 @@ export default function AdminPhotographers() {
 
                 {/* Account Active Toggle */}
                 <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-200/80 space-y-0.5">
-                  <span className="text-[10px] font-bold text-neutral-700 block uppercase tracking-wider">Authorization</span>
+                  <span className="text-xs font-bold text-neutral-700 block uppercase tracking-wider">Authorization</span>
                   <label className="flex items-center gap-1.5 cursor-pointer mt-0.5">
                     <input
                       type="checkbox"
@@ -1214,15 +1093,15 @@ export default function AdminPhotographers() {
 
             <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200 space-y-1.5 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-neutral-400 uppercase tracking-wider font-semibold text-[9px]">Photographer</span>
+                <span className="text-neutral-400 uppercase tracking-wider font-semibold text-[11px]">Photographer</span>
                 <span className="font-bold text-primary">{deletingPh.first_name} {deletingPh.last_name}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-neutral-400 uppercase tracking-wider font-semibold text-[9px]">Specialization</span>
+                <span className="text-neutral-400 uppercase tracking-wider font-semibold text-[11px]">Specialization</span>
                 <span className="font-medium text-neutral-700">{deletingPh.specialization || 'General'}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-neutral-400 uppercase tracking-wider font-semibold text-[9px]">Workload</span>
+                <span className="text-neutral-400 uppercase tracking-wider font-semibold text-[11px]">Workload</span>
                 <span className={`font-bold ${deletingPh.activeWorkloadCount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                   {deletingPh.activeWorkloadCount || 0} shoot{deletingPh.activeWorkloadCount !== 1 ? 's' : ''}
                 </span>
@@ -1275,7 +1154,7 @@ export default function AdminPhotographers() {
                       {selectedPh.first_name} {selectedPh.last_name}
                     </h2>
                     {liveOnlineMap.has(selectedPh.id) && (
-                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         Online Now
                       </span>
@@ -1305,7 +1184,7 @@ export default function AdminPhotographers() {
               {/* Quick Summary Strip */}
               <div className="grid grid-cols-3 gap-2.5">
                 <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200/80">
-                  <span className="text-[9px] uppercase font-bold tracking-wider text-neutral-400 block">Readiness</span>
+                  <span className="text-[11px] uppercase font-bold tracking-wider text-neutral-400 block">Readiness</span>
                   <div className="mt-1">
                     {selectedPh.is_available ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
@@ -1320,12 +1199,12 @@ export default function AdminPhotographers() {
                 </div>
 
                 <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200/80">
-                  <span className="text-[9px] uppercase font-bold tracking-wider text-neutral-400 block">Active Shoots</span>
+                  <span className="text-[11px] uppercase font-bold tracking-wider text-neutral-400 block">Active Shoots</span>
                   <p className="text-lg font-heading font-bold text-primary mt-0.5">{selectedPh.activeWorkloadCount || 0}</p>
                 </div>
 
                 <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200/80">
-                  <span className="text-[9px] uppercase font-bold tracking-wider text-neutral-400 block">Authorization</span>
+                  <span className="text-[11px] uppercase font-bold tracking-wider text-neutral-400 block">Authorization</span>
                   <p className={`text-[11px] font-bold mt-1 ${selectedPh.is_active ? 'text-emerald-700' : 'text-amber-700'}`}>
                     {selectedPh.is_active ? 'Active & Approved' : 'Pending Approval'}
                   </p>
@@ -1334,7 +1213,7 @@ export default function AdminPhotographers() {
 
               {/* Bio Statement Card */}
               <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200/80 space-y-1">
-                <span className="text-[9px] uppercase font-bold tracking-wider text-neutral-400 block">Artist Bio & Statement</span>
+                <span className="text-[11px] uppercase font-bold tracking-wider text-neutral-400 block">Artist Bio & Statement</span>
                 <p className="text-xs text-neutral-700 leading-relaxed">
                   {selectedPh.bio || 'No artist bio or portfolio statement on file.'}
                 </p>
@@ -1353,7 +1232,7 @@ export default function AdminPhotographers() {
                 ) : (
                   <div className="border border-neutral-200 rounded-xl overflow-hidden">
                     <table className="min-w-full text-xs">
-                      <thead className="bg-neutral-50 text-neutral-400 uppercase text-[9px] tracking-wider text-left border-b border-neutral-200">
+                      <thead className="bg-neutral-50 text-neutral-400 uppercase text-[11px] tracking-wider text-left border-b border-neutral-200">
                         <tr>
                           <th className="px-3 py-2">Date</th>
                           <th className="px-3 py-2">Time Window</th>
@@ -1374,12 +1253,14 @@ export default function AdminPhotographers() {
                                   : 'Full Day'}
                               </td>
                               <td className="px-3 py-2">
-                                <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                <span className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${
                                   st === 'AVAILABLE'
                                     ? 'bg-emerald-50 text-emerald-700'
+                                    : st === 'CUSTOM'
+                                    ? 'bg-amber-50 text-amber-700'
                                     : 'bg-rose-50 text-rose-700'
                                 }`}>
-                                  {st}
+                                  {st === 'CUSTOM' ? 'CUSTOM HOURS' : st}
                                 </span>
                               </td>
                               <td className="px-3 py-2 text-neutral-400 italic text-[11px]">
@@ -1407,7 +1288,7 @@ export default function AdminPhotographers() {
                 ) : (
                   <div className="border border-neutral-200 rounded-xl overflow-hidden">
                     <table className="min-w-full text-xs">
-                      <thead className="bg-neutral-50 text-neutral-400 uppercase text-[9px] tracking-wider text-left border-b border-neutral-200">
+                      <thead className="bg-neutral-50 text-neutral-400 uppercase text-[11px] tracking-wider text-left border-b border-neutral-200">
                         <tr>
                           <th className="px-3 py-2">Booking #</th>
                           <th className="px-3 py-2">Client</th>
@@ -1428,7 +1309,7 @@ export default function AdminPhotographers() {
                               {fmt(b.event_date)} {b.preferred_time && `(${b.preferred_time.substring(0, 5)})`}
                             </td>
                             <td className="px-3 py-2">
-                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-neutral-100 text-neutral-700">
+                              <span className="text-[11px] font-bold px-1.5 py-0.2 rounded bg-neutral-100 text-neutral-700">
                                 {b.status}
                               </span>
                             </td>

@@ -13,40 +13,36 @@ function getInitialSeedEvents(userId) {
     {
       id: `cust_seed_terms_${userId}`,
       category: 'TERMS_SIGN',
-      title: 'Studio Service Agreement & Model Release Signed',
-      description: 'Customer electronically signed the E-Kodak Studio Terms, Session Conduct Code, and Model Release agreement.',
+      title: 'Service Agreement & Model Release Signed',
+      description: 'Electronically signed studio terms, session conduct code, and model release.',
       changes: [
         'Electronic Signature: Verified (EK-SIG-99428-2026)',
         'Model Release: Consented',
         'Proofing Storage Policy: Acknowledged',
         'Session Conduct Code: Agreed'
       ],
-      bookingId: 'f941199a-a8fe-4a94-b152-cb3e7f4c1729',
-      bookingNumber: 'BK-2026-00004',
       timestamp: new Date(baseTime + 1000 * 60 * 120).toISOString(),
       source: 'CUSTOMER_ACTION'
     },
     {
       id: `cust_seed_delivery_${userId}`,
       category: 'DELIVERY_UPDATE',
-      title: 'Studio Direct Delivery Destination Saved',
-      description: 'Customer selected Studio Direct Delivery and saved package drop-off address and recipient contact details.',
+      title: 'Delivery Destination Saved',
+      description: 'Selected Studio Direct Delivery with saved drop-off location and recipient details.',
       changes: [
-        'Fulfillment Mode: Studio Direct Delivery',
+        'Fulfillment: Direct Delivery',
         'Recipient: Mark June Repunte (09102949414)',
         'Address: Barangay Alpaco, Purok Sagrada 2B',
         'Instructions: Near Alpaco, Barangay Hall'
       ],
-      bookingId: 'f941199a-a8fe-4a94-b152-cb3e7f4c1729',
-      bookingNumber: 'BK-2026-00004',
       timestamp: new Date(baseTime + 1000 * 60 * 95).toISOString(),
       source: 'CUSTOMER_ACTION'
     },
     {
       id: `cust_seed_specs_${userId}`,
       category: 'SPEC_UPDATE',
-      title: 'Toga Sizing & Shoot Specifications Saved',
-      description: 'Customer customized their academic graduation portrait shoot specifications and wardrobe sizes.',
+      title: 'Wardrobe & Shoot Specs Saved',
+      description: 'Configured academic portrait wardrobe sizing and shoot styling preferences.',
       changes: [
         "Toga Size: S (5'2\" - 5'4\")",
         'Inner Attire: M (Medium)',
@@ -55,8 +51,6 @@ function getInitialSeedEvents(userId) {
         'Retouching: Natural Texture Retouch',
         'Makeup: Natural Matte Fresh'
       ],
-      bookingId: 'f941199a-a8fe-4a94-b152-cb3e7f4c1729',
-      bookingNumber: 'BK-2026-00004',
       timestamp: new Date(baseTime + 1000 * 60 * 60).toISOString(),
       source: 'CUSTOMER_ACTION'
     },
@@ -64,7 +58,7 @@ function getInitialSeedEvents(userId) {
       id: `cust_seed_profile_${userId}`,
       category: 'PROFILE_UPDATE',
       title: 'Academic Profile Details Saved',
-      description: 'Customer updated graduation university, campus affiliation, and degree candidacy details.',
+      description: 'Updated university, degree candidacy, and graduation year details.',
       changes: [
         'University: Cebu Technological University (CTU)',
         'Campus: CTU - Main Campus',
@@ -145,8 +139,28 @@ export async function recordCustomerAction({
   };
 
   try {
-    // 1. Persist to localStorage
+    // 1. Check debounce: if the most recent event has identical title, category, changes, and booking within 10 seconds, update timestamp instead of creating a duplicate
     const existing = getCustomerAuditLogs(userId);
+    if (existing.length > 0) {
+      const latest = existing[0];
+      const isIdentical =
+        latest.title === title &&
+        latest.category === category &&
+        JSON.stringify(latest.changes || []) === JSON.stringify(changes || []) &&
+        (latest.bookingId || null) === (bookingId || null);
+
+      const timeDiffMs = Math.abs(Date.now() - new Date(latest.timestamp).getTime());
+      if (isIdentical && timeDiffMs < 10000) {
+        latest.timestamp = new Date().toISOString();
+        latest.description = description || title;
+        localStorage.setItem(`${STORAGE_KEY_PREFIX}${userId}`, JSON.stringify(existing));
+        window.dispatchEvent(new CustomEvent('ekodak_audit_trail_updated', {
+          detail: { event: latest, userId }
+        }));
+        return latest;
+      }
+    }
+
     const updated = [event, ...existing.filter(e => e.id !== event.id)].slice(0, 100);
     localStorage.setItem(`${STORAGE_KEY_PREFIX}${userId}`, JSON.stringify(updated));
 

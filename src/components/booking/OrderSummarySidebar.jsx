@@ -39,7 +39,6 @@ export default function OrderSummarySidebar({
   customVenue,
   customAddress,
   referenceFilesCount = 0,
-  selectedPresetPegs = [],
   totalAmount = 0,
   downPaymentAmount = 0,
   remainingBalance = 0,
@@ -117,11 +116,11 @@ export default function OrderSummarySidebar({
             {/* Down Payment & Remaining split */}
             <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-white/10 text-xs">
               <div className="bg-white/5 rounded-xl p-2.5 border border-white/5">
-                <span className="text-neutral-400 block text-[10px] uppercase font-medium">50% Down Payment</span>
+                <span className="text-neutral-400 block text-xs uppercase font-medium">50% Down Payment</span>
                 <span className="text-gold font-bold text-sm block mt-0.5">{formattedDownPayment}</span>
               </div>
               <div className="bg-white/5 rounded-xl p-2.5 border border-white/5">
-                <span className="text-neutral-400 block text-[10px] uppercase font-medium">Remaining at Studio</span>
+                <span className="text-neutral-400 block text-xs uppercase font-medium">Remaining at Studio</span>
                 <span className="text-white font-bold text-sm block mt-0.5">{formattedRemaining}</span>
               </div>
             </div>
@@ -155,7 +154,7 @@ export default function OrderSummarySidebar({
                 {onJumpToStep && (
                   <span
                     onClick={(e) => { e.stopPropagation(); onJumpToStep(2); }}
-                    className="text-[10px] text-gold hover:underline font-semibold"
+                    className="text-xs text-gold hover:underline font-semibold"
                   >
                     Edit
                   </span>
@@ -174,7 +173,7 @@ export default function OrderSummarySidebar({
                 )}
                 {(selectedTier.highlights || selectedTier.inclusions)?.length > 0 && (
                   <div className="space-y-1.5 pt-1">
-                    <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Package Inclusions:</p>
+                    <p className="text-xs font-bold text-neutral-400 uppercase tracking-wider">Package Inclusions:</p>
                     {(selectedTier.highlights || selectedTier.inclusions).map((inc, i) => (
                       <div key={i} className="flex items-start gap-1.5 text-[11px] text-neutral-700">
                         <Check size={12} className="text-emerald-600 mt-0.5 shrink-0" />
@@ -211,7 +210,7 @@ export default function OrderSummarySidebar({
                 {onJumpToStep && (
                   <span
                     onClick={(e) => { e.stopPropagation(); onJumpToStep(3); }}
-                    className="text-[10px] text-gold hover:underline font-semibold"
+                    className="text-xs text-gold hover:underline font-semibold"
                   >
                     Edit
                   </span>
@@ -230,7 +229,7 @@ export default function OrderSummarySidebar({
                       <div key={i} className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-white border border-neutral-200/60 text-[11px]">
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-neutral-800 truncate">{addon.name}</p>
-                          <p className="text-[10px] text-gold font-bold">+₱{Number(addon.price).toLocaleString()}</p>
+                          <p className="text-xs text-gold font-bold">+₱{Number(addon.price).toLocaleString()}</p>
                         </div>
                         {onRemoveAddOn && (
                           <button
@@ -283,7 +282,7 @@ export default function OrderSummarySidebar({
                   {onJumpToStep && (
                     <span
                       onClick={(e) => { e.stopPropagation(); onJumpToStep(4); }}
-                      className="text-[10px] text-gold hover:underline font-semibold"
+                      className="text-xs text-gold hover:underline font-semibold"
                     >
                       Edit
                     </span>
@@ -314,7 +313,9 @@ export default function OrderSummarySidebar({
                       )}
                       <div className="flex justify-between text-[11px]">
                         <span className="text-neutral-400">Class Section:</span>
-                        <span className="font-bold text-gold bg-gold/10 px-1.5 py-0.5 rounded">{studentDetails.section || 'Unassigned'}</span>
+                        <span className="font-bold text-gold bg-gold/10 px-1.5 py-0.5 rounded">
+                          {studentDetails.section ? (studentDetails.section.toLowerCase().startsWith('section') ? studentDetails.section : `Section ${studentDetails.section}`) : 'Unassigned'}
+                        </span>
                       </div>
                       {studentDetails.student_id && (
                         <div className="flex justify-between text-[11px]">
@@ -377,7 +378,7 @@ export default function OrderSummarySidebar({
                   {onJumpToStep && (
                     <span
                       onClick={(e) => { e.stopPropagation(); onJumpToStep(5); }}
-                      className="text-[10px] text-gold hover:underline font-semibold"
+                      className="text-xs text-gold hover:underline font-semibold"
                     >
                       Edit
                     </span>
@@ -397,7 +398,7 @@ export default function OrderSummarySidebar({
                     <span className="font-semibold text-primary">{preferredTime || "8:00 AM - 5:00 PM"}</span>
                   </div>
                   <div className="pt-2 border-t border-neutral-200/40">
-                    <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">Studio Location:</p>
+                    <p className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1">Studio Location:</p>
                     <p className="text-[11px] font-medium text-primary">
                       {locationType === "STUDIO" ? "E-Kodak Studio, 311 Rizal Street, City of Naga, Cebu" : customVenue || customAddress || "Custom Venue"}
                     </p>
@@ -415,12 +416,12 @@ export default function OrderSummarySidebar({
             </div>
           )}
 
-          {/* Reference Pegs / Upload count badge */}
-          {(referenceFilesCount > 0 || selectedPresetPegs.length > 0) && (
+          {/* Reference Photos Upload count badge */}
+          {referenceFilesCount > 0 && (
             <div className="p-3 rounded-2xl bg-gold/5 border border-gold/20 flex items-center justify-between text-xs">
-              <span className="text-neutral-600 font-medium">Style Pegs & References:</span>
+              <span className="text-neutral-600 font-medium">Reference Photos:</span>
               <span className="font-bold text-primary bg-white px-2 py-0.5 rounded-lg border border-gold/30">
-                {referenceFilesCount + selectedPresetPegs.length} Selected
+                {referenceFilesCount} Uploaded
               </span>
             </div>
           )}

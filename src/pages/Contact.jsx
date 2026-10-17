@@ -25,14 +25,22 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { MapPin, Phone, Mail, Clock, Send, CheckCircle, AlertCircle, ArrowRight, MessageSquare } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 import Navbar from "../components/layout/Navbar";
 import Footer from "../components/layout/Footer";
 import PageHero from "../components/ui/PageHero";
 import ServiceFAQ from "../components/services/ServiceFAQ";
+import { Spotlight } from "../components/ui/Interactive";
 
 import { FAQS, FAQ_TOPICS } from "../data/faqData";
-import { useScrollReveal } from "../lib/useScrollReveal";
+import {
+  viewport,
+  stagger,
+  staggerChild,
+  fadeUp,
+  ease,
+} from "../lib/motion";
 import { getFaqs } from "../services/contentService";
 
 // Inline SVG social icons
@@ -62,6 +70,21 @@ const SUBJECTS = [
 const EMPTY_FORM = {
   name: "", email: "", phone: "", subject: "", message: "",
 };
+
+// Panel variant: the panel itself rises while its children cascade in
+const panel = (childDelay = 0.07) => ({
+  hidden: { opacity: 0, y: 32 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.75,
+      ease: ease.smooth,
+      staggerChildren: childDelay,
+      delayChildren: 0.15,
+    },
+  },
+});
 
 export default function Contact() {
   const { config: siteConfig } = useSiteConfig();
@@ -116,10 +139,6 @@ export default function Contact() {
   const [form, setForm]       = useState(EMPTY_FORM);
   const [errors, setErrors]   = useState({});
   const [status, setStatus]   = useState("idle"); // idle | loading | success | error
-
-  const { ref: formRef,  inView: formIn  } = useScrollReveal({ threshold: 0.05 });
-  const { ref: infoRef,  inView: infoIn  } = useScrollReveal({ threshold: 0.05 });
-  const { ref: socialRef,inView: socialIn} = useScrollReveal({ threshold: 0.2 });
 
   // ── Validation ───────────────────────────────────────────────────────────────
   const validate = () => {
@@ -178,8 +197,8 @@ export default function Contact() {
           eyebrow="Reach Out"
           title="Get in Touch"
           subtitle="Have a question about our services or want to discuss a booking? We'd love to hear from you."
-          image="https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=1920&q=85&auto=format&fit=crop"
-          imageAlt="Person holding camera looking out a window"
+            image="https://images.unsplash.com/photo-1474552226712-ac0f0961a954?w=1920&q=85&auto=format&fit=crop"
+            imageAlt="Warm sunset silhouette of two people riding bicycles"
         />
 
         {/* ── 2. Form + Info ────────────────────────────────────────────────── */}
@@ -187,33 +206,68 @@ export default function Contact() {
           <div className="container-custom">
             <h2 id="contact-heading" className="sr-only">Contact form and information</h2>
 
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-10">
+            <motion.div
+              className="grid grid-cols-1 lg:grid-cols-5 gap-10"
+              variants={stagger(0.18)}
+              initial="hidden"
+              whileInView="show"
+              viewport={viewport}
+            >
 
               {/* Contact Form — 3/5 width */}
-              <div
-                ref={formRef}
-                className={`lg:col-span-3 transition-all duration-700 ease-smooth ${
-                  formIn ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-                }`}
+              <motion.div
+                variants={fadeUp}
+                className="lg:col-span-3"
               >
-                <div className="card p-8">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 rounded-xl bg-gold/15 flex items-center justify-center">
+                <Spotlight className="card p-8" color="rgba(212,175,55,0.12)">
+                <motion.div
+                  variants={panel(0.07)}
+                  initial="hidden"
+                  whileInView="show"
+                  viewport={viewport}
+                >
+                  <motion.div variants={staggerChild} className="flex items-center gap-3 mb-6">
+                    <motion.div
+                      className="w-10 h-10 rounded-xl bg-gold/15 flex items-center justify-center"
+                      whileHover={{ rotate: 8, scale: 1.08 }}
+                      transition={{ type: "spring", stiffness: 340, damping: 16 }}
+                    >
                       <MessageSquare size={18} className="text-gold" />
-                    </div>
+                    </motion.div>
                     <div>
                       <h3 className="font-heading text-primary text-xl">Send us a message</h3>
                       <p className="font-body text-neutral-400 text-xs mt-0.5">
                         We'll reply within 24 business hours. For urgent studio inquiries, you can also reach us via direct phone or studio visit.
                       </p>
                     </div>
-                  </div>
+                  </motion.div>
 
                   {/* Success state */}
+                  <AnimatePresence mode="wait">
                   {status === "success" ? (
-                    <div className="py-12 flex flex-col items-center text-center">
-                      <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
-                        <CheckCircle size={32} className="text-green-600" />
+                    <motion.div
+                      key="success"
+                      initial={{ opacity: 0, scale: 0.94 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.97 }}
+                      transition={{ duration: 0.5, ease: ease.spring }}
+                      className="py-12 flex flex-col items-center text-center"
+                    >
+                      <div className="relative w-16 h-16 mb-4">
+                        <motion.div
+                          className="absolute inset-0 rounded-full bg-green-400/30"
+                          animate={{ scale: [1, 1.35, 1], opacity: [0.7, 0, 0.7] }}
+                          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                          aria-hidden="true"
+                        />
+                        <motion.div
+                          initial={{ scale: 0.4, rotate: -25, opacity: 0 }}
+                          animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                          transition={{ delay: 0.15, type: "spring", stiffness: 260, damping: 14 }}
+                          className="relative w-16 h-16 rounded-full bg-green-100 flex items-center justify-center"
+                        >
+                          <CheckCircle size={32} className="text-green-600" />
+                        </motion.div>
                       </div>
                       <h4 className="font-heading text-primary text-xl mb-2">Message received!</h4>
                       <p className="font-body text-neutral-500 text-sm max-w-sm leading-relaxed mb-6">
@@ -225,14 +279,25 @@ export default function Contact() {
                       >
                         Send another message
                       </button>
-                    </div>
+                    </motion.div>
                   ) : (
                     /* Form */
-                    <form onSubmit={handleSubmit} noValidate aria-label="Contact form">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <motion.form
+                      onSubmit={handleSubmit}
+                      noValidate
+                      aria-label="Contact form"
+                      variants={stagger(0.07)}
+                      initial="hidden"
+                      animate="show"
+                      exit={{ opacity: 0, y: -12, transition: { duration: 0.3 } }}
+                    >
+                      <motion.div
+                        className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4"
+                        variants={stagger(0.07)}
+                      >
 
                         {/* Name */}
-                        <div>
+                        <motion.div variants={staggerChild}>
                           <label htmlFor="name" className="font-body text-primary text-xs font-medium mb-1.5 block">
                             Full Name <span className="text-red-400">*</span>
                           </label>
@@ -249,10 +314,10 @@ export default function Contact() {
                               {errors.name}
                             </p>
                           )}
-                        </div>
+                        </motion.div>
 
                         {/* Email */}
-                        <div>
+                        <motion.div variants={staggerChild}>
                           <label htmlFor="email" className="font-body text-primary text-xs font-medium mb-1.5 block">
                             Email Address <span className="text-red-400">*</span>
                           </label>
@@ -269,10 +334,10 @@ export default function Contact() {
                               {errors.email}
                             </p>
                           )}
-                        </div>
+                        </motion.div>
 
                         {/* Phone */}
-                        <div>
+                        <motion.div variants={staggerChild}>
                           <label htmlFor="phone" className="font-body text-primary text-xs font-medium mb-1.5 block">
                             Phone Number <span className="text-neutral-400 font-normal">(Optional)</span>
                           </label>
@@ -282,10 +347,10 @@ export default function Contact() {
                             placeholder="+63 912 345 6789"
                             className={inputClass("phone")}
                           />
-                        </div>
+                        </motion.div>
 
                         {/* Subject */}
-                        <div>
+                        <motion.div variants={staggerChild}>
                           <label htmlFor="subject" className="font-body text-primary text-xs font-medium mb-1.5 block">
                             Subject <span className="text-red-400">*</span>
                           </label>
@@ -304,11 +369,11 @@ export default function Contact() {
                               {errors.subject}
                             </p>
                           )}
-                        </div>
-                      </div>
+                        </motion.div>
+                      </motion.div>
 
                       {/* Message */}
-                      <div className="mb-6">
+                      <motion.div variants={staggerChild} className="mb-6">
                         <label htmlFor="message" className="font-body text-primary text-xs font-medium mb-1.5 block">
                           Message <span className="text-red-400">*</span>
                         </label>
@@ -331,12 +396,15 @@ export default function Contact() {
                             {form.message.length} / 20 min
                           </span>
                         </div>
-                      </div>
+                      </motion.div>
 
                       {/* Submit */}
-                      <button
+                      <motion.button
                         type="submit"
                         disabled={status === "loading"}
+                        variants={staggerChild}
+                        whileHover={{ y: -3 }}
+                        whileTap={{ scale: 0.98 }}
                         className="btn-primary w-full inline-flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         {status === "loading" ? (
@@ -353,30 +421,38 @@ export default function Contact() {
                             Send Message
                           </>
                         )}
-                      </button>
-                    </form>
+                      </motion.button>
+                    </motion.form>
                   )}
-                </div>
-              </div>
+                  </AnimatePresence>
+                </motion.div>
+                </Spotlight>
+              </motion.div>
 
               {/* Contact Info Panel — 2/5 width */}
-              <div
-                ref={infoRef}
-                className={`lg:col-span-2 space-y-4 transition-all duration-700 ease-smooth delay-150 ${
-                  infoIn ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-                }`}
+              <motion.div
+                variants={panel(0.1)}
+                className="lg:col-span-2 space-y-4"
               >
                 {/* Contact details */}
-                <div className="card p-6">
+                <motion.div className="card p-6" variants={staggerChild}>
                   <h3 className="font-heading text-primary text-lg mb-5">Contact Details</h3>
-                  <ul className="space-y-5">
+                  <motion.ul className="space-y-5" variants={stagger(0.08)}>
                     {CONTACT_ITEMS.map((item) => {
                       const Icon = item.icon;
                       return (
-                        <li key={item.label} className="flex items-start gap-4">
-                          <div className="shrink-0 flex items-center justify-center w-9 h-9 rounded-lg bg-gold/10">
+                        <motion.li
+                          key={item.label}
+                          variants={staggerChild}
+                          className="flex items-start gap-4"
+                        >
+                          <motion.div
+                            className="shrink-0 flex items-center justify-center w-9 h-9 rounded-lg bg-gold/10"
+                            whileHover={{ scale: 1.15, rotate: -8 }}
+                            transition={{ type: "spring", stiffness: 340, damping: 16 }}
+                          >
                             <Icon size={16} className="text-gold" aria-hidden="true" />
-                          </div>
+                          </motion.div>
                           <div>
                             <p className="font-body text-neutral-400 text-xs uppercase tracking-wider mb-0.5">
                               {item.label}
@@ -395,64 +471,86 @@ export default function Contact() {
                               <p className="font-body text-neutral-400 text-xs mt-0.5">{item.hint}</p>
                             )}
                           </div>
-                        </li>
+                        </motion.li>
                       );
                     })}
-                  </ul>
-                </div>
+                  </motion.ul>
+                </motion.div>
 
                 {/* Quick book nudge */}
-                <div className="card p-6 border-gold/20 bg-gold/5">
+                <motion.div
+                  variants={staggerChild}
+                  whileHover={{ y: -6 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 24 }}
+                  className="card p-6 border-gold/20 bg-gold/5"
+                >
                   <h3 className="font-heading text-primary text-base mb-2">Ready to book directly?</h3>
                   <p className="font-body text-neutral-500 text-sm leading-relaxed mb-4">
                     Create a free account and submit your booking online — it only takes a few minutes.
                   </p>
-                  <Link
-                    to={siteConfig.routes.register}
-                    className="btn-primary w-full inline-flex items-center justify-center gap-2 text-sm"
-                  >
-                    Book a Session
-                    <ArrowRight size={14} />
-                  </Link>
-                </div>
+                  <motion.div whileHover={{ x: 4 }}>
+                    <Link
+                      to={siteConfig.routes.register}
+                      className="btn-primary w-full inline-flex items-center justify-center gap-2 text-sm"
+                    >
+                      Book a Session
+                      <ArrowRight size={14} />
+                    </Link>
+                  </motion.div>
+                </motion.div>
 
                 {/* Response time badge */}
-                <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-green-50 border border-green-100">
-                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" aria-hidden="true" />
+                <motion.div
+                  variants={staggerChild}
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl bg-green-50 border border-green-100"
+                >
+                  <motion.div
+                    className="w-2 h-2 rounded-full bg-green-500 shrink-0"
+                    aria-hidden="true"
+                    animate={{ scale: [1, 1.6, 1], opacity: [1, 0.4, 1] }}
+                    transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+                  />
                   <p className="font-body text-green-700 text-xs">
                     We typically respond within <strong>24 hours</strong> on business days.
                   </p>
-                </div>
-              </div>
-            </div>
+                </motion.div>
+              </motion.div>
+            </motion.div>
           </div>
         </section>
 
         {/* ── 3. Social Links ───────────────────────────────────────────────── */}
         <section className="py-12 bg-white border-y border-neutral-100" aria-label="Social media links">
-          <div
-            ref={socialRef}
-            className={`container-custom text-center transition-all duration-700 ease-smooth ${
-              socialIn ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-            }`}
+          <motion.div
+            className="container-custom text-center"
+            variants={stagger(0.1)}
+            initial="hidden"
+            whileInView="show"
+            viewport={viewport}
           >
-            <p className="font-body text-neutral-400 text-sm mb-5">Follow us on social media</p>
+            <motion.p variants={staggerChild} className="font-body text-neutral-400 text-sm mb-5">
+              Follow us on social media
+            </motion.p>
             <div className="flex items-center justify-center gap-4">
               {SOCIAL_LINKS.filter((s) => s.href).map(({ label, href, Icon }) => (
-                <a
+                <motion.a
                   key={label}
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-neutral-200 text-neutral-600 hover:border-gold/40 hover:bg-gold/5 hover:text-primary transition-all duration-200 font-body text-sm"
+                  variants={staggerChild}
+                  whileHover={{ y: -4, scale: 1.04 }}
+                  whileTap={{ scale: 0.96 }}
+                  transition={{ type: "spring", stiffness: 340, damping: 18 }}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-neutral-200 text-neutral-600 hover:border-gold/40 hover:bg-gold/5 hover:text-primary transition-[border-color,background-color,color] duration-200 font-body text-sm"
                   aria-label={`Follow E-Kodak on ${label}`}
                 >
                   <Icon size={16} />
                   {label}
-                </a>
+                </motion.a>
               ))}
             </div>
-          </div>
+          </motion.div>
         </section>
 
         {/* ── 4. FAQ ────────────────────────────────────────────────────────── */}

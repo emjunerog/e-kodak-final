@@ -23,6 +23,9 @@ import {
 
 import { fetchPhotographerSchedule } from '../services/bookingService';
 import GlassCard from '../components/GlassCard';
+import GlassBackground from '../components/GlassBackground';
+import GlassHeader from '../components/GlassHeader';
+import PremiumIcon from '../components/PremiumIcon';
 import StatusBadge from '../components/StatusBadge';
 import { Colors, Gradients, Typography, Spacing, Radius, Shadow } from '../theme';
 
@@ -174,9 +177,7 @@ function ShootCard({ booking, onPress }) {
 
         <View style={styles.shootFooter}>
           <Text style={styles.viewDetails}>Track Session Details</Text>
-          <View style={styles.chevronPill}>
-            <ChevronRight size={13} color={colors.gold.light} />
-          </View>
+          <PremiumIcon icon={ChevronRight} size={13} box={26} tone="soft" />
         </View>
       </GlassCard>
     </TouchableOpacity>
@@ -223,27 +224,24 @@ export default function PhotographerScheduleScreen({ navigation, route }) {
     <View style={styles.screen}>
       <StatusBar barStyle="light-content" backgroundColor={colors.bg.base} />
 
-      {/* ── Editorial Header ── */}
-      <LinearGradient
-        colors={Gradients.darkStudio}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={styles.header}
-      >
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backBtn}
-          activeOpacity={0.7}
-        >
-          <ArrowLeft size={18} color={colors.text.primary} />
-        </TouchableOpacity>
-        <View style={styles.headerTitleGroup}>
-          <Text style={styles.headerTitle}>Studio Schedule</Text>
-          {photographerName && (
-            <Text style={styles.headerSub}>Lead: {photographerName}</Text>
-          )}
-        </View>
-      </LinearGradient>
+      {/* Ambient glass backdrop */}
+      <GlassBackground />
+
+      {/* ── Frosted Editorial Header ── */}
+      <GlassHeader
+        title="Studio Schedule"
+        subtitle={photographerName ? `Lead: ${photographerName}` : 'Daily shoot assignments'}
+        left={
+          <PremiumIcon
+            icon={ArrowLeft}
+            size={18}
+            box={38}
+            tone="glass"
+            accessibilityLabel="Go back"
+            onPress={() => navigation.goBack()}
+          />
+        }
+      />
 
       {/* ── Date Strip ── */}
       <DateStrip
@@ -281,9 +279,7 @@ export default function PhotographerScheduleScreen({ navigation, route }) {
         ListEmptyComponent={
           !loading && (
             <View style={styles.empty}>
-              <View style={styles.emptyIconRing}>
-                <Camera size={44} color={colors.gold.DEFAULT} strokeWidth={1.25} />
-              </View>
+              <PremiumIcon icon={Camera} size={40} box={84} tone="soft" glow />
               <Text style={styles.emptyTitle}>No Shoots Scheduled</Text>
               <Text style={styles.emptyBody}>
                 You have no studio sessions assigned for this selected date.
@@ -354,9 +350,9 @@ const getStyles = (colors) => StyleSheet.create({
     ...Shadow.goldSoft,
   },
   dateChipInactive: {
-    backgroundColor: colors.bg.card,
+    backgroundColor: 'rgba(127, 127, 140, 0.12)',
     borderWidth: 1,
-    borderColor: colors.gold.border,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
     borderRadius: Radius.md,
   },
   dayLabel: {

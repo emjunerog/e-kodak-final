@@ -14,6 +14,7 @@ import {
 import { Link } from 'react-router-dom';
 import LiveClock from '../../components/dashboard/LiveClock';
 import ClientToolsHub from '../../components/dashboard/ClientToolsHub';
+import ClientHeroBanner from '../../components/dashboard/ClientHeroBanner';
 import StatCard from '../../components/admin/StatCard';
 import SidebarOrderCalendar from '../../components/dashboard/SidebarOrderCalendar';
 import StudioDropdown from '../../components/ui/StudioDropdown';
@@ -150,67 +151,7 @@ export default function DashboardHome() {
     <div className="space-y-6 animate-fade-in max-w-screen-2xl mx-auto pb-12 font-body">
 
       {/* ── 1. Top Editorial Hero Banner with Integrated Quick Tools ──────── */}
-      <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-neutral-950 via-neutral-900 to-[#121c2d] p-6 sm:p-7 shadow-xl border border-neutral-800">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-gold/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none" />
-        <div className="absolute bottom-0 left-1/4 w-72 h-72 bg-primary/25 rounded-full blur-3xl translate-y-1/3 pointer-events-none" />
-
-        <div className="relative z-10 grid lg:grid-cols-12 gap-6 items-center">
-          <div className="lg:col-span-7 space-y-3">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-gold bg-gold/15 border border-gold/30 px-3 py-1 rounded-full inline-flex items-center gap-1.5 shadow-2xs">
-              <Sparkles size={12} className="text-gold" /> E-Kodak Studio Client Portal
-            </span>
-
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-heading text-white font-bold tracking-tight">
-              Welcome back,{' '}
-              <span className="text-gold italic font-normal">{profile?.first_name || 'Client'}</span>
-            </h1>
-
-            <p className="text-neutral-300 font-body text-xs sm:text-sm max-w-lg leading-relaxed">
-              {activeBookings.length > 0 ? (
-                <>
-                  You have <strong className="text-white font-semibold">{activeBookings.length} active session{activeBookings.length !== 1 ? 's' : ''}</strong> on record.
-                  {upcoming > 0 && <span> · <strong className="text-gold">{upcoming} confirmed shoot{upcoming !== 1 ? 's' : ''}</strong></span>}
-                </>
-              ) : (
-                'Review your photo deliverables, schedule your next photoshoot, or track studio order milestones.'
-              )}
-            </p>
-
-            {/* Actions + Integrated Quick Tools Dock */}
-            <div className="pt-2 flex flex-wrap items-center gap-3">
-              <Link
-                to="/dashboard/book"
-                className="btn-primary py-2 px-4 text-xs flex items-center gap-2 shadow-lg shadow-gold/20 hover:scale-105 transition-all"
-              >
-                <Camera size={15} /> Book a Session
-              </Link>
-
-              {/* Minimalist Quick Tools Dock */}
-              <div className="flex items-center gap-1 bg-neutral-900/90 border border-neutral-700/80 rounded-xl p-1 backdrop-blur-md shadow-xs">
-                {QUICK_TOOLS.map((tool) => (
-                  <div key={tool.id} className="relative group/tool">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenTool(tool.id)}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-300 hover:text-gold hover:bg-neutral-800 transition-all hover:scale-110 active:scale-95"
-                      aria-label={tool.label}
-                    >
-                      <tool.icon size={15} />
-                    </button>
-                    <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/tool:flex items-center px-2 py-1 rounded-md text-[10px] font-semibold bg-neutral-900 text-white shadow-xl whitespace-nowrap z-50 animate-fade-in border border-neutral-700">
-                      {tool.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="lg:col-span-5">
-            <LiveClock variant="card" />
-          </div>
-        </div>
-      </div>
+      <ClientHeroBanner bookings={bookings} />
 
       {/* ── 2. Pending Downpayment Notice Banner (Strictly > ₱0) ─────────── */}
       {pendingDownpaymentBooking && pendingDownpaymentAmount > 0 && (
@@ -221,7 +162,7 @@ export default function DashboardHome() {
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/70 px-2 py-0.5 rounded-md border border-amber-300 dark:border-amber-800">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/70 px-2 py-0.5 rounded-md border border-amber-300 dark:border-amber-800">
                   Downpayment Required
                 </span>
                 <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
@@ -310,7 +251,7 @@ export default function DashboardHome() {
 
                 {/* Month Dropdown Selector */}
                 <div className="inline-flex items-center gap-1.5 z-50">
-                  <span className="text-[10px] text-neutral-400 font-bold uppercase whitespace-nowrap">Month:</span>
+                  <span className="text-xs text-neutral-400 font-bold uppercase whitespace-nowrap">Month:</span>
                   <StudioDropdown
                     value={customMonth}
                     onChange={(val) => { setCustomMonth(val); setDateFilter('CUSTOM'); }}
@@ -386,9 +327,9 @@ export default function DashboardHome() {
                           </div>
                           <div>
                             <div className="flex items-center gap-1.5 mb-0.5">
-                              <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold font-body">Client</span>
+                              <span className="text-xs uppercase tracking-wider text-neutral-400 font-bold font-body">Client</span>
                               {isTracked && (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded-full font-body" title="Currently Tracking">
+                                <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded-full font-body" title="Currently Tracking">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                                 </span>
                               )}
@@ -402,11 +343,11 @@ export default function DashboardHome() {
                         {/* Middle: Status & ID */}
                         <div className="flex items-center gap-3 ml-auto mr-auto pl-4 border-l border-transparent sm:border-neutral-200 dark:sm:border-neutral-800">
                           {b.status === 'PHOTOGRAPHER_ASSIGNED' ? (
-                            <span className="px-3 py-1 text-[10px] font-bold rounded-full uppercase tracking-wider border bg-primary/10 text-primary border-primary/30 flex items-center gap-1.5 font-body">
+                            <span className="px-3 py-1 text-xs font-bold rounded-full uppercase tracking-wider border bg-primary/10 text-primary border-primary/30 flex items-center gap-1.5 font-body">
                               <Camera size={12} /> Assigned
                             </span>
                           ) : (
-                            <span className={`px-3 py-1 text-[10px] font-bold rounded-full uppercase tracking-wider border ${getStatusBadge(b.status)} font-body flex items-center gap-1.5`}>
+                            <span className={`px-3 py-1 text-xs font-bold rounded-full uppercase tracking-wider border ${getStatusBadge(b.status)} font-body flex items-center gap-1.5`}>
                               {getStatusLabel(b.status)}
                             </span>
                           )}
@@ -458,6 +399,46 @@ export default function DashboardHome() {
                            </div>
                         </div>
                       </div>
+
+                      {/* Integrated Compact Progress Tracker (Takes Zero Extra Layout Space) */}
+                      <div className="pt-3 border-t border-neutral-100 dark:border-neutral-800/80">
+                        <div className="flex items-center justify-between text-xs font-body mb-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                            <Layers size={12} className="text-gold" />
+                            <span>Production Progress</span>
+                          </span>
+                          <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+                            Stage {doneCount} of {steps.length} · <strong className="text-primary dark:text-gold font-bold">{currentStep?.label || 'In Progress'}</strong>
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between relative px-1 py-1">
+                          <div className="absolute left-3 right-3 top-1/2 -translate-y-1/2 h-1 bg-neutral-100 dark:bg-neutral-800 rounded-full z-0" />
+                          <div 
+                            className="absolute left-3 top-1/2 -translate-y-1/2 h-1 bg-gradient-to-r from-gold-dark via-gold to-amber-300 rounded-full z-0 transition-all duration-500" 
+                            style={{ width: `${Math.max(0, Math.min(100, ((doneCount - 0.5) / Math.max(1, steps.length - 1)) * 100))}%` }}
+                          />
+                          {steps.map((st, sIdx) => {
+                            const isComp = st.completed || st.done;
+                            const isAct = st.current || st.active;
+                            return (
+                              <div key={sIdx} className="relative z-10 group/mini flex flex-col items-center">
+                                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                                  isComp 
+                                    ? 'bg-emerald-500 text-white shadow-2xs' 
+                                    : isAct 
+                                    ? 'bg-gold text-neutral-950 ring-2 ring-gold/30 shadow-xs' 
+                                    : 'bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-400'
+                                }`}>
+                                  {isComp ? '✓' : sIdx + 1}
+                                </div>
+                                <span className="pointer-events-none absolute bottom-full mb-1 opacity-0 group-hover/mini:opacity-100 transition-opacity bg-neutral-900 text-white text-[11px] font-bold px-2 py-0.5 rounded shadow whitespace-nowrap z-30">
+                                  {st.label}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   );
                 })
@@ -487,101 +468,9 @@ export default function DashboardHome() {
           </div>
         </div>
 
-        {/* Right Column: Status Tracker & Tabbed Studio Hub (5 cols for perfect balanced height) */}
+        {/* Right Column: Tabbed Studio Schedule & Bulletins Hub (Cleanly aligned without wasted space) */}
         <div className="lg:col-span-5 space-y-4">
-
-          {/* A. Status Tracker */}
-          <div className="bg-white dark:bg-neutral-900 rounded-3xl p-6 border border-neutral-200/90 dark:border-neutral-800 shadow-xs">
-            <div className="flex justify-between items-center mb-5 font-body">
-              <h3 className="text-neutral-400 font-bold uppercase tracking-widest text-xs">
-                Progress
-              </h3>
-              {trackedSession && (
-                <span className="text-[11px] font-mono font-bold text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1 rounded-lg">
-                  #{trackedSession.booking_number}
-                </span>
-              )}
-            </div>
-
-            {trackedSession ? (
-              <div className="space-y-6">
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-1 font-body">
-                    <p className="text-sm font-bold text-primary dark:text-neutral-100 truncate">
-                      {trackedSession.service?.name || 'Studio Session'}
-                    </p>
-                    {trackedSession.status === 'PHOTOGRAPHER_ASSIGNED' ? (
-                      <span className="px-3 py-1 text-[10px] font-bold rounded-full uppercase tracking-wider border bg-primary/10 text-primary border-primary/30 flex items-center gap-1.5">
-                        <Camera size={12} /> Assigned
-                      </span>
-                    ) : (
-                      <span className={`px-3 py-1 text-[10px] font-bold rounded-full uppercase tracking-wider border ${getStatusBadge(trackedSession.status)}`}>
-                        {getStatusLabel(trackedSession.status)}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-gold-dark dark:text-gold font-bold">
-                    Set: {trackedSession.tier_name || 'Standard'}
-                  </p>
-                </div>
-
-                {/* Interactive Visual Stage Pipeline */}
-                <div className="py-2">
-                  <div className="flex items-center justify-between relative px-2">
-                    {/* Background line */}
-                    <div className="absolute left-6 right-6 top-1/2 -translate-y-1/2 h-0.5 bg-neutral-100 dark:bg-neutral-800 z-0" />
-                    
-                    {getProgressSteps(trackedSession.status, !!trackedSession.photographer || !!trackedSession.photographer_id).map((step, idx) => {
-                      const icons = [CheckSquare, Calendar, Camera, Palette, PackageCheck];
-                      const StepIcon = icons[idx] || CheckCircle;
-                      const isComplete = step.completed || step.done;
-                      const isActive = step.current || step.active;
-
-                      return (
-                        <div key={idx} className="relative group/step z-10 flex flex-col items-center">
-                          <div
-                            className={`w-9 h-9 flex items-center justify-center transition-all duration-300 ${
-                              isComplete
-                                ? 'bg-emerald-500 text-white rounded-xl shadow-xs scale-100'
-                                : isActive
-                                ? 'bg-amber-100 dark:bg-amber-900/40 text-gold-dark dark:text-gold rounded-full ring-4 ring-amber-50 dark:ring-amber-900/20 scale-110 shadow-sm'
-                                : 'bg-white dark:bg-neutral-900 text-neutral-300 dark:text-neutral-600 rounded-full border-2 border-neutral-100 dark:border-neutral-800'
-                            }`}
-                          >
-                            <StepIcon size={isComplete ? 16 : 14} />
-                          </div>
-                          
-                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/step:flex items-center px-2.5 py-1 rounded-md text-[10px] font-semibold bg-neutral-900 text-white shadow-xl whitespace-nowrap z-50 animate-fade-in border border-neutral-700">
-                            {step.label} {isComplete ? '✓' : isActive ? '(Active)' : ''}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between text-xs">
-                  <span className="text-[11px] text-neutral-400 font-medium">
-                    Stage {getProgressSteps(trackedSession.status, !!trackedSession.photographer || !!trackedSession.photographer_id).filter(s => s.completed || s.done).length} of 5 Complete
-                  </span>
-                  <Link
-                    to="/dashboard/progress"
-                    className="text-gold font-bold hover:underline flex items-center gap-1 text-[11px] group/arrow"
-                  >
-                    <span>Timeline</span>
-                    <ArrowRight size={12} className="transition-transform group-hover/arrow:translate-x-0.5" />
-                  </Link>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-6 text-neutral-400">
-                <CalendarPlus size={20} className="mx-auto mb-2 text-neutral-300" />
-                <p className="text-xs">No active session selected</p>
-              </div>
-            )}
-          </div>
-
-          {/* B. Tabbed Studio Schedule & Bulletins Hub (Harmonizes height with left column) */}
+          {/* Tabbed Studio Schedule & Bulletins Hub */}
           <div className="bg-white dark:bg-neutral-900 rounded-3xl p-5 border border-neutral-200/90 dark:border-neutral-800 shadow-xs">
             {/* Tab Controller */}
             <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b border-neutral-100 dark:border-neutral-800">
@@ -610,7 +499,7 @@ export default function DashboardHome() {
                   <Bell size={13} className={rightTab === 'bulletins' ? 'text-gold' : ''} />
                   <span>Bulletins</span>
                   {notifications.length > 0 && (
-                    <span className="w-4 h-4 rounded-full bg-gold/20 text-gold text-[9px] font-bold flex items-center justify-center">
+                    <span className="w-4 h-4 rounded-full bg-gold/20 text-gold text-[11px] font-bold flex items-center justify-center">
                       {notifications.length}
                     </span>
                   )}
@@ -644,7 +533,7 @@ export default function DashboardHome() {
                         <p className="text-xs font-semibold text-primary dark:text-neutral-200 truncate group-hover/bulletin:text-gold transition-colors">
                           {n.title}
                         </p>
-                        <span className="text-[10px] text-neutral-400 shrink-0 font-mono">
+                        <span className="text-xs text-neutral-400 shrink-0 font-mono">
                           {new Date(n.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </span>
                       </div>
@@ -673,7 +562,7 @@ export default function DashboardHome() {
                       )}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold mb-0.5">Assigned Photographer</p>
+                      <p className="text-xs uppercase tracking-widest text-neutral-400 font-bold mb-0.5">Assigned Photographer</p>
                       <p className="text-sm font-bold text-primary dark:text-neutral-100 truncate">
                         {trackedSession.photographer.profile?.first_name} {trackedSession.photographer.profile?.last_name}
                       </p>
@@ -726,15 +615,6 @@ export default function DashboardHome() {
 
         </div>
       </div>
-
-      {/* ── 5. Tools Modal ─────────────────────────────────────────────── */}
-      <ClientToolsHub
-        isOpen={toolsModalOpen}
-        onClose={() => setToolsModalOpen(false)}
-        initialTool={activeTool}
-        bookings={bookings}
-        selectedBooking={qrModalBooking}
-      />
 
     </div>
   );

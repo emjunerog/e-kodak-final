@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
+import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import StudioDropdown from '../../components/ui/StudioDropdown';
 import { getSmsLogs, dispatchManualSms, deleteSmsLog, getRecentBookings } from '../../services/adminService';
 
@@ -438,7 +439,7 @@ export default function AdminSmsLogs() {
   };
 
   return (
-    <div className="w-full max-w-screen-2xl mx-auto space-y-6 pb-16 animate-fade-in font-body">
+    <div className="w-full pb-16 animate-fade-in font-body">
       {/* ── 1. Luxury Administrative Hero Banner ────────────────────────────── */}
       <AdminHeroBanner
         station="admin"
@@ -461,6 +462,9 @@ export default function AdminSmsLogs() {
         onRefresh={load}
         isRefreshing={loading}
       />
+
+      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
 
       {/* Action Success Toast Banner */}
       {actionSuccessMsg && (
@@ -486,84 +490,45 @@ export default function AdminSmsLogs() {
         </div>
       )}
 
-      {/* ── 2. Metric Overview Strip (4 Spacious Luxury Cards) ──────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        {/* Card 1: Total Messages */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-gold/40 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
-              <MessageSquare size={20} />
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200">
-              AUDIT TRAIL
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Total Dispatched</p>
-            <h3 className="font-heading text-2xl font-bold text-primary mt-0.5">{stats.total}</h3>
-            <p className="text-xs text-neutral-500 mt-1">Lifetime studio SMS transmissions</p>
-          </div>
-        </div>
-
-        {/* Card 2: Delivered */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-emerald-300 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200">
-              <CheckCircle2 size={20} />
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-              {stats.deliveryRate}% SUCCESS
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Delivered to Handsets</p>
-            <h3 className="font-heading text-2xl font-bold text-emerald-700 mt-0.5">{stats.delivered}</h3>
-            <p className="text-xs text-neutral-500 mt-1">Confirmed telco handshakes</p>
-          </div>
-        </div>
-
-        {/* Card 3: Queued */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200">
-              <Clock size={20} />
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
-              IN TRANSIT
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Carrier Queue</p>
-            <h3 className="font-heading text-2xl font-bold text-amber-700 mt-0.5">{stats.queued}</h3>
-            <p className="text-xs text-neutral-500 mt-1">Pending carrier acknowledgement</p>
-          </div>
-        </div>
-
-        {/* Card 4: Gateway Route */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-blue-300 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-200">
-              <Radio size={20} />
-            </div>
-            <button
-              onClick={() => setShowGatewayDrawer(!showGatewayDrawer)}
-              className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100 transition-colors"
-            >
-              {showGatewayDrawer ? 'Hide Details' : 'View Routes'}
-            </button>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Philippine Telco Route</p>
-            <h3 className="font-heading text-base font-bold text-primary mt-0.5 truncate">
-              Semaphore · PhilSMS
-            </h3>
-            <p className="text-xs text-neutral-500 mt-1 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
-              Direct Carrier Gateways Active
-            </p>
-          </div>
-        </div>
-      </div>
+      {/* ── 2. Metric Overview Strip (Unified Luxury Studio KPI Cards) ──────── */}
+      <CategorizedMetricStrip
+        loading={loading}
+        columns="grid-cols-2 lg:grid-cols-4"
+        cards={[
+          {
+            key: 'total',
+            label: 'AUDIT TRAIL',
+            subtitle: 'TOTAL DISPATCHED',
+            value: stats.total,
+            isActive: statusFilter === 'all',
+            onClick: () => setStatusFilter('all')
+          },
+          {
+            key: 'delivered',
+            label: `${stats.deliveryRate}% SUCCESS`,
+            subtitle: 'DELIVERED TO HANDSETS',
+            value: stats.delivered,
+            isActive: statusFilter === 'delivered',
+            onClick: () => setStatusFilter('delivered')
+          },
+          {
+            key: 'queued',
+            label: 'IN TRANSIT',
+            subtitle: 'CARRIER QUEUE',
+            value: stats.queued,
+            isActive: statusFilter === 'queued',
+            onClick: () => setStatusFilter('queued')
+          },
+          {
+            key: 'gateway',
+            label: showGatewayDrawer ? 'OPEN' : 'TELCO',
+            subtitle: 'SEMAPHORE · PHILSMS',
+            value: '2 ROUTES',
+            isActive: showGatewayDrawer,
+            onClick: () => setShowGatewayDrawer(!showGatewayDrawer)
+          }
+        ]}
+      />
 
       {/* ── 3. Philippine Telco Carrier Gateways Status Card (Expandable) ────── */}
       {showGatewayDrawer && (
@@ -587,34 +552,34 @@ export default function AdminSmsLogs() {
             <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200/70 space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-primary">Semaphore PH</span>
-                <span className="text-[9.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full">
+                <span className="text-[11.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full">
                   Primary · Connected
                 </span>
               </div>
               <p className="text-[11px] text-neutral-500">Official Sender ID: <strong className="text-neutral-800 font-mono">E-KODAK</strong></p>
-              <p className="text-[10px] text-neutral-400">Routes: Globe Telecom, Smart Communications, DITO</p>
+              <p className="text-xs text-neutral-400">Routes: Globe Telecom, Smart Communications, DITO</p>
             </div>
 
             <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200/70 space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-primary">PhilSMS Gateway</span>
-                <span className="text-[9.5px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded-full">
+                <span className="text-[11.5px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded-full">
                   Failover Ready
                 </span>
               </div>
               <p className="text-[11px] text-neutral-500">Dedicated high-throughput transactional gateway</p>
-              <p className="text-[10px] text-neutral-400">Automatic retry on network congestion</p>
+              <p className="text-xs text-neutral-400">Automatic retry on network congestion</p>
             </div>
 
             <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200/70 space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-primary">Twilio SMS Global</span>
-                <span className="text-[9.5px] font-bold text-neutral-600 bg-neutral-100 border border-neutral-200 px-1.5 py-0.2 rounded-full">
+                <span className="text-[11.5px] font-bold text-neutral-600 bg-neutral-100 border border-neutral-200 px-1.5 py-0.2 rounded-full">
                   International Standby
                 </span>
               </div>
               <p className="text-[11px] text-neutral-500">Global roaming and overseas client notifications</p>
-              <p className="text-[10px] text-neutral-400">E.164 standard formatting verified</p>
+              <p className="text-xs text-neutral-400">E.164 standard formatting verified</p>
             </div>
           </div>
         </div>
@@ -675,7 +640,7 @@ export default function AdminSmsLogs() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 pt-2 border-t border-neutral-100 items-center">
           {/* StudioDropdown: Filter by Booking / Customer */}
           <div className="lg:col-span-6">
-            <label className="block text-[9.5px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+            <label className="block text-[11.5px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
               Filter by Booking or Client
             </label>
             <StudioDropdown
@@ -691,7 +656,7 @@ export default function AdminSmsLogs() {
 
           {/* StudioDropdown: Filter by Carrier */}
           <div className="lg:col-span-4">
-            <label className="block text-[9.5px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+            <label className="block text-[11.5px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
               Filter by Carrier Gateway
             </label>
             <StudioDropdown
@@ -818,7 +783,7 @@ export default function AdminSmsLogs() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs font-body border-collapse">
               <thead>
-                <tr className="bg-neutral-50/80 border-b border-neutral-200/80 text-[10.5px] font-bold text-neutral-500 uppercase tracking-wider">
+                <tr className="bg-neutral-50/80 border-b border-neutral-200/80 text-xs font-bold text-neutral-500 uppercase tracking-wider">
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Recipient &amp; Mobile</th>
                   <th className="px-4 py-3 hidden md:table-cell">Carrier Network</th>
@@ -846,7 +811,7 @@ export default function AdminSmsLogs() {
                     >
                       {/* Status */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
-                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${statusConf.badgeClass}`}>
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-bold border ${statusConf.badgeClass}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${statusConf.dotClass}`} />
                           <StatusIcon size={11} />
                           <span>{statusConf.label}</span>
@@ -856,22 +821,22 @@ export default function AdminSmsLogs() {
                       {/* Recipient & Phone */}
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-neutral-100 text-neutral-600 flex items-center justify-center font-bold text-[10px] shrink-0 border border-neutral-200">
+                          <div className="w-7 h-7 rounded-lg bg-neutral-100 text-neutral-600 flex items-center justify-center font-bold text-xs shrink-0 border border-neutral-200">
                             {cName.charAt(0)}
                           </div>
                           <div>
                             <div className="font-bold text-primary truncate max-w-[140px]">{cName}</div>
-                            <div className="font-mono text-[10px] text-neutral-500">{r.phone_number || 'No phone'}</div>
+                            <div className="font-mono text-xs text-neutral-500">{r.phone_number || 'No phone'}</div>
                           </div>
                         </div>
                       </td>
 
                       {/* Carrier Network */}
                       <td className="px-4 py-3.5 hidden md:table-cell whitespace-nowrap">
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
                           {carrier}
                         </span>
-                        <div className="text-[9.5px] text-neutral-400 mt-0.5">
+                        <div className="text-[11.5px] text-neutral-400 mt-0.5">
                           {r.provider_message_id?.split('_')[0] || 'SEMAPHORE'}
                         </div>
                       </td>
@@ -879,13 +844,13 @@ export default function AdminSmsLogs() {
                       {/* Booking Context */}
                       <td className="px-4 py-3.5 hidden lg:table-cell whitespace-nowrap">
                         {r.booking?.booking_number ? (
-                          <span className="font-mono text-[10px] font-bold bg-neutral-100 text-neutral-700 px-2 py-0.5 rounded border border-neutral-200">
+                          <span className="font-mono text-xs font-bold bg-neutral-100 text-neutral-700 px-2 py-0.5 rounded border border-neutral-200">
                             #{r.booking.booking_number}
                           </span>
                         ) : (
-                          <span className="text-neutral-400 text-[10px]">Direct SMS</span>
+                          <span className="text-neutral-400 text-xs">Direct SMS</span>
                         )}
-                        <div className="text-[9.5px] text-neutral-400 mt-0.5">
+                        <div className="text-[11.5px] text-neutral-400 mt-0.5">
                           {r.notification_type?.replace(/_/g, ' ') || 'DISPATCH'}
                         </div>
                       </td>
@@ -895,7 +860,7 @@ export default function AdminSmsLogs() {
                         <p className="text-neutral-700 line-clamp-2 leading-relaxed">
                           {r.message}
                         </p>
-                        <span className="text-[9px] text-neutral-400 font-mono mt-0.5 block">
+                        <span className="text-[11px] text-neutral-400 font-mono mt-0.5 block">
                           {r.message?.length || 0} chars · {Math.ceil((r.message?.length || 1) / 160)} credit
                         </span>
                       </td>
@@ -903,7 +868,7 @@ export default function AdminSmsLogs() {
                       {/* Sent Time */}
                       <td className="px-4 py-3.5 hidden sm:table-cell whitespace-nowrap">
                         <div className="text-neutral-700 font-medium">{timeAgo(r.sent_at || r.created_at)}</div>
-                        <div className="text-[10px] text-neutral-400">{fmt(r.sent_at || r.created_at)}</div>
+                        <div className="text-xs text-neutral-400">{fmt(r.sent_at || r.created_at)}</div>
                       </td>
 
                       {/* Actions */}
@@ -913,7 +878,7 @@ export default function AdminSmsLogs() {
                           <button
                             type="button"
                             onClick={() => handleCopyText(r.message, r.id)}
-                            className="p-1.5 text-neutral-400 hover:text-primary hover:bg-neutral-100 rounded-lg transition-colors border border-neutral-200/80 text-[10px]"
+                            className="p-1.5 text-neutral-400 hover:text-primary hover:bg-neutral-100 rounded-lg transition-colors border border-neutral-200/80 text-xs"
                             title="Copy SMS Message Text"
                           >
                             {isCopied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
@@ -923,7 +888,7 @@ export default function AdminSmsLogs() {
                           <button
                             type="button"
                             onClick={() => setInspectModalLog(r)}
-                            className="p-1.5 text-neutral-500 hover:text-primary hover:bg-neutral-100 rounded-lg transition-colors border border-neutral-200/80 text-[10px] flex items-center gap-1"
+                            className="p-1.5 text-neutral-500 hover:text-primary hover:bg-neutral-100 rounded-lg transition-colors border border-neutral-200/80 text-xs flex items-center gap-1"
                             title="Inspect Details"
                           >
                             <Eye size={12} />
@@ -934,7 +899,7 @@ export default function AdminSmsLogs() {
                           <button
                             type="button"
                             onClick={() => handleDeleteLog(r.id)}
-                            className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-neutral-200 hover:border-red-200 text-[10px]"
+                            className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-neutral-200 hover:border-red-200 text-xs"
                             title="Delete this record"
                           >
                             <Trash2 size={12} />
@@ -976,6 +941,7 @@ export default function AdminSmsLogs() {
           </div>
         )}
       </div>
+      </div>
 
       {/* ── 6. TOOL: QUICK SMS DISPATCH MODAL ──────────────────────────────── */}
       {composeModalOpen && (
@@ -991,7 +957,7 @@ export default function AdminSmsLogs() {
                   <h4 className="font-heading text-sm font-bold text-primary leading-tight">
                     Quick Telco SMS Dispatch
                   </h4>
-                  <p className="text-[10.5px] text-neutral-400 leading-tight">
+                  <p className="text-xs text-neutral-400 leading-tight">
                     Direct transmission via Philippine carrier gateways (Semaphore / PhilSMS)
                   </p>
                 </div>
@@ -1009,7 +975,7 @@ export default function AdminSmsLogs() {
             <form onSubmit={handleDispatchSms} className="p-5 overflow-y-auto space-y-4">
               {/* Select from Booking with StudioDropdown */}
               <div>
-                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1">
                   Recipient Booking (Auto-detects Mobile &amp; Name)
                 </label>
                 <StudioDropdown
@@ -1026,7 +992,7 @@ export default function AdminSmsLogs() {
               {/* Recipient Name & Phone Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                  <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1">
                     Recipient Name
                   </label>
                   <input
@@ -1038,7 +1004,7 @@ export default function AdminSmsLogs() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                  <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1">
                     Philippine Mobile Number
                   </label>
                   <div className="relative">
@@ -1050,7 +1016,7 @@ export default function AdminSmsLogs() {
                       placeholder="09XXXXXXXXX or +639XXXXXXXXX"
                       className="w-full pl-3 pr-16 py-2 bg-neutral-50/60 border border-neutral-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-gold/30 focus:bg-white"
                     />
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-neutral-400 bg-neutral-100 px-1.5 py-0.5 rounded border border-neutral-200">
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-neutral-400 bg-neutral-100 px-1.5 py-0.5 rounded border border-neutral-200">
                       {detectPhilippineCarrier(dispatchPhone)}
                     </span>
                   </div>
@@ -1059,7 +1025,7 @@ export default function AdminSmsLogs() {
 
               {/* Quick Preset Templates */}
               <div>
-                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1">
                   Quick Studio Templates
                 </label>
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -1074,7 +1040,7 @@ export default function AdminSmsLogs() {
                       key={tpl.id}
                       type="button"
                       onClick={() => applySmsTemplate(tpl.id)}
-                      className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-gold/10 text-gold-dark hover:bg-gold hover:text-white border border-gold/30 transition-colors"
+                      className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gold/10 text-gold-dark hover:bg-gold hover:text-white border border-gold/30 transition-colors"
                     >
                       {tpl.label}
                     </button>
@@ -1085,10 +1051,10 @@ export default function AdminSmsLogs() {
               {/* SMS Message Payload */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                  <label className="text-xs font-bold text-neutral-400 uppercase tracking-wider">
                     SMS Message Payload
                   </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
+                  <span className="text-xs font-mono text-neutral-500">
                     {dispatchMessage.length} / 160 chars ({Math.ceil(dispatchMessage.length / 160) || 1} credit)
                   </span>
                 </div>
@@ -1105,7 +1071,7 @@ export default function AdminSmsLogs() {
               {/* Gateway Selection & Telco Route */}
               <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/80 flex items-center justify-between gap-3 text-xs flex-wrap">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10.5px] font-bold text-neutral-600">Telco Gateway:</span>
+                  <span className="text-xs font-bold text-neutral-600">Telco Gateway:</span>
                   <select
                     value={dispatchGateway}
                     onChange={e => setDispatchGateway(e.target.value)}
@@ -1152,7 +1118,7 @@ export default function AdminSmsLogs() {
             {/* Header */}
             <div className="flex items-start justify-between border-b border-neutral-100 pb-3">
               <div>
-                <span className="text-[10px] font-bold text-gold uppercase tracking-widest">
+                <span className="text-xs font-bold text-gold uppercase tracking-widest">
                   SMS Transmission Audit
                 </span>
                 <h3 className="font-heading text-base font-bold text-primary mt-0.5">
@@ -1169,14 +1135,14 @@ export default function AdminSmsLogs() {
 
             {/* Message Bubble Preview */}
             <div className="p-4 bg-neutral-900 text-white rounded-2xl border border-neutral-800 space-y-2 shadow-inner">
-              <div className="flex items-center justify-between text-[10px] text-neutral-400 border-b border-neutral-800 pb-1.5 font-mono">
+              <div className="flex items-center justify-between text-xs text-neutral-400 border-b border-neutral-800 pb-1.5 font-mono">
                 <span>Sender: E-KODAK</span>
                 <span>{fmt(inspectModalLog.sent_at || inspectModalLog.created_at)}</span>
               </div>
               <p className="text-xs leading-relaxed font-body text-neutral-100">
                 {inspectModalLog.message}
               </p>
-              <div className="text-[9.5px] text-neutral-400 text-right pt-1 font-mono">
+              <div className="text-[11.5px] text-neutral-400 text-right pt-1 font-mono">
                 {inspectModalLog.message?.length || 0} characters ({Math.ceil((inspectModalLog.message?.length || 1) / 160)} SMS Credit)
               </div>
             </div>
@@ -1184,26 +1150,26 @@ export default function AdminSmsLogs() {
             {/* Dossier Grid */}
             <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200/80 grid grid-cols-2 gap-2.5 text-[11px] text-neutral-600">
               <div>
-                <span className="text-neutral-400 block text-[10px]">Mobile Phone:</span>
+                <span className="text-neutral-400 block text-xs">Mobile Phone:</span>
                 <span className="font-mono font-bold text-primary">{inspectModalLog.phone_number || '—'}</span>
               </div>
               <div>
-                <span className="text-neutral-400 block text-[10px]">Carrier Network:</span>
+                <span className="text-neutral-400 block text-xs">Carrier Network:</span>
                 <span className="font-semibold text-blue-700">{detectPhilippineCarrier(inspectModalLog.phone_number)}</span>
               </div>
               <div>
-                <span className="text-neutral-400 block text-[10px]">Delivery Status:</span>
+                <span className="text-neutral-400 block text-xs">Delivery Status:</span>
                 <span className="font-semibold text-emerald-700">{inspectModalLog.status || 'SENT'}</span>
               </div>
               <div>
-                <span className="text-neutral-400 block text-[10px]">Booking Reference:</span>
+                <span className="text-neutral-400 block text-xs">Booking Reference:</span>
                 <span className="font-semibold text-primary">
                   {inspectModalLog.booking?.booking_number ? `#${inspectModalLog.booking.booking_number}` : 'Direct SMS'}
                 </span>
               </div>
               <div className="col-span-2 pt-1 border-t border-neutral-200/60">
-                <span className="text-neutral-400 block text-[10px]">Provider Transaction ID:</span>
-                <span className="font-mono text-[10px] text-neutral-700">{inspectModalLog.provider_message_id || inspectModalLog.id}</span>
+                <span className="text-neutral-400 block text-xs">Provider Transaction ID:</span>
+                <span className="font-mono text-xs text-neutral-700">{inspectModalLog.provider_message_id || inspectModalLog.id}</span>
               </div>
             </div>
 

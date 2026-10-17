@@ -20,6 +20,9 @@ import { BookOpen, QrCode, ChevronRight, Trash2, Calendar } from 'lucide-react-n
 import { getSavedBookings, removeSavedBooking } from '../services/storageService';
 import { fetchBookingByToken } from '../services/bookingService';
 import GlassCard from '../components/GlassCard';
+import GlassBackground from '../components/GlassBackground';
+import GlassHeader from '../components/GlassHeader';
+import PremiumIcon from '../components/PremiumIcon';
 import StatusBadge from '../components/StatusBadge';
 import GoldButton from '../components/GoldButton';
 import { useTheme } from '../context/ThemeContext';
@@ -79,13 +82,11 @@ function BookingPassCard({ item, onPress, onDelete, colors, gradients }) {
             <Text style={[styles.savedAt, { color: colors.text.muted }]}>
               Added to device {formatDate(item.savedAt)}
             </Text>
-            <View style={styles.cardActions}>
+              <View style={styles.cardActions}>
               <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Trash2 size={15} color={colors.text.muted} />
               </TouchableOpacity>
-              <View style={[styles.chevronPill, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
-                <ChevronRight size={14} color={colors.gold.light} />
-              </View>
+              <PremiumIcon icon={ChevronRight} size={14} box={26} tone="soft" />
             </View>
           </View>
         </View>
@@ -143,53 +144,21 @@ export default function SavedBookingsScreen({ navigation }) {
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#0C0A08' : '#FAF8F5'} />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.bg.base} />
 
-      {/* Full-Screen Atmospheric Atelier Luxury Gradients */}
-      <LinearGradient
-        colors={
-          isDark
-            ? ['#0C0A08', '#16120E', '#0E0C09', '#1A140E', '#090806']
-            : ['#FAF8F5', '#F5EFE6', '#EDE4D4', '#F7F3EB', '#FAF7F2']
-        }
-        locations={[0, 0.22, 0.50, 0.78, 1]}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <LinearGradient
-        colors={
-          isDark
-            ? ['rgba(212, 175, 55, 0.08)', 'transparent', 'rgba(212, 175, 55, 0.04)', 'transparent']
-            : ['rgba(212, 175, 55, 0.12)', 'transparent', 'rgba(212, 175, 55, 0.06)', 'transparent']
-        }
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-        pointerEvents="none"
-      />
+      {/* Ambient glass backdrop */}
+      <GlassBackground />
 
-      {/* ── Editorial Header ── */}
-      <LinearGradient
-        colors={gradients.darkStudio}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={[styles.header, { borderBottomColor: colors.gold.border }]}
-      >
-        <View style={styles.headerTop}>
-          <View style={[styles.headerIconWrapper, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
-            <BookOpen size={20} color={colors.gold.light} />
-          </View>
-          <View>
-            <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Studio Passes</Text>
-            <Text style={[styles.headerSubtitle, { color: colors.text.secondary }]}>Saved & tracked client sessions</Text>
-          </View>
-        </View>
-      </LinearGradient>
+      {/* ── Frosted Editorial Header ── */}
+      <GlassHeader
+        icon={BookOpen}
+        title="Studio Passes"
+        subtitle="Saved & tracked client sessions"
+      />
 
       {bookings.length === 0 ? (
         <View style={styles.empty}>
-          <View style={[styles.emptyIconRing, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
-            <QrCode size={48} color={colors.gold.DEFAULT} strokeWidth={1.25} />
-          </View>
+          <PremiumIcon icon={QrCode} size={44} box={88} tone="soft" glow />
           <Text style={[styles.emptyTitle, { color: colors.text.primary }]}>No Studio Passes Saved</Text>
           <Text style={[styles.emptyBody, { color: colors.text.secondary }]}>
             Scan the QR code from your booking receipt or online account to track your photoshoot session live.
@@ -285,11 +254,15 @@ const getStyles = (colors) => StyleSheet.create({
   // Pass Card
   card: {
     flexDirection: 'row',
+    borderRadius: Radius['2xl'],
     overflow: 'hidden',
-    marginBottom: Spacing[2],
+    marginBottom: Spacing[3],
   },
   cardSpine: {
     width: 4,
+    borderRadius: Radius.full,
+    marginVertical: 12,
+    marginLeft: 6,
   },
   cardContent: {
     flex: 1,
@@ -321,6 +294,12 @@ const getStyles = (colors) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    backgroundColor: 'rgba(127, 127, 140, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
   },
   sessionDateText: {
     fontFamily: Typography.fontBody,
@@ -328,9 +307,10 @@ const getStyles = (colors) => StyleSheet.create({
     color: colors.text.muted,
   },
   cardDivider: {
-    height: 1,
+    height: StyleSheet.hairlineWidth,
     backgroundColor: colors.gold.border,
     marginVertical: Spacing[3],
+    opacity: 0.4,
   },
   cardFooter: {
     flexDirection: 'row',

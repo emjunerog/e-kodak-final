@@ -189,7 +189,7 @@ export default function ClientToolsHub({
               <tab.icon size={15} className={activeTool === tab.id ? "text-gold" : "text-neutral-400"} />
               <span>{tab.label}</span>
               {tab.badge && (
-                <span className="text-[10px] bg-gold/20 text-gold-dark px-1.5 py-0.2 rounded-full font-body">
+                <span className="text-xs bg-gold/20 text-gold-dark px-1.5 py-0.2 rounded-full font-body">
                   {tab.badge}
                 </span>
               )}
@@ -305,7 +305,7 @@ export default function ClientToolsHub({
                       <p className={`text-xs font-medium leading-snug ${item.done ? "line-through text-neutral-400" : "text-primary"}`}>
                         {item.label}
                       </p>
-                      <span className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider">
+                      <span className="text-xs text-neutral-400 uppercase font-bold tracking-wider">
                         {item.category}
                       </span>
                     </div>

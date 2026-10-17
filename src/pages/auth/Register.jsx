@@ -135,8 +135,10 @@ export default function Register() {
     <div className="min-h-screen flex bg-neutral-50">
       {/* Left decorative panel — hidden on mobile */}
       <div className="hidden lg:flex flex-col justify-between w-[42%] bg-primary px-12 py-14">
-        <Link to="/" className="flex items-center gap-2.5 text-white/80 hover:text-white transition-colors">
-          <Camera size={26} />
+        <Link to="/" className="flex items-center gap-2.5 text-white/80 hover:text-white transition-colors group">
+          <div className="w-8 h-8 rounded-xl bg-neutral-950 border border-neutral-800 flex items-center justify-center p-1 shrink-0 group-hover:border-gold/40 transition-colors">
+            <img src="/logo-mark.png" alt="E-Kodak" className="w-full h-full object-contain" />
+          </div>
           <span className="font-heading text-xl tracking-wide">E-KODAK</span>
         </Link>
         <div>
@@ -163,8 +165,10 @@ export default function Register() {
 
           {/* Mobile logo */}
           <div className="lg:hidden text-center mb-10">
-            <Link to="/" className="inline-flex items-center gap-2 text-primary hover:text-gold transition-colors">
-              <Camera size={28} />
+            <Link to="/" className="inline-flex items-center gap-2 text-primary hover:text-gold transition-colors group">
+              <div className="w-8 h-8 rounded-xl bg-neutral-950 border border-neutral-800 flex items-center justify-center p-1 shrink-0">
+                <img src="/logo-mark.png" alt="E-Kodak" className="w-full h-full object-contain" />
+              </div>
               <span className="font-heading text-xl tracking-wide">E-KODAK</span>
             </Link>
           </div>

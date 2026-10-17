@@ -11,45 +11,45 @@ import AnimatedCounter from '../ui/AnimatedCounter';
  */
 const COLOR_SCHEMES = {
   gold: {
-    gradient: 'from-white via-white to-amber-500/[0.06]',
-    border: 'border-amber-200/80 hover:border-gold hover:shadow-amber-500/10',
+    gradient: 'from-white via-white to-amber-500/[0.06] dark:from-neutral-900 dark:via-neutral-900 dark:to-amber-500/[0.06]',
+    border: 'border-amber-200/80 dark:border-amber-900/40 hover:border-gold hover:shadow-amber-500/10',
     iconBg: 'bg-gold/15 ring-1 ring-gold/30',
     iconColor: 'text-gold',
     badgeBg: 'bg-gold/10 text-gold border-gold/20',
   },
   blue: {
-    gradient: 'from-white via-white to-blue-500/[0.06]',
-    border: 'border-blue-200/80 hover:border-blue-400 hover:shadow-blue-500/10',
-    iconBg: 'bg-blue-50 ring-1 ring-blue-200',
-    iconColor: 'text-blue-600',
+    gradient: 'from-white via-white to-blue-500/[0.06] dark:from-neutral-900 dark:via-neutral-900 dark:to-blue-500/[0.06]',
+    border: 'border-blue-200/80 dark:border-blue-900/40 hover:border-blue-400 hover:shadow-blue-500/10',
+    iconBg: 'bg-blue-50 dark:bg-blue-950/60 ring-1 ring-blue-200 dark:ring-blue-800/60',
+    iconColor: 'text-blue-600 dark:text-blue-400',
     badgeBg: 'bg-blue-50 text-blue-700 border-blue-200',
   },
   green: {
-    gradient: 'from-white via-white to-emerald-500/[0.06]',
-    border: 'border-emerald-200/80 hover:border-emerald-400 hover:shadow-emerald-500/10',
-    iconBg: 'bg-emerald-50 ring-1 ring-emerald-200',
-    iconColor: 'text-emerald-600',
+    gradient: 'from-white via-white to-emerald-500/[0.06] dark:from-neutral-900 dark:via-neutral-900 dark:to-emerald-500/[0.06]',
+    border: 'border-emerald-200/80 dark:border-emerald-900/40 hover:border-emerald-400 hover:shadow-emerald-500/10',
+    iconBg: 'bg-emerald-50 dark:bg-emerald-950/60 ring-1 ring-emerald-200 dark:ring-emerald-800/60',
+    iconColor: 'text-emerald-600 dark:text-emerald-400',
     badgeBg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   },
   amber: {
-    gradient: 'from-white via-white to-orange-500/[0.06]',
-    border: 'border-orange-200/80 hover:border-orange-400 hover:shadow-orange-500/10',
-    iconBg: 'bg-amber-50 ring-1 ring-amber-200',
-    iconColor: 'text-amber-600',
+    gradient: 'from-white via-white to-orange-500/[0.06] dark:from-neutral-900 dark:via-neutral-900 dark:to-orange-500/[0.06]',
+    border: 'border-orange-200/80 dark:border-orange-900/40 hover:border-orange-400 hover:shadow-orange-500/10',
+    iconBg: 'bg-amber-50 dark:bg-amber-950/60 ring-1 ring-amber-200 dark:ring-amber-800/60',
+    iconColor: 'text-amber-600 dark:text-amber-400',
     badgeBg: 'bg-amber-50 text-amber-700 border-amber-200',
   },
   red: {
-    gradient: 'from-white via-white to-rose-500/[0.06]',
-    border: 'border-rose-200/80 hover:border-rose-400 hover:shadow-rose-500/10',
-    iconBg: 'bg-rose-50 ring-1 ring-rose-200',
-    iconColor: 'text-rose-600',
+    gradient: 'from-white via-white to-rose-500/[0.06] dark:from-neutral-900 dark:via-neutral-900 dark:to-rose-500/[0.06]',
+    border: 'border-rose-200/80 dark:border-rose-900/40 hover:border-rose-400 hover:shadow-rose-500/10',
+    iconBg: 'bg-rose-50 dark:bg-rose-950/60 ring-1 ring-rose-200 dark:ring-rose-800/60',
+    iconColor: 'text-rose-600 dark:text-rose-400',
     badgeBg: 'bg-rose-50 text-rose-700 border-rose-200',
   },
   neutral: {
-    gradient: 'from-white via-white to-neutral-500/[0.04]',
-    border: 'border-neutral-200/80 hover:border-neutral-400 hover:shadow-neutral-500/10',
-    iconBg: 'bg-neutral-100 ring-1 ring-neutral-200',
-    iconColor: 'text-neutral-600',
+    gradient: 'from-white via-white to-neutral-500/[0.04] dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-500/[0.04]',
+    border: 'border-neutral-200/80 dark:border-neutral-800 hover:border-neutral-400 hover:shadow-neutral-500/10',
+    iconBg: 'bg-neutral-100 dark:bg-neutral-800 ring-1 ring-neutral-200 dark:ring-neutral-700',
+    iconColor: 'text-neutral-600 dark:text-neutral-300',
     badgeBg: 'bg-neutral-100 text-neutral-600 border-neutral-200',
   },
 };
@@ -68,14 +68,14 @@ export default function StatCard({
 
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl border border-neutral-100 shadow-xs p-5 min-h-[110px] animate-pulse">
+      <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-100 dark:border-neutral-800 shadow-xs p-5 min-h-[110px] animate-pulse">
         <div className="flex items-start justify-between">
           <div className="space-y-2.5">
-            <div className="h-3 w-24 bg-neutral-200 rounded" />
-            <div className="h-7 w-16 bg-neutral-200 rounded" />
-            <div className="h-2.5 w-28 bg-neutral-100 rounded" />
+            <div className="h-3 w-24 bg-neutral-200 dark:bg-neutral-700 rounded" />
+            <div className="h-7 w-16 bg-neutral-200 dark:bg-neutral-700 rounded" />
+            <div className="h-2.5 w-28 bg-neutral-100 dark:bg-neutral-800 rounded" />
           </div>
-          <div className="w-11 h-11 bg-neutral-200 rounded-xl" />
+          <div className="w-11 h-11 bg-neutral-200 dark:bg-neutral-700 rounded-xl" />
         </div>
       </div>
     );
@@ -99,22 +99,22 @@ export default function StatCard({
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1 min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider font-body truncate">
+            <p className="text-[11px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider font-body truncate">
               {label}
             </p>
             {badgeText && (
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${scheme.badgeBg}`}>
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${scheme.badgeBg}`}>
                 {badgeText}
               </span>
             )}
           </div>
 
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-neutral-900 tracking-tight leading-none mt-1">
+          <p className="text-2xl sm:text-3xl font-heading font-bold text-neutral-900 dark:text-white tracking-tight leading-none mt-1">
             <AnimatedCounter value={value} />
           </p>
 
           {subtitle && (
-            <p className="text-[11px] text-neutral-400 font-body truncate mt-1">
+            <p className="text-[11px] text-neutral-400 dark:text-neutral-500 font-body truncate mt-1">
               {subtitle}
             </p>
           )}

@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 
 import { signInWithEmail, getProfile } from '../services/bookingService';
 import GlassCard from '../components/GlassCard';
+import PremiumIcon from '../components/PremiumIcon';
 import GoldButton from '../components/GoldButton';
 import { Colors, Gradients, Typography, Spacing, Radius, Shadow } from '../theme';
 
@@ -79,13 +80,16 @@ export default function PhotographerLoginScreen({ navigation }) {
       />
 
       {/* Top back button */}
-      <TouchableOpacity
-        onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main'))}
-        style={styles.backBtn}
-        activeOpacity={0.7}
-      >
-        <ArrowLeft size={20} color={colors.text.primary} />
-      </TouchableOpacity>
+      <View style={styles.backBtnWrap}>
+        <PremiumIcon
+          icon={ArrowLeft}
+          size={20}
+          box={40}
+          tone="glass"
+          accessibilityLabel="Go back"
+          onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Main'))}
+        />
+      </View>
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -193,18 +197,10 @@ const getStyles = (colors) => StyleSheet.create({
     opacity: 0.8,
   },
 
-  backBtn: {
+  backBtnWrap: {
     position: 'absolute',
     top: 52,
     left: Spacing[5],
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.gold.border,
-    alignItems: 'center',
-    justifyContent: 'center',
     zIndex: 10,
   },
 
@@ -238,7 +234,9 @@ const getStyles = (colors) => StyleSheet.create({
     width: 73,
     height: 73,
     borderRadius: 36.5,
-    backgroundColor: colors.bg.surface,
+    backgroundColor: 'rgba(127, 127, 140, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.14)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -279,9 +277,9 @@ const getStyles = (colors) => StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.bg.input,
+    backgroundColor: 'rgba(127, 127, 140, 0.12)',
     borderWidth: 1,
-    borderColor: colors.gold.border,
+    borderColor: 'rgba(255, 255, 255, 0.14)',
     borderRadius: Radius.md,
     paddingHorizontal: Spacing[4],
     height: 52,

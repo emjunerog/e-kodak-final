@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
+import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import { 
   getQRScanAuditLogs, 
   getBookingAuditLogs,
@@ -288,7 +289,7 @@ export default function AdminSecurity() {
   const roleLabel = profile?.role === 'admin' ? 'Super Administrator' : 'Studio Staff';
 
   return (
-    <div className="w-full max-w-screen-2xl mx-auto space-y-6 pb-16 animate-fade-in font-body">
+    <div className="w-full pb-16 animate-fade-in font-body">
       {/* ── 1. Luxury Administrative Hero Banner ────────────────────────────── */}
       <AdminHeroBanner
         station="admin"
@@ -313,85 +314,42 @@ export default function AdminSecurity() {
         onExport={handleExportCSV}
       />
 
-      {/* ── 2. Real-Time System Security Posture Strip (4 Core Pillars) ───────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        {/* Pillar 1: Auth & Session */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-gold/30 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100">
-              <UserCheck size={20} />
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-              <CheckCircle2 size={11} /> AUTHENTICATED
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Identity & Session Guard</p>
-            <p className="text-sm font-bold text-primary truncate mt-0.5">{user?.email || 'admin@e-kodak.com'}</p>
-            <p className="text-xs text-neutral-500 mt-1 flex items-center gap-1.5">
-              <span className="font-semibold text-gold">{roleLabel}</span> · TLS 1.3 / HTTPS
-            </p>
-          </div>
-        </div>
+      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
 
-        {/* Pillar 2: Database Row-Level Security */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-gold/30 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
-              <Database size={20} />
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
-              <ShieldCheck size={11} /> 6/6 ENFORCED
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Database Access Control</p>
-            <p className="text-sm font-bold text-primary mt-0.5">Row-Level Security (RLS)</p>
-            <p className="text-xs text-neutral-500 mt-1">
-              Strict isolation on bookings, payments & profiles
-            </p>
-          </div>
-        </div>
-
-        {/* Pillar 3: Client PII Confidentiality */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-gold/30 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 border border-purple-100">
-              <Lock size={20} />
-            </div>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${revealClientPII ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-purple-50 text-purple-700 border-purple-200'}`}>
-              {revealClientPII ? <AlertTriangle size={11} /> : <CheckCircle2 size={11} />}
-              {revealClientPII ? 'ADMIN REVEALED' : 'MASKED (ACTIVE)'}
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Client Data Privacy</p>
-            <p className="text-sm font-bold text-primary mt-0.5">Least-Privilege PII Guard</p>
-            <p className="text-xs text-neutral-500 mt-1">
-              {revealClientPII ? 'Full visibility active for admin audit' : 'Phone, email & IDs masked for staff'}
-            </p>
-          </div>
-        </div>
-
-        {/* Pillar 4: Storage Defense & Upload Policies */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-gold/30 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-100">
-              <HardDrive size={20} />
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-              <CheckCircle2 size={11} /> SAFE STORAGE
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Media & File Defense</p>
-            <p className="text-sm font-bold text-primary mt-0.5">Upload Guard & Quotas</p>
-            <p className="text-xs text-neutral-500 mt-1">
-              MIME allowlist · 25MB Portraits · Scripts blocked
-            </p>
-          </div>
-        </div>
-      </div>
+      {/* ── 2. Real-Time System Security Posture Strip (Unified Luxury KPI Cards) ───────── */}
+      <CategorizedMetricStrip
+        loading={loading}
+        columns="grid-cols-2 lg:grid-cols-4"
+        cards={[
+          {
+            key: 'auth',
+            label: 'AUTHENTICATED',
+            subtitle: 'IDENTITY & SESSION',
+            value: roleLabel || 'ADMIN'
+          },
+          {
+            key: 'rls',
+            label: 'ENFORCED',
+            subtitle: 'ROW-LEVEL SECURITY',
+            value: '6/6 TABLES'
+          },
+          {
+            key: 'pii',
+            label: revealClientPII ? 'REVEALED' : 'MASKED',
+            subtitle: 'CLIENT DATA PRIVACY',
+            value: revealClientPII ? 'UNMASKED' : 'ACTIVE',
+            isActive: revealClientPII,
+            onClick: () => setRevealClientPII(!revealClientPII)
+          },
+          {
+            key: 'storage',
+            label: 'SAFE STORAGE',
+            subtitle: 'MEDIA & FILE DEFENSE',
+            value: 'MIME GUARD'
+          }
+        ]}
+      />
 
       {/* PII Reveal Alert Notice (displayed when admin unmasks data) */}
       {revealClientPII && (
@@ -399,7 +357,7 @@ export default function AdminSecurity() {
           <div className="flex items-start gap-2.5">
             <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <span className="font-bold block uppercase text-[10px] tracking-wider text-amber-800">
+              <span className="font-bold block uppercase text-xs tracking-wider text-amber-800">
                 Administrative PII Unmasking Active
               </span>
               <span>
@@ -516,7 +474,7 @@ export default function AdminSecurity() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs font-body">
                 <thead>
-                  <tr className="border-b border-neutral-200 text-[10px] font-bold text-neutral-400 uppercase tracking-wider bg-neutral-50/80">
+                  <tr className="border-b border-neutral-200 text-xs font-bold text-neutral-400 uppercase tracking-wider bg-neutral-50/80">
                     <th className="py-3 px-4">Timestamp (PST)</th>
                     <th className="py-3 px-4">Category</th>
                     <th className="py-3 px-4">Action / Event</th>
@@ -544,12 +502,12 @@ export default function AdminSecurity() {
                           {/* Timestamp */}
                           <td className="py-3 px-4 whitespace-nowrap">
                             <span className="font-semibold text-primary block">{timeAgo(item.rawTimestamp)}</span>
-                            <span className="text-[10px] text-neutral-400">{fmt(item.rawTimestamp)}</span>
+                            <span className="text-xs text-neutral-400">{fmt(item.rawTimestamp)}</span>
                           </td>
 
                           {/* Category Badge */}
                           <td className="py-3 px-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${catStyle.badge}`}>
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${catStyle.badge}`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${catStyle.dot}`} />
                               {catStyle.label}
                             </span>
@@ -571,7 +529,7 @@ export default function AdminSecurity() {
                               {item.clientName}
                             </span>
                             {item.clientEmail && (
-                              <span className="text-[10px] text-neutral-400 block truncate max-w-[140px]">
+                              <span className="text-xs text-neutral-400 block truncate max-w-[140px]">
                                 {revealClientPII ? item.clientEmail : maskClientPII(item.clientEmail, 'email')}
                               </span>
                             )}
@@ -580,7 +538,7 @@ export default function AdminSecurity() {
                           {/* Actor */}
                           <td className="py-3 px-4 whitespace-nowrap">
                             <span className="font-semibold text-primary block">{item.actor}</span>
-                            <span className="text-[10px] text-neutral-400 uppercase font-semibold">{item.actorRole}</span>
+                            <span className="text-xs text-neutral-400 uppercase font-semibold">{item.actorRole}</span>
                           </td>
 
                           {/* Details / Remarks */}
@@ -590,7 +548,7 @@ export default function AdminSecurity() {
 
                           {/* Status */}
                           <td className="py-3 px-4 text-center whitespace-nowrap">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                               <CheckCircle2 size={10} />
                               {item.status}
                             </span>
@@ -623,7 +581,7 @@ export default function AdminSecurity() {
                   PostgreSQL kernel-enforced data partitioning ensuring complete privacy between clients, photographers, and studio staff.
                 </p>
               </div>
-              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 w-fit">
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 w-fit">
                 <CheckCircle2 size={12} /> ALL ACTIVE (ENFORCED)
               </span>
             </div>
@@ -634,7 +592,7 @@ export default function AdminSecurity() {
                   <div>
                     <div className="flex items-center justify-between">
                       <span className="font-mono font-bold text-xs text-primary">{p.table}</span>
-                      <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 uppercase">
+                      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 uppercase">
                         {p.rls}
                       </span>
                     </div>
@@ -652,7 +610,7 @@ export default function AdminSecurity() {
                       )}
                     </div>
                   </div>
-                  <div className="pt-2 border-t border-neutral-200/50 flex items-center justify-between text-[10px] text-neutral-400">
+                  <div className="pt-2 border-t border-neutral-200/50 flex items-center justify-between text-xs text-neutral-400">
                     <span>Target: Supabase PostgreSQL</span>
                     <span className="text-emerald-700 font-bold">Policy Active</span>
                   </div>
@@ -678,7 +636,7 @@ export default function AdminSecurity() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs font-body">
                 <thead>
-                  <tr className="border-b border-neutral-200 text-[10px] font-bold text-neutral-400 uppercase tracking-wider bg-neutral-50/80">
+                  <tr className="border-b border-neutral-200 text-xs font-bold text-neutral-400 uppercase tracking-wider bg-neutral-50/80">
                     <th className="py-3 px-3">Resource / Operation</th>
                     <th className="py-3 px-3">Level</th>
                     <th className="py-3 px-3 font-bold text-primary">Administrator</th>
@@ -692,7 +650,7 @@ export default function AdminSecurity() {
                     <tr key={idx} className="hover:bg-neutral-50/70 transition-colors">
                       <td className="py-2.5 px-3 font-semibold text-primary">{row.resource}</td>
                       <td className="py-2.5 px-3">
-                        <span className="text-[10px] font-body px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 font-semibold">
+                        <span className="text-xs font-body px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 font-semibold">
                           {row.level}
                         </span>
                       </td>
@@ -738,31 +696,31 @@ export default function AdminSecurity() {
 
             <div className="grid sm:grid-cols-3 gap-3.5 text-xs">
               <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200/80 space-y-1">
-                <span className="text-[10px] uppercase font-bold text-neutral-400 block">Customer Mobile Phone</span>
+                <span className="text-xs uppercase font-bold text-neutral-400 block">Customer Mobile Phone</span>
                 <span className="font-body font-bold text-primary text-sm block">
                   {revealClientPII ? '0917 842 1993' : maskClientPII('09178421993', 'phone')}
                 </span>
-                <span className="text-[10px] text-neutral-500 block">
+                <span className="text-xs text-neutral-500 block">
                   {revealClientPII ? 'Admin visible' : 'Masked for studio staff'}
                 </span>
               </div>
 
               <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200/80 space-y-1">
-                <span className="text-[10px] uppercase font-bold text-neutral-400 block">Customer Email Address</span>
+                <span className="text-xs uppercase font-bold text-neutral-400 block">Customer Email Address</span>
                 <span className="font-body font-bold text-primary text-sm block">
                   {revealClientPII ? 'alimentomakie@gmail.com' : maskClientPII('alimentomakie@gmail.com', 'email')}
                 </span>
-                <span className="text-[10px] text-neutral-500 block">
+                <span className="text-xs text-neutral-500 block">
                   {revealClientPII ? 'Admin visible' : 'Masked for studio staff'}
                 </span>
               </div>
 
               <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200/80 space-y-1">
-                <span className="text-[10px] uppercase font-bold text-neutral-400 block">Student / School ID</span>
+                <span className="text-xs uppercase font-bold text-neutral-400 block">Student / School ID</span>
                 <span className="font-body font-bold text-primary text-sm block">
                   {revealClientPII ? '22104582' : maskClientPII('22104582', 'id_number')}
                 </span>
-                <span className="text-[10px] text-neutral-500 block">
+                <span className="text-xs text-neutral-500 block">
                   {revealClientPII ? 'Admin visible' : 'Masked for studio staff'}
                 </span>
               </div>
@@ -794,7 +752,7 @@ export default function AdminSecurity() {
               <div className="p-4 rounded-xl border border-neutral-200/80 bg-neutral-50/50 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-primary">Allowed Upload MIME Formats</span>
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                     ALLOWLIST ACTIVE
                   </span>
                 </div>
@@ -803,7 +761,7 @@ export default function AdminSecurity() {
                 </p>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].map(mime => (
-                    <span key={mime} className="font-mono text-[10px] bg-white border border-neutral-200 px-2 py-0.5 rounded text-neutral-700">
+                    <span key={mime} className="font-mono text-xs bg-white border border-neutral-200 px-2 py-0.5 rounded text-neutral-700">
                       {mime}
                     </span>
                   ))}
@@ -813,7 +771,7 @@ export default function AdminSecurity() {
               <div className="p-4 rounded-xl border border-neutral-200/80 bg-neutral-50/50 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-primary">Strictly Blocked Executables</span>
-                  <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                  <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
                     ZERO TOLERANCE
                   </span>
                 </div>
@@ -822,7 +780,7 @@ export default function AdminSecurity() {
                 </p>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {['.exe', '.bat', '.sh', '.php', '.js', '.svg', '.dll', '.msi'].map(ext => (
-                    <span key={ext} className="font-mono text-[10px] bg-rose-50 border border-rose-200 px-2 py-0.5 rounded text-rose-700 font-bold">
+                    <span key={ext} className="font-mono text-xs bg-rose-50 border border-rose-200 px-2 py-0.5 rounded text-rose-700 font-bold">
                       {ext}
                     </span>
                   ))}
@@ -883,6 +841,7 @@ export default function AdminSecurity() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

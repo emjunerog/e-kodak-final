@@ -51,36 +51,8 @@ async function seedAdminProfiles() {
   `);
   console.log('✓ Trigger function updated successfully.');
 
-  // 2. Insert or update profiles for all admin and staff auth users
+  // 2. Insert or update profiles for registered admin and staff auth users
   const staffAccounts = [
-    {
-      id: 'adcc286d-d6bb-4753-8b8b-25dc7b1f441d',
-      first_name: 'Studio',
-      last_name: 'Admin',
-      role: 'admin',
-      phone: '09170000001'
-    },
-    {
-      id: 'c0921f2f-9194-4a58-9700-7836ff53ecd5',
-      first_name: 'Super',
-      last_name: 'Admin',
-      role: 'admin',
-      phone: '09170000002'
-    },
-    {
-      id: 'cd6ed460-22ee-4abb-93e8-f9bf14088782',
-      first_name: 'Studio',
-      last_name: 'Staff',
-      role: 'staff',
-      phone: '09170000003'
-    },
-    {
-      id: '73771082-598a-4965-a200-6bf004382bbf',
-      first_name: 'Lead',
-      last_name: 'Photographer',
-      role: 'photographer',
-      phone: '09170000004'
-    },
     {
       id: 'e79e026f-e105-4348-99a4-efdfecbaafa9',
       first_name: 'Mark June',

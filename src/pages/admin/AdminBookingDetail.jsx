@@ -400,9 +400,29 @@ export default function AdminBookingDetail() {
   const [loadingPhotographers, setLoadingPhotographers] = useState(false);
   const [eligiblePhotographers, setEligiblePhotographers] = useState([]);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [autoDetectedPhotographer, setAutoDetectedPhotographer] = useState(null);
   const [assignmentRemarks, setAssignmentRemarks] = useState('');
   const [assignConfirmOpen, setAssignConfirmOpen] = useState(false);
   const [assignSubmitting, setAssignSubmitting] = useState(false);
+
+  // Auto-detect availability on target booking event_date (photographer accounts only)
+  useEffect(() => {
+    if (booking?.event_date && !booking.photographer_id) {
+      getPhotographersWithWorkloadAndAvailability(booking.event_date, booking.preferred_time)
+        .then(({ data }) => {
+          const list = (data || []).filter(p => (!p.role || p.role.toLowerCase() === 'photographer') && p.role?.toLowerCase() !== 'admin' && p.role?.toLowerCase() !== 'staff');
+          const available = list.filter(p => !p.hasConflict && p.is_available).sort((a, b) => (a.activeWorkloadCount || 0) - (b.activeWorkloadCount || 0));
+          if (available.length > 0) {
+            setAutoDetectedPhotographer(available[0]);
+          } else {
+            setAutoDetectedPhotographer(null);
+          }
+        })
+        .catch(err => console.warn('Auto-detect photographer error:', err));
+    } else {
+      setAutoDetectedPhotographer(null);
+    }
+  }, [booking?.event_date, booking?.preferred_time, booking?.photographer_id]);
 
   // Deletion & Trash State
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -558,7 +578,13 @@ export default function AdminBookingDetail() {
       booking?.preferred_time
     );
     if (!phErr) {
-      setEligiblePhotographers(data || []);
+      const list = (data || []).filter(p => (!p.role || p.role.toLowerCase() === 'photographer') && p.role?.toLowerCase() !== 'admin' && p.role?.toLowerCase() !== 'staff');
+      setEligiblePhotographers(list);
+      // Auto-select candidate if available on this date
+      const available = list.filter(p => !p.hasConflict && p.is_available).sort((a, b) => (a.activeWorkloadCount || 0) - (b.activeWorkloadCount || 0));
+      if (available.length > 0 && !booking?.photographer_id) {
+        setSelectedCandidate(available[0]);
+      }
     } else {
       showToast('error', 'Failed to load photographers.');
     }
@@ -719,7 +745,7 @@ export default function AdminBookingDetail() {
   const specs = customer?.studio_specs || {};
   const service = booking.service;
   const ph = booking.photographer;
-  const phProfile = ph?.profile;
+  const phProfile = ph?.profile || (ph?.first_name ? ph : null);
   const history = booking.booking_status_history || [];
   const payments = booking.payments || [];
   const refImages = booking.reference_images || [];
@@ -743,7 +769,12 @@ export default function AdminBookingDetail() {
     (booking.notes || '').includes('Official School Partner') ||
     (booking.notes || '').includes('School Partner Agreement');
 
+  const participantDetails = booking.participant_details || null;
+  const isSomeoneElse = participantDetails?.booking_for === 'someone_else';
+  const participantName = participantDetails?.full_name || booking.student_details?.student_name || `${customer?.first_name || ''} ${customer?.last_name || ''}`.trim();
+
   const studentInfo = {
+    studentName: booking.student_details?.student_name || (booking.notes?.match(/•\s*Student\s*Name:\s*([^\n\r]+)/i)?.[1]?.trim()) || null,
     bookingMode: booking.student_details?.booking_mode || (isSchoolPartner ? 'SCHOOL_PARTNER' : 'INDIVIDUAL'),
     isSchoolPartner,
     school: specs.university || booking.student_details?.school,
@@ -767,7 +798,7 @@ export default function AdminBookingDetail() {
   );
 
   return (
-    <div className="space-y-7 animate-fade-in w-full max-w-screen-2xl mx-auto pb-20 font-body">
+    <div className="space-y-7 animate-fade-in w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 pb-20 font-body">
 
       {/* ── Global UI Feedback & Overlays ────────────────────────────────────── */}
       {toast && (
@@ -879,6 +910,28 @@ export default function AdminBookingDetail() {
                 <PaymentBadge status={booking.payment_status} />
               </div>
             </div>
+
+            {/* Beneficiary & Account Distinction banner */}
+            {isSomeoneElse ? (
+              <div className="flex items-center gap-2 flex-wrap text-sm pt-1">
+                <span className="font-bold text-neutral-900">
+                  Participant: {participantDetails.full_name}
+                </span>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                  Someone Else ({participantDetails.relationship || 'Beneficiary'})
+                </span>
+                <span className="text-xs text-neutral-500">
+                  · Booked by Account Owner: <strong className="text-neutral-700">{customer?.first_name} {customer?.last_name}</strong>
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm pt-1 text-neutral-600">
+                <span>Client / Participant: <strong className="text-neutral-900">{customer ? `${customer.first_name} ${customer.last_name}` : 'Unknown'}</strong></span>
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-800 border border-neutral-300">
+                  Direct Student
+                </span>
+              </div>
+            )}
 
             <p className="text-xs sm:text-sm text-neutral-400 font-body">
               Registered on {fmtDateTime(booking.created_at)} · Last synchronized {fmtDateTime(booking.updated_at)}
@@ -1012,7 +1065,7 @@ export default function AdminBookingDetail() {
                 <h4 className="text-sm font-heading font-bold text-primary">
                   Order is in Trash Cycle
                 </h4>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-900 border border-rose-500/40">
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-900 border border-rose-500/40">
                   DELETED RECORD
                 </span>
               </div>
@@ -1138,33 +1191,148 @@ export default function AdminBookingDetail() {
         {/* ── LEFT COLUMN (7 COLS ON LG): Operations, Specs & Custody ──────── */}
         <div className="lg:col-span-7 space-y-7">
 
-          {/* Section A: Customer & Contact Information */}
+          {/* Section A: Customer & Participant Identity */}
           <SectionCard
             icon={User}
-            title="Customer & Contact Information"
-            subtitle="Verified client identity, direct phone contact, and residential address"
+            title={isSomeoneElse ? "Participant & Customer Identity" : "Customer & Contact Information"}
+            subtitle={isSomeoneElse
+              ? "Distinction between the session participant (beneficiary) and account owner (payer)"
+              : "Verified client identity, direct phone contact, and residential address"
+            }
           >
-            {customer ? (
-              <div className="space-y-1">
-                <DetailRow label="Full Legal Name" value={`${customer.first_name} ${customer.last_name}`} />
-                <DetailRow
-                  label="Contact Phone"
-                  value={
-                    customer.phone ? (
-                      <a href={`tel:${customer.phone}`} className="text-gold hover:underline flex items-center gap-1.5 justify-end font-semibold">
-                        <Phone size={13} /> {customer.phone}
-                      </a>
-                    ) : null
-                  }
-                />
-                <DetailRow label="Residential Address" value={customer.address} />
-                {customer.bio && <DetailRow label="Customer Profile Notes" value={customer.bio} />}
-                {specs.emergencyContactName && (
+            {isSomeoneElse ? (
+              <div className="space-y-5">
+                {/* 1. Session Participant / Beneficiary Dossier */}
+                <div className="p-4 bg-gradient-to-br from-blue-50/70 via-indigo-50/30 to-amber-50/20 rounded-2xl border border-blue-200/80 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap border-b border-blue-200/60 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                        <UserCheck size={16} />
+                      </div>
+                      <div>
+                        <span className="text-xs uppercase font-bold tracking-wider text-blue-700 block">Session Participant / Beneficiary</span>
+                        <h4 className="text-base font-heading font-bold text-neutral-900 leading-tight">
+                          {participantDetails.full_name || 'Unspecified Name'}
+                        </h4>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                      Attending Photoshoot
+                    </span>
+                  </div>
+
+                  <div className="space-y-1 font-body text-sm">
+                    <DetailRow
+                      label="Relationship to Account"
+                      value={
+                        <span className="font-semibold text-neutral-900">
+                          {participantDetails.relationship || 'Specified Beneficiary'}
+                        </span>
+                      }
+                    />
+                    {participantDetails.phone && (
+                      <DetailRow
+                        label="Participant Direct Phone"
+                        value={
+                          <a href={`tel:${participantDetails.phone}`} className="text-blue-700 hover:underline flex items-center gap-1.5 justify-end font-semibold">
+                            <Phone size={13} /> {participantDetails.phone}
+                          </a>
+                        }
+                      />
+                    )}
+                    {participantDetails.email && (
+                      <DetailRow
+                        label="Participant Direct Email"
+                        value={
+                          <a href={`mailto:${participantDetails.email}`} className="text-blue-700 hover:underline flex items-center gap-1.5 justify-end font-semibold">
+                            <Mail size={13} /> {participantDetails.email}
+                          </a>
+                        }
+                      />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-blue-700/80 bg-blue-100/40 p-2 rounded-xl border border-blue-200/50">
+                    ℹ️ <strong>Studio Notice:</strong> All camera bay shoots, regalia tailoring, and session poses belong to this participant.
+                  </p>
+                </div>
+
+                {/* 2. Account Owner / Payer Dossier */}
+                <div className="p-4 bg-neutral-50/80 rounded-2xl border border-neutral-200/80 space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap border-b border-neutral-200 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-neutral-800 text-gold flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                        <CreditCard size={15} />
+                      </div>
+                      <div>
+                        <span className="text-xs uppercase font-bold tracking-wider text-neutral-500 block">Account Owner & Billing Client</span>
+                        <h4 className="text-sm font-heading font-bold text-neutral-800 leading-tight">
+                          {customer ? `${customer.first_name} ${customer.last_name}` : 'Unknown Profile'}
+                        </h4>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-neutral-200/70 text-neutral-700 border border-neutral-300">
+                      Client Portal Payer
+                    </span>
+                  </div>
+
+                  {customer ? (
+                    <div className="space-y-1 font-body text-sm">
+                      <DetailRow
+                        label="Account Owner Phone"
+                        value={
+                          customer.phone ? (
+                            <a href={`tel:${customer.phone}`} className="text-gold hover:underline flex items-center gap-1.5 justify-end font-semibold">
+                              <Phone size={13} /> {customer.phone}
+                            </a>
+                          ) : null
+                        }
+                      />
+                      <DetailRow label="Billing / Registered Address" value={customer.address} />
+                      {customer.bio && <DetailRow label="Account Notes" value={customer.bio} />}
+                      {specs.emergencyContactName && (
+                        <DetailRow
+                          label="Emergency Contact"
+                          value={`${specs.emergencyContactName} (${specs.emergencyContactPhone || 'No phone set'})`}
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-neutral-400 italic">No account profile linked.</p>
+                  )}
+                  <p className="text-[11px] text-neutral-500">
+                    🔒 The client portal account owner placed this order and retains ownership of the invoice. Their master profile remains intact.
+                  </p>
+                </div>
+              </div>
+            ) : customer ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
+                  <span className="text-xs text-neutral-500 font-medium">Session Beneficiary:</span>
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-neutral-100 text-neutral-800 border border-neutral-300">
+                    Direct Student Registration (Account Owner)
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <DetailRow label="Full Legal Name" value={`${customer.first_name} ${customer.last_name}`} />
                   <DetailRow
-                    label="Emergency Contact"
-                    value={`${specs.emergencyContactName} (${specs.emergencyContactPhone || 'No phone set'})`}
+                    label="Contact Phone"
+                    value={
+                      customer.phone ? (
+                        <a href={`tel:${customer.phone}`} className="text-gold hover:underline flex items-center gap-1.5 justify-end font-semibold">
+                          <Phone size={13} /> {customer.phone}
+                        </a>
+                      ) : null
+                    }
                   />
-                )}
+                  <DetailRow label="Residential Address" value={customer.address} />
+                  {customer.bio && <DetailRow label="Customer Profile Notes" value={customer.bio} />}
+                  {specs.emergencyContactName && (
+                    <DetailRow
+                      label="Emergency Contact"
+                      value={`${specs.emergencyContactName} (${specs.emergencyContactPhone || 'No phone set'})`}
+                    />
+                  )}
+                </div>
               </div>
             ) : (
               <p className="text-sm text-neutral-400 italic">No customer profile linked to this order.</p>
@@ -1191,6 +1359,12 @@ export default function AdminBookingDetail() {
                     </span>
                   }
                 />
+                {studentInfo.studentName && (
+                  <DetailRow
+                    label="Student / Graduate"
+                    value={<span className="font-bold text-neutral-900">{studentInfo.studentName}</span>}
+                  />
+                )}
                 <DetailRow label="School" value={studentInfo.school} />
                 {studentInfo.campus && <DetailRow label="Campus" value={studentInfo.campus} />}
                 <DetailRow label="Course / Strand" value={studentInfo.degree} />
@@ -1240,19 +1414,19 @@ export default function AdminBookingDetail() {
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="p-3.5 bg-white rounded-xl border border-neutral-200/80 shadow-2xs">
-                      <span className="text-[10px] uppercase font-bold text-neutral-400 block">Toga Robe Size</span>
+                      <span className="text-xs uppercase font-bold text-neutral-400 block">Toga Robe Size</span>
                       <span className="font-bold text-sm text-neutral-900 block mt-1">
                         {studentInfo.togaSize || 'Studio Standard'}
                       </span>
                     </div>
                     <div className="p-3.5 bg-white rounded-xl border border-neutral-200/80 shadow-2xs">
-                      <span className="text-[10px] uppercase font-bold text-neutral-400 block">Inner Attire Fit</span>
+                      <span className="text-xs uppercase font-bold text-neutral-400 block">Inner Attire Fit</span>
                       <span className="font-bold text-sm text-neutral-900 block mt-1">
                         {studentInfo.innerAttireSize || 'Standard Fit'}
                       </span>
                     </div>
                     <div className="p-3.5 bg-white rounded-xl border border-neutral-200/80 shadow-2xs">
-                      <span className="text-[10px] uppercase font-bold text-neutral-400 block">Academic Hood</span>
+                      <span className="text-xs uppercase font-bold text-neutral-400 block">Academic Hood</span>
                       <span className="font-semibold text-sm text-neutral-900 block mt-1 truncate" title={HOOD_LABELS[studentInfo.hoodDiscipline] || studentInfo.hoodDiscipline}>
                         {HOOD_LABELS[studentInfo.hoodDiscipline] || studentInfo.hoodDiscipline || 'Program Standard'}
                       </span>
@@ -1529,7 +1703,7 @@ export default function AdminBookingDetail() {
                             />
                             {/* Set Badge */}
                             <div className="absolute top-2 left-2 z-10">
-                              <span className="bg-black/80 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-md border border-white/20 truncate max-w-[120px] block">
+                              <span className="bg-black/80 backdrop-blur-xs text-white text-xs font-bold px-2 py-0.5 rounded-md border border-white/20 truncate max-w-[120px] block">
                                 {sName}
                               </span>
                             </div>
@@ -1541,14 +1715,14 @@ export default function AdminBookingDetail() {
                                   href={imgUrl}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="text-[10px] text-gold underline hover:text-white"
+                                  className="text-xs text-gold underline hover:text-white"
                                 >
                                   Open full size
                                 </a>
                                 <button
                                   type="button"
                                   onClick={() => setLightboxImg(imgUrl)}
-                                  className="text-[10px] bg-white/20 hover:bg-white/40 px-1.5 py-0.5 rounded text-white"
+                                  className="text-xs bg-white/20 hover:bg-white/40 px-1.5 py-0.5 rounded text-white"
                                 >
                                   Inspect
                                 </button>
@@ -1564,11 +1738,11 @@ export default function AdminBookingDetail() {
             </div>
           </SectionCard>
 
-          {/* Section D: Workstation Custody & Departmental Handoffs */}
+          {/* Section D: Operational Custody & Departmental Handoffs */}
           <SectionCard
             icon={ArrowRightLeft}
-            title="Workstation Flow & Departmental Handoffs"
-            subtitle="Synchronized chain of custody across Front Desk, Bay, Treasury & Command"
+            title="Operational Custody & Departmental Actions"
+            subtitle="Synchronized lifecycle tracking across Front Desk, Bay, Treasury & Command"
             action={
               <div className="flex items-center gap-2 flex-wrap">
                 <button
@@ -1602,28 +1776,28 @@ export default function AdminBookingDetail() {
                   ? 'bg-blue-50 border-blue-200 text-blue-900 font-bold'
                   : 'bg-neutral-50 border-neutral-200 text-neutral-400'
                   }`}>
-                  <span className="block text-[10px] uppercase font-bold text-blue-600 mb-0.5">Stage 1</span>
+                  <span className="block text-xs uppercase font-bold text-blue-600 mb-0.5">Stage 1</span>
                   Front Desk Intake
                 </div>
                 <div className={`p-3.5 rounded-xl border text-sm font-body ${booking.payment_status === 'PAID' || booking.payment_status === 'PARTIAL'
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-bold'
                   : 'bg-neutral-50 border-neutral-200 text-neutral-400'
                   }`}>
-                  <span className="block text-[10px] uppercase font-bold text-emerald-600 mb-0.5">Stage 2</span>
+                  <span className="block text-xs uppercase font-bold text-emerald-600 mb-0.5">Stage 2</span>
                   Finance Cleared
                 </div>
                 <div className={`p-3.5 rounded-xl border text-sm font-body ${['CAPTURE', 'EDITING', 'PRINTING', 'READY', 'COMPLETED'].includes(status)
                   ? 'bg-purple-50 border-purple-200 text-purple-900 font-bold'
                   : 'bg-neutral-50 border-neutral-200 text-neutral-400'
                   }`}>
-                  <span className="block text-[10px] uppercase font-bold text-purple-600 mb-0.5">Stage 3</span>
+                  <span className="block text-xs uppercase font-bold text-purple-600 mb-0.5">Stage 3</span>
                   Creative Bay
                 </div>
                 <div className={`p-3.5 rounded-xl border text-sm font-body ${['READY', 'COMPLETED'].includes(status)
                   ? 'bg-gold/15 border-gold/40 text-gold-darker font-bold'
                   : 'bg-neutral-50 border-neutral-200 text-neutral-400'
                   }`}>
-                  <span className="block text-[10px] uppercase font-bold text-gold-dark mb-0.5">Stage 4</span>
+                  <span className="block text-xs uppercase font-bold text-gold-dark mb-0.5">Stage 4</span>
                   Print & Release
                 </div>
               </div>
@@ -1645,7 +1819,7 @@ export default function AdminBookingDetail() {
                         <div key={tf.id} className="p-4 rounded-xl bg-neutral-50/80 border border-neutral-200/80 text-sm font-body">
                           <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
                             <div className="flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${typeCfg.badge}`}>
+                              <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider border ${typeCfg.badge}`}>
                                 {typeCfg.label}
                               </span>
                               <span className="font-bold text-neutral-900 capitalize text-xs">
@@ -1850,7 +2024,7 @@ export default function AdminBookingDetail() {
                       <h4 className="font-heading text-base font-bold text-neutral-900 truncate">
                         {phProfile.first_name} {phProfile.last_name}
                       </h4>
-                      <span className="inline-flex items-center text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase">
+                      <span className="inline-flex items-center text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase">
                         Active
                       </span>
                     </div>
@@ -1883,19 +2057,73 @@ export default function AdminBookingDetail() {
               </div>
             ) : (
               <div className="text-center py-6 font-body">
-                <Camera size={32} className="mx-auto text-neutral-300 mb-2" />
-                <p className="text-sm font-bold text-neutral-700">No Photographer Assigned</p>
-                <p className="text-xs text-neutral-400 mt-1 max-w-xs mx-auto">
-                  Assign a photographer to synchronize session specifications with the studio camera bay.
+                <Camera size={32} className={`mx-auto mb-2 ${autoDetectedPhotographer ? 'text-gold' : 'text-neutral-300'}`} />
+                <p className="text-sm font-bold text-neutral-800">
+                  {autoDetectedPhotographer ? 'Lead Photographer Available' : 'No Photographer Assigned'}
                 </p>
-                {['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED'].includes(status) && (
-                  <button
-                    type="button"
-                    onClick={openAssignModal}
-                    className="btn-primary text-xs px-4 py-2 mt-4 inline-flex items-center gap-1.5 cursor-pointer font-semibold"
-                  >
-                    <UserCheck size={15} /> Assign Photographer
-                  </button>
+                <p className="text-xs text-neutral-400 mt-1 max-w-xs mx-auto">
+                  {autoDetectedPhotographer
+                    ? `Our system auto-detected that ${autoDetectedPhotographer.first_name} is available on this booking's date.`
+                    : 'Assign a photographer to synchronize session specifications with the studio camera bay.'}
+                </p>
+
+                {autoDetectedPhotographer ? (
+                  <div className="mt-4 p-4 bg-emerald-50/80 rounded-2xl border border-emerald-200/90 text-left max-w-sm mx-auto shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+                        <CheckCircle2 size={12} className="text-emerald-600" /> Available on {fmt(booking.event_date)}
+                      </span>
+                      <span className="text-[11px] font-bold text-emerald-700 bg-white/90 px-2 py-0.5 rounded-full border border-emerald-200">
+                        Photographer
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3 mt-2.5">
+                      <div className="w-10 h-10 rounded-xl bg-neutral-900 text-gold flex items-center justify-center font-heading font-bold text-xs ring-1 ring-gold/20 shrink-0 overflow-hidden">
+                        {autoDetectedPhotographer.avatar_url ? (
+                          <img src={autoDetectedPhotographer.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          `${autoDetectedPhotographer.first_name?.[0] || ''}${autoDetectedPhotographer.last_name?.[0] || ''}`.toUpperCase() || 'P'
+                        )}
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-neutral-900 text-sm">
+                          {autoDetectedPhotographer.first_name} {autoDetectedPhotographer.last_name}
+                        </h4>
+                        <p className="text-xs text-neutral-600">
+                          {autoDetectedPhotographer.specialization || 'Studio Photographer'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSelectCandidate(autoDetectedPhotographer)}
+                        className="btn-primary text-xs w-full py-2 flex items-center justify-center gap-1.5 cursor-pointer font-bold shadow-xs"
+                      >
+                        <UserCheck size={14} /> Assign {autoDetectedPhotographer.first_name} Now
+                      </button>
+                      <button
+                        type="button"
+                        onClick={openAssignModal}
+                        className="px-3 py-2 text-xs font-semibold rounded-xl border border-neutral-200 text-neutral-600 hover:bg-neutral-100 transition-colors cursor-pointer shrink-0"
+                        title="Browse other photographers"
+                      >
+                        Browse
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  ['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED'].includes(status) && (
+                    <button
+                      type="button"
+                      onClick={openAssignModal}
+                      className="btn-primary text-xs px-4 py-2 mt-4 inline-flex items-center gap-1.5 cursor-pointer font-semibold"
+                    >
+                      <UserCheck size={15} /> Assign Photographer
+                    </button>
+                  )
                 )}
               </div>
             )}
@@ -2165,10 +2393,26 @@ export default function AdminBookingDetail() {
         <div className="space-y-4 font-body">
           {/* Booking Context Banner */}
           <div className="bg-neutral-50 rounded-xl p-4 border border-neutral-200/80 text-sm space-y-1.5">
-            <div className="flex justify-between">
-              <span className="text-neutral-400">Customer:</span>
-              <span className="font-semibold text-neutral-900">{customer?.first_name} {customer?.last_name}</span>
-            </div>
+            {isSomeoneElse && participantDetails?.full_name ? (
+              <>
+                <div className="flex justify-between items-center">
+                  <span className="text-neutral-400">Participant:</span>
+                  <span className="font-bold text-neutral-900 flex items-center gap-1.5">
+                    {participantDetails.full_name}
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-bold border border-blue-200">Someone Else</span>
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-neutral-400">Account Owner / Payer:</span>
+                  <span className="text-neutral-600">{customer?.first_name} {customer?.last_name} ({participantDetails.relationship || 'Account Holder'})</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Customer / Participant:</span>
+                <span className="font-semibold text-neutral-900">{customer?.first_name} {customer?.last_name}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-neutral-400">Service:</span>
               <span className="font-semibold text-neutral-900">{service?.name}</span>
@@ -2224,7 +2468,7 @@ export default function AdminBookingDetail() {
                           <p className="text-sm font-bold text-neutral-900">
                             {candidate.first_name} {candidate.last_name}
                             {isCurrentlyAssigned && (
-                              <span className="ml-2 text-[10px] font-bold text-gold bg-gold/15 px-2 py-0.5 rounded-full uppercase">
+                              <span className="ml-2 text-xs font-bold text-gold bg-gold/15 px-2 py-0.5 rounded-full uppercase">
                                 Current
                               </span>
                             )}
@@ -2238,15 +2482,15 @@ export default function AdminBookingDetail() {
                       <div>
                         {isPending ? (
                           <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                            Pending
+                            Pending Account
                           </span>
-                        ) : candidate.is_available ? (
-                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            Available
+                        ) : !candidate.hasConflict && candidate.is_available ? (
+                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                            <CheckCircle2 size={12} className="text-emerald-600" /> Available on Date
                           </span>
                         ) : (
-                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-neutral-100 text-neutral-500">
-                            Busy
+                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                            Busy / Conflict
                           </span>
                         )}
                       </div>

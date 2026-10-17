@@ -15,7 +15,9 @@ async function main() {
   const sql = `
     ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS bio text;
     ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS studio_specs jsonb DEFAULT '{}'::jsonb;
-    ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS badges jsonb DEFAULT '[]'::jsonb;
+    -- NOTE: the legacy studio-recognitions `badges` column was removed (see
+    -- supabase/migrations/10_remove_profile_badges.sql). Do not re-add it.
+    ALTER TABLE public.profiles DROP COLUMN IF EXISTS badges;
     
     -- Ensure user can insert and update their profile
     DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;

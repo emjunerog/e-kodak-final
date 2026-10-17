@@ -1,9 +1,11 @@
-import React from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Platform, Pressable, Animated } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import {
   QrCode, BookOpen, Home, User, Settings,
 } from 'lucide-react-native';
@@ -24,58 +26,39 @@ import PhotographerScheduleScreen from '../screens/PhotographerScheduleScreen';
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
 
-// ── Liquid Gradient Glass Dock Background ────────────────────────────────────
+// ── Frosted Glass Dock Background ────────────────────────────────────────────
 
 function LiquidGlassTabBarBackground({ isDark }) {
   return (
     <View style={[StyleSheet.absoluteFillObject, styles.tabBarBgWrapper]}>
-      {/* Underlying Solid Frosted Base (Guarantees zero bleed-through of underlying photos on both Android & iOS) */}
+      {/* Solid frosted base (guarantees no bleed-through on Android) */}
       <View
         style={[
           StyleSheet.absoluteFillObject,
-          {
-            backgroundColor: isDark ? 'rgba(18, 15, 12, 0.94)' : 'rgba(255, 255, 255, 0.94)',
-          },
+          { backgroundColor: isDark ? 'rgba(18, 16, 20, 0.92)' : 'rgba(255, 255, 255, 0.92)' },
         ]}
       />
-
-      {/* Acrylic Hardware Blur Layer */}
       <BlurView
-        intensity={Platform.OS === 'ios' ? 95 : 100}
+        intensity={Platform.OS === 'ios' ? 90 : 100}
         tint={isDark ? 'dark' : 'light'}
         style={StyleSheet.absoluteFillObject}
       />
-
-      {/* Luxurious Frosted Studio Tint Gradient */}
       <LinearGradient
         colors={
           isDark
-            ? ['rgba(26, 22, 18, 0.94)', 'rgba(14, 12, 9, 0.97)']
-            : ['rgba(255, 255, 255, 0.94)', 'rgba(248, 246, 240, 0.97)']
+            ? ['rgba(30, 27, 32, 0.90)', 'rgba(14, 12, 16, 0.96)']
+            : ['rgba(255, 255, 255, 0.94)', 'rgba(248, 245, 240, 0.97)']
         }
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={StyleSheet.absoluteFillObject}
       />
-
-      {/* Subtle Liquid Gold Sheen */}
+      {/* Top specular edge */}
       <LinearGradient
         colors={
           isDark
-            ? ['rgba(212, 168, 83, 0.12)', 'transparent', 'rgba(212, 168, 83, 0.08)']
-            : ['rgba(184, 134, 11, 0.08)', 'transparent', 'rgba(184, 134, 11, 0.05)']
-        }
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-
-      {/* Top Specular Liquid Edge Highlight Line */}
-      <LinearGradient
-        colors={
-          isDark
-            ? ['transparent', 'rgba(255, 223, 137, 0.65)', 'transparent']
-            : ['transparent', 'rgba(184, 134, 11, 0.55)', 'transparent']
+            ? ['transparent', 'rgba(255, 241, 214, 0.35)', 'transparent']
+            : ['transparent', 'rgba(255, 255, 255, 1)', 'transparent']
         }
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
@@ -85,106 +68,141 @@ function LiquidGlassTabBarBackground({ isDark }) {
   );
 }
 
+// ── Floating Dock (custom tab bar) ────────────────────────────────────────────
+// Active tab morphs into a champagne-gold pill with its label; inactive
+// tabs are icon-only. Each tab owns its own native-driven Animated.Value
+// (opacity/scale/translate only), so nothing touches layout props.
+
+const TAB_META = {
+  Home:     { label: 'Home',     Icon: Home },
+  Scanner:  { label: 'Scan',     Icon: QrCode },
+  Bookings: { label: 'Passes',   Icon: BookOpen },
+  Profile:  { label: 'Profile',  Icon: User },
+  Settings: { label: 'Settings', Icon: Settings },
+};
+
+function DockTab({ routeName, focused, onPress, onLongPress, isDark, gradients }) {
+  const anim = useRef(new Animated.Value(focused ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(anim, {
+      toValue: focused ? 1 : 0,
+      friction: 7,
+      tension: 120,
+      useNativeDriver: true,
+    }).start();
+  }, [focused, anim]);
+
+  const meta = TAB_META[routeName] || { label: routeName, Icon: Home };
+  const { Icon } = meta;
+  const inactiveColor = isDark ? '#9C958C' : '#6A6156';
+  const activeColor = isDark ? '#17130C' : '#FFFFFF';
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={focused ? { selected: true } : {}}
+      accessibilityLabel={meta.label}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={[styles.tabItem, focused && styles.tabItemFocused]}
+    >
+      {/* Gold pill (fades/scales in when focused) */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.activePill,
+          {
+            opacity: anim,
+            transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }],
+          },
+        ]}
+      >
+        <LinearGradient
+          colors={gradients.gold}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+
+      <View style={styles.tabInner}>
+        <Icon size={20} color={focused ? activeColor : inactiveColor} strokeWidth={focused ? 2.4 : 1.9} />
+        {focused && (
+          <Text numberOfLines={1} style={[styles.tabLabel, { color: activeColor }]}>
+            {meta.label}
+          </Text>
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
+function FloatingDock({ state, navigation }) {
+  const { isDark, gradients } = useTheme();
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View
+      pointerEvents="box-none"
+      style={[styles.dockWrap, { bottom: Math.max(insets.bottom, 10) + 4 }]}
+    >
+      <View
+        style={[
+          styles.dock,
+          {
+            borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(30,20,5,0.08)',
+            shadowColor: isDark ? '#000' : '#5A4524',
+            shadowOpacity: isDark ? 0.5 : 0.16,
+          },
+        ]}
+      >
+        <LiquidGlassTabBarBackground isDark={isDark} />
+        <View style={styles.dockRow}>
+          {state.routes.map((route, index) => {
+            const focused = state.index === index;
+            const onPress = () => {
+              const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+              if (!focused && !event.defaultPrevented) {
+                try { Haptics.selectionAsync(); } catch {}
+                navigation.navigate(route.name, route.params);
+              }
+            };
+            const onLongPress = () => navigation.emit({ type: 'tabLongPress', target: route.key });
+            return (
+              <DockTab
+                key={route.key}
+                routeName={route.name}
+                focused={focused}
+                onPress={onPress}
+                onLongPress={onLongPress}
+                isDark={isDark}
+                gradients={gradients}
+              />
+            );
+          })}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 // ── 5-Tab Bottom Navigator ───────────────────────────────────────────────────
 
 function MainTabs() {
-  const { isDark, colors } = useTheme();
-
   return (
     <Tab.Navigator
+      tabBar={(props) => <FloatingDock {...props} />}
       screenOptions={{
         headerShown: false,
-        tabBarBackground: () => <LiquidGlassTabBarBackground isDark={isDark} />,
-        tabBarStyle: {
-          position: 'absolute',
-          bottom: Platform.OS === 'ios' ? 24 : 14,
-          left: 14,
-          right: 14,
-          height: 68,
-          borderRadius: 24,
-          borderTopWidth: 0,
-          borderWidth: 1.2,
-          borderColor: isDark ? 'rgba(212, 168, 83, 0.35)' : 'rgba(184, 134, 11, 0.30)',
-          backgroundColor: isDark ? '#14110E' : '#FFFFFF',
-          elevation: 12,
-          shadowColor: isDark ? '#000000' : '#4A3B22',
-          shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: isDark ? 0.55 : 0.18,
-          shadowRadius: 16,
-          paddingTop: 8,
-          paddingBottom: Platform.OS === 'ios' ? 12 : 8,
-          overflow: 'hidden',
-        },
-        tabBarActiveTintColor: isDark ? colors.gold.light : '#996515',
-        tabBarInactiveTintColor: isDark ? '#A39988' : '#3E372D',
-        tabBarLabelStyle: {
-          fontFamily: Typography.fontBodySemi,
-          fontSize: 10,
-          letterSpacing: 0.4,
-          marginTop: 2,
-        },
+        tabBarHideOnKeyboard: true,
       }}
     >
-      <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{
-          tabBarLabel: 'Home',
-          tabBarIcon: ({ color, size, focused }) => (
-            <View style={focused ? [styles.activeIconGlow, { backgroundColor: isDark ? 'rgba(212, 168, 83, 0.16)' : 'rgba(184, 134, 11, 0.12)' }] : null}>
-              <Home size={size - 3} color={color} strokeWidth={focused ? 2.4 : 1.9} />
-            </View>
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Scanner"
-        component={QRScannerScreen}
-        options={{
-          tabBarLabel: 'Scan Pass',
-          tabBarIcon: ({ color, size, focused }) => (
-            <View style={focused ? [styles.activeIconGlow, { backgroundColor: isDark ? 'rgba(212, 168, 83, 0.16)' : 'rgba(184, 134, 11, 0.12)' }] : null}>
-              <QrCode size={size - 3} color={color} strokeWidth={focused ? 2.4 : 1.9} />
-            </View>
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Bookings"
-        component={SavedBookingsScreen}
-        options={{
-          tabBarLabel: 'Passes',
-          tabBarIcon: ({ color, size, focused }) => (
-            <View style={focused ? [styles.activeIconGlow, { backgroundColor: isDark ? 'rgba(212, 168, 83, 0.16)' : 'rgba(184, 134, 11, 0.12)' }] : null}>
-              <BookOpen size={size - 3} color={color} strokeWidth={focused ? 2.4 : 1.9} />
-            </View>
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
-        options={{
-          tabBarLabel: 'Profile',
-          tabBarIcon: ({ color, size, focused }) => (
-            <View style={focused ? [styles.activeIconGlow, { backgroundColor: isDark ? 'rgba(212, 168, 83, 0.16)' : 'rgba(184, 134, 11, 0.12)' }] : null}>
-              <User size={size - 3} color={color} strokeWidth={focused ? 2.4 : 1.9} />
-            </View>
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Settings"
-        component={SettingsScreen}
-        options={{
-          tabBarLabel: 'Settings',
-          tabBarIcon: ({ color, size, focused }) => (
-            <View style={focused ? [styles.activeIconGlow, { backgroundColor: isDark ? 'rgba(212, 168, 83, 0.16)' : 'rgba(184, 134, 11, 0.12)' }] : null}>
-              <Settings size={size - 3} color={color} strokeWidth={focused ? 2.4 : 1.9} />
-            </View>
-          ),
-        }}
-      />
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Scanner" component={QRScannerScreen} />
+      <Tab.Screen name="Bookings" component={SavedBookingsScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
 }
@@ -227,26 +245,65 @@ export default function AppNavigator({ initialRouteName = 'Main' }) {
 }
 
 const styles = StyleSheet.create({
+  dockWrap: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    alignItems: 'stretch',
+  },
+  dock: {
+    height: 66,
+    borderRadius: 33,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 24,
+    elevation: 14,
+  },
+  dockRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 7,
+    gap: 4,
+  },
   tabBarBgWrapper: {
-    borderRadius: 24,
+    borderRadius: 33,
     overflow: 'hidden',
   },
   specularEdge: {
     position: 'absolute',
     top: 0,
-    left: 0,
-    right: 0,
-    height: 1.5,
+    left: 24,
+    right: 24,
+    height: 1,
   },
-  activeIconGlow: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
+  tabItem: {
+    flex: 1,
+    height: 50,
+    borderRadius: 25,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#C9A96E',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
+    overflow: 'hidden',
+  },
+  tabItemFocused: {
+    flex: 1.9,
+  },
+  activePill: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 25,
+    overflow: 'hidden',
+  },
+  tabInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+  },
+  tabLabel: {
+    fontFamily: Typography.fontBodySemi,
+    fontSize: 12.5,
+    letterSpacing: 0.2,
   },
 });

@@ -33,7 +33,8 @@ import {
   User,
   Phone,
   Camera,
-  Layers2
+  Layers2,
+  History
 } from 'lucide-react';
 import { 
   getPhotoOutputs, 
@@ -46,6 +47,7 @@ import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import Toast from '../../components/ui/Toast';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
+import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import CustomDropdown from '../../components/ui/CustomDropdown';
 
 const PAGE_SIZE = 20;
@@ -366,7 +368,7 @@ export default function AdminPhotos() {
         {
           booking_id: targetBooking.id,
           file_name: '[Creative Milestone] Cap_Throw_Milestone_Shot.jpg',
-          file_path: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=1500&q=85&auto=format&fit=crop',
+          file_path: 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?w=1500&q=85&auto=format&fit=crop',
           file_type: 'image/jpeg',
           file_size: 4900000,
           status: 'READY',
@@ -546,7 +548,7 @@ export default function AdminPhotos() {
   };
 
   return (
-    <div className="w-full max-w-screen-2xl mx-auto space-y-6 pb-16 animate-fade-in font-body">
+    <div className="w-full pb-16 animate-fade-in font-body">
       {/* ── 1. Luxury Dark Hero Banner ───────────────────────────────────────── */}
       <AdminHeroBanner
         station="production"
@@ -569,131 +571,83 @@ export default function AdminPhotos() {
         isRefreshing={loading}
         onExport={handleExportCSV}
         extraTools={[
-          { label: 'Workstation Hub', href: '/admin/workstation', icon: ArrowRightLeft, iconColor: 'text-gold' },
+          { label: 'Activity Logs', href: '/admin/activity-logs', icon: History, iconColor: 'text-gold' },
           { label: 'Bookings Central', href: '/admin/bookings', icon: CalendarDays, iconColor: 'text-gold' },
           { label: 'Finance & Payments', href: '/admin/payments', icon: HardDrive, iconColor: 'text-neutral-400' },
         ]}
       />
 
-      {/* ── 2. KPI Overview Metric Strip (Enlarged & Interactive) ─────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-        {/* Total Deliverables */}
-        <button
-          type="button"
-          onClick={() => {
-            setActiveTab('all');
-            setStatusFilter('ALL');
-            setCategoryFilter('ALL');
-          }}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            activeTab === 'all' && statusFilter === 'ALL' && categoryFilter === 'ALL'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Total Outputs</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-gold/25 to-gold/10 text-gold-dark flex items-center justify-center">
-              <FolderCheck size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-gold-dark">{stats.total}</p>
-          <span className="text-xs text-neutral-400 font-normal mt-1 block truncate">Master & proof assets</span>
-        </button>
+      {/* ── Page Content Container with Balanced Spacing ─────────────────────── */}
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
 
-        {/* Ready for Release */}
-        <button
-          type="button"
-          onClick={() => {
-            setActiveTab(activeTab === 'ready' ? 'all' : 'ready');
-            setStatusFilter(activeTab === 'ready' ? 'ALL' : 'READY');
-          }}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            activeTab === 'ready' || statusFilter === 'READY'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Ready for Release</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-100 to-emerald-200/60 text-emerald-800 flex items-center justify-center">
-              <CheckCircle2 size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{stats.ready}</p>
-          <span className="text-xs text-neutral-400 font-medium mt-1 block truncate">QA approved proofs</span>
-        </button>
-
-        {/* Under Retouching */}
-        <button
-          type="button"
-          onClick={() => {
-            setActiveTab(activeTab === 'editing' ? 'all' : 'editing');
-            setStatusFilter(activeTab === 'editing' ? 'ALL' : 'EDITING');
-          }}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            activeTab === 'editing' || statusFilter === 'EDITING'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">In Retouching</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-100 to-gold/20 text-amber-800 flex items-center justify-center">
-              <Clock size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{stats.editing}</p>
-          <span className="text-xs text-neutral-400 font-medium mt-1 block truncate">Active grading & crop</span>
-        </button>
-
-        {/* Client Released */}
-        <button
-          type="button"
-          onClick={() => {
-            setActiveTab(activeTab === 'released' ? 'all' : 'released');
-            setStatusFilter(activeTab === 'released' ? 'ALL' : 'RELEASED');
-          }}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            activeTab === 'released' || statusFilter === 'RELEASED'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Client Released</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-gold/25 to-gold/10 text-gold-dark flex items-center justify-center">
-              <Sparkles size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{stats.released}</p>
-          <span className="text-xs text-neutral-400 font-medium mt-1 block truncate">Live on student portals</span>
-        </button>
-
-        {/* Storage Allocated */}
-        <div className="p-4 sm:p-5 rounded-2xl border border-neutral-200/90 shadow-xs bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 text-left">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Storage Used</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200/70 text-neutral-700 flex items-center justify-center">
-              <HardDrive size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{fmtSize(stats.totalBytes)}</p>
-          <span className="text-xs text-neutral-400 font-normal mt-1 block truncate">Supabase bucket asset load</span>
-        </div>
-
-        {/* Distinct Sessions */}
-        <div className="p-4 sm:p-5 rounded-2xl border border-neutral-200/90 shadow-xs bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 text-left">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Client Sessions</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-gold/25 to-gold/10 text-gold-dark flex items-center justify-center">
-              <CalendarDays size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{stats.distinctBookingsCount}</p>
-          <span className="text-xs text-neutral-400 font-normal mt-1 block truncate">Graduation appointments</span>
-        </div>
-      </div>
+      {/* ── 2. Unified Luxury Studio KPI Overview Metric Strip ─────────────── */}
+      <CategorizedMetricStrip
+        loading={loading}
+        columns="grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"
+        cards={[
+          {
+            key: 'all',
+            label: 'TOTAL',
+            subtitle: 'Master & proof assets',
+            value: stats.total,
+            isActive: activeTab === 'all' && statusFilter === 'ALL' && categoryFilter === 'ALL',
+            onClick: () => {
+              setActiveTab('all');
+              setStatusFilter('ALL');
+              setCategoryFilter('ALL');
+            },
+          },
+          {
+            key: 'ready',
+            label: 'READY',
+            subtitle: 'QA approved proofs',
+            value: stats.ready,
+            isActive: activeTab === 'ready' || statusFilter === 'READY',
+            onClick: () => {
+              setActiveTab(activeTab === 'ready' ? 'all' : 'ready');
+              setStatusFilter(activeTab === 'ready' ? 'ALL' : 'READY');
+            },
+          },
+          {
+            key: 'editing',
+            label: 'RETOUCHING',
+            subtitle: 'Active grading & crop',
+            value: stats.editing,
+            isActive: activeTab === 'editing' || statusFilter === 'EDITING',
+            onClick: () => {
+              setActiveTab(activeTab === 'editing' ? 'all' : 'editing');
+              setStatusFilter(activeTab === 'editing' ? 'ALL' : 'EDITING');
+            },
+          },
+          {
+            key: 'released',
+            label: 'RELEASED',
+            subtitle: 'Live on student portals',
+            value: stats.released,
+            isActive: activeTab === 'released' || statusFilter === 'RELEASED',
+            onClick: () => {
+              setActiveTab(activeTab === 'released' ? 'all' : 'released');
+              setStatusFilter(activeTab === 'released' ? 'ALL' : 'RELEASED');
+            },
+          },
+          {
+            key: 'storage',
+            label: 'STORAGE',
+            subtitle: 'Bucket asset volume',
+            value: fmtSize(stats.totalBytes),
+            isActive: false,
+            onClick: () => {},
+          },
+          {
+            key: 'sessions',
+            label: 'SESSIONS',
+            subtitle: 'Studio appointments',
+            value: stats.distinctBookingsCount,
+            isActive: false,
+            onClick: () => {},
+          },
+        ]}
+      />
 
       {/* ── 3. Search & Filter Toolbar ───────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border border-neutral-200/90 shadow-xs p-4 sm:p-5 space-y-4">
@@ -1010,7 +964,7 @@ export default function AdminPhotos() {
                           <div className="min-w-0 max-w-xs sm:max-w-sm">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {extractSetName(p.file_name) !== 'Main Set' && (
-                                <span className="bg-neutral-100 text-neutral-800 text-[10px] font-bold px-1.5 py-0.5 rounded border border-neutral-200">
+                                <span className="bg-neutral-100 text-neutral-800 text-xs font-bold px-1.5 py-0.5 rounded border border-neutral-200">
                                   {extractSetName(p.file_name)}
                                 </span>
                               )}
@@ -1095,7 +1049,7 @@ export default function AdminPhotos() {
                       {/* Timestamp */}
                       <td className="px-5 sm:px-6 py-4 sm:py-5 text-neutral-500 hidden sm:table-cell text-xs">
                         <p className="font-medium text-neutral-700">{fmt(p.created_at)}</p>
-                        <p className="text-[10px] text-neutral-400">{fmtTime(p.created_at)}</p>
+                        <p className="text-xs text-neutral-400">{fmtTime(p.created_at)}</p>
                       </td>
 
                       {/* Admin Tools & Actions */}
@@ -1176,6 +1130,8 @@ export default function AdminPhotos() {
             </div>
           </div>
         )}
+      </div>
+
       </div>
 
       {/* ── 5. DELIVERABLE INSPECTION & PROOF ZOOM MODAL ──────────────────────── */}
@@ -1412,8 +1368,8 @@ export default function AdminPhotos() {
                       }`}
                     >
                       <div className="truncate text-xs font-semibold">{t.label}</div>
-                      <div className="text-[10px] text-neutral-400 font-normal">{t.spec}</div>
-                      <span className="inline-block mt-1 text-[9px] font-mono text-gold-dark bg-gold/10 px-1.5 py-0.5 rounded">
+                      <div className="text-xs text-neutral-400 font-normal">{t.spec}</div>
+                      <span className="inline-block mt-1 text-[11px] font-mono text-gold-dark bg-gold/10 px-1.5 py-0.5 rounded">
                         Aspect {t.ratio}
                       </span>
                     </button>
@@ -1491,7 +1447,7 @@ export default function AdminPhotos() {
                   <div>
                     <span className="font-bold text-neutral-800 block text-xs">Ready for Publishing</span>
                     <span className="text-[11px] text-neutral-500 block">Deliverable Category: {deliverableType}</span>
-                    <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1 mt-0.5">
+                    <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1 mt-0.5">
                       <CheckCircle2 size={11} /> QA pass ready
                     </span>
                   </div>

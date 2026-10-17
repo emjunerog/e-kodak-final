@@ -21,6 +21,8 @@ import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { SERVICES } from '../../data/servicesData';
 import { getServices } from '../../services/contentService';
 import Toast from '../../components/ui/Toast';
+import DashboardHero from '../../components/dashboard/DashboardHero';
+import StatCard from '../../components/admin/StatCard';
 
 // ── Verified High-Resolution Sample Imagery for Specific Package Deliverables ──
 const getVerifiedSampleImage = (name = '') => {
@@ -166,16 +168,16 @@ function StackedDeliverableCard({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gold/10 text-gold border border-gold/20">
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gold/10 text-gold border border-gold/20">
               {set.items.length} {set.items.length === 1 ? 'deliverable' : 'deliverables'}
             </span>
             {isAllReady ? (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
                 Ready
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
                 <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
                 In Post-Production
               </span>
@@ -201,7 +203,7 @@ function StackedDeliverableCard({
                 alt={leadItem.name}
                 className="w-full h-full object-cover"
               />
-              <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-bold text-gold font-mono">
+              <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-[11px] font-bold text-gold font-mono">
                 ×{set.items.length}
               </div>
             </div>
@@ -246,7 +248,7 @@ function StackedDeliverableCard({
                     <h4 className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 truncate">
                       {item.name}
                     </h4>
-                    <span className="text-[10px] text-neutral-500 dark:text-neutral-400 block truncate">
+                    <span className="text-xs text-neutral-500 dark:text-neutral-400 block truncate">
                       {item.packageName} · {item.tierName}
                     </span>
                   </div>
@@ -254,7 +256,7 @@ function StackedDeliverableCard({
 
                 <button
                   onClick={() => onInspect(item)}
-                  className="px-2.5 py-1 rounded-lg bg-gold/15 hover:bg-gold text-gold hover:text-neutral-950 text-[10px] font-bold transition-all shrink-0 cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg bg-gold/15 hover:bg-gold text-gold hover:text-neutral-950 text-xs font-bold transition-all shrink-0 cursor-pointer"
                 >
                   Inspect
                 </button>
@@ -572,122 +574,56 @@ export default function GalleryPage() {
   };
 
   return (
-    <div className="space-y-6 pb-12 font-body max-w-6xl mx-auto animate-fade-in">
+    <div className="space-y-6 pb-12 font-body max-w-screen-2xl mx-auto w-full animate-fade-in">
       
       {/* ── Premium Luxury Header Banner with Verified Imagery ───────────────── */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1c1917] via-[#141210] to-[#0c0a09] border border-gold/25 p-6 sm:p-7 shadow-xl">
-        <div className="absolute -right-16 -top-16 w-72 h-72 bg-gold/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute left-1/3 bottom-0 w-64 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gold/10 border border-gold/30 text-gold text-xs font-semibold uppercase tracking-wider">
-              <Sparkles className="w-3.5 h-3.5 text-gold" />
-              <span>Studio Photo Deliverables</span>
-            </div>
-            
-            <h1 className="text-2xl sm:text-3xl font-heading font-black text-white tracking-tight leading-tight">
-              Package Photo Deliverables
-            </h1>
-            
-            <p className="text-neutral-300 text-xs sm:text-sm leading-relaxed font-body">
-              {activeBooking?.services?.name || 'Studio Photography Package'} {activeBooking?.tier_name ? `(${activeBooking.tier_name})` : ''} — Preview deliverables, monitor post-production status, and inspect verified high-resolution photo outputs.
-            </p>
-
-            <div className="pt-2 flex items-center gap-3">
-              <button
-                onClick={loadDeliverables}
-                disabled={loading}
-                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700 text-neutral-200 text-xs font-semibold transition-all shadow-xs cursor-pointer"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 text-gold ${loading ? 'animate-spin' : ''}`} />
-                <span>Sync Deliverables</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Animated Studio Portrait Art */}
+      <DashboardHero
+        role="client"
+        badgeLabel="Studio Photo Deliverables"
+        badgeIcon={Sparkles}
+        title="Photo Deliverables"
+        subtitle={`${activeBooking?.services?.name || 'Studio Photography Package'}${activeBooking?.tier_name ? ` (${activeBooking.tier_name})` : ''} — Preview deliverables, monitor post-production status, and inspect verified high-resolution photo outputs.`}
+        showStudioStatus={true}
+        primaryAction={{
+          label: 'Sync Deliverables',
+          onClick: loadDeliverables,
+          icon: RefreshCw,
+          disabled: loading,
+          className: loading ? 'opacity-80 pointer-events-none' : '',
+        }}
+        extraActions={
           <div className="hidden md:flex shrink-0 items-center justify-center">
-            <AnimatedGalleryArt className="w-48 h-32" />
+            <AnimatedGalleryArt className="w-36 h-20" />
           </div>
-        </div>
-      </div>
+        }
+      />
 
-      {/* ── Space-Efficient Uniform KPI Cards Grid ──────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 font-body">
-        
-        {/* Card 1: Total Deliverables */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-gold/30 transition-all flex items-center gap-3.5 w-full min-h-[88px] group">
-          <div className="w-11 h-11 rounded-xl bg-gold/10 border border-gold/20 text-gold flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-            <Package className="w-5 h-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block truncate">
-              Total Deliverables
-            </span>
-            <span className="font-heading font-black text-2xl text-primary dark:text-neutral-100 leading-tight mt-0.5 block truncate">
-              {mappedDeliverables.length} Items
-            </span>
-            <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-medium block truncate mt-0.5">
-              Included in {activeBooking?.tier_name || 'package'}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 2: Release Status */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-emerald-500/30 transition-all flex items-center gap-3.5 w-full min-h-[88px] group">
-          <div className={`w-11 h-11 rounded-xl ${readyCount > 0 ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200/60 text-emerald-600 dark:text-emerald-400' : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200/60 text-amber-600 dark:text-amber-400'} border flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform`}>
-            {readyCount > 0 ? <CheckCircle2 className="w-5 h-5" /> : <Clock className="w-5 h-5" />}
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block truncate">
-              Output Status
-            </span>
-            <span className={`font-heading font-black text-2xl leading-tight mt-0.5 block truncate ${readyCount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-              {readyCount > 0 ? `${readyCount} Ready` : 'Post-Production'}
-            </span>
-            <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-medium block truncate mt-0.5">
-              {readyCount > 0 ? 'Digital download ready' : 'In studio production'}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 3: Active Reservation */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-amber-500/30 transition-all flex items-center gap-3.5 w-full min-h-[88px] group">
-          <div className="w-11 h-11 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/40 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-            <Camera className="w-5 h-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block truncate">
-              Booking Ref
-            </span>
-            <span className="font-heading font-bold text-lg text-primary dark:text-neutral-100 leading-tight mt-0.5 block truncate">
-              #{activeBooking?.booking_number || 'N/A'}
-            </span>
-            <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-medium block truncate mt-0.5">
-              {activeBooking?.services?.name || 'Studio Shoot'}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 4: Booked Package & Tier */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-gold/30 transition-all flex items-center gap-3.5 w-full min-h-[88px] group">
-          <div className="w-11 h-11 rounded-xl bg-gold/10 border border-gold/20 text-gold flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-            <Layers className="w-5 h-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider block truncate">
-              Selected Tier
-            </span>
-            <span className="font-heading font-bold text-lg text-primary dark:text-neutral-100 leading-tight mt-0.5 block truncate">
-              {activeBooking?.tier_name || 'Standard'}
-            </span>
-            <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-medium block truncate mt-0.5">
-              {activeBooking?.services?.name || 'Photography'}
-            </span>
-          </div>
-        </div>
-
+      {/* ── Overview Metrics Strip (Matching DashboardHome Standard) ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard
+          label="Total Deliverables"
+          value={`${mappedDeliverables.length} Items`}
+          icon={Package}
+          color="gold"
+        />
+        <StatCard
+          label="Output Status"
+          value={readyCount > 0 ? `${readyCount} Ready` : 'In Production'}
+          icon={readyCount > 0 ? CheckCircle2 : Clock}
+          color={readyCount > 0 ? 'green' : 'amber'}
+        />
+        <StatCard
+          label="Booking Ref"
+          value={`#${activeBooking?.booking_number || 'N/A'}`}
+          icon={Camera}
+          color="gold"
+        />
+        <StatCard
+          label="Package & Tier"
+          value={activeBooking?.tier_name || 'Standard'}
+          icon={Layers}
+          color="blue"
+        />
       </div>
 
       {/* ── Navigation Tabs & Order Selector ────────────────────────────────── */}
@@ -702,7 +638,7 @@ export default function GalleryPage() {
             }`}
           >
             <span>Photo Deliverables</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
               activeTab === 'deliverables'
                 ? 'bg-gold/20 text-gold'
                 : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
@@ -720,7 +656,7 @@ export default function GalleryPage() {
             }`}
           >
             <span>Package Inclusions & Attire</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
               activeTab === 'inclusions'
                 ? 'bg-gold/20 text-gold'
                 : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
@@ -840,12 +776,12 @@ export default function GalleryPage() {
                       </div>
 
                       {item.isReady ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold border border-emerald-500/25">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-bold border border-emerald-500/25">
                           <CheckCircle2 size={12} className="text-emerald-500" />
                           Photo Ready
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px] font-bold border border-amber-500/30">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs font-bold border border-amber-500/30">
                           <Clock size={12} className="text-amber-500 animate-pulse" />
                           In Post-Production
                         </span>
@@ -936,7 +872,7 @@ export default function GalleryPage() {
                   <Check size={14} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
+                  <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider block">
                     Inclusion 0{idx + 1}
                   </span>
                   <p className="text-xs font-medium text-neutral-800 dark:text-neutral-200 mt-0.5">
@@ -989,7 +925,7 @@ export default function GalleryPage() {
                 {/* Left: Package Synopsis (5 cols) */}
                 <div className="lg:col-span-5 space-y-4">
                   <div className="inline-flex items-center gap-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2.5 py-0.5 rounded-full border border-amber-500/30">
+                    <span className="text-xs font-bold uppercase tracking-wider bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2.5 py-0.5 rounded-full border border-amber-500/30">
                       Tier 0{idx + 1}
                     </span>
                     <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">
@@ -1021,7 +957,7 @@ export default function GalleryPage() {
                   {/* Pricing & CTA */}
                   <div className="pt-3 flex items-center justify-between border-t border-neutral-100 dark:border-neutral-800">
                     <div>
-                      <span className="text-[10px] text-neutral-400 uppercase block">Starting from</span>
+                      <span className="text-xs text-neutral-400 uppercase block">Starting from</span>
                       <span className="font-heading text-lg sm:text-xl font-bold text-primary dark:text-white">
                         {srv.tiers?.[0]?.price || "Inquire for quote"}
                       </span>
@@ -1110,7 +1046,7 @@ export default function GalleryPage() {
             <div className="md:w-2/5 p-6 flex flex-col justify-between border-t md:border-t-0 md:border-l border-stone-800 space-y-6">
               <div className="space-y-4">
                 <div>
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-gold/10 border border-gold/25 text-gold text-[10px] font-semibold uppercase tracking-wider mb-2">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-gold/10 border border-gold/25 text-gold text-xs font-semibold uppercase tracking-wider mb-2">
                     <Sparkles size={11} /> {lightbox.tierName || 'Package Deliverable'}
                   </div>
                   <h3 className="text-lg sm:text-xl font-heading font-bold text-white leading-snug">

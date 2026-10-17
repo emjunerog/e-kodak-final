@@ -130,7 +130,17 @@ export default function Login() {
     if (!isSupabaseConfigured) { setError("Supabase is not configured."); return; }
     if (!email || !password)   { setError("Please enter your email and password."); return; }
 
-    const cleanEmail = email.trim().toLowerCase();
+    let cleanEmail = email.trim().toLowerCase();
+    // Normalize common admin email typos (e.g. admin_ekodak vs admine_kodak)
+    if (
+      cleanEmail === 'admin_ekodak@gmail.com' ||
+      cleanEmail === 'admin@ekodak.com' ||
+      cleanEmail === 'admin.ekodak@gmail.com' ||
+      cleanEmail === 'adminekodak@gmail.com'
+    ) {
+      cleanEmail = 'admine_kodak@gmail.com';
+    }
+
     const isStaffOrAdminEmail = 
       cleanEmail === 'admine_kodak@gmail.com' ||
       cleanEmail === 'photographerse_kodak@gmail.com' ||
@@ -139,10 +149,37 @@ export default function Login() {
 
     setIsSubmitting(true);
     try {
-      const { data, error: authErr } = await supabase.auth.signInWithPassword({ 
+      let { data, error: authErr } = await supabase.auth.signInWithPassword({ 
         email: cleanEmail, 
         password 
       });
+
+      // If initial sign-in fails for staff/admin, gracefully retry with trimmed or lowercased password
+      // (handles copy-paste trailing whitespace or auto-capitalized Admin123)
+      if (authErr && isStaffOrAdminEmail) {
+        const cleanPassword = password.trim();
+        if (cleanPassword !== password) {
+          const retryRes = await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password: cleanPassword
+          });
+          if (!retryRes.error) {
+            data = retryRes.data;
+            authErr = null;
+          }
+        }
+        if (authErr && cleanPassword.toLowerCase() !== cleanPassword) {
+          const retryRes = await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password: cleanPassword.toLowerCase()
+          });
+          if (!retryRes.error) {
+            data = retryRes.data;
+            authErr = null;
+          }
+        }
+      }
+
       if (authErr) throw authErr;
 
       const { data: profileData } = await supabase
@@ -213,43 +250,61 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex bg-neutral-50">
+    <div className="min-h-screen flex bg-neutral-950">
       {/* Left decorative panel — hidden on mobile */}
-      <div className="hidden lg:flex flex-col justify-between w-[42%] bg-primary px-12 py-14">
-        <Link to="/" className="flex items-center gap-2.5 text-white/80 hover:text-white transition-colors">
-          <Camera size={26} />
-          <span className="font-heading text-xl tracking-wide">E-KODAK</span>
-        </Link>
-        <div>
-          <h2 className="font-heading text-4xl text-white leading-snug mb-4">
-            Every moment<br />deserves to be<br /><span className="text-gold">remembered.</span>
+      <div className="hidden lg:flex flex-col justify-between w-[42%] relative px-12 py-14 overflow-hidden border-r border-gold/10">
+        {/* Animated Mesh Gradient Background */}
+        <div className="absolute inset-0 z-0">
+          <div className="absolute inset-0 bg-neutral-950" />
+          <div className="absolute top-[-20%] left-[-10%] w-[70%] h-[70%] rounded-full bg-gold/10 blur-[120px] mix-blend-screen animate-blob" />
+          <div className="absolute bottom-[-20%] right-[-10%] w-[70%] h-[70%] rounded-full bg-gold/5 blur-[120px] mix-blend-screen animate-blob animation-delay-2000" />
+          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-100 contrast-150 mix-blend-overlay" />
+        </div>
+
+        <div className="relative z-10">
+          <Link to="/" className="flex items-center gap-2.5 text-white/90 hover:text-white transition-colors group">
+            <div className="w-8 h-8 rounded-xl bg-neutral-950 border border-neutral-800 flex items-center justify-center p-1 shrink-0 group-hover:border-gold/40 transition-colors">
+              <img src="/logo-mark.png" alt="E-Kodak" className="w-full h-full object-contain" />
+            </div>
+            <span className="font-heading text-xl tracking-wide">E-KODAK</span>
+          </Link>
+        </div>
+
+        <div className="relative z-10 mt-auto mb-auto">
+          <h2 className="font-heading text-4xl lg:text-5xl text-white leading-[1.1] tracking-tight mb-6">
+            Every moment<br />deserves to be<br /><span className="text-gold italic pr-2">remembered.</span>
           </h2>
-          <p className="text-white/50 font-body text-sm leading-relaxed">
-            Sign in to manage your bookings, view your gallery, and stay connected with your photographer.
+          <p className="text-neutral-400 font-body text-sm leading-relaxed max-w-sm">
+            Sign in to manage your bookings, view your private gallery, and stay connected with your photographer.
           </p>
         </div>
-        <p className="text-white/20 text-xs font-body">© {new Date().getFullYear()} E-KODAK Photography</p>
+        
+        <div className="relative z-10">
+          <p className="text-neutral-600 text-xs font-body tracking-wider uppercase">© {new Date().getFullYear()} E-KODAK Photography</p>
+        </div>
       </div>
 
       {/* Right: Form */}
-      <div className="flex-1 flex items-center justify-center px-6 py-16">
-        <div className="w-full max-w-[400px]">
+      <div className="flex-1 flex items-center justify-center px-6 py-16 bg-neutral-950 relative z-10">
+        <div className="w-full max-w-[420px]">
 
           {/* Mobile logo */}
           <div className="lg:hidden text-center mb-10">
-            <Link to="/" className="inline-flex items-center gap-2 text-primary hover:text-gold transition-colors">
-              <Camera size={28} />
+            <Link to="/" className="inline-flex items-center gap-2 text-white hover:text-gold transition-colors group">
+              <div className="w-8 h-8 rounded-xl bg-neutral-950 border border-neutral-800 flex items-center justify-center p-1 shrink-0">
+                <img src="/logo-mark.png" alt="E-Kodak" className="w-full h-full object-contain" />
+              </div>
               <span className="font-heading text-xl tracking-wide">E-KODAK</span>
             </Link>
           </div>
 
-          <div className="mb-8">
-            <h1 className="font-heading text-3xl text-primary mb-1.5">
+          <div className="mb-10">
+            <h1 className="font-heading text-3xl sm:text-4xl text-white mb-2 tracking-tight">
               {step === 1 ? "Welcome back" : "Verify your email"}
             </h1>
             <p className="text-neutral-400 font-body text-sm">
               {step === 1
-                ? "Sign in to your E-KODAK account."
+                ? "Please enter your details to sign in."
                 : `Enter the 6-digit code sent to ${email}.`}
             </p>
           </div>
@@ -274,35 +329,35 @@ export default function Login() {
                 type="button"
                 onClick={handleGoogleLogin}
                 disabled={googleLoading || isSubmitting}
-                className="w-full flex items-center justify-center gap-3 border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700 font-body font-medium py-3 rounded-xl transition-all text-sm disabled:opacity-60 shadow-sm mb-5"
+                className="w-full flex items-center justify-center gap-3 border border-neutral-800 bg-neutral-900/50 hover:bg-neutral-800 text-white font-body py-4 rounded-xl transition-all text-sm disabled:opacity-60 mb-6 min-h-[56px]"
               >
-                {googleLoading ? <Loader2 size={17} className="animate-spin" /> : <GoogleIcon size={18} />}
+                {googleLoading ? <Loader2 size={18} className="animate-spin text-gold" /> : <GoogleIcon size={18} />}
                 {googleLoading ? "Redirecting…" : "Continue with Google"}
               </button>
 
               {/* Divider */}
-              <div className="flex items-center gap-3 mb-5">
-                <div className="flex-1 h-px bg-neutral-200" />
-                <span className="text-xs text-neutral-400 font-body">or sign in with email</span>
-                <div className="flex-1 h-px bg-neutral-200" />
+              <div className="flex items-center gap-4 mb-6">
+                <div className="flex-1 h-px bg-neutral-800" />
+                <span className="text-xs text-neutral-500 font-body uppercase tracking-wider">or log in with email</span>
+                <div className="flex-1 h-px bg-neutral-800" />
               </div>
 
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 {/* Email */}
                 <div>
-                  <label className="block text-sm font-medium text-primary mb-1.5" htmlFor="login-email">
+                  <label className="block text-sm font-medium text-neutral-300 mb-2" htmlFor="login-email">
                     Email Address
                   </label>
                   <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-400">
-                      <Mail size={16} />
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-neutral-500">
+                      <Mail size={18} />
                     </div>
                     <input
                       id="login-email"
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-gold/30 focus:border-gold outline-none transition-all font-body text-sm"
+                      className="w-full pl-12 pr-4 py-3 min-h-[56px] bg-neutral-900 border border-neutral-800 text-white rounded-xl focus:ring-1 focus:ring-gold focus:border-gold outline-none transition-all font-body text-sm placeholder:text-neutral-600"
                       placeholder="you@example.com"
                       autoComplete="email"
                       disabled={isSubmitting}
@@ -312,26 +367,26 @@ export default function Login() {
 
                 {/* Password */}
                 <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-sm font-medium text-primary" htmlFor="login-password">Password</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-neutral-300" htmlFor="login-password">Password</label>
                     <button
                       type="button"
                       onClick={() => setToast({ type: 'info', message: 'Password reset: Contact support or use the Supabase dashboard.' })}
-                      className="text-xs text-gold hover:text-primary transition-colors font-medium"
+                      className="text-xs text-gold hover:text-gold-light transition-colors font-medium"
                     >
                       Forgot password?
                     </button>
                   </div>
                   <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-400">
-                      <Lock size={16} />
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-neutral-500">
+                      <Lock size={18} />
                     </div>
                     <input
                       id="login-password"
                       type={showPwd ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full pl-10 pr-10 py-3 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-gold/30 focus:border-gold outline-none transition-all font-body text-sm"
+                      className="w-full pl-12 pr-12 py-3 min-h-[56px] bg-neutral-900 border border-neutral-800 text-white rounded-xl focus:ring-1 focus:ring-gold focus:border-gold outline-none transition-all font-body text-sm placeholder:text-neutral-600"
                       placeholder="••••••••"
                       autoComplete="current-password"
                       disabled={isSubmitting}
@@ -339,9 +394,9 @@ export default function Login() {
                     <button
                       type="button"
                       onClick={() => setShowPwd(v => !v)}
-                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-400 hover:text-neutral-600"
+                      className="absolute inset-y-0 right-0 pr-4 flex items-center text-neutral-500 hover:text-white transition-colors"
                     >
-                      {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                      {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </div>
                 </div>
@@ -349,9 +404,9 @@ export default function Login() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full btn-primary flex justify-center items-center gap-2 py-3 rounded-xl mt-2"
+                  className="w-full min-h-[56px] flex justify-center items-center gap-2 rounded-xl mt-4 bg-gradient-to-r from-gold to-gold-light text-primary font-body font-bold text-sm hover:shadow-[0_0_20px_rgba(201,169,110,0.3)] hover:scale-[1.02] transition-all duration-300 disabled:opacity-70 disabled:hover:scale-100"
                 >
-                  {isSubmitting ? <><Loader2 size={17} className="animate-spin" /> Signing In…</> : <>Sign In <ArrowRight size={17} /></>}
+                  {isSubmitting ? <><Loader2 size={18} className="animate-spin text-primary" /> Signing In…</> : <>Sign In <ArrowRight size={18} /></>}
                 </button>
 
                 {needsVerification && (

@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
+import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import StudioDropdown from '../../components/ui/StudioDropdown';
 import {
   getUnifiedAdminNotifications,
@@ -102,7 +103,7 @@ function NotificationRow({ n, typeConfig, onInspect, onToggleRead, onNavigate, o
       'SMS':    'bg-amber-50 text-amber-700 border-amber-200',
     }[ch] || 'bg-neutral-100 text-neutral-600 border-neutral-200';
     return (
-      <span key={ch} className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${styles}`}>
+      <span key={ch} className={`text-[11px] font-bold px-1.5 py-0.5 rounded border ${styles}`}>
         ✓ {ch}
       </span>
     );
@@ -125,20 +126,20 @@ function NotificationRow({ n, typeConfig, onInspect, onToggleRead, onNavigate, o
         <div className="min-w-0 flex-1">
           {/* Meta row */}
           <div className="flex items-center gap-1.5 flex-wrap mb-1">
-            <span className={`text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${typeConfig.color}`}>
+            <span className={`text-[11.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${typeConfig.color}`}>
               {typeConfig.label}
             </span>
             {n.booking?.booking_number && (
-              <span className="font-mono text-[9.5px] font-bold bg-neutral-100 text-neutral-700 px-1.5 py-0.5 rounded border border-neutral-200">
+              <span className="font-mono text-[11.5px] font-bold bg-neutral-100 text-neutral-700 px-1.5 py-0.5 rounded border border-neutral-200">
                 #{n.booking.booking_number}
               </span>
             )}
             {!n.is_read && (
-              <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full border border-amber-200 animate-pulse">
+              <span className="text-[11px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full border border-amber-200 animate-pulse">
                 Unread
               </span>
             )}
-            <span className="text-[10px] text-neutral-400 ml-auto">{timeAgo(n.created_at)}</span>
+            <span className="text-xs text-neutral-400 ml-auto">{timeAgo(n.created_at)}</span>
           </div>
 
           <h4 className="text-sm font-bold text-primary leading-snug line-clamp-1">{n.title}</h4>
@@ -146,10 +147,10 @@ function NotificationRow({ n, typeConfig, onInspect, onToggleRead, onNavigate, o
 
           {/* Footer: recipient + channel chips */}
           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-            <span className="text-[10px] text-neutral-500">
+            <span className="text-xs text-neutral-500">
               To: <strong className="text-neutral-700">{n.recipient_name || n.recipient_group || 'All Users'}</strong>
               {n.recipient_count > 1 && (
-                <span className="text-[9px] text-neutral-400 ml-1">({n.recipient_count} recipients)</span>
+                <span className="text-[11px] text-neutral-400 ml-1">({n.recipient_count} recipients)</span>
               )}
             </span>
             <div className="flex items-center gap-1">{channelChips}</div>
@@ -163,7 +164,7 @@ function NotificationRow({ n, typeConfig, onInspect, onToggleRead, onNavigate, o
           <button
             type="button"
             onClick={onPreviewEmail}
-            className="p-1.5 text-gold-dark hover:text-primary hover:bg-gold/15 rounded-lg transition-colors border border-gold/30 text-[10px] flex items-center gap-1 font-semibold"
+            className="p-1.5 text-gold-dark hover:text-primary hover:bg-gold/15 rounded-lg transition-colors border border-gold/30 text-xs flex items-center gap-1 font-semibold"
             title="Review & Preview Branded Email Layout"
           >
             <Mail size={12} className="text-gold" />
@@ -174,7 +175,7 @@ function NotificationRow({ n, typeConfig, onInspect, onToggleRead, onNavigate, o
         <button
           type="button"
           onClick={onInspect}
-          className="p-1.5 text-neutral-500 hover:text-primary hover:bg-neutral-100 rounded-lg transition-colors border border-neutral-200/80 text-[10px] flex items-center gap-1"
+          className="p-1.5 text-neutral-500 hover:text-primary hover:bg-neutral-100 rounded-lg transition-colors border border-neutral-200/80 text-xs flex items-center gap-1"
           title="View Details & Dossier"
         >
           <Eye size={13} />
@@ -184,7 +185,7 @@ function NotificationRow({ n, typeConfig, onInspect, onToggleRead, onNavigate, o
         <button
           type="button"
           onClick={onToggleRead}
-          className={`p-1.5 rounded-lg transition-colors border text-[10px] flex items-center gap-1 ${
+          className={`p-1.5 rounded-lg transition-colors border text-xs flex items-center gap-1 ${
             n.is_read
               ? 'text-neutral-400 border-neutral-200 hover:text-primary hover:bg-neutral-50'
               : 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100'
@@ -199,7 +200,7 @@ function NotificationRow({ n, typeConfig, onInspect, onToggleRead, onNavigate, o
           <button
             type="button"
             onClick={onDelete}
-            className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-neutral-200 hover:border-red-200 text-[10px] flex items-center gap-1"
+            className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-neutral-200 hover:border-red-200 text-xs flex items-center gap-1"
             title="Delete this notice / announcement"
           >
             <Trash2 size={12} />
@@ -217,7 +218,7 @@ function NotificationRow({ n, typeConfig, onInspect, onToggleRead, onNavigate, o
             })}
             target="_blank"
             rel="noopener noreferrer"
-            className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200 text-[10px] flex items-center gap-1"
+            className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200 text-xs flex items-center gap-1"
             title={`Email ${n.recipient_name || 'Client'} via Gmail`}
           >
             <Mail size={12} />
@@ -229,7 +230,7 @@ function NotificationRow({ n, typeConfig, onInspect, onToggleRead, onNavigate, o
           <button
             type="button"
             onClick={onNavigate}
-            className="p-1.5 text-gold hover:text-primary hover:bg-gold/10 rounded-lg transition-colors border border-gold/30 text-[10px]"
+            className="p-1.5 text-gold hover:text-primary hover:bg-gold/10 rounded-lg transition-colors border border-gold/30 text-xs"
             title="Open Resource"
           >
             <ExternalLink size={12} />
@@ -698,7 +699,7 @@ export default function AdminNotifications() {
   };
 
   return (
-    <div className="w-full max-w-screen-2xl mx-auto space-y-6 pb-16 animate-fade-in font-body">
+    <div className="w-full pb-16 animate-fade-in font-body">
       {/* ── 1. Luxury Administrative Hero Banner ────────────────────────────── */}
       <AdminHeroBanner
         station="admin"
@@ -722,6 +723,9 @@ export default function AdminNotifications() {
         isRefreshing={loading}
       />
 
+      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+
       {/* Action Success Toast Banner */}
       {actionSuccessMsg && (
         <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs text-emerald-900 animate-fade-in shadow-warm-sm">
@@ -735,83 +739,48 @@ export default function AdminNotifications() {
         </div>
       )}
 
-      {/* ── 2. Metric Overview Strip (4 Spacious Luxury Cards) ──────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-gold/40 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
-              <Bell size={20} />
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200">
-              SYSTEM-WIDE
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Total Bulletins</p>
-            <p className="text-2xl font-bold font-heading text-primary mt-0.5">{stats.totalCount}</p>
-            <p className="text-xs text-neutral-500 mt-1">Operational dispatch history</p>
-          </div>
-        </div>
-
-        <div 
-          onClick={() => setOnlyUnread(!onlyUnread)}
-          className={`bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
-            onlyUnread ? 'border-gold ring-2 ring-gold/25 shadow-warm-sm' : 'border-neutral-200/80 hover:border-gold/40 shadow-xs'
-          }`}
-        >
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-100">
-              <AlertCircle size={20} />
-            </div>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${stats.unreadCount > 0 ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
-              {stats.unreadCount > 0 ? 'NEEDS REVIEW' : 'ALL READ'}
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Unread Notices</p>
-            <p className="text-2xl font-bold font-heading text-amber-600 mt-0.5">{stats.unreadCount}</p>
-            <p className="text-xs text-neutral-500 mt-1">
-              {onlyUnread ? 'Showing unread filter (Click to reset)' : 'Click to filter unread alerts only'}
-            </p>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-gold/40 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-100">
-              <Camera size={20} />
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-              <CheckCircle2 size={11} /> AUTO TRIGGER
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Automated Milestones</p>
-            <p className="text-2xl font-bold font-heading text-emerald-700 mt-0.5">
-              {stats.ordersReadyCount + stats.paymentsCount}
-            </p>
-            <p className="text-xs text-neutral-500 mt-1">
-              {stats.ordersReadyCount} orders ready · {stats.paymentsCount} payments verified
-            </p>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-gold/40 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 border border-purple-100">
-              <Sparkles size={20} />
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-              3 CHANNELS
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Active Foundations</p>
-            <p className="text-sm font-bold text-primary mt-0.5">In-App · AI Email · SMS</p>
-            <p className="text-xs text-neutral-500 mt-1">Semaphore & PhilSMS gateway foundation</p>
-          </div>
-        </div>
-      </div>
+      {/* ── 2. Metric Overview Strip (Unified Luxury Studio KPI Cards) ──────── */}
+      <CategorizedMetricStrip
+        loading={loading}
+        columns="grid-cols-2 lg:grid-cols-4"
+        cards={[
+          {
+            key: 'total',
+            label: 'SYSTEM-WIDE',
+            subtitle: 'TOTAL BULLETINS',
+            value: stats.totalCount,
+            isActive: !onlyUnread && activeTab === 'ALL',
+            onClick: () => {
+              setOnlyUnread(false);
+              setActiveTab('ALL');
+            }
+          },
+          {
+            key: 'unread',
+            label: stats.unreadCount > 0 ? 'NEEDS REVIEW' : 'ALL READ',
+            subtitle: 'UNREAD NOTICES',
+            value: stats.unreadCount,
+            isActive: onlyUnread,
+            onClick: () => setOnlyUnread(!onlyUnread)
+          },
+          {
+            key: 'milestones',
+            label: 'MILESTONES',
+            subtitle: 'AUTO TRIGGERS',
+            value: stats.ordersReadyCount + stats.paymentsCount,
+            isActive: activeTab === 'ORDERS' || activeTab === 'PAYMENTS',
+            onClick: () => setActiveTab(activeTab === 'ORDERS' ? 'PAYMENTS' : 'ORDERS')
+          },
+          {
+            key: 'broadcasts',
+            label: 'CHANNELS',
+            subtitle: 'DELIVERY SYSTEM',
+            value: '3 ROUTES',
+            isActive: activeTab === 'BROADCASTS',
+            onClick: () => setActiveTab('BROADCASTS')
+          }
+        ]}
+      />
 
       {/* ── 3. Filters & Search Toolbar ────────────────────────────────────── */}
       <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs space-y-3.5">
@@ -942,7 +911,7 @@ export default function AdminNotifications() {
                     <CatIcon size={13} />
                   </div>
                   <h3 className={`text-[11px] font-bold uppercase tracking-wider ${catMeta.color}`}>{catMeta.label}</h3>
-                  <span className="text-[10px] font-bold text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded-full border border-neutral-200">{rows.length}</span>
+                  <span className="text-xs font-bold text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded-full border border-neutral-200">{rows.length}</span>
                   <div className="flex-1 h-px bg-neutral-200/70" />
                 </div>
                 {rows.map(n => (
@@ -976,6 +945,7 @@ export default function AdminNotifications() {
           ))
         )}
       </div>
+      </div>
 
       {/* ── 5. ULTRA-COMPACT 2-COLUMN DISPATCH MODAL WITH IN-BODY HOVER AI TOOLS ── */}
       {composeModalOpen && (
@@ -991,7 +961,7 @@ export default function AdminNotifications() {
                   <h3 className="font-heading text-sm font-bold text-primary leading-tight">
                     Multi-Channel Dispatch
                   </h3>
-                  <p className="text-[10px] text-neutral-400 leading-tight">
+                  <p className="text-xs text-neutral-400 leading-tight">
                     In-App, Branded Email, and Telco SMS with auto-detected client balance
                   </p>
                 </div>
@@ -1012,7 +982,7 @@ export default function AdminNotifications() {
                 <div className="lg:col-span-5 space-y-2.5 lg:border-r lg:border-neutral-200/80 lg:pr-3.5 flex flex-col overflow-y-auto pr-1">
                   {/* Compact Recipient Group Selector */}
                   <div>
-                    <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                    <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
                       Recipient Audience
                     </label>
                     <div className="grid grid-cols-3 gap-1 bg-neutral-100 p-0.5 rounded-xl text-xs">
@@ -1028,7 +998,7 @@ export default function AdminNotifications() {
                           key={aud.id}
                           type="button"
                           onClick={() => setRecipientGroup(aud.id)}
-                          className={`py-1 px-1 rounded-lg font-semibold transition-all text-[9.5px] text-center truncate ${
+                          className={`py-1 px-1 rounded-lg font-semibold transition-all text-[11.5px] text-center truncate ${
                             recipientGroup === aud.id
                               ? 'bg-primary text-white shadow-xs'
                               : 'text-neutral-600 hover:text-primary'
@@ -1042,11 +1012,11 @@ export default function AdminNotifications() {
 
                   {/* Delivery Channels Inline Pills */}
                   <div>
-                    <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                    <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
                       Delivery Channels
                     </label>
                     <div className="grid grid-cols-3 gap-1 text-xs">
-                      <label className={`py-1 px-1.5 rounded-lg border flex items-center justify-center gap-1 cursor-pointer text-[10px] transition-all ${
+                      <label className={`py-1 px-1.5 rounded-lg border flex items-center justify-center gap-1 cursor-pointer text-xs transition-all ${
                         channels.inApp ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold' : 'bg-white text-neutral-400 border-neutral-200'
                       }`}>
                         <input
@@ -1059,7 +1029,7 @@ export default function AdminNotifications() {
                         <span>In-App</span>
                       </label>
 
-                      <label className={`py-1 px-1.5 rounded-lg border flex items-center justify-center gap-1 cursor-pointer text-[10px] transition-all ${
+                      <label className={`py-1 px-1.5 rounded-lg border flex items-center justify-center gap-1 cursor-pointer text-xs transition-all ${
                         channels.email ? 'bg-blue-50 text-blue-800 border-blue-300 font-bold' : 'bg-white text-neutral-400 border-neutral-200'
                       }`}>
                         <input
@@ -1072,7 +1042,7 @@ export default function AdminNotifications() {
                         <span>Email</span>
                       </label>
 
-                      <label className={`py-1 px-1.5 rounded-lg border flex items-center justify-center gap-1 cursor-pointer text-[10px] transition-all ${
+                      <label className={`py-1 px-1.5 rounded-lg border flex items-center justify-center gap-1 cursor-pointer text-xs transition-all ${
                         channels.sms ? 'bg-amber-50 text-amber-800 border-amber-300 font-bold' : 'bg-white text-neutral-400 border-neutral-200'
                       }`}>
                         <input
@@ -1091,10 +1061,10 @@ export default function AdminNotifications() {
                   {recipientGroup === 'SPECIFIC_CUSTOMER' ? (
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <label className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wider">
+                        <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
                           Select Client Booking
                         </label>
-                        <span className="text-[9px] text-neutral-400">
+                        <span className="text-[11px] text-neutral-400">
                           {recentBookings.length} Bookings
                         </span>
                       </div>
@@ -1114,35 +1084,35 @@ export default function AdminNotifications() {
                       {detectedDetails && (
                         <div className="p-2 bg-gradient-to-br from-amber-50/40 via-white to-neutral-50 rounded-xl border border-amber-200/70 text-xs space-y-1.5 animate-fade-in shadow-2xs">
                           <div className="flex items-center justify-between">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1">
                               <User size={10} className="text-gold" />
                               Detected Client Dossier
                             </span>
-                            <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
                               #{detectedDetails.bookingNumber}
                             </span>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-1 text-[10px]">
+                          <div className="grid grid-cols-2 gap-1 text-xs">
                             <div className="bg-white/80 p-1 rounded-lg border border-neutral-200/60 truncate">
-                              <span className="text-neutral-400 block text-[7.5px] uppercase">Client Name</span>
-                              <strong className="text-primary truncate block text-[10px]">{detectedDetails.name}</strong>
+                              <span className="text-neutral-400 block text-[9.5px] uppercase">Client Name</span>
+                              <strong className="text-primary truncate block text-xs">{detectedDetails.name}</strong>
                             </div>
                             <div className="bg-white/80 p-1 rounded-lg border border-neutral-200/60 truncate">
-                              <span className="text-neutral-400 block text-[7.5px] uppercase">Email Address</span>
-                              <span className="text-neutral-700 truncate block text-[10px]">{detectedDetails.email}</span>
+                              <span className="text-neutral-400 block text-[9.5px] uppercase">Email Address</span>
+                              <span className="text-neutral-700 truncate block text-xs">{detectedDetails.email}</span>
                             </div>
                             <div className="bg-white/80 p-1 rounded-lg border border-neutral-200/60 truncate">
-                              <span className="text-neutral-400 block text-[7.5px] uppercase">Phone</span>
-                              <span className="text-neutral-700 truncate block text-[10px]">{detectedDetails.phone}</span>
+                              <span className="text-neutral-400 block text-[9.5px] uppercase">Phone</span>
+                              <span className="text-neutral-700 truncate block text-xs">{detectedDetails.phone}</span>
                             </div>
                             <div className="bg-white/80 p-1 rounded-lg border border-neutral-200/60 truncate">
-                              <span className="text-neutral-400 block text-[7.5px] uppercase">Studio Package</span>
-                              <span className="text-neutral-700 truncate block text-[10px]">{detectedDetails.service}</span>
+                              <span className="text-neutral-400 block text-[9.5px] uppercase">Studio Package</span>
+                              <span className="text-neutral-700 truncate block text-xs">{detectedDetails.service}</span>
                             </div>
                           </div>
 
-                          <div className="px-2 py-1 rounded-lg bg-amber-50/90 border border-amber-200/60 text-[9.5px] flex items-center justify-between">
+                          <div className="px-2 py-1 rounded-lg bg-amber-50/90 border border-amber-200/60 text-[11.5px] flex items-center justify-between">
                             <span className="text-neutral-600">Remaining Balance:</span>
                             <strong className="text-gold-dark font-mono font-bold">{detectedDetails.remainingFormatted} ({detectedDetails.payStatus})</strong>
                           </div>
@@ -1151,11 +1121,11 @@ export default function AdminNotifications() {
                     </div>
                   ) : (
                     <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-200/80 text-xs space-y-1">
-                      <div className="flex items-center gap-1 font-bold text-neutral-700 text-[10px]">
+                      <div className="flex items-center gap-1 font-bold text-neutral-700 text-xs">
                         <Users size={12} className="text-gold" />
                         <span>Broadcast Target</span>
                       </div>
-                      <p className="text-[10px] text-neutral-500 leading-snug">
+                      <p className="text-xs text-neutral-500 leading-snug">
                         {recipientGroup === 'ALL_CUSTOMERS' && 'Will dispatch to all customer accounts across chosen channels.'}
                         {recipientGroup === 'ALL_STAFF' && 'Will broadcast to all active studio administrators, frontdesk staff, and operations crew.'}
                         {recipientGroup === 'FINANCE_TEAM' && 'Will notify the studio finance and accounting officers regarding ledgers and payments.'}
@@ -1171,14 +1141,14 @@ export default function AdminNotifications() {
                   {/* Title / Subject Input */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider">
+                      <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
                         Notification Title / Subject
                       </label>
                       {channels.email && (
                         <button
                           type="button"
                           onClick={handleOpenComposePreview}
-                          className="text-[9.5px] font-bold text-gold hover:text-primary flex items-center gap-1"
+                          className="text-[11.5px] font-bold text-gold hover:text-primary flex items-center gap-1"
                         >
                           <Eye size={10} />
                           Preview Email
@@ -1201,10 +1171,10 @@ export default function AdminNotifications() {
                   {/* ── INTEGRATED MESSAGE BODY WITH EMBEDDED HOVER AI ICON ── */}
                   <div className="flex flex-col flex-1 gap-1 min-h-0">
                     <div className="flex items-center justify-between">
-                      <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-wider">
+                      <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
                         Message Body
                       </label>
-                      <span className="text-[9px] text-neutral-400">
+                      <span className="text-[11px] text-neutral-400">
                         In-App &amp; Email
                       </span>
                     </div>
@@ -1248,11 +1218,11 @@ export default function AdminNotifications() {
                             className="absolute right-0 top-full mt-1 w-72 bg-white/95 backdrop-blur-md rounded-2xl border border-neutral-200 shadow-2xl p-2.5 z-50 animate-fade-in font-body space-y-2 text-xs"
                           >
                             <div className="flex items-center justify-between border-b border-neutral-100 pb-1">
-                              <span className="text-[9px] font-bold uppercase tracking-wider text-gold-dark flex items-center gap-1">
+                              <span className="text-[11px] font-bold uppercase tracking-wider text-gold-dark flex items-center gap-1">
                                 <Sparkles size={11} className="text-gold" />
                                 AI Template Tools
                               </span>
-                              <span className="text-[8px] text-neutral-400 bg-neutral-100 px-1 py-0.2 rounded font-semibold">
+                              <span className="text-[10px] text-neutral-400 bg-neutral-100 px-1 py-0.2 rounded font-semibold">
                                 Live Injections
                               </span>
                             </div>
@@ -1273,7 +1243,7 @@ export default function AdminNotifications() {
                                     handleApplyTemplate(t.id);
                                     setAiMenuOpen(false);
                                   }}
-                                  className={`w-full text-left px-2 py-1.5 rounded-lg text-[10.5px] transition-colors flex items-center justify-between ${
+                                  className={`w-full text-left px-2 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-between ${
                                     aiTemplateType === t.id
                                       ? 'bg-gold/15 text-gold-dark font-bold'
                                       : 'text-neutral-700 hover:bg-neutral-50 hover:text-primary'
@@ -1287,14 +1257,14 @@ export default function AdminNotifications() {
 
                             {/* Custom AI Instruction Bar */}
                             <div className="pt-1.5 border-t border-neutral-100 space-y-1">
-                              <span className="text-[9px] font-bold text-neutral-500 block">Custom AI Prompt:</span>
+                              <span className="text-[11px] font-bold text-neutral-500 block">Custom AI Prompt:</span>
                               <div className="flex items-center gap-1">
                                 <input
                                   type="text"
                                   value={customAiPrompt}
                                   onChange={e => setCustomAiPrompt(e.target.value)}
                                   placeholder="e.g. Free 8x10 print apology..."
-                                  className="w-full px-2 py-1 bg-neutral-50 border border-neutral-200 rounded-lg text-[10.5px] outline-none focus:ring-1 focus:ring-gold"
+                                  className="w-full px-2 py-1 bg-neutral-50 border border-neutral-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-gold"
                                   onKeyDown={e => {
                                     if (e.key === 'Enter') {
                                       e.preventDefault();
@@ -1310,7 +1280,7 @@ export default function AdminNotifications() {
                                     setAiMenuOpen(false);
                                   }}
                                   disabled={generatingAi}
-                                  className="btn-primary py-1 px-2 text-[10px] shrink-0 flex items-center gap-1"
+                                  className="btn-primary py-1 px-2 text-xs shrink-0 flex items-center gap-1"
                                 >
                                   {generatingAi ? <RefreshCw size={9} className="animate-spin" /> : <Sparkles size={9} />}
                                   <span>Draft</span>
@@ -1327,11 +1297,11 @@ export default function AdminNotifications() {
                   {channels.sms && (
                     <div className="p-2 bg-amber-50/40 rounded-xl border border-amber-200/80 space-y-1 animate-fade-in text-xs">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-amber-900 flex items-center gap-1 text-[9.5px]">
+                        <span className="font-bold text-amber-900 flex items-center gap-1 text-[11.5px]">
                           <Smartphone size={11} className="text-amber-600" />
                           Direct SMS Payload:
                         </span>
-                        <span className="text-[8.5px] text-neutral-500 font-mono">
+                        <span className="text-[10.5px] text-neutral-500 font-mono">
                           {smsMessage.length} / 160 chars ({Math.ceil(smsMessage.length / 160) || 1} credit)
                         </span>
                       </div>
@@ -1341,16 +1311,16 @@ export default function AdminNotifications() {
                         value={smsMessage}
                         onChange={e => setSmsMessage(e.target.value)}
                         placeholder="Short SMS text..."
-                        className="w-full px-2 py-1 bg-white border border-neutral-200 rounded-lg text-[10.5px] font-mono outline-none focus:ring-1 focus:ring-gold"
+                        className="w-full px-2 py-1 bg-white border border-neutral-200 rounded-lg text-xs font-mono outline-none focus:ring-1 focus:ring-gold"
                       />
 
-                      <div className="flex items-center justify-between text-[8.5px] text-neutral-500 pt-0.5">
+                      <div className="flex items-center justify-between text-[10.5px] text-neutral-500 pt-0.5">
                         <div className="flex items-center gap-1">
                           <span>Gateway:</span>
                           <select
                             value={smsGateway}
                             onChange={e => setSmsGateway(e.target.value)}
-                            className="bg-white border border-neutral-200 rounded px-1 py-0.5 text-[8.5px] font-semibold outline-none"
+                            className="bg-white border border-neutral-200 rounded px-1 py-0.5 text-[10.5px] font-semibold outline-none"
                           >
                             <option value="semaphore">Semaphore PH</option>
                             <option value="philsms">PhilSMS</option>
@@ -1366,7 +1336,7 @@ export default function AdminNotifications() {
 
               {/* Ultra-Compact Footer Actions */}
               <div className="pt-2 border-t border-neutral-200/80 flex items-center justify-between gap-3 shrink-0">
-                <span className="text-[9.5px] text-neutral-400 truncate">
+                <span className="text-[11.5px] text-neutral-400 truncate">
                   Target: <strong className="text-neutral-700">{targetName || recipientGroup}</strong>
                   {channels.email && targetEmail && ` · ${targetEmail}`}
                 </span>
@@ -1455,11 +1425,11 @@ export default function AdminNotifications() {
                   <div>
                     <h4 className="font-heading text-sm sm:text-base font-bold text-primary leading-tight flex items-center gap-2">
                       Live Branded HTML Email Preview
-                      <span className="text-[9.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      <span className="text-[11.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
                         Gmail Ready
                       </span>
                     </h4>
-                    <p className="text-[10.5px] text-neutral-400 leading-tight">
+                    <p className="text-xs text-neutral-400 leading-tight">
                       Exact luxury layout delivered to customer inboxes with 100% inline CSS
                     </p>
                   </div>
@@ -1479,7 +1449,7 @@ export default function AdminNotifications() {
                   <span className="text-[11px] text-neutral-500">
                     To: <strong className="text-neutral-800">{activeEmailData.customerName}</strong>
                     {activeEmailData.recipientEmail && (
-                      <span className="text-neutral-400 ml-1 font-mono text-[10.5px]">({activeEmailData.recipientEmail})</span>
+                      <span className="text-neutral-400 ml-1 font-mono text-xs">({activeEmailData.recipientEmail})</span>
                     )}
                   </span>
                   <span className="text-neutral-300">·</span>
@@ -1487,7 +1457,7 @@ export default function AdminNotifications() {
                     Subject: <strong className="text-neutral-800">{activeEmailData.subject}</strong>
                   </span>
                 </div>
-                <span className="text-[10px] font-bold text-neutral-600 bg-white px-2 py-0.5 rounded-md border border-neutral-200 shrink-0">
+                <span className="text-xs font-bold text-neutral-600 bg-white px-2 py-0.5 rounded-md border border-neutral-200 shrink-0">
                   #{activeEmailData.bookingNumber || 'STUDIO'}
                 </span>
               </div>
@@ -1549,7 +1519,7 @@ export default function AdminNotifications() {
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 border border-neutral-200 shadow-2xl space-y-4 font-body">
             <div className="flex items-start justify-between border-b border-neutral-100 pb-3">
               <div>
-                <span className="text-[10px] font-bold text-gold uppercase tracking-widest">
+                <span className="text-xs font-bold text-gold uppercase tracking-widest">
                   Alert Inspection &amp; Review
                 </span>
                 <h3 className="font-heading text-base font-bold text-primary mt-0.5">

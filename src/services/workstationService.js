@@ -241,10 +241,12 @@ export async function getWorkstationMetrics(role) {
  * fetchAdminActivityLogs
  * ---------------------
  * Fetches real administrator activity logs directly from Supabase PostgreSQL.
- * Supports filtering by adminId, actionType, search query, and pagination limit.
+ * Supports filtering by adminId, role, actionType, search query, and pagination limit.
+ * Uses profiles!inner to enforce that accounts that no longer exist are excluded.
  */
 export async function fetchAdminActivityLogs({
   adminId = null,
+  role = null,
   actionType = null,
   search = null,
   limit = 50,
@@ -266,20 +268,25 @@ export async function fetchAdminActivityLogs({
         details,
         ip_address,
         created_at,
-        admin_profile:admin_id (
+        admin_profile:profiles!inner (
           id,
           first_name,
           last_name,
           avatar_url,
           role,
-          phone
+          phone,
+          email,
+          is_active
         )
       `, { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+      .order('created_at', { ascending: false });
 
     if (adminId && adminId !== 'all') {
       query = query.eq('admin_id', adminId);
+    }
+
+    if (role && role !== 'all') {
+      query = query.eq('admin_profile.role', role);
     }
 
     if (actionType && actionType !== 'all') {
@@ -291,9 +298,28 @@ export async function fetchAdminActivityLogs({
       query = query.or(`description.ilike.%${s}%,entity_label.ilike.%${s}%,admin_name.ilike.%${s}%`);
     }
 
+    query = query.range(offset, offset + limit - 1);
+
     const { data, count, error } = await query;
     if (error) throw error;
-    return { data: data || [], count: count || 0, error: null };
+
+    // Dynamically resolve the administrator's real name and role from their active profile
+    const cleaned = (data || []).map((log) => {
+      const prof = log.admin_profile;
+      const resolvedName = prof
+        ? `${prof.first_name || ''} ${prof.last_name || ''}`.trim() || prof.email
+        : log.admin_name;
+      const resolvedRole = prof?.role || log.admin_role || 'admin';
+
+      return {
+        ...log,
+        admin_name: resolvedName,
+        admin_role: resolvedRole,
+        admin_avatar: prof?.avatar_url || null,
+      };
+    });
+
+    return { data: cleaned, count: count || 0, error: null };
   } catch (err) {
     console.error('fetchAdminActivityLogs error:', err);
     return { data: [], count: 0, error: err };
@@ -304,10 +330,11 @@ export async function fetchAdminActivityLogs({
  * recordAdminActivity
  * -------------------
  * Inserts an administrative activity log into public.admin_activity_logs.
+ * Automatically resolves the logged-in administrator from Supabase Auth if adminId is not provided.
  */
 export async function recordAdminActivity({
-  adminId,
-  adminName,
+  adminId = null,
+  adminName = null,
   adminRole = 'admin',
   actionType,
   entityType = 'booking',
@@ -317,18 +344,44 @@ export async function recordAdminActivity({
   details = {},
 }) {
   try {
+    let resolvedId = adminId;
+    let resolvedName = adminName;
+    let resolvedRole = adminRole;
+
+    // Auto-detect current authenticated user if not provided
+    if (!resolvedId) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          resolvedId = user.id;
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('first_name, last_name, role, email')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (prof) {
+            resolvedName = `${prof.first_name || ''} ${prof.last_name || ''}`.trim() || prof.email;
+            resolvedRole = prof.role || resolvedRole;
+          }
+        }
+      } catch (authErr) {
+        console.warn('Could not auto-resolve auth user for activity log:', authErr);
+      }
+    }
+
     const { data, error } = await supabase
       .from('admin_activity_logs')
       .insert([{
-        admin_id: adminId || null,
-        admin_name: adminName || 'Studio Staff',
-        admin_role: adminRole,
+        admin_id: resolvedId || null,
+        admin_name: resolvedName || 'Studio Staff',
+        admin_role: resolvedRole || 'admin',
         action_type: actionType,
         entity_type: entityType,
         entity_id: entityId ? String(entityId) : null,
         entity_label: entityLabel ? String(entityLabel) : null,
         description,
-        details: typeof details === 'object' ? details : {},
+        details: typeof details === 'object' && details !== null ? details : {},
         created_at: new Date().toISOString(),
       }])
       .select()
@@ -348,14 +401,15 @@ export async function recordAdminActivity({
 /**
  * fetchAdministratorsList
  * -----------------------
- * Returns all administrator, staff, and finance profiles from database for filter dropdowns.
+ * Returns all active administrator, staff, finance, and photographer profiles
+ * currently existing in the database for filter dropdowns.
  */
 export async function fetchAdministratorsList() {
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, first_name, last_name, role, avatar_url, is_active')
-      .in('role', ['admin', 'staff', 'finance'])
+      .select('id, first_name, last_name, role, avatar_url, is_active, email')
+      .in('role', ['admin', 'staff', 'finance', 'photographer'])
       .eq('is_active', true)
       .not('first_name', 'is', null)
       .order('role', { ascending: true })
@@ -378,7 +432,13 @@ export async function getAdminActivityStats() {
   try {
     const { data, error } = await supabase
       .from('admin_activity_logs')
-      .select('id, action_type, created_at, admin_id');
+      .select(`
+        id,
+        action_type,
+        created_at,
+        admin_id,
+        admin_profile:profiles!inner(id, role, is_active)
+      `);
 
     if (error) throw error;
     const logs = data || [];
@@ -392,11 +452,21 @@ export async function getAdminActivityStats() {
       ['BOOKING_SOFT_DELETED', 'BOOKING_PURGED', 'ISSUE_ESCALATION'].includes(l.action_type)
     ).length;
 
+    // Counts by role
+    const adminActions = logs.filter(l => l.admin_profile?.role === 'admin').length;
+    const staffActions = logs.filter(l => l.admin_profile?.role === 'staff').length;
+    const financeActions = logs.filter(l => l.admin_profile?.role === 'finance').length;
+    const photographerActions = logs.filter(l => l.admin_profile?.role === 'photographer').length;
+
     return {
       totalLogs: logs.length,
       todayCount,
       activeAdminsCount: uniqueAdmins,
       criticalCount,
+      adminActions,
+      staffActions,
+      financeActions,
+      photographerActions,
     };
   } catch (err) {
     console.error('getAdminActivityStats error:', err);
@@ -405,6 +475,10 @@ export async function getAdminActivityStats() {
       todayCount: 0,
       activeAdminsCount: 0,
       criticalCount: 0,
+      adminActions: 0,
+      staffActions: 0,
+      financeActions: 0,
+      photographerActions: 0,
     };
   }
 }

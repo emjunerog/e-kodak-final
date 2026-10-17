@@ -1,281 +1,196 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { motion } from 'motion/react';
-import {
-  CalendarDays, Clock, CheckCircle2, Camera,
-  CreditCard, AlertCircle, Package,
-} from 'lucide-react';
 import AnimatedCounter from '../ui/AnimatedCounter';
 
 /**
- * CategorizedMetricStrip — 3-color palette (primary / gold / neutral).
- * 6 status cards clickable to filter the booking queue with motion micro-interactions.
- * 2 finance tiles below.
+ * CategorizedMetricStrip
+ * ----------------------
+ * Unified 4-card KPI metric strip following luxury studio visual guidelines:
+ * - Same cohesive warm cream/gold aesthetic across the entire card set
+ * - Extra large elegant serif numerals (Playfair Display / Serif)
+ * - Icons completely removed for clean, uncluttered minimalism
+ * - Top-right status pill badge (TOTAL, PENDING, APPROVED, COMPLETED)
+ * - Clear uppercase descriptive subtitle with matching horizontal accent bar
+ * - Subtle botanical leaf & organic fluid wave in bottom-right corner
  */
 export default function CategorizedMetricStrip({
   stats,
+  cards,
   loading = false,
   onSelectFilter,
   activeFilter = 'ALL',
+  columns,
+  className = '',
 }) {
   const s = stats || {};
-  const activeJobs = s.active_jobs ?? 0;
 
-  // ── 3 visual tiers using only: primary, gold, neutral ──────────────
-  const statusCards = [
+  // ── Default 4 Studio KPI Cards if custom cards array not provided ──
+  const defaultCards = [
     {
       key: 'ALL',
-      label: 'Total',
+      label: 'TOTAL',
+      subtitle: 'All studio bookings recorded',
       value: s.total,
-      icon: CalendarDays,
-      tier: 'neutral',
     },
     {
       key: 'PENDING',
-      label: 'Pending',
+      label: 'PENDING',
+      subtitle: 'Awaiting scheduling & review',
       value: s.pending,
-      icon: Clock,
-      tier: 'gold',
-      alert: (s.pending ?? 0) > 0,
     },
     {
       key: 'CONFIRMED',
-      label: 'Confirmed',
+      label: 'APPROVED',
+      subtitle: 'Verified & ready for shooting',
       value: s.confirmed,
-      icon: CheckCircle2,
-      tier: 'primary',
-    },
-    {
-      key: 'CAPTURE',
-      label: 'Active',
-      value: activeJobs,
-      icon: Camera,
-      tier: 'primary',
-    },
-    {
-      key: 'READY',
-      label: 'Ready',
-      value: s.ready,
-      icon: Package,
-      tier: 'gold',
     },
     {
       key: 'COMPLETED',
-      label: 'Done',
+      label: 'COMPLETED',
+      subtitle: 'Fulfilled & outputs delivered',
       value: s.completed,
-      icon: CheckCircle2,
-      tier: 'neutral',
     },
   ];
 
-  // Resolve tier-based classes
-  const tierClasses = {
-    neutral: {
-      icon:       'bg-neutral-100 text-neutral-600',
-      number:     'text-neutral-900',
-      activeRing: 'ring-neutral-400',
-      activeBg:   'bg-neutral-100',
-    },
-    gold: {
-      icon:       'bg-gold/15 text-gold-dark',
-      number:     'text-gold-dark',
-      activeRing: 'ring-gold',
-      activeBg:   'bg-gold/10',
-    },
-    primary: {
-      icon:       'bg-neutral-900/8 text-neutral-900',
-      number:     'text-neutral-900',
-      activeRing: 'ring-neutral-900/40',
-      activeBg:   'bg-neutral-900/5',
-    },
-  };
+  const effectiveCards = cards || defaultCards;
+
+  // Auto-determine default grid columns based on card count if not specified
+  const effectiveColumns = columns || (
+    effectiveCards.length === 6
+      ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6'
+      : effectiveCards.length === 5
+        ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5'
+        : 'grid-cols-2 lg:grid-cols-4'
+  );
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-[105px] bg-neutral-100 rounded-2xl animate-pulse" />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {[...Array(2)].map((_, i) => (
-            <div key={i} className="h-[100px] bg-neutral-100 rounded-2xl animate-pulse" />
-          ))}
-        </div>
+      <div className={`grid ${effectiveColumns} gap-3 sm:gap-3.5 font-body ${className}`}>
+        {[...Array(effectiveCards.length)].map((_, i) => (
+          <div
+            key={i}
+            className="min-h-[135px] sm:min-h-[145px] bg-gradient-to-br from-[#fcf9f2] via-[#faf5eb] to-[#f4ebe0] rounded-2xl sm:rounded-3xl border border-amber-200/70 p-4 sm:p-5 animate-pulse flex flex-col justify-between shadow-xs"
+          >
+            <div className="flex justify-end">
+              <div className="w-16 h-5 rounded-full bg-amber-200/60" />
+            </div>
+            <div>
+              <div className="w-16 h-8 rounded bg-amber-200/50 mb-2.5" />
+              <div className="w-28 h-3 rounded bg-amber-200/60 mb-2.5" />
+              <div className="w-10 h-[3px] rounded-full bg-amber-300/70" />
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
 
-  const isClearedActive = activeFilter === 'PAID' || activeFilter === 'CLEARED';
-  const isUnpaidActive = activeFilter === 'UNPAID';
-
   return (
-    <div className="space-y-4 font-body">
+    <div className={`font-body ${className}`}>
+      {/* ── Responsive KPI Cards (Identical Luxury Cream/Gold Look Across Whole Set) ──── */}
+      <div className={`grid ${effectiveColumns} gap-3 sm:gap-3.5`}>
+        {effectiveCards.map((card) => {
+          const isActive = card.isActive !== undefined 
+            ? card.isActive 
+            : (activeFilter !== undefined && activeFilter === card.key);
 
-      {/* ── Status KPI Cards ─────────────────────────────────────── */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-        {statusCards.map((card) => {
-          const isActive = activeFilter === card.key;
-          const Icon = card.icon;
-          const t = tierClasses[card.tier];
+          const handleClick = () => {
+            if (card.onClick) {
+              card.onClick();
+            } else if (onSelectFilter) {
+              onSelectFilter(card.key);
+            }
+          };
+
+          const rawVal = card.value ?? 0;
+          const isNumeric = typeof rawVal === 'number' || (!isNaN(rawVal) && typeof rawVal !== 'string');
+          const isStringVal = typeof rawVal === 'string';
+          const isLongString = isStringVal && rawVal.length > 7;
 
           return (
             <motion.button
               key={card.key}
               type="button"
-              whileHover={{ y: -2, transition: { duration: 0.15 } }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => onSelectFilter?.(card.key)}
+              whileHover={{ y: -2, transition: { duration: 0.16, ease: 'easeOut' } }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleClick}
               title={`Filter: ${card.label}`}
-              className={`group relative p-3.5 sm:p-4 rounded-2xl border text-left transition-shadow cursor-pointer select-none min-h-[105px] flex flex-col justify-between ${
+              className={`group relative p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl border text-left transition-all duration-200 cursor-pointer select-none min-h-[135px] sm:min-h-[145px] flex flex-col justify-between overflow-hidden shadow-xs ${
                 isActive
-                  ? `${t.activeBg} border-transparent ring-2 ${t.activeRing} shadow-xs`
-                  : 'bg-white border-neutral-200/80 hover:border-neutral-300 hover:shadow-md'
+                  ? 'bg-gradient-to-br from-[#faf3e3] via-[#f7ebd1] to-[#f2dfbe] border-gold ring-2 ring-gold/45 shadow-md shadow-amber-950/10'
+                  : 'bg-gradient-to-br from-[#fcf9f2] via-[#faf5eb] to-[#f4ebe0] border-amber-200/80 hover:border-gold/60 hover:shadow-md hover:shadow-amber-950/5'
               }`}
             >
-              {/* Icon */}
-              <div className={`w-8 h-8 rounded-xl ${t.icon} flex items-center justify-center transition-transform group-hover:scale-105 shadow-xs`}>
-                <Icon size={16} />
-              </div>
+              {/* Organic Fluid Corner Wave & Botanical Leaf Silhouette in bottom-right */}
+              <svg
+                className="absolute bottom-0 right-0 w-20 h-20 sm:w-24 sm:h-24 pointer-events-none transition-transform duration-300 group-hover:scale-105"
+                viewBox="0 0 160 160"
+                fill="none"
+                preserveAspectRatio="none"
+              >
+                <path
+                  d="M160 25 C120 40 85 80 65 110 C50 130 35 150 0 160 L160 160 Z"
+                  fill="url(#kpi-wave-gold)"
+                />
+                {/* Botanical leaves */}
+                <path
+                  d="M160 65 C140 70 125 90 120 112 C132 106 146 102 160 106 Z"
+                  fill="#d97706"
+                  fillOpacity="0.14"
+                />
+                <path
+                  d="M135 105 C115 108 100 124 95 142 C108 137 122 133 135 137 Z"
+                  fill="#d97706"
+                  fillOpacity="0.12"
+                />
+                <defs>
+                  <linearGradient id="kpi-wave-gold" x1="0" y1="1" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#d97706" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="#fef3c7" stopOpacity="0.08" />
+                  </linearGradient>
+                </defs>
+              </svg>
 
-              <div>
-                {/* Value */}
-                <p className={`text-2xl font-heading font-bold leading-none ${t.number}`}>
-                  <AnimatedCounter value={card.value ?? 0} />
-                </p>
-
-                {/* Label */}
-                <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider mt-1 truncate">
+              {/* Top Row: Clean layout without icon, Right-aligned Status Pill Badge */}
+              <div className="flex items-center justify-end relative z-10 w-full">
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] sm:text-[10.5px] font-bold tracking-wider uppercase border transition-colors shadow-3xs ${
+                    isActive
+                      ? 'bg-amber-200/90 text-amber-950 border-amber-300'
+                      : 'bg-amber-100/75 text-amber-900 border-amber-200/70 group-hover:bg-amber-100 group-hover:border-amber-300'
+                  }`}
+                >
                   {card.label}
-                </p>
+                </span>
               </div>
 
-              {/* Pending alert pulse */}
-              {card.alert && (card.value ?? 0) > 0 && (
-                <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-gold animate-pulse" />
-              )}
+              {/* Content Area: Extra Large Playfair Display Number, Label, and Accent Bar */}
+              <div className="relative z-10 mt-1">
+                <p className={`font-heading font-bold text-neutral-900 leading-none tracking-tight ${
+                  isLongString 
+                    ? 'text-2xl sm:text-3xl lg:text-4xl' 
+                    : isStringVal 
+                      ? 'text-3xl sm:text-4xl lg:text-[42px]' 
+                      : 'text-4xl sm:text-5xl lg:text-[52px]'
+                }`}>
+                  {isNumeric ? (
+                    <AnimatedCounter value={Number(rawVal)} />
+                  ) : (
+                    rawVal
+                  )}
+                </p>
 
-              {/* Active dot */}
-              {isActive && !(card.alert && (card.value ?? 0) > 0) && (
-                <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-primary/40" />
-              )}
+                <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-neutral-600 font-body mt-2 leading-tight truncate">
+                  {card.subtitle}
+                </p>
+
+                {/* Horizontal Accent Line underneath subtitle */}
+                <div className="w-8 sm:w-10 h-[3px] rounded-full bg-amber-600/75 mt-1.5 transition-all group-hover:w-14 group-hover:bg-amber-700" />
+              </div>
             </motion.button>
           );
         })}
-      </div>
-
-      {/* ── Prominent Finance Overview Cards ──────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-        {/* Cleared / Settled Card */}
-        <motion.button
-          type="button"
-          whileHover={{ y: -2, transition: { duration: 0.15 } }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => onSelectFilter?.(isClearedActive ? 'ALL' : 'PAID')}
-          title="Filter by Cleared & Settled bookings"
-          className={`group p-4 sm:p-5 rounded-2xl border text-left transition-shadow cursor-pointer select-none flex items-center justify-between min-h-[100px] ${
-            isClearedActive
-              ? 'bg-neutral-900 text-white border-neutral-900 ring-2 ring-neutral-900 shadow-md'
-              : 'bg-white border-neutral-200/80 hover:border-neutral-300 hover:shadow-md'
-          }`}
-        >
-          <div className="flex items-center gap-4">
-            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 shadow-xs ${
-              isClearedActive ? 'bg-white/10 text-gold' : 'bg-neutral-100 text-neutral-900'
-            }`}>
-              <CreditCard size={20} />
-            </div>
-            <div>
-              <p className={`text-2xl sm:text-3xl font-heading font-bold leading-none ${
-                isClearedActive ? 'text-white' : 'text-neutral-900'
-              }`}>
-                <AnimatedCounter value={s.cleared ?? s.total_payments_recorded ?? 0} />
-              </p>
-              <p className={`text-[11px] font-bold uppercase tracking-wider mt-1 ${
-                isClearedActive ? 'text-neutral-300' : 'text-neutral-500'
-              }`}>
-                Cleared Payments
-              </p>
-            </div>
-          </div>
-
-          <div className="text-right flex flex-col items-end gap-1">
-            <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
-              isClearedActive
-                ? 'bg-gold/20 text-gold border-gold/40'
-                : 'bg-neutral-100 text-neutral-600 border-neutral-200'
-            }`}>
-              {isClearedActive ? 'Filtered' : 'Verified'}
-            </span>
-            <span className="text-[11px] font-medium text-neutral-400">
-              Fully settled
-            </span>
-          </div>
-        </motion.button>
-
-        {/* Unpaid / Pending Clearance Card */}
-        <motion.button
-          type="button"
-          whileHover={{ y: -2, transition: { duration: 0.15 } }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => onSelectFilter?.(isUnpaidActive ? 'ALL' : 'UNPAID')}
-          title="Filter by Unpaid & Partial bookings"
-          className={`group p-4 sm:p-5 rounded-2xl border text-left transition-shadow cursor-pointer select-none flex items-center justify-between min-h-[100px] ${
-            isUnpaidActive
-              ? 'bg-gold/15 border-gold ring-2 ring-gold shadow-md'
-              : (s.unpaid_partial ?? 0) > 0
-                ? 'bg-amber-50/40 border-amber-200/80 hover:border-gold hover:shadow-md'
-                : 'bg-white border-neutral-200/80 hover:border-neutral-300 hover:shadow-md'
-          }`}
-        >
-          <div className="flex items-center gap-4">
-            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 shadow-xs ${
-              isUnpaidActive
-                ? 'bg-gold text-white'
-                : (s.unpaid_partial ?? 0) > 0
-                  ? 'bg-gold/20 text-gold-dark'
-                  : 'bg-neutral-100 text-neutral-400'
-            }`}>
-              <AlertCircle size={20} />
-            </div>
-            <div>
-              <p className={`text-2xl sm:text-3xl font-heading font-bold leading-none ${
-                isUnpaidActive
-                  ? 'text-gold-dark'
-                  : (s.unpaid_partial ?? 0) > 0
-                    ? 'text-gold-dark'
-                    : 'text-neutral-900'
-              }`}>
-                <AnimatedCounter value={s.unpaid_partial ?? 0} />
-              </p>
-              <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 mt-1">
-                Pending Clearance
-              </p>
-            </div>
-          </div>
-
-          <div className="text-right flex flex-col items-end gap-1">
-            {(s.unpaid_partial ?? 0) > 0 ? (
-              <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
-                isUnpaidActive
-                  ? 'bg-gold text-white border-gold'
-                  : 'bg-gold/15 text-gold-dark border-gold/30'
-              }`}>
-                {isUnpaidActive ? 'Filtered' : 'Action'}
-              </span>
-            ) : (
-              <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border bg-neutral-100 text-neutral-500 border-neutral-200">
-                Cleared
-              </span>
-            )}
-            <span className="text-[11px] font-medium text-neutral-400">
-              Unpaid / partial
-            </span>
-          </div>
-        </motion.button>
-
       </div>
     </div>
   );
@@ -283,7 +198,17 @@ export default function CategorizedMetricStrip({
 
 CategorizedMetricStrip.propTypes = {
   stats: PropTypes.object,
+  cards: PropTypes.arrayOf(PropTypes.shape({
+    key: PropTypes.string.isRequired,
+    label: PropTypes.string.isRequired,
+    subtitle: PropTypes.string.isRequired,
+    value: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+    isActive: PropTypes.bool,
+    onClick: PropTypes.func,
+  })),
   loading: PropTypes.bool,
   onSelectFilter: PropTypes.func,
   activeFilter: PropTypes.string,
+  columns: PropTypes.string,
+  className: PropTypes.string,
 };

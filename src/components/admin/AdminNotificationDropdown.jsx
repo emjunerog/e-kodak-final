@@ -152,15 +152,15 @@ export default function AdminNotificationDropdown() {
         onClick={() => setIsOpen(!isOpen)}
         aria-label="Notifications"
         aria-expanded={isOpen}
-        className={`relative p-2 rounded-full transition-all border outline-none ${
+        className={`relative p-2 rounded-full transition-all border outline-none cursor-pointer ${
           isOpen
-            ? 'bg-neutral-100 text-primary border-gold/40 shadow-xs ring-2 ring-gold/20'
-            : 'text-neutral-500 hover:text-primary hover:bg-neutral-100 border-transparent'
+            ? 'bg-white/[0.14] text-gold border-gold/40 shadow-xs ring-2 ring-gold/20'
+            : 'text-neutral-300 hover:text-white hover:bg-white/[0.08] border-transparent'
         }`}
       >
         <Bell size={18} />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-gradient-to-r from-amber-500 to-rose-500 text-white text-[10px] font-bold font-body px-1 rounded-full flex items-center justify-center border-2 border-white shadow-xs animate-pulse">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-gradient-to-r from-amber-500 to-rose-500 text-white text-xs font-bold font-body px-1 rounded-full flex items-center justify-center border-2 border-[#120f0c] shadow-xs animate-pulse">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
@@ -168,7 +168,7 @@ export default function AdminNotificationDropdown() {
 
       {/* Floating Modal / Popover Dropdown */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-84 sm:w-96 bg-white/95 backdrop-blur-md rounded-2xl border border-neutral-200/90 shadow-2xl shadow-neutral-900/15 overflow-hidden z-50 animate-fade-in font-body flex flex-col max-h-[85vh]">
+        <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 max-w-[calc(100vw-2rem)] bg-white/95 backdrop-blur-md rounded-2xl border border-neutral-200/90 shadow-2xl shadow-neutral-900/15 overflow-hidden z-50 animate-fade-in font-body flex flex-col max-h-[85vh]">
           {/* Header */}
           <div className="p-3.5 sm:p-4 bg-gradient-to-r from-neutral-50 via-white to-neutral-50 border-b border-neutral-200/80 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -179,7 +179,7 @@ export default function AdminNotificationDropdown() {
                 <h3 className="text-xs font-bold text-primary font-heading tracking-wide">
                   Notifications
                 </h3>
-                <p className="text-[10px] text-neutral-400">
+                <p className="text-xs text-neutral-400">
                   {unreadCount} unread alert{unreadCount !== 1 ? 's' : ''}
                 </p>
               </div>
@@ -275,7 +275,7 @@ export default function AdminNotificationDropdown() {
                         <p className={`font-bold text-primary truncate ${!n.is_read ? 'font-bold' : 'font-medium'}`}>
                           {n.title}
                         </p>
-                        <span className="text-[10px] text-neutral-400 shrink-0">
+                        <span className="text-xs text-neutral-400 shrink-0">
                           {timeAgo(n.created_at)}
                         </span>
                       </div>
@@ -285,15 +285,15 @@ export default function AdminNotificationDropdown() {
 
                       <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                         {n.booking?.booking_number && (
-                          <span className="font-mono text-[9px] font-bold bg-neutral-100 text-neutral-700 px-1.5 py-0.2 rounded">
+                          <span className="font-mono text-[11px] font-bold bg-neutral-100 text-neutral-700 px-1.5 py-0.2 rounded">
                             #{n.booking.booking_number}
                           </span>
                         )}
-                        <span className="text-[9px] font-semibold text-gold uppercase tracking-wider">
+                        <span className="text-[11px] font-semibold text-gold uppercase tracking-wider">
                           {config.label}
                         </span>
                         {n.channels && n.channels.length > 0 && (
-                          <span className="text-[9px] text-neutral-400">
+                          <span className="text-[11px] text-neutral-400">
                             via {n.channels.join(', ')}
                           </span>
                         )}

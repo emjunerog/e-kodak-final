@@ -1,280 +1,303 @@
 /**
  * SetsSectionRenderer.jsx
  * =======================
- * Renders ALL service packages (any tier count) as:
- *  1. Individual tier cards — each Set/Tier as its own standalone section
- *     with its full inclusions list
- *  2. "At a Glance" comparison table — after all tier cards
+ * Renders a package's individual sets/tiers (1–4 per package) as a responsive
+ * grid of cards — each with its full inclusions list, price and Book CTA.
+ * The "popular" tier carries the gold Most Popular badge.
  *
- * Works for 2, 3, or 4 tiers:
- *  - 2 tiers → themes [1, 3]   e.g. College Set A/B, Couple Classic/Cinematic
- *  - 3 tiers → themes [0, 2, 3] e.g. Portrait Basic/Standard/Premium
- *  - 4 tiers → themes [0, 1, 2, 3] e.g. Studio & Toga Set D/C/B/A
- *
- * Rendered OUTSIDE and BELOW the parent PackageCard overview.
+ * Rendered BELOW the parent PackageCard overview.
  */
 
 import { Link } from "react-router-dom";
-import { Check, ArrowRight, X } from "lucide-react";
-import { siteConfig } from "../../config/siteConfig";
+import { motion } from "framer-motion";
+import {
+  Check, ArrowRight, X, Sparkles, CreditCard,
+  Frame, Image, GraduationCap, Shirt, Users, Camera
+} from "lucide-react";
 import { SET_THEMES } from "./PackageCard";
+import {
+  stagger,
+  staggerChild,
+  fadeUp,
+  riseRotate,
+  pop,
+} from "../../lib/motion";
+import { Magnetic, Spotlight, Counter } from "../ui/Interactive";
 
-// ── Theme index mapping by tier count and position ────────────────────────────
+// ── Theme index mapping by tier count and position (hierarchy: Set A → Set D) ─
 function getThemeIndex(position, totalCount) {
   const maps = {
     1: [3],
-    2: [1, 3],
-    3: [0, 2, 3],
-    4: [0, 1, 2, 3],
+    2: [3, 2],
+    3: [3, 2, 0],
+    4: [3, 2, 1, 0],
   };
   const map = maps[Math.min(totalCount, 4)] || maps[4];
   return map[Math.min(position, map.length - 1)];
 }
 
-// ── Individual Tier/Set Card ──────────────────────────────────────────────────
+function toNumber(price) {
+  const n = parseFloat(String(price || "").replace(/[₱,]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+// ── Semantic icon & typography mapping for inclusions ─────────────────────────
+function getInclusionMeta(text) {
+  const lower = text.toLowerCase();
+
+  // Negative inclusions (e.g., "No free make up")
+  if (lower.includes("no free") || lower.startsWith("no ") || lower.includes("without make up")) {
+    return {
+      Icon: X,
+      iconColor: "text-neutral-400",
+      bgColor: "bg-neutral-100",
+      textColor: "text-neutral-400 line-through decoration-neutral-300",
+      isNegative: true,
+    };
+  }
+
+  // Free makeup / hair styling
+  if (lower.includes("make up") || lower.includes("hair style") || lower.includes("make-up")) {
+    return {
+      Icon: Sparkles,
+      iconColor: "text-amber-600",
+      bgColor: "bg-amber-500/10",
+      textColor: "text-neutral-900 font-medium",
+    };
+  }
+
+  // Crystal wood frames & portraits
+  if (lower.includes("crystal") || (lower.includes("frame") && !lower.includes("without frame"))) {
+    return {
+      Icon: Frame,
+      iconColor: "text-amber-700",
+      bgColor: "bg-amber-50",
+      textColor: "text-neutral-900 font-medium",
+    };
+  }
+
+  // Graduation cap / toga
+  if (lower.includes("toga") || lower.includes("cap") || lower.includes("graduat")) {
+    return {
+      Icon: GraduationCap,
+      iconColor: "text-neutral-700",
+      bgColor: "bg-neutral-100",
+      textColor: "text-neutral-800",
+    };
+  }
+
+  // Filipiniana / Barong / Formal attire
+  if (lower.includes("pilipiñ") || lower.includes("filipin") || lower.includes("barong") || lower.includes("attire")) {
+    return {
+      Icon: Shirt,
+      iconColor: "text-neutral-700",
+      bgColor: "bg-neutral-100",
+      textColor: "text-neutral-800",
+    };
+  }
+
+  // Family portraits
+  if (lower.includes("family") || lower.includes("group")) {
+    return {
+      Icon: Users,
+      iconColor: "text-neutral-700",
+      bgColor: "bg-neutral-100",
+      textColor: "text-neutral-800 font-medium",
+    };
+  }
+
+  // Identification prints (Tesda, Passport, 2x2, 1x1)
+  if (lower.includes("passport") || lower.includes("tesda") || lower.includes("2x2") || lower.includes("1x1") || lower.includes("i.d")) {
+    return {
+      Icon: CreditCard,
+      iconColor: "text-neutral-600",
+      bgColor: "bg-neutral-100",
+      textColor: "text-neutral-700",
+    };
+  }
+
+  // Media, Camera, Video, Delivery
+  if (lower.includes("camera") || lower.includes("video") || lower.includes("movie") || lower.includes("mtv") || lower.includes("usb") || lower.includes("drive")) {
+    return {
+      Icon: Camera,
+      iconColor: "text-neutral-700",
+      bgColor: "bg-neutral-100",
+      textColor: "text-neutral-800",
+    };
+  }
+
+  // Photo prints & sizes
+  if (lower.includes("size") || lower.includes("wallet") || lower.includes("print") || lower.includes("colored") || lower.includes("8x10") || lower.includes("12x18") || lower.includes("10x12") || lower.includes("soft copies")) {
+    return {
+      Icon: Image,
+      iconColor: "text-neutral-600",
+      bgColor: "bg-neutral-100",
+      textColor: "text-neutral-700",
+    };
+  }
+
+  return {
+    Icon: Check,
+    iconColor: "text-gold",
+    bgColor: "bg-gold/10",
+    textColor: "text-neutral-700",
+  };
+}
+
+// ── Individual Tier/Set Card (2-Column Balanced Layout) ───────────────────────
 function TierSectionCard({ tier, themeIndex, serviceName, serviceSlug }) {
   const theme = SET_THEMES[themeIndex] || SET_THEMES[0];
   const ThemeIcon = theme.icon;
+  const amount = toNumber(tier.price);
+  const highlights = tier.highlights || [];
+
+  const accent = tier.popular
+    ? "border-gold shadow-gold ring-1 ring-gold/40"
+    : theme.border;
 
   return (
-    <article
-      className={`rounded-2xl border-2 overflow-hidden shadow-warm-sm hover:shadow-warm-lg transition-all duration-300 hover:-translate-y-0.5 ${
-        tier.popular ? "border-gold shadow-gold" : theme.border
-      }`}
+    <motion.article
+      variants={riseRotate(0, 56)}
+      className={`group relative rounded-3xl border-2 overflow-hidden bg-white transition-all duration-300 hover:shadow-warm-lg flex flex-col h-full self-stretch ${accent}`}
       aria-label={`${serviceName} — ${tier.name}`}
     >
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className={`${theme.header} px-6 py-5`}>
-        <div className="flex items-start justify-between gap-3">
-          {/* Left: badges + tier name */}
-          <div>
-            <div className="flex flex-wrap items-center gap-2 mb-3">
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-white text-[10px] font-bold uppercase tracking-wider ${theme.labelBg}`}>
-                <ThemeIcon size={10} />
-                {theme.label}
-              </span>
-              {tier.popular && (
-                <span className="px-2.5 py-1 rounded-full bg-gold text-primary text-[10px] font-bold uppercase tracking-wider">
-                  ⭐ Most Popular
-                </span>
+      {/* Cursor spotlight on hover */}
+      <Spotlight
+        className="h-full w-full flex-1 flex flex-col justify-between"
+        innerClassName="h-full w-full flex-1 flex flex-col justify-between"
+        color={tier.popular ? "rgba(212,175,55,0.16)" : "rgba(17,24,39,0.05)"}
+      >
+        {/* ── Header ───────────────────────────────────────────────────────── */}
+        <div className={`${theme.header} px-6 py-5 sm:px-7 sm:py-6 relative overflow-hidden shrink-0 min-h-[116px] flex flex-col justify-between`}>
+          {/* Cinematic sheen sweep */}
+          <div
+            className="absolute inset-0 -skew-x-12 bg-gradient-to-r from-transparent via-white/12 to-transparent animate-shimmer"
+            aria-hidden="true"
+          />
+          {tier.popular && (
+            <div
+              className="absolute -top-16 -right-10 w-44 h-44 rounded-full bg-gold/25 blur-2xl animate-halo"
+              aria-hidden="true"
+            />
+          )}
+
+          <div className="relative flex items-start justify-between gap-4">
+            {/* Left: badges + tier name */}
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
+                {!tier.popular && (
+                  <motion.span
+                    variants={pop}
+                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${theme.labelBg}`}
+                  >
+                    <ThemeIcon size={11} />
+                    {theme.label}
+                  </motion.span>
+                )}
+                {tier.popular && (
+                  <motion.span
+                    variants={pop}
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-gold text-primary text-[10px] font-bold uppercase tracking-wider shadow-sm"
+                  >
+                    <Sparkles size={10} />
+                    Most Popular
+                  </motion.span>
+                )}
+              </div>
+              <h4 className={`font-heading text-3xl sm:text-4xl font-bold ${theme.headerAccent} leading-tight`}>
+                {tier.name}
+              </h4>
+            </div>
+
+            {/* Right: price */}
+            <div className="text-right shrink-0">
+              <p className="text-white/50 font-body text-[10px] uppercase tracking-wider mb-0.5">
+                Package Price
+              </p>
+              <p className={`font-heading text-3xl sm:text-4xl font-bold leading-none ${theme.headerAccent}`}>
+                {amount !== null ? (
+                  <>
+                    ₱<Counter value={amount} duration={1.4} />
+                  </>
+                ) : (
+                  tier.price
+                )}
+              </p>
+              {tier.edited && (
+                <p className="text-white/50 font-body text-[11px] mt-1">{tier.edited}</p>
               )}
             </div>
-            <h4 className={`font-heading text-4xl font-bold ${theme.headerAccent}`}>
-              {tier.name}
-            </h4>
-            {tier.duration && (
-              <p className="text-white/55 font-body text-xs mt-1">{tier.duration}</p>
-            )}
-          </div>
-
-          {/* Right: price + edited */}
-          <div className="text-right shrink-0">
-            <p className="text-white/50 font-body text-[10px] uppercase tracking-wider mb-1">
-              Package Price
-            </p>
-            <p className={`font-heading text-4xl font-bold leading-none ${theme.headerAccent}`}>
-              {tier.price}
-            </p>
-            {tier.edited && (
-              <p className="text-white/45 font-body text-[11px] mt-1.5">{tier.edited}</p>
-            )}
           </div>
         </div>
-      </div>
 
-      {/* ── Inclusions ─────────────────────────────────────────────────────── */}
-      <div className="bg-white px-6 py-6">
-        <p className="font-body text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400 mb-4">
-          What's included
-        </p>
+        {/* ── Body ─────────────────────────────────────────────────────────── */}
+        <div className="p-6 sm:p-7 flex-1 flex flex-col justify-between">
+          <div className="min-w-0 flex-1 flex flex-col">
+            <p className="font-body text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400 mb-3.5">
+              What's included · {highlights.length} items
+            </p>
 
-        {tier.highlights && tier.highlights.length > 0 ? (
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
-            {tier.highlights.map((h) => (
-              <li key={h} className="flex items-start gap-3">
-                <span className={`mt-0.5 shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${theme.checkBg}`}>
-                  <Check size={11} className={theme.checkColor} strokeWidth={2.5} />
-                </span>
-                <span className="font-body text-neutral-700 text-sm leading-snug">{h}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="font-body text-neutral-400 text-sm italic">No inclusions listed.</p>
-        )}
-
-        {/* Book CTA */}
-        <div className="mt-6 pt-5 border-t border-neutral-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <p className="font-body text-neutral-400 text-xs">50% down payment required to book</p>
-          <Link
-            to={`/dashboard/book?service=${serviceSlug}&tier=${encodeURIComponent(tier.name)}`}
-            className={`inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-body font-semibold transition-all duration-200 active:scale-95 whitespace-nowrap ${theme.ctaBg}`}
-            aria-label={`Book ${tier.name} — ${serviceName}`}
-          >
-            Book {tier.name}
-            <ArrowRight size={14} />
-          </Link>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-// ── At-a-Glance Comparison Table ─────────────────────────────────────────────
-function GlanceTable({ tiers, serviceName }) {
-  // Sort cheapest → most expensive
-  const sorted = [...tiers].sort((a, b) => {
-    const av = parseFloat(a.price?.replace(/[₱,]/g, "") || "9999");
-    const bv = parseFloat(b.price?.replace(/[₱,]/g, "") || "9999");
-    return av - bv;
-  });
-
-  // ── Build smart comparison rows ───────────────────────────────────────────
-  // Collect all unique highlights across tiers
-  const allHighlights = [];
-  tiers.forEach(tier => {
-    (tier.highlights || []).forEach(h => {
-      if (!allHighlights.includes(h)) allHighlights.push(h);
-    });
-  });
-
-  // Differentiating rows: highlights NOT present in ALL tiers (so they show real differences)
-  const differentiating = allHighlights.filter(h => {
-    const count = tiers.filter(t => (t.highlights || []).includes(h)).length;
-    return count < tiers.length && count > 0;
-  });
-
-  // Fall back to all highlights if every highlight is unique to one tier
-  const comparisonRows = differentiating.length >= 3
-    ? differentiating.slice(0, 10)
-    : allHighlights.slice(0, 10);
-
-  // Always-first rows: price and session type
-  const headerRows = [
-    {
-      label: "Price",
-      get: (t) => t.price,
-      render: (val) => <span className="font-heading text-primary font-bold text-sm">{val}</span>,
-    },
-    ...(sorted.some(t => t.edited)
-      ? [{
-          label: "Deliverables",
-          get: (t) => t.edited || "—",
-          render: (val) => <span className="font-body text-neutral-700 text-xs font-semibold">{val}</span>,
-        }]
-      : []),
-    ...(sorted.some(t => t.duration)
-      ? [{
-          label: "Session",
-          get: (t) => t.duration || "—",
-          render: (val) => <span className="font-body text-neutral-600 text-xs">{val}</span>,
-        }]
-      : []),
-  ];
-
-  return (
-    <div className="rounded-2xl border border-neutral-200 overflow-hidden shadow-warm-sm bg-white">
-      {/* Header */}
-      <div className="bg-neutral-800 px-6 py-4 flex items-center justify-between">
-        <div>
-          <p className="font-body text-white/40 text-[10px] uppercase tracking-widest">Quick Reference</p>
-          <h4 className="font-heading text-white text-lg font-semibold">
-            At a Glance — Compare All {serviceName} Options
-          </h4>
-        </div>
-        <span className="hidden sm:block font-body text-white/30 text-xs">← Scroll if needed →</span>
-      </div>
-
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full" style={{ minWidth: `${Math.max(480, sorted.length * 130 + 180)}px` }}>
-          <thead>
-            <tr className="border-b border-neutral-100">
-              <th className="py-3.5 px-5 text-left font-body text-[10px] uppercase tracking-widest text-neutral-400 font-bold w-[35%]">
-                Feature
-              </th>
-              {sorted.map((tier, i) => {
-                const theme = SET_THEMES[getThemeIndex(i, sorted.length)] || SET_THEMES[0];
-                return (
-                  <th key={tier.name} className="py-3.5 px-3 text-center align-bottom">
-                    <div className={`inline-block px-3 py-1.5 rounded-lg text-xs font-bold text-white ${theme.header}`}>
-                      {tier.name}
-                    </div>
-                    <div className="font-heading text-primary text-base font-bold mt-1">{tier.price}</div>
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {/* Static header rows (price already shown in column headers, skip price row) */}
-            {headerRows.filter(r => r.label !== "Price").map((row, rowIdx) => (
-              <tr key={row.label} className={`border-b border-neutral-50 ${rowIdx % 2 === 0 ? "bg-neutral-50/50" : "bg-white"}`}>
-                <td className="py-3 px-5 font-body text-neutral-600 text-xs font-semibold">{row.label}</td>
-                {sorted.map(tier => (
-                  <td key={tier.name} className="py-3 px-3 text-center">
-                    {row.render(row.get(tier))}
-                  </td>
-                ))}
-              </tr>
-            ))}
-
-            {/* Feature comparison rows */}
-            {comparisonRows.map((h, rowIdx) => {
-              const baseIdx = headerRows.filter(r => r.label !== "Price").length;
-              const isEven = (baseIdx + rowIdx) % 2 === 0;
-              return (
-                <tr key={h} className={`border-b border-neutral-50 ${isEven ? "bg-neutral-50/50" : "bg-white"}`}>
-                  <td className="py-3 px-5 font-body text-neutral-600 text-xs font-medium leading-snug">
-                    {h}
-                  </td>
-                  {sorted.map(tier => {
-                    const has = (tier.highlights || []).includes(h);
-                    return (
-                      <td key={tier.name} className="py-3 px-3 text-center">
-                        {has ? (
-                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 mx-auto">
-                            <Check size={12} className="text-emerald-600" strokeWidth={2.5} />
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-neutral-100 mx-auto">
-                            <X size={10} className="text-neutral-300" strokeWidth={2.5} />
-                          </span>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-
-            {/* Book CTA row */}
-            <tr className="bg-neutral-50 border-t-2 border-neutral-200">
-              <td className="py-4 px-5 font-body text-neutral-400 text-xs italic">
-                Ready to book?
-              </td>
-              {sorted.map((tier, i) => {
-                const theme = SET_THEMES[getThemeIndex(i, sorted.length)] || SET_THEMES[0];
-                return (
-                  <td key={tier.name} className="py-4 px-3 text-center">
-                    <Link
-                      to={siteConfig.routes.register}
-                      className={`inline-block w-full py-2 px-1 rounded-lg text-xs font-body font-bold text-white transition-all duration-200 active:scale-95 ${
-                        tier.popular
-                          ? "bg-gold text-primary hover:bg-gold-dark"
-                          : theme.header + " hover:opacity-90"
-                      }`}
+            {highlights.length > 0 ? (
+              <motion.ul
+                className={highlights.length >= 8 ? "grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2" : "space-y-2"}
+                variants={stagger(0.04, 0.15)}
+                initial="hidden"
+                whileInView="show"
+                viewport={{ once: true, margin: "-40px" }}
+              >
+                {highlights.map((h) => {
+                  const meta = getInclusionMeta(h);
+                  return (
+                    <motion.li
+                      key={h}
+                      variants={staggerChild}
+                      className="flex items-center gap-2.5 py-1 px-1.5 rounded-lg hover:bg-neutral-50 transition-colors"
                     >
-                      Book {tier.name}
-                    </Link>
-                  </td>
-                );
-              })}
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+                      <span
+                        className={`shrink-0 w-6 h-6 rounded-md flex items-center justify-center ${meta.bgColor}`}
+                        aria-hidden="true"
+                      >
+                        <meta.Icon size={12} className={meta.iconColor} strokeWidth={2.2} />
+                      </span>
+                      <span className={`font-body text-xs sm:text-[13px] leading-snug tracking-tight antialiased ${meta.textColor}`}>
+                        {h}
+                      </span>
+                    </motion.li>
+                  );
+                })}
+              </motion.ul>
+            ) : (
+              <p className="font-body text-neutral-400 text-sm italic">No inclusions listed.</p>
+            )}
+          </div>
+
+          {/* Card Footer — down payment note + CTA (Equalized Baseline) */}
+          <div className="mt-auto pt-4 border-t border-dashed border-neutral-200 shrink-0">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between text-[11px] font-body text-neutral-500">
+                <span className="inline-flex items-center gap-1 text-gold font-semibold">
+                  <CreditCard size={12} /> 50% down payment
+                </span>
+                <span>Balance on shoot day</span>
+              </div>
+              <Magnetic strength={0.25} pull={1.04} className="w-full">
+                <Link
+                  to={`/dashboard/book?service=${serviceSlug}&tier=${encodeURIComponent(tier.name)}`}
+                  className={`group/btn w-full h-12 inline-flex items-center justify-center gap-2 px-5 rounded-xl text-xs sm:text-sm font-body font-semibold transition-all duration-300 active:scale-95 whitespace-nowrap shadow-sm ${theme.ctaBg}`}
+                  aria-label={`Book ${tier.name} — ${serviceName}`}
+                >
+                  Book {tier.name}
+                  <ArrowRight
+                    size={14}
+                    className="transition-transform duration-300 group-hover/btn:translate-x-1"
+                  />
+                </Link>
+              </Magnetic>
+            </div>
+          </div>
+        </div>
+      </Spotlight>
+    </motion.article>
   );
 }
 
@@ -283,33 +306,48 @@ export default function SetsSectionRenderer({ service }) {
   const tiers = service.tiers || [];
   if (tiers.length === 0) return null;
 
-  // Sort cheapest → most expensive
+  // Hierarchy first: Set A → Set B → Set C → Set D
   const sorted = [...tiers].sort((a, b) => {
-    const av = parseFloat(a.price?.replace(/[₱,]/g, "") || "9999");
-    const bv = parseFloat(b.price?.replace(/[₱,]/g, "") || "9999");
-    return av - bv;
+    return a.name.trim().localeCompare(b.name.trim());
   });
 
-  // Grid: 2 cols for 3–4 tiers, single col for 1–2 tiers
-  const gridClass = sorted.length >= 3 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1";
+  const gridClass =
+    sorted.length === 1
+      ? "grid-cols-1 max-w-xl mx-auto"
+      : "grid-cols-1 md:grid-cols-2";
 
   return (
-    <div className="space-y-5">
+    <motion.div
+      id={`sets-${service.slug}`}
+      className="space-y-5 scroll-mt-[calc(var(--nav-h)_+_var(--viewing-h)_+_24px)]"
+      variants={stagger(0.14, 0.05)}
+      initial="hidden"
+      whileInView="show"
+      viewport={{ once: true, margin: "-40px" }}
+    >
       {/* Section label */}
-      <div className="flex items-center gap-3">
-        <div className="w-1 h-8 bg-gold rounded-full shrink-0" />
+      <motion.div variants={fadeUp} className="flex items-center gap-3">
+        <motion.div
+          className="w-1 h-8 bg-gold rounded-full shrink-0 origin-top"
+          variants={{
+            hidden: { scaleY: 0, opacity: 0 },
+            show: {
+              scaleY: 1,
+              opacity: 1,
+              transition: { duration: 0.7, ease: [0.16, 1, 0.3, 1] },
+            },
+          }}
+        />
         <div>
-          <p className="font-body text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">
-            {service.name}
-          </p>
           <h3 className="font-heading text-primary text-xl font-semibold leading-snug">
-            {sorted.length <= 2 ? "Choose Your Package" : "All Available Sets"}
+            Available Sets
           </h3>
         </div>
-      </div>
+        <div className="hidden sm:flex-1 h-px bg-gradient-to-r from-neutral-200 to-transparent ml-2" />
+      </motion.div>
 
-      {/* Individual tier/set cards */}
-      <div className={`grid ${gridClass} gap-5`}>
+      {/* Individual tier/set cards — 2-column layout with equalized row heights */}
+      <div className={`grid ${gridClass} gap-6 items-stretch auto-rows-fr`}>
         {sorted.map((tier, i) => (
           <TierSectionCard
             key={tier.name}
@@ -320,9 +358,6 @@ export default function SetsSectionRenderer({ service }) {
           />
         ))}
       </div>
-
-      {/* At-a-glance comparison table */}
-      <GlanceTable tiers={tiers} serviceName={service.name} />
-    </div>
+    </motion.div>
   );
 }

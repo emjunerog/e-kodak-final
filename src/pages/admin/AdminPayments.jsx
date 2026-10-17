@@ -19,20 +19,21 @@
  */
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   CreditCard, RefreshCw, AlertCircle, ChevronLeft, ChevronRight,
   Plus, Send, CheckCircle2, Search, Filter, ArrowRightLeft,
   X, FileCheck, ShieldCheck, Download, CalendarDays, Users,
   Trash2, Eye, Printer, Copy, Check, ExternalLink, Receipt,
   Banknote, Wallet, Building, CircleDollarSign, ArrowUpRight,
-  LayoutGrid, List, Sparkles, Clock, User, Mail, Phone
+  LayoutGrid, List, Sparkles, Clock, User, Mail, Phone, History
 } from 'lucide-react';
 import { getPayments, getPaymentStats, deletePayment } from '../../services/adminService';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
-import { createTransferLog } from '../../services/workstationService';
+import { recordAdminActivity } from '../../services/workstationService';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
+import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import CustomDropdown from '../../components/ui/CustomDropdown';
 
 const PAGE_SIZE = 20;
@@ -93,7 +94,8 @@ export default function AdminPayments() {
   const [actionNotice, setActionNotice] = useState(null);
 
   // Search & Filter state
-  const [searchTerm, setSearchTerm]       = useState('');
+  const [searchParams]                    = useSearchParams();
+  const [searchTerm, setSearchTerm]       = useState(() => searchParams.get('search') || '');
   const [typeFilter, setTypeFilter]       = useState('ALL');      // ALL | DOWN_PAYMENT | FINAL_PAYMENT | OTHER
   const [channelFilter, setChannelFilter] = useState('ALL');      // ALL | E_WALLET | BANK_TRANSFER | CASH | OTHER
   const [amountTier, setAmountTier]       = useState('ALL');      // ALL | HIGH | MID | LOW
@@ -104,9 +106,9 @@ export default function AdminPayments() {
   const [pendingViewMode, setPendingViewMode] = useState('cards'); // 'cards' | 'table'
 
   // Record Payment Modal State
-  const [recordModalOpen, setRecordModalOpen] = useState(false);
+  const [recordModalOpen, setRecordModalOpen] = useState(() => searchParams.get('action') === 'record');
   const [bookingsList, setBookingsList]       = useState([]);
-  const [selectedBookingId, setSelectedBookingId] = useState('');
+  const [selectedBookingId, setSelectedBookingId] = useState(() => searchParams.get('booking_id') || '');
   const [amount, setAmount]                   = useState('');
   const [paymentType, setPaymentType]         = useState('DOWN_PAYMENT');
   const [paymentMethod, setPaymentMethod]     = useState('E_WALLET');
@@ -334,29 +336,30 @@ export default function AdminPayments() {
     }
   };
 
-  // Quick Workstation Clearance Handoff tool
+  // Quick Activity Logs Clearance Handoff tool
   const handleSendClearanceLog = async (payment) => {
     try {
       const bNum = payment.booking?.booking_number || 'Order';
       const cName = `${payment.booking?.customer?.first_name || ''} ${payment.booking?.customer?.last_name || ''}`.trim();
-      const res = await createTransferLog({
-        bookingId: payment.booking_id,
-        senderId: user?.id,
-        senderRole: 'finance',
-        targetRole: 'staff',
-        transferType: 'PAYMENT_VERIFICATION',
-        priority: 'NORMAL',
-        title: `Receipt Verified for #${bNum}`,
-        message: `Finance verified payment of ₱${Number(payment.amount).toLocaleString()} (${METHOD_LABELS[payment.payment_method] || payment.payment_method}). Customer is cleared for studio services.`,
-        payload: {
+      const res = await recordAdminActivity({
+        adminId: user?.id,
+        adminName: `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Finance Officer',
+        adminRole: 'finance',
+        actionType: 'PAYMENT_RECORD',
+        entityType: 'payment',
+        entityId: payment.id,
+        entityLabel: bNum,
+        description: `Finance verified payment of ₱${Number(payment.amount).toLocaleString()} (${METHOD_LABELS[payment.payment_method] || payment.payment_method}) for #${bNum}. Clearance recorded.`,
+        details: {
           payment_id: payment.id,
           amount: payment.amount,
-          method: payment.payment_method
+          method: payment.payment_method,
+          customer_name: cName,
         }
       });
 
       if (res.error) throw res.error;
-      notifySuccess(`Clearance notice dispatched to Front Desk for #${bNum}!`);
+      notifySuccess(`Clearance notice logged for #${bNum}!`);
     } catch (err) {
       alert('Failed to dispatch clearance log: ' + err.message);
     }
@@ -463,7 +466,7 @@ export default function AdminPayments() {
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   return (
-    <div className="w-full max-w-screen-2xl mx-auto space-y-6 pb-16 animate-fade-in font-body">
+    <div className="w-full pb-16 animate-fade-in font-body">
       {/* ── 1. Luxury Dark Hero Banner ───────────────────────────────────────── */}
       <AdminHeroBanner
         station={profile?.role || 'finance'}
@@ -486,129 +489,74 @@ export default function AdminPayments() {
         isRefreshing={loading}
         onExport={handleExportCSV}
         extraTools={[
-          { label: 'Workstation Hub', href: '/admin/workstation', icon: ArrowRightLeft, iconColor: 'text-gold' },
+          { label: 'Activity Logs', href: '/admin/activity-logs', icon: History, iconColor: 'text-gold' },
           { label: 'Bookings Central', href: '/admin/bookings', icon: CalendarDays, iconColor: 'text-gold' },
           { label: 'Audit Log', href: '/admin/security', icon: ShieldCheck, iconColor: 'text-neutral-400' },
         ]}
       />
 
-      {/* ── 2. KPI Overview Metric Strip (Overall Database Money Values) ──────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-        {/* Total Collected Revenue */}
-        <button
-          type="button"
-          onClick={() => {
-            setTypeFilter('ALL');
-            setChannelFilter('ALL');
-            setAmountTier('ALL');
-          }}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            typeFilter === 'ALL' && channelFilter === 'ALL' && amountTier === 'ALL'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Total Collected</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-gold/25 to-gold/10 text-gold-dark flex items-center justify-center">
-              <CircleDollarSign size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-gold-dark">{peso(stats?.total)}</p>
-          <span className="text-xs text-neutral-400 font-normal mt-1 block truncate">All confirmed receipts</span>
-        </button>
+      {/* ── Page Content Container with Balanced Spacing ─────────────────────── */}
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
 
-        {/* Downpayments */}
-        <button
-          type="button"
-          onClick={() => setTypeFilter(typeFilter === 'DOWN_PAYMENT' ? 'ALL' : 'DOWN_PAYMENT')}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            typeFilter === 'DOWN_PAYMENT'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Downpayments</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200/70 text-neutral-700 flex items-center justify-center">
-              <Receipt size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{peso(stats?.down)}</p>
-          <span className="text-xs text-neutral-400 font-medium mt-1 block truncate">Initial reservations</span>
-        </button>
-
-        {/* Final Payments */}
-        <button
-          type="button"
-          onClick={() => setTypeFilter(typeFilter === 'FINAL_PAYMENT' ? 'ALL' : 'FINAL_PAYMENT')}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            typeFilter === 'FINAL_PAYMENT'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Final Cleared</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200/70 text-neutral-700 flex items-center justify-center">
-              <CheckCircle2 size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{peso(stats?.final)}</p>
-          <span className="text-xs text-neutral-400 font-medium mt-1 block truncate">Settled on handover</span>
-        </button>
-
-        {/* Remaining Balances */}
-        <button
-          type="button"
-          onClick={() => setActiveLedgerTab(activeLedgerTab === 'pending_receivables' ? 'confirmed' : 'pending_receivables')}
-          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none hover:border-gold/60 hover:shadow-warm-sm ${
-            activeLedgerTab === 'pending_receivables'
-              ? 'border-gold ring-2 ring-gold/25 bg-gradient-to-br from-amber-50/80 via-gold/15 to-white shadow-xs'
-              : 'border-neutral-200/90 bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-              Remaining Balance
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-100 to-gold/20 text-amber-800 flex items-center justify-center">
-              <AlertCircle size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-amber-800">{peso(stats?.outstanding)}</p>
-          <span className="text-xs text-amber-700/80 font-medium mt-1 block truncate">
-            {stats?.unpaidCount || 0} unpaid · {stats?.partialCount || 0} partial (Click queue)
-          </span>
-        </button>
-
-        {/* Gross Bookings Value */}
-        <div className="p-4 sm:p-5 rounded-2xl border border-neutral-200/90 shadow-xs bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 text-left">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Gross Commitments</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200/70 text-neutral-700 flex items-center justify-center">
-              <CalendarDays size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{peso(stats?.grossBookings)}</p>
-          <span className="text-xs text-neutral-400 font-normal mt-1 block truncate">Total order commitments</span>
-        </div>
-
-        {/* Realization Rate */}
-        <div className="p-4 sm:p-5 rounded-2xl border border-neutral-200/90 shadow-xs bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 text-left">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Collection Rate</span>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-gold/25 to-gold/10 text-gold-dark flex items-center justify-center">
-              <ArrowUpRight size={15} />
-            </div>
-          </div>
-          <p className="text-2xl sm:text-3xl font-heading font-bold text-primary">{stats?.realizationRate || 0}%</p>
-          <span className="text-xs text-neutral-400 font-normal mt-1 block truncate">
-            {peso(stats?.other)} add-ons
-          </span>
-        </div>
-      </div>
+      {/* ── 2. Unified Luxury Studio KPI Overview Metric Strip ─────────────── */}
+      <CategorizedMetricStrip
+        loading={loading}
+        columns="grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"
+        cards={[
+          {
+            key: 'TOTAL',
+            label: 'TOTAL',
+            subtitle: 'Confirmed receipts',
+            value: peso(stats?.total),
+            isActive: typeFilter === 'ALL' && channelFilter === 'ALL' && amountTier === 'ALL',
+            onClick: () => {
+              setTypeFilter('ALL');
+              setChannelFilter('ALL');
+              setAmountTier('ALL');
+            },
+          },
+          {
+            key: 'DOWN_PAYMENT',
+            label: 'DEPOSITS',
+            subtitle: 'Initial reservations',
+            value: peso(stats?.down),
+            isActive: typeFilter === 'DOWN_PAYMENT',
+            onClick: () => setTypeFilter(typeFilter === 'DOWN_PAYMENT' ? 'ALL' : 'DOWN_PAYMENT'),
+          },
+          {
+            key: 'FINAL_PAYMENT',
+            label: 'CLEARED',
+            subtitle: 'Settled on handover',
+            value: peso(stats?.final),
+            isActive: typeFilter === 'FINAL_PAYMENT',
+            onClick: () => setTypeFilter(typeFilter === 'FINAL_PAYMENT' ? 'ALL' : 'FINAL_PAYMENT'),
+          },
+          {
+            key: 'RECEIVABLES',
+            label: 'BALANCE',
+            subtitle: `${stats?.unpaidCount || 0} unpaid · ${stats?.partialCount || 0} partial`,
+            value: peso(stats?.outstanding),
+            isActive: activeLedgerTab === 'pending_receivables',
+            onClick: () => setActiveLedgerTab(activeLedgerTab === 'pending_receivables' ? 'confirmed' : 'pending_receivables'),
+          },
+          {
+            key: 'GROSS',
+            label: 'GROSS',
+            subtitle: 'Order commitments',
+            value: peso(stats?.grossBookings),
+            isActive: false,
+            onClick: () => {},
+          },
+          {
+            key: 'RATE',
+            label: 'COLLECTED',
+            subtitle: 'Realization rate',
+            value: `${stats?.realizationRate || 0}%`,
+            isActive: false,
+            onClick: () => {},
+          },
+        ]}
+      />
 
       {/* Action Flash Message */}
       {actionNotice && (
@@ -749,7 +697,7 @@ export default function AdminPayments() {
         {/* Active Filter Badges */}
         {(typeFilter !== 'ALL' || channelFilter !== 'ALL' || amountTier !== 'ALL' || sortBy !== 'NEWEST' || searchTerm) && (
           <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-neutral-100 text-xs font-body">
-            <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[9px]">Active Filters:</span>
+            <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[11px]">Active Filters:</span>
             {searchTerm && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-neutral-100 text-neutral-800 text-[11px] font-medium">
                 "{searchTerm}"
@@ -901,7 +849,7 @@ export default function AdminPayments() {
                   <div>
                     <h4 className="text-xs font-heading font-bold text-amber-950 flex items-center gap-1.5">
                       <span>Payment-First Policy Transparency</span>
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-500/20 text-amber-800 border border-amber-500/30">
+                      <span className="px-1.5 py-0.5 rounded text-[11px] font-bold uppercase bg-amber-500/20 text-amber-800 border border-amber-500/30">
                         Admin Operations
                       </span>
                     </h4>
@@ -942,7 +890,7 @@ export default function AdminPayments() {
                               <ArrowUpRight size={13} className="text-neutral-400 group-hover:text-gold transition-colors" />
                             </Link>
 
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider border ${
                               isUnpaid 
                                 ? 'bg-red-50 text-red-700 border-red-200 animate-pulse' 
                                 : 'bg-amber-50 text-amber-800 border-amber-200'
@@ -993,26 +941,26 @@ export default function AdminPayments() {
                           {/* 4 Financial Metrics Mini-Grid */}
                           <div className="grid grid-cols-2 gap-2 pt-1">
                             <div className="bg-white p-2.5 rounded-xl border border-neutral-200">
-                              <span className="text-[10px] text-neutral-400 uppercase font-medium block">Total Price</span>
+                              <span className="text-xs text-neutral-400 uppercase font-medium block">Total Price</span>
                               <span className="text-xs font-bold text-neutral-900">{peso(total)}</span>
                             </div>
                             <div className="bg-white p-2.5 rounded-xl border border-neutral-200">
-                              <span className="text-[10px] text-amber-700 uppercase font-medium block">Downpayment Due</span>
+                              <span className="text-xs text-amber-700 uppercase font-medium block">Downpayment Due</span>
                               <span className="text-xs font-bold text-amber-700">{peso(downRequired)}</span>
                             </div>
                             <div className="bg-white p-2.5 rounded-xl border border-neutral-200">
-                              <span className="text-[10px] text-emerald-600 uppercase font-medium block">Paid So Far</span>
+                              <span className="text-xs text-emerald-600 uppercase font-medium block">Paid So Far</span>
                               <span className="text-xs font-bold text-emerald-600">{peso(paid)}</span>
                             </div>
                             <div className="bg-white p-2.5 rounded-xl border border-neutral-200">
-                              <span className="text-[10px] text-primary uppercase font-medium block">Remaining</span>
+                              <span className="text-xs text-primary uppercase font-medium block">Remaining</span>
                               <span className="text-xs font-bold text-primary">{peso(remaining)}</span>
                             </div>
                           </div>
 
                           {/* Collection Progress Bar */}
                           <div className="space-y-1">
-                            <div className="flex justify-between text-[10px] text-neutral-500 font-medium">
+                            <div className="flex justify-between text-xs text-neutral-500 font-medium">
                               <span>Collection Progress</span>
                               <span className="font-bold text-primary">{paidPct}% Settled</span>
                             </div>
@@ -1403,6 +1351,8 @@ export default function AdminPayments() {
         )}
       </div>
 
+      </div>
+
       {/* ── 5. RECORD PAYMENT RECEIPT MODAL ──────────────────────────────────── */}
       {recordModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-sm animate-fade-in font-body">
@@ -1431,7 +1381,7 @@ export default function AdminPayments() {
             <form onSubmit={handleSavePayment} className="p-4 sm:p-5 space-y-3.5 text-xs">
               {/* Booking Selector */}
               <div>
-                <label className="block text-[10px] font-bold text-neutral-600 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1">
                   Select Customer Order / Booking
                 </label>
                 <select
@@ -1452,7 +1402,7 @@ export default function AdminPayments() {
               {/* Amount & Classification */}
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-[10px] font-bold text-neutral-600 uppercase tracking-wider mb-1">
+                  <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1">
                     Amount (PHP ₱)
                   </label>
                   <input
@@ -1466,7 +1416,7 @@ export default function AdminPayments() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-neutral-600 uppercase tracking-wider mb-1">
+                  <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1">
                     Classification
                   </label>
                   <select
@@ -1485,7 +1435,7 @@ export default function AdminPayments() {
               {/* Payment Channel & Reference */}
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-[10px] font-bold text-neutral-600 uppercase tracking-wider mb-1">
+                  <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1">
                     Payment Channel
                   </label>
                   <select
@@ -1501,7 +1451,7 @@ export default function AdminPayments() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-neutral-600 uppercase tracking-wider mb-1">
+                  <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1">
                     Reference / Ref #
                   </label>
                   <input
@@ -1516,7 +1466,7 @@ export default function AdminPayments() {
 
               {/* Cashier Notes */}
               <div>
-                <label className="block text-[10px] font-bold text-neutral-600 uppercase tracking-wider mb-1">
+                <label className="block text-xs font-bold text-neutral-600 uppercase tracking-wider mb-1">
                   Treasury Remarks / Receipt Notes
                 </label>
                 <input
@@ -1539,10 +1489,10 @@ export default function AdminPayments() {
                   />
                   <div className="text-xs">
                     <span className="font-semibold text-emerald-900 block">
-                      Auto-Dispatch Clearance to Front Desk Staff
+                      Auto-Record Clearance to Activity Logs
                     </span>
                     <span className="text-emerald-700 text-[11px]">
-                      Instantly alerts front desk via Workstation Hub that this order's payment is verified.
+                      Instantly logs verified clearance to Activity Logs for studio record.
                     </span>
                   </div>
                 </label>
@@ -1595,11 +1545,11 @@ export default function AdminPayments() {
               {/* Studio Header */}
               <div className="text-center pb-3 border-b border-dashed border-neutral-200">
                 <p className="font-heading font-bold text-sm text-primary tracking-wide uppercase">E-Kodak Studio</p>
-                <p className="text-[10px] text-neutral-400 mt-0.5">Official Treasury & Payment Voucher</p>
+                <p className="text-xs text-neutral-400 mt-0.5">Official Treasury & Payment Voucher</p>
                 <p className="text-2xl font-heading font-bold text-gold-dark mt-2">
                   {peso(selectedReceipt.amount)}
                 </p>
-                <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${TYPE_COLORS[selectedReceipt.payment_type] || ''}`}>
+                <span className={`inline-block mt-1 text-xs font-bold px-2 py-0.5 rounded-full border ${TYPE_COLORS[selectedReceipt.payment_type] || ''}`}>
                   {TYPE_LABELS[selectedReceipt.payment_type] || selectedReceipt.payment_type}
                 </span>
               </div>
@@ -1644,7 +1594,7 @@ export default function AdminPayments() {
                 )}
                 {selectedReceipt.notes && (
                   <div className="pt-2 border-t border-neutral-100">
-                    <span className="text-neutral-400 block text-[10px] uppercase font-bold tracking-wider mb-0.5">Remarks:</span>
+                    <span className="text-neutral-400 block text-xs uppercase font-bold tracking-wider mb-0.5">Remarks:</span>
                     <p className="text-[11px] text-neutral-600 italic">{selectedReceipt.notes}</p>
                   </div>
                 )}
@@ -1700,17 +1650,17 @@ export default function AdminPayments() {
 
             <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200 space-y-1.5 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-neutral-400 uppercase tracking-wider font-semibold text-[9px]">Booking</span>
+                <span className="text-neutral-400 uppercase tracking-wider font-semibold text-[11px]">Booking</span>
                 <span className="font-bold text-primary">#{deletingPayment.booking?.booking_number || '—'}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-neutral-400 uppercase tracking-wider font-semibold text-[9px]">Client</span>
+                <span className="text-neutral-400 uppercase tracking-wider font-semibold text-[11px]">Client</span>
                 <span className="font-semibold text-neutral-800">
                   {deletingPayment.booking?.customer?.first_name} {deletingPayment.booking?.customer?.last_name}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-neutral-400 uppercase tracking-wider font-semibold text-[9px]">Void Amount</span>
+                <span className="text-neutral-400 uppercase tracking-wider font-semibold text-[11px]">Void Amount</span>
                 <span className="font-bold text-rose-600">{peso(deletingPayment.amount)}</span>
               </div>
             </div>

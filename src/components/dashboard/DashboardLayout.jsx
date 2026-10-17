@@ -15,7 +15,7 @@ export default function DashboardLayout() {
   const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const isBookingPage = location.pathname.startsWith('/dashboard/book');
+  const isBookingPage = location.pathname === '/dashboard/book' || location.pathname.startsWith('/dashboard/book/');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
@@ -83,6 +83,33 @@ export default function DashboardLayout() {
     return () => clearTimeout(timer);
   }, [liveToast]);
 
+  // Prevent background scrolling while mobile/tablet sidebar drawer is open
+  useEffect(() => {
+    if (sidebarOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [sidebarOpen]);
+
+  // Close drawer on Escape key press
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && sidebarOpen) {
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sidebarOpen]);
+
+  // Auto-close sidebar drawer on route navigation
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
+
   const handleLogoutConfirm = async () => {
     await signOut();
     navigate('/login');
@@ -102,9 +129,22 @@ export default function DashboardLayout() {
   }
 
   return (
-    <div className={`min-h-screen ${isBookingPage ? 'booking-gradient-bg text-neutral-100' : 'dashboard-gradient-bg'} flex flex-col font-body relative overflow-x-hidden transition-colors duration-500`}>
-      {/* Moving Ambient Gradient Lighting on the major background */}
+    <div className={`min-h-screen ${isBookingPage ? 'booking-gradient-bg text-neutral-100' : 'dashboard-gradient-bg text-neutral-900 dark:text-neutral-100'} flex flex-col font-body relative overflow-x-hidden transition-colors duration-500`}>
+      {/* ── Premium Photography Studio Atmosphere with Extensive Gradients ──── */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
+        {/* Subtle Photographic Studio Background Image with Multi-stop Gradient Blend */}
+        <div 
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.07] dark:opacity-[0.14] mix-blend-luminosity dark:mix-blend-screen transition-opacity duration-700"
+          style={{
+            backgroundImage: `url('https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=1920&q=80&auto=format&fit=crop')`,
+          }}
+        />
+
+        {/* Extensive Radial & Linear Gradient Overlays */}
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-neutral-100/20 to-neutral-200/40 dark:from-transparent dark:via-neutral-950/40 dark:to-neutral-950/80 transition-colors" />
+        <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[1200px] h-[600px] bg-gradient-to-b from-gold/15 dark:from-gold/20 via-amber-500/5 to-transparent blur-[120px] rounded-full" />
+
+        {/* Moving Ambient Gradient Lighting Orbs */}
         {isBookingPage ? (
           <>
             <div className="absolute -top-40 left-1/4 w-[850px] h-[850px] rounded-full bg-gradient-to-b from-gold/25 via-amber-500/10 to-transparent blur-[140px] animate-float-slow-1" />
@@ -113,34 +153,37 @@ export default function DashboardLayout() {
           </>
         ) : (
           <>
-            <div className="absolute -top-40 -left-40 w-[650px] h-[650px] rounded-full bg-gradient-to-br from-amber-200/40 via-gold/25 to-transparent blur-[120px] animate-float-slow-1" />
-            <div className="absolute top-1/4 -right-40 w-[750px] h-[750px] rounded-full bg-gradient-to-bl from-gold/30 via-amber-300/20 to-transparent blur-[140px] animate-float-slow-2" />
-            <div className="absolute -bottom-40 left-1/4 w-[700px] h-[700px] rounded-full bg-gradient-to-tr from-amber-100/50 via-gold/20 to-transparent blur-[130px] animate-float-slow-1" />
+            <div className="absolute -top-40 -left-40 w-[700px] h-[700px] rounded-full bg-gradient-to-br from-amber-300/30 dark:from-gold/20 via-gold/20 dark:via-amber-500/15 to-transparent blur-[130px] animate-float-slow-1" />
+            <div className="absolute top-1/4 -right-40 w-[800px] h-[800px] rounded-full bg-gradient-to-bl from-gold/25 dark:from-amber-600/18 via-amber-400/15 dark:via-gold/12 to-transparent blur-[150px] animate-float-slow-2" />
+            <div className="absolute -bottom-40 left-1/4 w-[750px] h-[750px] rounded-full bg-gradient-to-tr from-amber-200/35 dark:from-[#121c2d]/75 via-gold/15 dark:via-gold/10 to-transparent blur-[140px] animate-float-slow-1" />
           </>
         )}
       </div>
 
-      {/* Sidebar Backdrop Overlay (for mobile, or on desktop when booking and sidebar is revealed) */}
+      {/* Sidebar Backdrop Overlay (for mobile & tablet, or on desktop when booking and sidebar is revealed) */}
       {sidebarOpen && (
         <div 
-          className={`fixed inset-0 bg-neutral-950/60 backdrop-blur-xs z-40 transition-opacity ${isBookingPage ? 'block' : 'lg:hidden'}`}
+          className={`fixed inset-0 bg-neutral-950/60 backdrop-blur-xs z-40 transition-opacity animate-fade-in ${isBookingPage ? 'block' : 'lg:hidden'}`}
           onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
         />
       )}
 
-      {/* Permanently Fixed Sidebar (hidden by default when booking a session, reveals on toggle) */}
+      {/* Permanently Fixed Sidebar (desktop) / Responsive Slide-out Drawer (mobile & tablet) */}
       <aside 
         className={`
-          fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-neutral-200 shadow-2xl
+          fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 shadow-2xl
           transform transition-transform duration-300 ease-in-out flex flex-col h-screen
           ${isBookingPage 
             ? (sidebarOpen ? 'translate-x-0' : '-translate-x-full') 
             : (sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0')}
         `}
+        aria-label="Studio navigation menu"
       >
         <Sidebar 
           onClose={() => setSidebarOpen(false)} 
           bookings={bookings} 
+          unreadCount={unreadCount}
           onRequestLogout={() => setLogoutModalOpen(true)}
         />
       </aside>
@@ -178,7 +221,7 @@ export default function DashboardLayout() {
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-1">
-                <span className="text-[10px] font-bold text-gold-dark uppercase tracking-wider">
+                <span className="text-xs font-bold text-gold-dark uppercase tracking-wider">
                   New Studio Notice
                 </span>
                 <button
@@ -200,13 +243,13 @@ export default function DashboardLayout() {
                     setLiveToast(null);
                     navigate('/dashboard/notifications');
                   }}
-                  className="btn-primary py-1 px-2.5 text-[10.5px] font-bold rounded-lg shadow-xs"
+                  className="btn-primary py-1 px-2.5 text-xs font-bold rounded-lg shadow-xs"
                 >
                   View in Inbox
                 </button>
                 <button
                   onClick={() => setLiveToast(null)}
-                  className="text-[10.5px] text-neutral-400 hover:text-neutral-600 px-1.5"
+                  className="text-xs text-neutral-400 hover:text-neutral-600 px-1.5"
                 >
                   Dismiss
                 </button>

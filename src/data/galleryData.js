@@ -133,14 +133,14 @@ export const GALLERY_ITEMS = [
     id: "f1", category: "family",
     title: "Family in the Park",
     description: "Relaxed outdoor family session with natural expressions.",
-    image: "https://images.unsplash.com/photo-1511895426328-dc8714191011?w=800&q=80&auto=format&fit=crop",
+    image: "https://images.unsplash.com/photo-1475503572774-15a45e5d60b9?w=800&q=80&auto=format&fit=crop",
     aspectRatio: "landscape",
   },
   {
     id: "f2", category: "family",
     title: "Home Session",
     description: "Cozy at-home family portraits — authentic and warm.",
-    image: "https://images.unsplash.com/photo-1475503572774-15a45e5d60b9?w=800&q=80&auto=format&fit=crop",
+    image: "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&q=80&auto=format&fit=crop",
     aspectRatio: "landscape",
   },
   {
@@ -163,7 +163,7 @@ export const GALLERY_ITEMS = [
     id: "c2", category: "couple",
     title: "Urban Prenuptial",
     description: "Creative prenuptial session in a city environment.",
-    image: "https://images.unsplash.com/photo-1488116908828-cbf1b36c6e53?w=800&q=80&auto=format&fit=crop",
+    image: "https://images.unsplash.com/photo-1583939003579-730e3918a45a?w=800&q=80&auto=format&fit=crop",
     aspectRatio: "portrait",
   },
   {

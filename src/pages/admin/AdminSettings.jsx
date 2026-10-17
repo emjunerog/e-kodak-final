@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { validatePasswordStrength } from '../../lib/securityValidator';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
+import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import StudioDropdown from '../../components/ui/StudioDropdown';
 
 const ROLE_BADGE = {
@@ -239,7 +240,7 @@ export default function AdminSettings() {
   ];
 
   return (
-    <div className="w-full max-w-screen-2xl mx-auto space-y-6 pb-16 animate-fade-in font-body">
+    <div className="w-full pb-16 animate-fade-in font-body">
       {/* ── 1. Luxury Administrative Hero Banner ────────────────────────────── */}
       <AdminHeroBanner
         station="admin"
@@ -263,6 +264,9 @@ export default function AdminSettings() {
         isRefreshing={loading}
       />
 
+      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+
       {/* Action Success Toast */}
       {actionSuccessMsg && (
         <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs text-emerald-900 animate-fade-in shadow-warm-sm">
@@ -285,83 +289,43 @@ export default function AdminSettings() {
         </div>
       )}
 
-      {/* ── 2. Metric Overview Strip (4 Luxury Cards with Gradients) ───────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        {/* Studio Identity Card */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-gold/40 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
-              <Globe size={20} />
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              VERIFIED
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Studio Profile</p>
-            <h3 className="font-heading text-lg font-bold text-primary mt-0.5 truncate">
-              {formData.contact_email || 'contact@e-kodak.com'}
-            </h3>
-            <p className="text-xs text-neutral-500 mt-1 truncate">
-              {formData.contact_phone || '+63 917 123 4567'}
-            </p>
-          </div>
-        </div>
-
-        {/* Staff Members Count */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-blue-300 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-200">
-              <Users size={20} />
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-              ACCESS
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Staff Accounts</p>
-            <h3 className="font-heading text-2xl font-bold text-primary mt-0.5">{staff.length}</h3>
-            <p className="text-xs text-neutral-500 mt-1">
-              {staff.filter(s => s.role === 'admin').length} Admins · {staff.filter(s => s.role === 'staff').length} Staff
-            </p>
-          </div>
-        </div>
-
-        {/* Security & Transport Status */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-emerald-300 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200">
-              <ShieldCheck size={20} />
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-              SECURE
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Security Transport</p>
-            <h3 className="font-heading text-lg font-bold text-primary mt-0.5">TLS 1.3 / Bcrypt</h3>
-            <p className="text-xs text-neutral-500 mt-1">Row Level Security Active</p>
-          </div>
-        </div>
-
-        {/* System Platform */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-purple-300 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0 border border-purple-200">
-              <Sparkles size={20} />
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
-              STABLE
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">System Version</p>
-            <h3 className="font-heading text-lg font-bold text-primary mt-0.5">E-Kodak v2.6</h3>
-            <p className="text-xs text-neutral-500 mt-1">Supabase Cloud Database</p>
-          </div>
-        </div>
-      </div>
+      {/* ── 2. Metric Overview Strip (Unified Luxury Studio KPI Cards) ───────── */}
+      <CategorizedMetricStrip
+        loading={loading}
+        columns="grid-cols-2 lg:grid-cols-4"
+        cards={[
+          {
+            key: 'studio',
+            label: 'VERIFIED',
+            subtitle: 'STUDIO IDENTITY',
+            value: formData.contact_email ? 'ONLINE' : 'CONFIGURING',
+            onClick: () => {
+              window.scrollTo({ top: 380, behavior: 'smooth' });
+            }
+          },
+          {
+            key: 'staff',
+            label: 'ACCESS',
+            subtitle: 'STAFF ACCOUNTS',
+            value: staff.length,
+            onClick: () => {
+              window.scrollTo({ top: 900, behavior: 'smooth' });
+            }
+          },
+          {
+            key: 'security',
+            label: 'ENFORCED',
+            subtitle: 'SECURITY POSTURE',
+            value: 'TLS 1.3'
+          },
+          {
+            key: 'platform',
+            label: 'PRODUCTION',
+            subtitle: 'SYSTEM VERSION',
+            value: 'v2.6'
+          }
+        ]}
+      />
 
       {/* ── 3. Global Studio Settings Section ─────────────────────────────── */}
       <Section 
@@ -532,7 +496,7 @@ export default function AdminSettings() {
               <div>
                 <p className="font-semibold text-primary text-sm">{profile?.first_name} {profile?.last_name}</p>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className={`inline-flex items-center gap-1 text-[10px] font-bold border px-2 py-0.5 rounded-full uppercase tracking-wider ${ROLE_BADGE[profile?.role] || 'text-neutral-500 bg-neutral-100 border-neutral-200'}`}>
+                  <span className={`inline-flex items-center gap-1 text-xs font-bold border px-2 py-0.5 rounded-full uppercase tracking-wider ${ROLE_BADGE[profile?.role] || 'text-neutral-500 bg-neutral-100 border-neutral-200'}`}>
                     <ShieldCheck size={11} /> {profile?.role}
                   </span>
                   <span className="text-xs text-neutral-400 font-body truncate">{user?.email}</span>
@@ -578,17 +542,17 @@ export default function AdminSettings() {
 
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[11px] font-body">
             <div className="p-3 rounded-xl bg-neutral-50/80 border border-neutral-100">
-              <span className="text-neutral-400 block uppercase text-[10px] font-bold tracking-wider">Session Status</span>
+              <span className="text-neutral-400 block uppercase text-xs font-bold tracking-wider">Session Status</span>
               <span className="font-bold text-emerald-700 flex items-center gap-1 mt-1">
                 <CheckCircle2 size={12} /> Active & Authenticated
               </span>
             </div>
             <div className="p-3 rounded-xl bg-neutral-50/80 border border-neutral-100">
-              <span className="text-neutral-400 block uppercase text-[10px] font-bold tracking-wider">Transport Protocol</span>
+              <span className="text-neutral-400 block uppercase text-xs font-bold tracking-wider">Transport Protocol</span>
               <span className="font-bold text-primary block mt-1">TLS 1.3 / HTTPS</span>
             </div>
             <div className="p-3 rounded-xl bg-neutral-50/80 border border-neutral-100">
-              <span className="text-neutral-400 block uppercase text-[10px] font-bold tracking-wider">Credential Policy</span>
+              <span className="text-neutral-400 block uppercase text-xs font-bold tracking-wider">Credential Policy</span>
               <span className="font-bold text-primary block mt-1">Bcrypt & Salt</span>
             </div>
           </div>
@@ -604,7 +568,7 @@ export default function AdminSettings() {
               { label: 'Auth Infrastructure', value: 'Supabase GoTrue Auth Service' }
             ].map(({ label, value }) => (
               <div key={label} className="bg-neutral-50/80 border border-neutral-100 rounded-xl px-4 py-3">
-                <dt className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">{label}</dt>
+                <dt className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1">{label}</dt>
                 <dd className="text-primary font-semibold text-xs truncate">{value}</dd>
               </div>
             ))}
@@ -687,7 +651,7 @@ export default function AdminSettings() {
                     </p>
                   </div>
                 </div>
-                <span className={`text-[10px] font-bold border px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${ROLE_BADGE[s.role] || 'text-neutral-500 bg-neutral-100 border-neutral-200'}`}>
+                <span className={`text-xs font-bold border px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${ROLE_BADGE[s.role] || 'text-neutral-500 bg-neutral-100 border-neutral-200'}`}>
                   {s.role}
                 </span>
               </div>
@@ -703,6 +667,7 @@ export default function AdminSettings() {
           <span className="font-semibold text-neutral-500">{filteredStaff.length} Accounts Listed</span>
         </div>
       </Section>
+      </div>
 
       {/* ── Change Password Modal ── */}
       {showPasswordModal && (
@@ -731,7 +696,7 @@ export default function AdminSettings() {
               )}
 
               <div>
-                <label className="block font-semibold text-primary mb-1 uppercase tracking-wider text-[10px]">
+                <label className="block font-semibold text-primary mb-1 uppercase tracking-wider text-xs">
                   New Security Password
                 </label>
                 <div className="relative">
@@ -766,7 +731,7 @@ export default function AdminSettings() {
                       style={{ width: `${(pwStrength.score / 4) * 100}%` }}
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-1 text-[10px] pt-1">
+                  <div className="grid grid-cols-2 gap-1 text-xs pt-1">
                     <span className={pwStrength.rules.minLength ? 'text-emerald-700 flex items-center gap-1' : 'text-neutral-400 flex items-center gap-1'}>
                       <Check size={10} /> Min 8 chars
                     </span>
@@ -784,7 +749,7 @@ export default function AdminSettings() {
               )}
 
               <div>
-                <label className="block font-semibold text-primary mb-1 uppercase tracking-wider text-[10px]">
+                <label className="block font-semibold text-primary mb-1 uppercase tracking-wider text-xs">
                   Confirm New Password
                 </label>
                 <input
@@ -855,12 +820,12 @@ export default function AdminSettings() {
               </div>
 
               <div>
-                <span className="text-neutral-400 block uppercase text-[10px] mb-1">Current Active Email</span>
+                <span className="text-neutral-400 block uppercase text-xs mb-1">Current Active Email</span>
                 <p className="font-semibold text-primary p-2.5 bg-neutral-100 rounded-xl">{user?.email}</p>
               </div>
 
               <div>
-                <label className="block font-semibold text-primary mb-1 uppercase tracking-wider text-[10px]">
+                <label className="block font-semibold text-primary mb-1 uppercase tracking-wider text-xs">
                   New Administrator Email Address
                 </label>
                 <input

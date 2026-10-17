@@ -8,15 +8,14 @@
  *  1. Navbar             — Fixed top navigation
  *  2. Hero               — Immediate visual impact + CTAs
  *  3. IntroSection       — Build trust, explain the studio
- *  4. ServicesPreview    — Showcase what's offered
- *  5. PackageFinder      — Interactive 3-step plan matcher
- *  6. WhyChooseUs        — Differentiate from competition (dark section)
- *  7. GalleryShowcase    — Show actual photography quality
- *  8. HowItWorks         — Introduce the booking workflow
- *  9. MobileCompanion    — Preview the companion app (dark section)
- * 10. Testimonials       — Social proof
- * 11. CTASection         — Convert visitors to registrations
- * 12. Footer
+ *  4. ServicesPreview    — Showcase what's offered (+ floating Package Finder tool)
+ *  5. WhyChooseUs        — Differentiate from competition (dark section)
+ *  6. GalleryShowcase    — Show actual photography quality
+ *  7. HowItWorks         — Introduce the booking workflow
+ *  8. MobileCompanion    — Preview the companion app (dark section)
+ *  9. Testimonials       — Social proof
+ * 10. CTASection         — Convert visitors to registrations
+ * 11. Footer
  *
  * ARCHITECTURE NOTE:
  * Each section is a standalone component. Reordering or replacing
@@ -26,8 +25,8 @@
 import Navbar from "../components/layout/Navbar";
 import Footer from "../components/layout/Footer";
 import Hero from "../components/landing/Hero";
+import IntroSection from "../components/landing/IntroSection";
 import ServicesPreview from "../components/landing/ServicesPreview";
-import PackageFinder from "../components/landing/PackageFinder";
 import WhyChooseUs from "../components/landing/WhyChooseUs";
 import GalleryShowcase from "../components/landing/GalleryShowcase";
 import HowItWorks from "../components/landing/HowItWorks";
@@ -44,10 +43,8 @@ export default function Home() {
       {/* ── Main Sections (Clean, non-repetitive flow) ───────────────────── */}
       <main id="main-content">
         <Hero />
+        <IntroSection />
         <ServicesPreview />
-
-        {/* Interactive Package Finder — user answers 3 Qs, gets recommendation */}
-        <PackageFinder />
 
         <WhyChooseUs />
         <GalleryShowcase />
@@ -57,7 +54,7 @@ export default function Home() {
         <CTASection />
       </main>
 
-      {/* ── 12. Footer ────────────────────────────────────────────────────── */}
+      {/* ── 11. Footer ────────────────────────────────────────────────────── */}
       <Footer />
     </>
   );

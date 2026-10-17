@@ -65,12 +65,13 @@ export default function CustomDropdown({
         }`}
       >
         <div className="flex items-center gap-2 truncate min-w-0 flex-1">
-          {TriggerIcon && <TriggerIcon size={15} className="text-gold flex-shrink-0" />}
+          {activeOption?.icon ? (
+            <activeOption.icon size={14} className="text-gold flex-shrink-0" />
+          ) : TriggerIcon ? (
+            <TriggerIcon size={15} className="text-gold flex-shrink-0" />
+          ) : null}
           {activeOption?.dotColor && (
             <span className={`w-2 h-2 rounded-full ${activeOption.dotColor} ring-1 ring-black/10 flex-shrink-0`} />
-          )}
-          {activeOption?.icon && (
-            <activeOption.icon size={14} className="text-gold flex-shrink-0" />
           )}
           <span className="truncate text-neutral-800 dark:text-neutral-100 font-medium">
             {activeOption ? activeOption.label : placeholder}
@@ -101,7 +102,7 @@ export default function CustomDropdown({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
             transition={{ duration: 0.12 }}
-            className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} mt-1.5 ${popoverWidth} backdrop-blur-md bg-white/95 dark:bg-neutral-900/95 rounded-2xl shadow-2xl shadow-neutral-900/15 dark:shadow-black/60 border border-neutral-200/90 dark:border-neutral-700/80 ring-1 ring-black/5 dark:ring-white/10 p-1.5 z-50 overflow-hidden`}
+            className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} mt-1.5 ${popoverWidth} min-w-full backdrop-blur-md bg-white/95 dark:bg-neutral-900/95 rounded-2xl shadow-2xl shadow-neutral-900/15 dark:shadow-black/60 border border-neutral-200/90 dark:border-neutral-700/80 ring-1 ring-black/5 dark:ring-white/10 p-1.5 z-50 overflow-hidden`}
           >
           <div className="max-h-64 overflow-y-auto space-y-0.5 scrollbar-thin">
             {options.map((option) => {
@@ -122,14 +123,14 @@ export default function CustomDropdown({
                       : 'text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100/90 dark:hover:bg-neutral-800/80 hover:text-neutral-950'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 truncate flex-1 min-w-0">
+                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
                     {option.dotColor && (
                       <span className={`w-2.5 h-2.5 rounded-full ${option.dotColor} ring-1 ring-black/10 flex-shrink-0`} />
                     )}
                     {option.icon && (
                       <option.icon size={15} className={`${isSelected ? 'text-gold' : 'text-neutral-400'} flex-shrink-0`} />
                     )}
-                    <span className="truncate">{option.label}</span>
+                    <span className="truncate whitespace-nowrap">{option.label}</span>
                   </div>
 
                   <div className="flex items-center gap-1.5 flex-shrink-0 ml-1">

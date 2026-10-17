@@ -1,20 +1,14 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { GoogleGenAI } from '@google/genai';
-
-// Initialize the GenAI client. 
-// In a real production app, this should be a backend edge function because 
-// exposing the API key in the frontend is a security risk.
-// For this prototype, we'll use the import.meta.env.
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+import { getAiClient, isAiConfigured } from '../lib/ai';
 
 /**
  * assignPhotographer
  * ------------------
- * Attempts to automatically assign a photographer to a new booking using Gemini.
+ * Attempts to automatically assign a photographer to a new booking using AI (Groq / Gemini).
  * @param {Object} booking - The booking details (date, time, service, etc.)
  */
 export async function assignPhotographer(booking) {
-  if (!isSupabaseConfigured || !import.meta.env.VITE_GEMINI_API_KEY) {
+  if (!isSupabaseConfigured || !isAiConfigured()) {
     return { assigned: false, error: 'Studio schedule allocation pending.' };
   }
 
@@ -68,10 +62,15 @@ export async function assignPhotographer(booking) {
       }
     `;
 
-    // 3. Ask Gemini to make the decision
+    // 3. Ask AI to make the decision
+    const ai = getAiClient();
+    if (!ai) {
+      return { assigned: false, reason: 'AI service unavailable.' };
+    }
+
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
       contents: prompt,
+      config: { maxTokens: 400, temperature: 0.2 },
     });
 
     const resultText = response.text;

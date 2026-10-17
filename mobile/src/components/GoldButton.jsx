@@ -1,14 +1,11 @@
 /**
- * GoldButton.jsx — Luxury Metallic Gold Button
- * Features:
- * - Multi-stop brushed metallic gold gradient (E8D5B0 -> C9A96E -> A8843A)
- * - Tactile spring scale press animation
- * - Haptic impact feedback
- * - Inter_600SemiBold typography with luxury tracking
- * - Variants: 'primary' (gradient fill), 'outline' (gold hairline), 'ghost' (tinted)
+ * GoldButton.jsx — Luxury Metallic Gold Button (modernized)
+ * - Same public API & behaviour: variant/size/disabled/loading/icon/onPress preserved
+ * - Visual upgrade only: outer gold aura for primary, top specular hairline,
+ *   travelling sheen sweep, crisper tactile press physics
  */
 
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   Pressable, Text, StyleSheet, ActivityIndicator, View, Animated,
 } from 'react-native';
@@ -31,14 +28,27 @@ export default function GoldButton({
   const { isDark, colors, gradients } = useTheme();
   const styles = getStyles(colors);
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const sheenAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Slow ambient sheen drift for primary buttons (purely cosmetic)
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(sheenAnim, { toValue: 1, duration: 2600, useNativeDriver: true }),
+        Animated.timing(sheenAnim, { toValue: 0, duration: 2600, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [sheenAnim]);
 
   const handlePressIn = () => {
     if (disabled || loading) return;
     Animated.spring(scaleAnim, {
-      toValue: 0.96,
+      toValue: 0.965,
       useNativeDriver: true,
-      speed: 25,
-      bounciness: 4,
+      speed: 28,
+      bounciness: 5,
     }).start();
   };
 
@@ -47,8 +57,8 @@ export default function GoldButton({
     Animated.spring(scaleAnim, {
       toValue: 1,
       useNativeDriver: true,
-      speed: 25,
-      bounciness: 6,
+      speed: 24,
+      bounciness: 7,
     }).start();
   };
 
@@ -74,8 +84,19 @@ export default function GoldButton({
     ? (isDark ? colors.gold.light : colors.gold.DEFAULT)
     : colors.gold.DEFAULT;
 
+  const sheenX = sheenAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-60, 60],
+  });
+
   return (
-    <Animated.View style={[{ transform: [{ scale: scaleAnim }] }, style]}>
+    <Animated.View
+      style={[
+        { transform: [{ scale: scaleAnim }] },
+        isPrimary && !disabled && styles.primaryAura,
+        style,
+      ]}
+    >
       <Pressable
         onPress={handlePress}
         onPressIn={handlePressIn}
@@ -85,8 +106,8 @@ export default function GoldButton({
           styles.base,
           styles[`size_${size}`],
           isOutline && {
-            backgroundColor: isDark ? 'rgba(201, 169, 110, 0.05)' : 'rgba(184, 134, 11, 0.04)',
-            borderWidth: 1.2,
+            backgroundColor: colors.surface?.chip || 'rgba(255,255,255,0.05)',
+            borderWidth: 1,
             borderColor: colors.gold.borderLight,
           },
           isGhost && {
@@ -104,6 +125,31 @@ export default function GoldButton({
           />
         )}
 
+        {/* Top specular chamfer — sells the machined-metal feel */}
+        {isPrimary && !disabled && (
+          <LinearGradient
+            colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.specularTop}
+          />
+        )}
+
+        {/* Travelling sheen sweep (clipped by overflow:hidden on base) */}
+        {isPrimary && !disabled && !loading && (
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.sheen, { transform: [{ translateX: sheenX }, { rotate: '18deg' }] }]}
+          >
+            <LinearGradient
+              colors={['transparent', 'rgba(255,255,255,0.5)', 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Animated.View>
+        )}
+
         {isPrimary && disabled && (
           <View style={[StyleSheet.absoluteFill, styles.disabledPrimaryBg]} />
         )}
@@ -116,7 +162,7 @@ export default function GoldButton({
               <Icon
                 size={size === 'sm' ? 14 : size === 'lg' ? 20 : 17}
                 color={iconColor}
-                strokeWidth={1.75}
+                strokeWidth={2}
                 style={{ marginRight: 8 }}
               />
             )}
@@ -138,19 +184,38 @@ export default function GoldButton({
 }
 
 const getStyles = (colors) => StyleSheet.create({
+  primaryAura: {
+    ...Shadow.goldGlow,
+  },
   base: {
-    borderRadius: Radius.md,
+    borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
     position: 'relative',
   },
   gradientBg: {
-    borderRadius: Radius.md,
+    borderRadius: Radius.full,
+  },
+  specularTop: {
+    position: 'absolute',
+    top: 0,
+    left: 18,
+    right: 18,
+    height: 1.5,
+    borderRadius: 1,
+    opacity: 0.9,
+  },
+  sheen: {
+    position: 'absolute',
+    top: -12,
+    bottom: -12,
+    width: 44,
+    opacity: 0.5,
   },
   disabledPrimaryBg: {
-    backgroundColor: '#3E3424',
-    borderRadius: Radius.md,
+    backgroundColor: '#3A342C',
+    borderRadius: Radius.full,
   },
   inner: {
     flexDirection: 'row',
@@ -158,44 +223,32 @@ const getStyles = (colors) => StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Variants
-  variant_outline: {
-    backgroundColor: 'rgba(201, 169, 110, 0.05)',
-    borderWidth: 1.2,
-    borderColor: colors.gold.borderLight,
-  },
-  variant_ghost: {
-    backgroundColor: colors.gold.bg,
-  },
-
   // Sizes
   size_sm: {
     paddingVertical: Spacing[2],
     paddingHorizontal: Spacing[4],
-    minHeight: 38,
+    minHeight: 40,
   },
   size_md: {
     paddingVertical: Spacing[3],
     paddingHorizontal: Spacing[6],
-    minHeight: 50,
-    ...Shadow.goldSoft,
+    minHeight: 52,
   },
   size_lg: {
     paddingVertical: Spacing[4],
     paddingHorizontal: Spacing[8],
     minHeight: 58,
-    ...Shadow.gold,
   },
 
   // Text
   text: {
     fontFamily: Typography.fontBodySemi,
-    letterSpacing: 0.8,
+    letterSpacing: 0.4,
     textAlign: 'center',
   },
-  textSize_sm: { fontSize: Typography.size.xs },
-  textSize_md: { fontSize: Typography.size.sm },
-  textSize_lg: { fontSize: Typography.size.base },
+  textSize_sm: { fontSize: Typography.size.sm - 0.5 },
+  textSize_md: { fontSize: Typography.size.base - 0.5 },
+  textSize_lg: { fontSize: Typography.size.md },
 
   disabled: {
     opacity: 0.45,

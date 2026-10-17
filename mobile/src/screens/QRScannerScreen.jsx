@@ -14,7 +14,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Animated, Dimensions, StatusBar, TextInput, Modal, ActivityIndicator,
+  Animated, Easing, Dimensions, StatusBar, TextInput, Modal, ActivityIndicator,
 } from 'react-native';
 import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -29,6 +29,9 @@ import {
 import { parseQRPayload, fetchBookingByToken, logQRScan } from '../services/bookingService';
 import { saveBookingToken, saveCustomerProfileFromBooking } from '../services/storageService';
 import GoldButton from '../components/GoldButton';
+import GlassCard from '../components/GlassCard';
+import GlassBackground from '../components/GlassBackground';
+import PremiumIcon from '../components/PremiumIcon';
 import StudioMascotKit from '../components/StudioMascotKit';
 import { useTheme } from '../context/ThemeContext';
 import { Typography, Spacing, Radius, Shadow } from '../theme';
@@ -59,15 +62,11 @@ export default function QRScannerScreen({ navigation }) {
   const [scanState, setScanState]       = useState('IDLE'); // 'IDLE' | 'LOADING' | 'ERROR' | 'SUCCESS'
   const [mascotMessage, setMascotMessage] = useState('');
 
-  // Animated gold laser scanline
+  // Animated gold laser scanline (100% native driver for buttery smooth 60fps)
   const scanAnim = useRef(new Animated.Value(0)).current;
   const cornerAnim = useRef(new Animated.Value(1)).current;
-
-  // Dynamic QR Tracking Reticle
-  const reticleX = useRef(new Animated.Value(RETICLE_LEFT)).current;
-  const reticleY = useRef(new Animated.Value(RETICLE_TOP)).current;
-  const reticleW = useRef(new Animated.Value(RETICLE_SIZE)).current;
-  const reticleH = useRef(new Animated.Value(RETICLE_SIZE)).current;
+  const lockScaleAnim = useRef(new Animated.Value(1)).current;
+  const scanLockRef = useRef(false);
 
   const [isCameraActive, setIsCameraActive] = useState(false);
 
@@ -75,6 +74,7 @@ export default function QRScannerScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       let active = true;
+      scanLockRef.current = false;
       const t = setTimeout(() => {
         if (active) {
           setIsCameraActive(true);
@@ -82,11 +82,12 @@ export default function QRScannerScreen({ navigation }) {
           setCameraError(null);
           setScanning(true);
           setScanState('IDLE');
-          resetReticle();
+          scanLockRef.current = false;
         }
-      }, 250);
+      }, 200);
       return () => {
         active = false;
+        scanLockRef.current = true;
         setIsCameraActive(false);
         clearTimeout(t);
       };
@@ -109,80 +110,84 @@ export default function QRScannerScreen({ navigation }) {
       Animated.sequence([
         Animated.timing(scanAnim, {
           toValue: 1,
-          duration: 2200,
-          useNativeDriver: false,
+          duration: 1800,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
         }),
         Animated.timing(scanAnim, {
           toValue: 0,
-          duration: 2200,
-          useNativeDriver: false,
+          duration: 1800,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
         }),
       ])
     ).start();
 
     Animated.loop(
       Animated.sequence([
-        Animated.timing(cornerAnim, { toValue: 0.35, duration: 1100, useNativeDriver: true }),
-        Animated.timing(cornerAnim, { toValue: 1, duration: 1100, useNativeDriver: true }),
+        Animated.timing(cornerAnim, { toValue: 0.45, duration: 900, useNativeDriver: true }),
+        Animated.timing(cornerAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
       ])
     ).start();
   };
 
-  const resetReticle = () => {
-    Animated.parallel([
-      Animated.timing(reticleX, { toValue: RETICLE_LEFT, duration: 400, useNativeDriver: false }),
-      Animated.timing(reticleY, { toValue: RETICLE_TOP, duration: 400, useNativeDriver: false }),
-      Animated.timing(reticleW, { toValue: RETICLE_SIZE, duration: 400, useNativeDriver: false }),
-      Animated.timing(reticleH, { toValue: RETICLE_SIZE, duration: 400, useNativeDriver: false }),
-    ]).start();
-  };
+  const scanTranslateY = scanAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [6, RETICLE_SIZE - 14],
+  });
 
-  const scanLineY = Animated.multiply(scanAnim, Animated.subtract(reticleH, 4));
+  // Smart-grid lock color — purely visual, derived from existing scanState.
+  // IDLE/LOADING = gold hunting, SUCCESS = green lock, ERROR = red alert.
+  const lockColor =
+    scanState === 'SUCCESS' ? '#34D399' :
+    scanState === 'ERROR'   ? '#EF4444' :
+                              colors.gold.DEFAULT;
 
   const handleRestartCamera = () => {
     try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch {}
+    scanLockRef.current = false;
     setCameraReady(false);
     setCameraError(null);
     setScanState('IDLE');
     setScanning(true);
-    resetReticle();
     setIsCameraActive(false);
-    setTimeout(() => setIsCameraActive(true), 300);
+    setTimeout(() => setIsCameraActive(true), 250);
   };
 
-  const handleScanned = async ({ data, bounds }) => {
-    if (!scanning || loading || scanState === 'LOADING') return;
+  const handleScanned = async ({ data }) => {
+    // Synchronously lock immediately on the first scanned frame to prevent loop!
+    if (scanLockRef.current || !scanning || loading || scanState === 'LOADING') return;
+    scanLockRef.current = true;
     setScanning(false);
     setScanState('LOADING');
     setMascotMessage('Analyzing QR payload...');
 
-    // Animate bounding box to exactly wrap the real-world QR code
-    if (bounds && bounds.origin && bounds.size) {
-      Animated.parallel([
-        Animated.spring(reticleX, { toValue: bounds.origin.x - 10, useNativeDriver: false }),
-        Animated.spring(reticleY, { toValue: bounds.origin.y - 10, useNativeDriver: false }),
-        Animated.spring(reticleW, { toValue: bounds.size.width + 20, useNativeDriver: false }),
-        Animated.spring(reticleH, { toValue: bounds.size.height + 20, useNativeDriver: false }),
-      ]).start();
-    }
+    // Snappy hardware-accelerated target pulse
+    Animated.sequence([
+      Animated.timing(lockScaleAnim, { toValue: 1.06, duration: 140, useNativeDriver: true }),
+      Animated.timing(lockScaleAnim, { toValue: 1, duration: 140, useNativeDriver: true }),
+    ]).start();
 
     try {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {}
 
-    // Brief delay to allow the lock-on animation to play before processing
-    setTimeout(async () => {
-      const { valid, token, error } = parseQRPayload(data);
-      if (!valid) {
-        try {
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        } catch {}
-        setScanState('ERROR');
-        setMascotMessage(error || 'This QR code is not a valid E-Kodak booking pass.');
-        return;
-      }
-      await processToken(token);
-    }, 700);
+    const { valid, token, error } = parseQRPayload(data);
+    if (!valid) {
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } catch {}
+      setScanState('ERROR');
+      setMascotMessage(error || 'This QR code is not a valid E-Kodak booking pass.');
+      setTimeout(() => {
+        scanLockRef.current = false;
+        setScanning(true);
+        setScanState('IDLE');
+      }, 2500);
+      return;
+    }
+
+    await processToken(token);
   };
 
   const processToken = async (token) => {
@@ -198,6 +203,11 @@ export default function QRScannerScreen({ navigation }) {
       } catch {}
       setScanState('ERROR');
       setMascotMessage(error?.message || 'Could not locate a booking for this pass token. Please try again.');
+      setTimeout(() => {
+        scanLockRef.current = false;
+        setScanning(true);
+        setScanState('IDLE');
+      }, 2500);
       return;
     }
 
@@ -210,7 +220,7 @@ export default function QRScannerScreen({ navigation }) {
     
     setTimeout(() => {
       navigation.replace('BookingTracker', { booking, token });
-    }, 1200);
+    }, 600);
   };
 
   const maskColor = isDark ? 'rgba(13, 11, 9, 0.72)' : 'rgba(24, 20, 16, 0.65)';
@@ -220,10 +230,10 @@ export default function QRScannerScreen({ navigation }) {
     return (
       <View style={[styles.screenContainer, { backgroundColor: colors.bg.base }, styles.centered]}>
         <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.bg.base} />
-        
-        <View style={[styles.permIconRing, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
-          <QrCode size={52} color={colors.gold.DEFAULT} strokeWidth={1.25} />
-        </View>
+        {/* Ambient glass backdrop */}
+        <GlassBackground />
+
+        <PremiumIcon icon={QrCode} size={46} box={88} tone="soft" glow />
 
         <Text style={[styles.permTitle, { color: colors.text.primary }]}>Camera Access Required</Text>
         <Text style={[styles.permBody, { color: colors.text.secondary }]}>
@@ -252,14 +262,15 @@ export default function QRScannerScreen({ navigation }) {
           animationType="fade"
           onRequestClose={() => setManualVisible(false)}
         >
-          <View style={[styles.modalOverlay, { backgroundColor: colors.bg.overlay }]}>
-            <View style={[styles.modalCard, { backgroundColor: colors.bg.card, borderColor: colors.gold.border }]}>
+          <View style={styles.modalOverlay}>
+            <BlurView intensity={isDark ? 60 : 40} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+            <GlassCard glow highlight style={styles.modalCard}>
               <Text style={[styles.modalTitle, { color: colors.text.primary }]}>Enter Pass Token</Text>
               <Text style={[styles.modalDesc, { color: colors.text.secondary }]}>
                 Enter the alphanumeric code printed below the QR code on your reception pass.
               </Text>
               <TextInput
-                style={[styles.modalInput, { backgroundColor: colors.bg.input, color: colors.text.primary, borderColor: colors.gold.border }]}
+                style={[styles.modalInput, { backgroundColor: 'rgba(127, 127, 140, 0.12)', color: colors.text.primary, borderColor: 'rgba(255, 255, 255, 0.14)' }]}
                 placeholder="e.g. EK-892147"
                 placeholderTextColor={colors.text.muted}
                 value={manualToken}
@@ -285,7 +296,7 @@ export default function QRScannerScreen({ navigation }) {
                   Verify Pass
                 </GoldButton>
               </View>
-            </View>
+            </GlassCard>
           </View>
         </Modal>
       </View>
@@ -309,7 +320,7 @@ export default function QRScannerScreen({ navigation }) {
           autofocus="on"
           enableTorch={torch}
           barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-          onBarcodeScanned={scanning && !loading ? handleScanned : undefined}
+          onBarcodeScanned={scanning && !loading && !scanLockRef.current ? handleScanned : undefined}
           onCameraReady={() => {
             setCameraReady(true);
             setCameraError(null);
@@ -321,21 +332,22 @@ export default function QRScannerScreen({ navigation }) {
         />
       )}
 
-      {/* ── Airtight Animated 4-Piece Mask ── */}
-      <Animated.View style={[styles.maskBlock, { backgroundColor: maskColor, top: 0, left: 0, right: 0, height: reticleY }]} />
-      <Animated.View style={[styles.maskBlock, { backgroundColor: maskColor, top: reticleY, left: 0, width: reticleX, height: reticleH }]} />
-      <Animated.View style={[styles.maskBlock, { backgroundColor: maskColor, top: reticleY, right: 0, left: Animated.add(reticleX, reticleW), height: reticleH }]} />
-      <Animated.View style={[styles.maskBlock, { backgroundColor: maskColor, top: Animated.add(reticleY, reticleH), left: 0, right: 0, bottom: 0 }]} />
+      {/* ── Airtight Clean 4-Piece Mask (Static, zero JS thread overhead) ── */}
+      <View style={[styles.maskBlock, { backgroundColor: maskColor, top: 0, left: 0, right: 0, height: RETICLE_TOP }]} />
+      <View style={[styles.maskBlock, { backgroundColor: maskColor, top: RETICLE_TOP, left: 0, width: RETICLE_LEFT, height: RETICLE_SIZE }]} />
+      <View style={[styles.maskBlock, { backgroundColor: maskColor, top: RETICLE_TOP, right: 0, width: RETICLE_LEFT, height: RETICLE_SIZE }]} />
+      <View style={[styles.maskBlock, { backgroundColor: maskColor, top: RETICLE_TOP + RETICLE_SIZE, left: 0, right: 0, bottom: 0 }]} />
 
-      {/* ── Dynamic Reticle Frame ── */}
+      {/* ── Precision Reticle Frame (Native Driver Transform) ── */}
       <Animated.View
         style={[
           styles.reticle,
           {
-            top: reticleY,
-            left: reticleX,
-            width: reticleW,
-            height: reticleH,
+            top: RETICLE_TOP,
+            left: RETICLE_LEFT,
+            width: RETICLE_SIZE,
+            height: RETICLE_SIZE,
+            transform: [{ scale: lockScaleAnim }],
           },
         ]}
       >
@@ -346,14 +358,25 @@ export default function QRScannerScreen({ navigation }) {
             style={[
               styles.corner,
               styles[`corner_${corner}`],
-              { borderColor: colors.gold.DEFAULT, opacity: cornerAnim },
+              { borderColor: lockColor, opacity: cornerAnim },
             ]}
           />
         ))}
 
-        {/* Animated Gold Laser Scanline */}
+        {/* Smart detection grid — rule-of-thirds aim aid, tints on lock */}
+        <Animated.View pointerEvents="none" style={[styles.smartGrid, { opacity: cornerAnim }]}>
+          <View style={[styles.gridLineV, { left: '33.3%', backgroundColor: lockColor }]} />
+          <View style={[styles.gridLineV, { left: '66.6%', backgroundColor: lockColor }]} />
+          <View style={[styles.gridLineH, { top: '33.3%', backgroundColor: lockColor }]} />
+          <View style={[styles.gridLineH, { top: '66.6%', backgroundColor: lockColor }]} />
+          <View style={styles.gridCrossH}>
+            <View style={[styles.gridCrossDot, { backgroundColor: lockColor }]} />
+          </View>
+        </Animated.View>
+
+        {/* Animated Gold Laser Scanline (Hardware Accelerated 60fps) */}
         <Animated.View
-          style={[styles.scanLineWrapper, { transform: [{ translateY: scanLineY }] }]}
+          style={[styles.scanLineWrapper, { transform: [{ translateY: scanTranslateY }] }]}
         >
           <LinearGradient
             colors={gradients.gold}
@@ -579,7 +602,7 @@ export default function QRScannerScreen({ navigation }) {
       <Modal visible={manualVisible} animationType="slide" transparent>
         <BlurView intensity={75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         <View style={styles.modalContainer}>
-          <View style={[styles.modalCard, { backgroundColor: colors.bg.card, borderColor: colors.gold.border }]}>
+          <GlassCard glow highlight style={styles.modalCard}>
             <Text style={[styles.modalTitle, { color: colors.text.primary }]}>Enter Pass Token</Text>
             <Text style={[styles.modalSub, { color: colors.text.secondary }]}>
               Enter the verification token from your confirmation email or booking pass.
@@ -588,7 +611,7 @@ export default function QRScannerScreen({ navigation }) {
             <TextInput
               style={[
                 styles.tokenInput,
-                { backgroundColor: colors.bg.input, color: colors.text.primary, borderColor: colors.gold.border },
+                { backgroundColor: 'rgba(127, 127, 140, 0.12)', color: colors.text.primary, borderColor: 'rgba(255, 255, 255, 0.14)' },
               ]}
               placeholder="e.g. EK-892147"
               placeholderTextColor={colors.text.muted}
@@ -627,7 +650,7 @@ export default function QRScannerScreen({ navigation }) {
                 Verify Pass
               </GoldButton>
             </View>
-          </View>
+          </GlassCard>
         </View>
       </Modal>
     </View>
@@ -690,10 +713,49 @@ const styles = StyleSheet.create({
     width: CORNER_SIZE,
     height: CORNER_SIZE,
   },
-  corner_tl: { top: 0, left: 0, borderTopWidth: CORNER_WIDTH, borderLeftWidth: CORNER_WIDTH },
-  corner_tr: { top: 0, right: 0, borderTopWidth: CORNER_WIDTH, borderRightWidth: CORNER_WIDTH },
-  corner_bl: { bottom: 0, left: 0, borderBottomWidth: CORNER_WIDTH, borderLeftWidth: CORNER_WIDTH },
-  corner_br: { bottom: 0, right: 0, borderBottomWidth: CORNER_WIDTH, borderRightWidth: CORNER_WIDTH },
+  corner_tl: { top: 0, left: 0, borderTopWidth: CORNER_WIDTH, borderLeftWidth: CORNER_WIDTH, borderTopLeftRadius: 12 },
+  corner_tr: { top: 0, right: 0, borderTopWidth: CORNER_WIDTH, borderRightWidth: CORNER_WIDTH, borderTopRightRadius: 12 },
+  corner_bl: { bottom: 0, left: 0, borderBottomWidth: CORNER_WIDTH, borderLeftWidth: CORNER_WIDTH, borderBottomLeftRadius: 12 },
+  corner_br: { bottom: 0, right: 0, borderBottomWidth: CORNER_WIDTH, borderRightWidth: CORNER_WIDTH, borderBottomRightRadius: 12 },
+
+  // Smart detection grid (rule-of-thirds aim aid inside the reticle)
+  smartGrid: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  gridLineV: {
+    position: 'absolute',
+    top: 10,
+    bottom: 10,
+    width: 1,
+    opacity: 0.35,
+  },
+  gridLineH: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    height: 1,
+    opacity: 0.35,
+  },
+  gridCrossH: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: 18,
+    height: 18,
+    marginLeft: -9,
+    marginTop: -9,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridCrossDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    opacity: 0.9,
+  },
 
   // Laser scanline
   scanLineWrapper: {
@@ -875,7 +937,7 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    borderRadius: Radius.xl,
+    borderRadius: Radius['2xl'],
     padding: Spacing[6],
     borderWidth: 1,
     shadowColor: '#000',
@@ -902,7 +964,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing[4],
   },
   modalInput: {
-    borderRadius: Radius.md,
+    borderRadius: Radius.lg,
     borderWidth: 1,
     paddingHorizontal: Spacing[4],
     paddingVertical: Spacing[3],
@@ -912,7 +974,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing[5],
   },
   tokenInput: {
-    borderRadius: Radius.md,
+    borderRadius: Radius.lg,
     borderWidth: 1,
     paddingHorizontal: Spacing[4],
     paddingVertical: Spacing[3],
@@ -973,7 +1035,7 @@ const styles = StyleSheet.create({
   mascotResultCard: {
     width: '100%',
     maxWidth: 380,
-    borderRadius: Radius.xl,
+    borderRadius: Radius['2xl'],
     borderWidth: 1,
     paddingTop: Spacing[5],
     paddingBottom: Spacing[7],

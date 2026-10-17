@@ -30,7 +30,7 @@
  * • Strict 3-color luxury palette: Primary (#1a1a1a), Gold (#c9a96e), Neutral (#f5f5f5, gray, white)
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -42,7 +42,7 @@ import {
   Download, ArrowUpDown, Lock, Phone, UserPlus, Copy, RotateCcw,
   Archive, ShieldAlert, ArrowRightLeft, ExternalLink, Building2,
   FileImage, Maximize2, Megaphone, Bell, AlertTriangle,
-  QrCode
+  QrCode, Table, Filter, Users, UserCheck, Printer, ShieldCheck, History
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -60,11 +60,13 @@ import {
   ALL_PAYMENT_STATUSES,
   getPhotographersWithWorkloadAndAvailability,
   batchScheduleSchoolPictorial,
+  rescheduleStudentBooking,
 } from '../../services/bookingAdminService';
 import BookingLifecycleBadge from '../../components/admin/BookingLifecycleBadge';
 import BookingQuickInspector from '../../components/admin/BookingQuickInspector';
 import CustomDropdown from '../../components/ui/CustomDropdown';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
+import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 
 function fmtDate(dateStr) {
   if (!dateStr) return '—';
@@ -74,14 +76,32 @@ function fmtDate(dateStr) {
 }
 
 function formatTime(timeStr) {
-  if (!timeStr) return null;
-  const parts = timeStr.split(':');
-  if (parts.length < 2) return timeStr;
+  if (!timeStr) return '';
+  const trimmed = String(timeStr).trim();
+  if (/am|pm/i.test(trimmed)) return trimmed;
+  const parts = trimmed.split(':');
+  if (parts.length < 2) return trimmed;
   let hours = parseInt(parts[0], 10);
   const minutes = parts[1];
   const ampm = hours >= 12 ? 'PM' : 'AM';
   hours = hours % 12 || 12;
   return `${hours}:${minutes} ${ampm}`;
+}
+
+function getBookingSchool(b) {
+  return b?.student_details?.school || (b?.notes && b.notes.match(/•\s*(?:School|Institution):\s*([^\n\r]+)/i)?.[1]?.trim()) || '';
+}
+
+function getBookingSection(b) {
+  return b?.student_details?.section || (b?.notes && b.notes.match(/•\s*Section(?:\s*\/\s*Batch)?:\s*([^\n\r]+)/i)?.[1]?.trim()) || '';
+}
+
+function getBookingCampus(b) {
+  return b?.student_details?.campus || (b?.notes && b.notes.match(/•\s*Campus(?:\s*\/\s*Address)?:\s*([^\n\r]+)/i)?.[1]?.trim()) || '';
+}
+
+function getBookingStudentName(b) {
+  return b?.student_details?.student_name || (b?.customer ? `${b.customer.first_name || ''} ${b.customer.last_name || ''}`.trim() : '—');
 }
 
 function getCustomerSize(cust, booking) {
@@ -260,6 +280,12 @@ export default function AdminBookings({ initialSection }) {
     if (initialTab === 'COMPLETED') return 'COMPLETED';
     return '';
   });
+  const [schoolFilter, setSchoolFilter] = useState('');
+  const [sectionFilter, setSectionFilter] = useState('');
+  const [schoolSearch, setSchoolSearch] = useState('');
+  const [schoolSortBy, setSchoolSortBy] = useState('pending_desc');
+  const [schoolStatusFilter, setSchoolStatusFilter] = useState('ALL');
+  const [collapsedSchools, setCollapsedSchools] = useState({});
   const [paymentFilter, setPayment] = useState(() => {
     if (initialTab === 'UNPAID') return 'UNPAID';
     return '';
@@ -285,6 +311,8 @@ export default function AdminBookings({ initialSection }) {
   const [inspectingBooking, setInspectingBooking] = useState(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingBooking, setEditingBooking] = useState(null);
+  const [editBookingPhotographers, setEditBookingPhotographers] = useState([]);
+  const [loadingEditPhotographers, setLoadingEditPhotographers] = useState(false);
   const [bookingToDelete, setBookingToDelete] = useState(null);
   const [bookingToPermanentlyPurge, setBookingToPermanentlyPurge] = useState(null);
   const [deleteReason, setDeleteReason] = useState('');
@@ -353,17 +381,33 @@ export default function AdminBookings({ initialSection }) {
   }, []);
 
   // ── School Pictorial Scheduler & Announcement Tool State ─────────────────────
+  const [viewMode, setViewMode] = useState('table'); // 'table' (complete tables is default) | 'batch' (school batches)
   const [isSchoolSchedulerOpen, setIsSchoolSchedulerOpen] = useState(false);
   const [schoolBatchesList, setSchoolBatchesList] = useState([]);
   const [selectedBatchKey, setSelectedBatchKey] = useState('');
+  const [selectedBatchSchool, setSelectedBatchSchool] = useState('');
+  const [selectedBatchSection, setSelectedBatchSection] = useState('ALL');
   const [batchEventDate, setBatchEventDate] = useState('');
-  const [batchPreferredTime, setBatchPreferredTime] = useState('09:00:00');
+  const [batchStartTime, setBatchStartTime] = useState('08:00');
+  const [batchEndTime, setBatchEndTime] = useState('11:30');
   const [batchLocationType, setBatchLocationType] = useState('CAMPUS'); // 'CAMPUS' | 'STUDIO'
   const [batchCustomAddress, setBatchCustomAddress] = useState('');
   const [batchPhotographerId, setBatchPhotographerId] = useState('');
   const [batchAnnouncementText, setBatchAnnouncementText] = useState('');
   const [isBatchSubmitting, setIsBatchSubmitting] = useState(false);
   const [batchPhotographersAvailability, setBatchPhotographersAvailability] = useState([]);
+  const [allowRescheduleProtection, setAllowRescheduleProtection] = useState(true);
+  const [rescheduleStudentId, setRescheduleStudentId] = useState('');
+  const [rescheduleNewDate, setRescheduleNewDate] = useState('');
+  const [rescheduleReason, setRescheduleReason] = useState('Unable to attend confirmed batch date');
+  const [isReschedulingSingleStudent, setIsReschedulingSingleStudent] = useState(false);
+  const [completedSchoolStudents, setCompletedSchoolStudents] = useState([]);
+
+  const adminStaffName = useMemo(() => profile?.first_name
+    ? `${profile.first_name} ${profile.last_name || ''}`.trim()
+    : 'Admin Staff', [profile]);
+
+  const formattedBatchTimeRange = `${formatTime(batchStartTime)} – ${formatTime(batchEndTime)}`;
 
   // Fetch pending school batches across the database
   const fetchSchoolBatches = useCallback(async () => {
@@ -391,7 +435,7 @@ export default function AdminBookings({ initialSection }) {
         const notes = b.notes || '';
         const parsed = parseStructuredNotes(notes);
         const isSchoolBooking = parsed.school || notes.includes('SCHOOL_PARTNER') || notes.includes('School Pictorial');
-        const isPendingDate = !b.event_date || b.status === 'PENDING' || notes.includes('SCHOOL_PARTNER');
+        const isPendingDate = !b.event_date || b.status === 'PENDING';
 
         if (isSchoolBooking && isPendingDate) {
           const schoolName = parsed.school || 'Designated School';
@@ -421,43 +465,340 @@ export default function AdminBookings({ initialSection }) {
       const list = Object.values(batchesMap);
       setSchoolBatchesList(list);
 
-      if (list.length > 0 && !selectedBatchKey) {
+      if (list.length > 0 && !selectedBatchSchool) {
         setSelectedBatchKey(list[0].key);
-        setBatchCustomAddress(list[0].campus || '');
+        setSelectedBatchSchool(list[0].school);
+        setSelectedBatchSection('ALL');
+        setBatchCustomAddress(''); // Never duplicate full campus/city in custom landmark
         setBatchAnnouncementText(
-          `Graduation Pictorial confirmed for ${list[0].school}${list[0].section ? ` (${list[0].section})` : ''}. Photoshoot schedule is now locked in. Please review your booking pass for session details.`
+          `Graduation Pictorial confirmed for ${list[0].school}. Date: Confirmed Date. Schedule: 8:00 AM – 11:30 AM. Venue: School Campus. Please arrive 15 minutes before your time slot. Notice: Students with scheduling conflicts can request a batch transfer or studio makeup session via their portal pass.`
         );
       }
     } catch (err) {
       console.warn('fetchSchoolBatches warning:', err);
     }
-  }, [selectedBatchKey]);
+  }, [selectedBatchSchool]);
 
-  // When selected batch changes, update default announcement text and prefilled address
-  const handleSelectBatch = (key) => {
-    setSelectedBatchKey(key);
-    const found = schoolBatchesList.find(b => b.key === key);
-    if (found) {
-      setBatchCustomAddress(found.campus || '');
-      setBatchAnnouncementText(
-        `Graduation Pictorial confirmed for ${found.school}${found.section ? ` (${found.section})` : ''}. Photoshoot schedule is now locked in. Please review your booking pass for session details.`
-      );
+  // Unique schools for the school dropdown
+  const uniqueSchools = useMemo(() => {
+    const map = new Map();
+    schoolBatchesList.forEach(b => {
+      const sch = b.school;
+      if (!sch) return;
+      if (!map.has(sch)) {
+        map.set(sch, {
+          name: sch,
+          campus: b.campus || '',
+          count: 0,
+        });
+      }
+      map.get(sch).count += b.count;
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [schoolBatchesList]);
+
+  // Sections under the currently selected school
+  const sectionsForSelectedSchool = useMemo(() => {
+    if (!selectedBatchSchool) return [];
+    const set = new Set();
+    schoolBatchesList.forEach(b => {
+      if (b.school.toLowerCase() === selectedBatchSchool.toLowerCase()) {
+        if (b.section && b.section !== 'All Sections' && b.section !== 'ALL') {
+          set.add(b.section);
+        }
+      }
+    });
+    bookings.forEach(b => {
+      const sch = b.student_details?.school || (b.notes && b.notes.match(/•\s*School:\s*([^\n\r]+)/i)?.[1]?.trim());
+      const sec = b.student_details?.section || (b.notes && b.notes.match(/•\s*Section(?:\s*\/\s*Batch)?:\s*([^\n\r]+)/i)?.[1]?.trim());
+      if (sch && sch.toLowerCase().includes(selectedBatchSchool.toLowerCase()) && sec && sec !== 'N/A' && sec !== 'All Sections') {
+        set.add(sec);
+      }
+    });
+    return Array.from(set).sort();
+  }, [schoolBatchesList, bookings, selectedBatchSchool]);
+
+  // Total student count for the currently selected school and section
+  const targetStudentCount = useMemo(() => {
+    if (!selectedBatchSchool) return 0;
+    return schoolBatchesList
+      .filter(b => {
+        if (b.school.toLowerCase() !== selectedBatchSchool.toLowerCase()) return false;
+        if (selectedBatchSection !== 'ALL' && selectedBatchSection !== 'All Sections') {
+          return b.section === selectedBatchSection;
+        }
+        return true;
+      })
+      .reduce((sum, b) => sum + b.count, 0);
+  }, [schoolBatchesList, selectedBatchSchool, selectedBatchSection]);
+
+  // Detect students in this school with reschedule / rollover requests
+  const detectedRescheduleStudents = useMemo(() => {
+    if (!selectedBatchSchool) return [];
+    const reschedList = [];
+    bookings.forEach(b => {
+      const notes = (b.notes || '').toLowerCase();
+      const sch = b.student_details?.school || (notes.match(/•\s*school:\s*([^\n\r]+)/i)?.[1]?.trim());
+      if (sch && sch.toLowerCase().includes(selectedBatchSchool.toLowerCase())) {
+        const hasConflictOrReq = notes.includes('reschedule') || notes.includes('makeup') || notes.includes('conflict') || notes.includes('rollover');
+        if (hasConflictOrReq && !b.event_date) {
+          const studentName = b.customer
+            ? `${b.customer.first_name || ''} ${b.customer.last_name || ''}`.trim() || b.customer.email
+            : 'Student';
+          reschedList.push({
+            id: b.id,
+            bookingNumber: b.booking_number,
+            name: studentName,
+            section: b.student_details?.section || 'General',
+            reason: notes.includes('conflict') ? 'Schedule Conflict' : 'Makeup Rollover Requested'
+          });
+        }
+      }
+    });
+    return reschedList;
+  }, [bookings, selectedBatchSchool]);
+
+  // Detailed student roster for the selected school & section
+  const studentsInSelectedBatch = useMemo(() => {
+    if (!selectedBatchSchool) return [];
+    return bookings.filter(b => {
+      const notes = (b.notes || '').toLowerCase();
+      const sch = b.student_details?.school || (notes.match(/•\s*school:\s*([^\n\r]+)/i)?.[1]?.trim());
+      if (!sch || !sch.toLowerCase().includes(selectedBatchSchool.toLowerCase())) return false;
+      if (selectedBatchSection && selectedBatchSection !== 'ALL' && selectedBatchSection !== 'All Sections') {
+        const sec = b.student_details?.section || (notes.match(/•\s*section(?:\s*\/\s*batch)?:\s*([^\n\r]+)/i)?.[1]?.trim());
+        if (sec && sec.toLowerCase() !== selectedBatchSection.toLowerCase()) return false;
+      }
+      return !b.is_deleted;
+    }).map(b => {
+      const name = b.customer
+        ? `${b.customer.first_name || ''} ${b.customer.last_name || ''}`.trim() || b.customer.email
+        : (b.student_details?.full_name || 'Student');
+      const isRescheduled = (b.notes || '').includes('[RESCHEDULED_MAKEUP]');
+      return {
+        id: b.id,
+        bookingNumber: b.booking_number,
+        name,
+        section: b.student_details?.section || (b.notes?.match(/•\s*section(?:\s*\/\s*batch)?:\s*([^\n\r]+)/i)?.[1]?.trim()) || 'General',
+        eventDate: b.event_date,
+        status: b.status,
+        isRescheduled,
+      };
+    });
+  }, [bookings, selectedBatchSchool, selectedBatchSection]);
+
+  // Fetch completed students for post-pictorial attendance & makeup review
+  const fetchCompletedStudents = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select(`
+          id,
+          booking_number,
+          status,
+          event_date,
+          preferred_time,
+          location,
+          notes,
+          customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, email)
+        `)
+        .eq('status', 'COMPLETED')
+        .or('is_deleted.is.null,is_deleted.eq.false')
+        .order('event_date', { ascending: false });
+
+      if (error || !data) return;
+
+      const list = data.map(b => {
+        const notes = b.notes || '';
+        const parsed = parseStructuredNotes(notes);
+        const name = b.customer
+          ? `${b.customer.first_name || ''} ${b.customer.last_name || ''}`.trim() || b.customer.email
+          : 'Student';
+        return {
+          id: b.id,
+          bookingNumber: b.booking_number,
+          name,
+          school: parsed.school || 'Designated School',
+          section: parsed.section || 'General',
+          eventDate: b.event_date,
+          isRescheduled: notes.includes('[RESCHEDULED_MAKEUP]'),
+        };
+      });
+      setCompletedSchoolStudents(list);
+    } catch (err) {
+      console.warn('fetchCompletedStudents error:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeNavTab === 'COMPLETED') {
+      fetchCompletedStudents();
+    }
+  }, [activeNavTab, fetchCompletedStudents]);
+
+  const handleRescheduleSingleStudent = async () => {
+    if (!rescheduleStudentId) {
+      showToast('Please choose a student to reschedule.', 'error');
+      return;
+    }
+    const targetStudent = completedSchoolStudents.find(s => s.id === rescheduleStudentId) || bookings.find(b => b.id === rescheduleStudentId);
+    setIsReschedulingSingleStudent(true);
+    try {
+      const res = await rescheduleStudentBooking({
+        bookingId: rescheduleStudentId,
+        newDate: rescheduleNewDate || null,
+        newLocation: 'E-Kodak Studio (Makeup Session)',
+        reason: rescheduleReason || 'Unable to attend confirmed pictorial date',
+        adminId: profile?.id || null,
+        adminName: adminStaffName,
+      });
+
+      if (res.success) {
+        showToast(res.message || `Rescheduled ${targetStudent?.name || 'student'} for makeup session. Pushed back to active queue.`);
+        setRescheduleStudentId('');
+        setRescheduleNewDate('');
+        fetchBookings();
+        fetchCounts();
+        fetchSchoolBatches();
+        fetchCompletedStudents();
+      } else {
+        showToast(res.message || 'Failed to reschedule student.', 'error');
+      }
+    } catch (err) {
+      showToast('Error rescheduling student.', 'error');
+    } finally {
+      setIsReschedulingSingleStudent(false);
     }
   };
 
-  // Sync available photographers when batch date/time changes
+  // Smart announcement generator (clean, no duplicate text, with reschedule protection notice)
+  const generateAnnouncementText = (school, section, date, startTime, endTime, locType, customAddr, photogId, hasReschedule = true, photogList = batchPhotographersAvailability) => {
+    if (!school) return '';
+    const secLabel = section && section !== 'ALL' && section !== 'All Sections'
+      ? (section.toLowerCase().startsWith('section') ? ` (${section})` : ` (Section ${section})`)
+      : '';
+    const dateLabel = date ? fmtDate(date) : 'Confirmed Date';
+    const timeLabel = `${formatTime(startTime)} – ${formatTime(endTime)}`;
+    const venueLabel = locType === 'CAMPUS'
+      ? `School Campus${customAddr && customAddr.trim() ? ` (${customAddr.trim()})` : ''}`
+      : 'E-Kodak Studio, 311 Rizal Street, City of Naga';
+    const listToSearch = (photogList && photogList.length > 0) ? photogList : batchPhotographersAvailability;
+    const photog = listToSearch.find(p => p.id === photogId);
+    const photogName = photog ? `${photog.first_name || ''} ${photog.last_name || ''}`.trim() : '';
+    const photogText = photogName ? ` Lead Photographer: ${photogName}.` : '';
+    const safetyNote = hasReschedule
+      ? ' Notice: Students unable to attend this date can request a batch transfer or studio makeup session via their portal pass.'
+      : '';
+
+    return `Graduation Pictorial confirmed for ${school}${secLabel}. Date: ${dateLabel}. Schedule: ${timeLabel}. Venue: ${venueLabel}.${photogText} Please arrive 15 minutes before your time slot.${safetyNote}`;
+  };
+
+  // Open scheduler modal for a specific school and section
+  const handleOpenSchoolScheduler = (schoolName, sectionName = 'ALL') => {
+    setSelectedBatchSchool(schoolName);
+    setSelectedBatchSection(sectionName);
+    setBatchCustomAddress('');
+    setBatchPhotographerId('');
+    const found = schoolBatchesList.find(b => b.school.toLowerCase().includes(schoolName.toLowerCase()));
+    if (found) {
+      setSelectedBatchKey(found.key);
+    }
+    const generated = generateAnnouncementText(
+      schoolName,
+      sectionName,
+      batchEventDate,
+      batchStartTime,
+      batchEndTime,
+      batchLocationType,
+      '',
+      '',
+      allowRescheduleProtection
+    );
+    setBatchAnnouncementText(generated);
+    setIsSchoolSchedulerOpen(true);
+  };
+
+  // Sync available photographers and auto-assign best available photographer (strictly photographer accounts)
   useEffect(() => {
-    if (isSchoolSchedulerOpen && batchEventDate) {
-      getPhotographersWithWorkloadAndAvailability(batchEventDate, batchPreferredTime).then(res => {
-        setBatchPhotographersAvailability(res.data || []);
+    if (isSchoolSchedulerOpen) {
+      const targetDate = batchEventDate ? batchEventDate : null;
+      getPhotographersWithWorkloadAndAvailability(targetDate, batchStartTime).then(res => {
+        const list = (res.data || []).filter(p => (!p.role || p.role.toLowerCase() === 'photographer') && p.role?.toLowerCase() !== 'admin' && p.role?.toLowerCase() !== 'staff');
+        setBatchPhotographersAvailability(list);
+
+        // Only auto-assign if an actual target event date is chosen
+        if (targetDate) {
+          const currentPhotog = list.find(p => p.id === batchPhotographerId);
+          if (!batchPhotographerId || (currentPhotog && (currentPhotog.hasConflict || !currentPhotog.is_available))) {
+            const available = list.filter(p => !p.hasConflict && p.is_available).sort((a, b) => (a.activeWorkloadCount || 0) - (b.activeWorkloadCount || 0));
+            if (available.length > 0) {
+              const bestPhotogId = available[0].id;
+              setBatchPhotographerId(bestPhotogId);
+              setBatchAnnouncementText(generateAnnouncementText(
+                selectedBatchSchool,
+                selectedBatchSection,
+                batchEventDate,
+                batchStartTime,
+                batchEndTime,
+                batchLocationType,
+                batchCustomAddress,
+                bestPhotogId,
+                allowRescheduleProtection,
+                list
+              ));
+            } else {
+              setBatchPhotographerId('');
+              setBatchAnnouncementText(generateAnnouncementText(
+                selectedBatchSchool,
+                selectedBatchSection,
+                batchEventDate,
+                batchStartTime,
+                batchEndTime,
+                batchLocationType,
+                batchCustomAddress,
+                '',
+                allowRescheduleProtection,
+                list
+              ));
+            }
+          }
+        }
       });
     }
-  }, [isSchoolSchedulerOpen, batchEventDate, batchPreferredTime]);
+  }, [isSchoolSchedulerOpen, batchEventDate, batchStartTime, batchEndTime, batchLocationType, batchCustomAddress, selectedBatchSchool, selectedBatchSection, allowRescheduleProtection]);
+
+  // Auto-detect & auto-assign photographer availability for active booking editing (strictly photographer accounts)
+  useEffect(() => {
+    if (editingBooking && editingBooking.event_date) {
+      const targetDate = editingBooking.event_date.split('T')[0];
+      setLoadingEditPhotographers(true);
+      getPhotographersWithWorkloadAndAvailability(targetDate, editingBooking.preferred_time)
+        .then(res => {
+          const list = (res.data || []).filter(p => (!p.role || p.role.toLowerCase() === 'photographer') && p.role?.toLowerCase() !== 'admin' && p.role?.toLowerCase() !== 'staff');
+          setEditBookingPhotographers(list);
+
+          // Auto-assign: if the booking has no photographer yet or current one conflicts on this date: put available photographer's name on it!
+          const currentPhotog = list.find(p => p.id === editingBooking.photographer_id);
+          if (!editingBooking.photographer_id || (currentPhotog && (currentPhotog.hasConflict || !currentPhotog.is_available))) {
+            const available = list.filter(p => !p.hasConflict && p.is_available).sort((a, b) => (a.activeWorkloadCount || 0) - (b.activeWorkloadCount || 0));
+            if (available.length > 0) {
+              setEditingBooking(prev => {
+                if (!prev) return prev;
+                return { ...prev, photographer_id: available[0].id };
+              });
+            }
+          }
+        })
+        .finally(() => setLoadingEditPhotographers(false));
+    } else if (!editingBooking) {
+      setEditBookingPhotographers([]);
+    }
+  }, [editingBooking?.id, editingBooking?.event_date, editingBooking?.preferred_time]);
 
   const handleBatchScheduleSubmit = async (e) => {
     e.preventDefault();
-    const batch = schoolBatchesList.find(b => b.key === selectedBatchKey);
-    if (!batch) {
+    const targetSchool = selectedBatchSchool || (schoolBatchesList.find(b => b.key === selectedBatchKey)?.school);
+    if (!targetSchool) {
       showToast('Please select a school batch to schedule.', 'error');
       return;
     }
@@ -469,27 +810,28 @@ export default function AdminBookings({ initialSection }) {
     setIsBatchSubmitting(true);
 
     const venue = batchLocationType === 'CAMPUS'
-      ? `School Campus: ${batch.school}${batchCustomAddress ? ` (${batchCustomAddress})` : ''}`
+      ? `School Campus: ${targetSchool}${batchCustomAddress ? ` (${batchCustomAddress})` : ''}`
       : 'E-Kodak Studio, 311 Rizal Street, City of Naga, Cebu';
 
     const adminName = profile?.first_name ? `${profile.first_name} ${profile.last_name || ''}`.trim() : 'Studio Admin';
 
     const result = await batchScheduleSchoolPictorial({
-      schoolName: batch.school,
-      sectionName: batch.section === 'All Sections' ? null : batch.section,
+      schoolName: targetSchool,
+      sectionName: selectedBatchSection === 'ALL' || selectedBatchSection === 'All Sections' ? null : selectedBatchSection,
       eventDate: batchEventDate,
-      preferredTime: batchPreferredTime,
+      preferredTime: formattedBatchTimeRange,
       location: venue,
       photographerId: batchPhotographerId || null,
       announcementMessage: batchAnnouncementText,
       adminId: profile?.id || null,
       adminName,
+      allowRescheduleProtection,
     });
 
     setIsBatchSubmitting(false);
 
     if (result.success) {
-      showToast(`Confirmed pictorial schedule for ${result.count} student(s) at ${batch.school}! Announcement broadcasted.`);
+      showToast(`Confirmed pictorial schedule for ${result.count} student(s) at ${targetSchool}! Announcement broadcasted.`);
       setIsSchoolSchedulerOpen(false);
       fetchBookings();
       fetchCounts();
@@ -508,12 +850,15 @@ export default function AdminBookings({ initialSection }) {
         const [servicesRes, customersRes, photographersRes] = await Promise.all([
           supabase.from('services').select('id, name, base_price, category').eq('is_active', true).order('name'),
           supabase.from('profiles').select('id, first_name, last_name, phone, studio_specs').order('first_name'),
-          supabase.from('photographer_profiles').select('id, specialization, profile:profiles(first_name, last_name)'),
+          supabase.from('photographer_profiles').select('id, specialization, profile:profiles(first_name, last_name, role)'),
         ]);
 
         if (servicesRes.data) setAvailableServices(servicesRes.data);
         if (customersRes.data) setAvailableCustomers(customersRes.data);
-        if (photographersRes.data) setAvailablePhotographers(photographersRes.data);
+        if (photographersRes.data) {
+          const onlyPhotogs = photographersRes.data.filter(p => !p.profile || p.profile.role === 'photographer');
+          setAvailablePhotographers(onlyPhotogs);
+        }
       } catch (e) {
         console.warn('Metadata fetch warning:', e);
       }
@@ -661,9 +1006,12 @@ export default function AdminBookings({ initialSection }) {
     if (bookings.length === 0) return;
     const headers = [
       'Booking Number',
-      'Client First Name',
-      'Client Last Name',
+      'Account Owner First Name',
+      'Account Owner Last Name',
       'Phone',
+      'Booking For',
+      'Participant Name',
+      'Participant Relationship',
       'Service',
       'Tier',
       'Event Date',
@@ -679,6 +1027,9 @@ export default function AdminBookings({ initialSection }) {
       b.customer?.first_name || '',
       b.customer?.last_name || '',
       b.customer?.phone || '',
+      b.participant_details?.booking_for === 'someone_else' ? 'Someone else' : 'Myself',
+      b.participant_details?.full_name || '',
+      b.participant_details?.relationship || '',
       b.service?.name || '',
       b.tier_name || '',
       b.event_date || '',
@@ -951,14 +1302,11 @@ export default function AdminBookings({ initialSection }) {
   const handleConfirmSoftDelete = async () => {
     if (!bookingToDelete) return;
     setIsDeleting(true);
-    const deletedByName = profile?.first_name
-      ? `${profile.first_name} ${profile.last_name || ''}`.trim()
-      : 'Admin Staff';
 
     const { success, error: delErr } = await softDeleteBooking({
       bookingId: bookingToDelete.id,
       deletedById: profile?.id,
-      deletedByName,
+      deletedByName: adminStaffName,
       reason: deleteReason || 'Moved to Trash by Admin',
     });
 
@@ -977,14 +1325,10 @@ export default function AdminBookings({ initialSection }) {
 
   // ── RECOVER CRUD (Restore from Trash) ─────────────────────────────────────
   const handleRestoreBooking = async (b) => {
-    const restoredByName = profile?.first_name
-      ? `${profile.first_name} ${profile.last_name || ''}`.trim()
-      : 'Admin Staff';
-
     const { success, error: resErr } = await restoreBooking({
       bookingId: b.id,
       restoredById: profile?.id,
-      restoredByName,
+      restoredByName: adminStaffName,
     });
 
     if (!success) {
@@ -1001,14 +1345,11 @@ export default function AdminBookings({ initialSection }) {
   const handleConfirmPermanentPurge = async () => {
     if (!bookingToPermanentlyPurge) return;
     setIsDeleting(true);
-    const deletedByName = profile?.first_name
-      ? `${profile.first_name} ${profile.last_name || ''}`.trim()
-      : 'Admin Staff';
 
     const { success, error: delErr } = await deleteBookingPermanently({
       bookingId: bookingToPermanentlyPurge.id,
       deletedById: profile?.id,
-      deletedByName,
+      deletedByName: adminStaffName,
       reason: 'Permanently purged from Deleted tab',
     });
 
@@ -1027,13 +1368,10 @@ export default function AdminBookings({ initialSection }) {
   // ── EMPTY ENTIRE TRASH CRUD ──────────────────────────────────────────────
   const handleEmptyTrash = async () => {
     setIsEmptyingTrash(true);
-    const deletedByName = profile?.first_name
-      ? `${profile.first_name} ${profile.last_name || ''}`.trim()
-      : 'Admin Staff';
 
     const { success, count, error: err } = await emptyTrash({
       deletedById: profile?.id,
-      deletedByName,
+      deletedByName: adminStaffName,
     });
 
     setIsEmptyingTrash(false);
@@ -1052,41 +1390,24 @@ export default function AdminBookings({ initialSection }) {
   // Dropdown options
   const statusDropdownOptions = [
     { value: '', label: 'All Statuses', dotColor: 'bg-neutral-400' },
-    { value: 'PENDING', label: 'Pending Review', dotColor: 'bg-gold' },
-    { value: 'CONFIRMED', label: 'Confirmed', dotColor: 'bg-neutral-900' },
+    { value: 'PENDING', label: 'Pending Review', dotColor: 'bg-amber-500' },
+    { value: 'CONFIRMED', label: 'Confirmed Sessions', dotColor: 'bg-neutral-900' },
     { value: 'PHOTOGRAPHER_ASSIGNED', label: 'Photographer Assigned', dotColor: 'bg-neutral-600' },
     { value: 'CAPTURE', label: 'In Studio Bay', dotColor: 'bg-gold' },
     { value: 'EDITING', label: 'In Post-Processing', dotColor: 'bg-neutral-600' },
     { value: 'READY', label: 'Ready for Pickup', dotColor: 'bg-gold' },
-    { value: 'COMPLETED', label: 'Completed', dotColor: 'bg-neutral-900' },
+    { value: 'COMPLETED', label: 'Completed Orders', dotColor: 'bg-neutral-900' },
     { value: 'REJECTED', label: 'Rejected', dotColor: 'bg-neutral-400' },
     { value: 'CANCELLED', label: 'Cancelled', dotColor: 'bg-neutral-300' },
   ];
 
-  const paymentDropdownOptions = [
-    { value: '', label: 'All Payments', dotColor: 'bg-neutral-400' },
-    { value: 'PAID', label: 'Cleared (Paid)', dotColor: 'bg-neutral-900' },
-    { value: 'UNPAID', label: 'Unpaid', dotColor: 'bg-gold' },
-    { value: 'PARTIAL', label: 'Partial Balance', dotColor: 'bg-gold' },
-    { value: 'REFUNDED', label: 'Refunded', dotColor: 'bg-neutral-300' },
-  ];
-
   const sortDropdownOptions = [
-    { value: 'created_at', label: 'Creation Date' },
-    { value: 'event_date', label: 'Scheduled Event Date' },
+    { value: 'created_at', label: 'Newest First' },
+    { value: 'student_name_asc', label: 'Student (A–Z)' },
+    { value: 'student_name_desc', label: 'Student (Z–A)' },
+    { value: 'event_date', label: 'Event Date' },
     { value: 'booking_number', label: 'Booking Number' },
     { value: 'total_amount', label: 'Total Amount' },
-  ];
-
-  const queueDropdownOptions = [
-    { value: 'ALL', label: 'All Bookings', badge: counts.total, dotColor: 'bg-primary', icon: CalendarDays },
-    { value: 'PENDING', label: 'Pending Review', badge: counts.pending, dotColor: 'bg-gold', icon: Clock },
-    { value: 'CONFIRMED', label: 'Confirmed Sessions', badge: counts.confirmed, dotColor: 'bg-blue-600', icon: CheckCircle2 },
-    { value: 'PRODUCTION', label: 'In Production', badge: counts.inBay, dotColor: 'bg-purple-600', icon: Camera },
-    { value: 'READY', label: 'Ready for Pickup', badge: counts.ready, dotColor: 'bg-emerald-600', icon: Package },
-    { value: 'COMPLETED', label: 'Completed Orders', badge: counts.completed, dotColor: 'bg-neutral-500', icon: CheckCircle },
-    { value: 'UNPAID', label: 'Unpaid / Balances', badge: counts.unpaid, dotColor: 'bg-amber-500', icon: AlertCircle },
-    { value: 'DELETED', label: 'Deleted (Trash)', badge: counts.deleted, dotColor: 'bg-rose-500', icon: Trash2 },
   ];
 
   // Sequential Pipeline Stages for Edit Order Progress
@@ -1127,18 +1448,271 @@ export default function AdminBookings({ initialSection }) {
     { value: 'REFUNDED', label: 'Refunded', dotColor: 'bg-neutral-400' },
   ];
 
-  const editPhotographerOptions = [
-    { value: '', label: 'Unassigned (Assign Later)', dotColor: 'bg-neutral-300' },
-    ...availablePhotographers.map(p => {
-      const name = `${p.profile?.first_name || ''} ${p.profile?.last_name || ''}`.trim() || 'Photographer';
-      const spec = p.specialization ? ` (${p.specialization})` : '';
-      return {
-        value: p.id,
-        label: `${name}${spec}`,
-        dotColor: 'bg-indigo-500',
-      };
-    }),
-  ];
+
+  // Apply in-memory filtering and multi-attribute sorting for campus batch orders
+  const displayedBookings = useMemo(() => {
+    let result = [...bookings];
+
+    if (schoolFilter) {
+      result = result.filter(b => getBookingSchool(b).toLowerCase().includes(schoolFilter.toLowerCase()));
+    }
+
+    if (sectionFilter) {
+      result = result.filter(b => getBookingSection(b).toLowerCase().includes(sectionFilter.toLowerCase()));
+    }
+
+    if (sortBy === 'student_name_asc') {
+      result.sort((a, b) => getBookingStudentName(a).localeCompare(getBookingStudentName(b)));
+    } else if (sortBy === 'student_name_desc') {
+      result.sort((a, b) => getBookingStudentName(b).localeCompare(getBookingStudentName(a)));
+    } else if (sortBy === 'school_asc') {
+      result.sort((a, b) => getBookingSchool(a).localeCompare(getBookingSchool(b)));
+    } else if (sortBy === 'section_asc') {
+      result.sort((a, b) => getBookingSection(a).localeCompare(getBookingSection(b)));
+    } else if (sortBy === 'batch_asc') {
+      result.sort((a, b) => {
+        const btA = (a.student_details?.batch || '').trim();
+        const btB = (b.student_details?.batch || '').trim();
+        return btA.localeCompare(btB);
+      });
+    } else if (sortBy === 'student_id_asc') {
+      result.sort((a, b) => {
+        const idA = (a.student_details?.student_id || '').trim();
+        const idB = (b.student_details?.student_id || '').trim();
+        return idA.localeCompare(idB);
+      });
+    }
+
+    return result;
+  }, [bookings, schoolFilter, sectionFilter, sortBy]);
+
+  // Group all bookings into school places with sections (Batching categorization)
+  const allSchoolPlacesList = useMemo(() => {
+    const map = {};
+    displayedBookings.forEach(b => {
+      const sch = getBookingSchool(b) || 'Studio Direct / General';
+      const sec = getBookingSection(b) || 'General Section';
+      const campus = getBookingCampus(b);
+
+      if (!map[sch]) {
+        map[sch] = {
+          schoolName: sch,
+          campus,
+          totalStudents: 0,
+          pendingScheduleCount: 0,
+          confirmedScheduleCount: 0,
+          sectionsMap: {},
+          bookings: [],
+        };
+      }
+
+      map[sch].totalStudents += 1;
+      map[sch].bookings.push(b);
+
+      const isPending = !b.event_date || b.status === 'PENDING';
+      if (isPending) {
+        map[sch].pendingScheduleCount += 1;
+      } else {
+        map[sch].confirmedScheduleCount += 1;
+      }
+
+      if (!map[sch].sectionsMap[sec]) {
+        map[sch].sectionsMap[sec] = [];
+      }
+      map[sch].sectionsMap[sec].push(b);
+    });
+
+    return Object.values(map);
+  }, [displayedBookings]);
+
+  const totalSchoolsCount = allSchoolPlacesList.length;
+  const pendingSchoolsCount = allSchoolPlacesList.filter(s => s.pendingScheduleCount > 0).length;
+  const confirmedSchoolsCount = allSchoolPlacesList.filter(s => s.pendingScheduleCount === 0).length;
+
+  const categorizedSchoolPlaces = useMemo(() => {
+    let list = [...allSchoolPlacesList];
+
+    // Live search by school name, campus, or section
+    if (schoolSearch.trim()) {
+      const q = schoolSearch.trim().toLowerCase();
+      list = list.filter(s =>
+        s.schoolName.toLowerCase().includes(q) ||
+        (s.campus && s.campus.toLowerCase().includes(q)) ||
+        Object.keys(s.sectionsMap).some(sec => sec.toLowerCase().includes(q))
+      );
+    }
+
+    // Status filter chip
+    if (schoolStatusFilter === 'PENDING') {
+      list = list.filter(s => s.pendingScheduleCount > 0);
+    } else if (schoolStatusFilter === 'CONFIRMED') {
+      list = list.filter(s => s.pendingScheduleCount === 0);
+    }
+
+    // Dynamic school sorting (Future-proofed for large directories)
+    return list.sort((a, b) => {
+      if (a.schoolName === 'Studio Direct / General') return 1;
+      if (b.schoolName === 'Studio Direct / General') return -1;
+
+      if (schoolSortBy === 'students_desc') {
+        return b.totalStudents - a.totalStudents;
+      }
+      if (schoolSortBy === 'students_asc') {
+        return a.totalStudents - b.totalStudents;
+      }
+      if (schoolSortBy === 'name_desc') {
+        return b.schoolName.localeCompare(a.schoolName);
+      }
+      if (schoolSortBy === 'name_asc') {
+        return a.schoolName.localeCompare(b.schoolName);
+      }
+      // default: 'pending_desc' (Action required first, then alphabetical)
+      if (b.pendingScheduleCount !== a.pendingScheduleCount) {
+        return b.pendingScheduleCount - a.pendingScheduleCount;
+      }
+      return a.schoolName.localeCompare(b.schoolName);
+    });
+  }, [allSchoolPlacesList, schoolSearch, schoolStatusFilter, schoolSortBy]);
+
+  const areAllCollapsed = useMemo(() => {
+    if (categorizedSchoolPlaces.length === 0) return false;
+    return categorizedSchoolPlaces.every(s => collapsedSchools[s.schoolName]);
+  }, [categorizedSchoolPlaces, collapsedSchools]);
+
+  const toggleSchoolCollapse = (schoolName) => {
+    setCollapsedSchools(prev => ({
+      ...prev,
+      [schoolName]: !prev[schoolName]
+    }));
+  };
+
+  const handleExpandAllSchools = () => {
+    setCollapsedSchools({});
+  };
+
+  const handleCollapseAllSchools = () => {
+    const all = {};
+    categorizedSchoolPlaces.forEach(s => {
+      all[s.schoolName] = true;
+    });
+    setCollapsedSchools(all);
+  };
+
+  // Handler for printing an official school masterlist call-sheet
+  const handlePrintClassRoster = (targetSchool = null) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    const activeSchool = targetSchool || schoolFilter;
+    const targetList = activeSchool
+      ? displayedBookings.filter(b => {
+          const s = getBookingSchool(b);
+          return s && s.toLowerCase().includes(activeSchool.toLowerCase());
+        })
+      : displayedBookings;
+    const title = activeSchool ? `${activeSchool} - ${sectionFilter || 'All Sections'}` : 'E-Kodak Student Roster';
+    const rowsHtml = targetList.map((b, idx) => {
+      const sName = b.student_details?.student_name || (b.customer ? `${b.customer.last_name}, ${b.customer.first_name}` : 'N/A');
+      const sId = b.student_details?.student_id || 'N/A';
+      const sSec = b.student_details?.section || 'N/A';
+      const sCourse = b.student_details?.course || 'N/A';
+      const sTier = b.tier_name || 'Standard';
+      const sPayment = b.payment_status || 'UNPAID';
+      const sStatus = b.status || 'PENDING';
+      return `<tr>
+        <td style="padding: 6px 10px; border: 1px solid #ddd; text-align: center;">${idx + 1}</td>
+        <td style="padding: 6px 10px; border: 1px solid #ddd; font-weight: bold;">${sName}</td>
+        <td style="padding: 6px 10px; border: 1px solid #ddd; text-align: center;">${sId}</td>
+        <td style="padding: 6px 10px; border: 1px solid #ddd;">${sSec}</td>
+        <td style="padding: 6px 10px; border: 1px solid #ddd;">${sCourse}</td>
+        <td style="padding: 6px 10px; border: 1px solid #ddd;">${sTier}</td>
+        <td style="padding: 6px 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${sPayment}</td>
+        <td style="padding: 6px 10px; border: 1px solid #ddd; text-align: center;">${sStatus}</td>
+      </tr>`;
+    }).join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>E-Kodak Class Masterlist - ${title}</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; color: #111; }
+            h1 { margin: 0 0 4px; font-size: 20px; }
+            h2 { margin: 0 0 16px; font-size: 13px; color: #666; font-weight: normal; }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 12px; }
+            th { background: #f0ede6; padding: 8px 10px; border: 1px solid #ccc; text-align: left; font-size: 10px; text-transform: uppercase; }
+            .header-info { display: flex; justify-content: space-between; border-bottom: 2px solid #c9a96e; padding-bottom: 12px; margin-bottom: 16px; }
+          </style>
+        </head>
+        <body>
+          <div class="header-info">
+            <div>
+              <h1>E-KODAK STUDIO CEBU</h1>
+              <h2>Official Campus Batch Pictorial Masterlist &bull; ${title}</h2>
+            </div>
+            <div style="text-align: right; font-size: 11px; color: #555;">
+              <p style="margin: 0;">Total Students: <strong>${displayedBookings.length}</strong></p>
+              <p style="margin: 4px 0 0;">Date Printed: ${new Date().toLocaleDateString()}</p>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 40px; text-align: center;">#</th>
+                <th>Student Name (Alphabetical)</th>
+                <th style="width: 100px; text-align: center;">Student ID</th>
+                <th style="width: 80px;">Section</th>
+                <th>Degree / Strand</th>
+                <th style="width: 80px;">Package</th>
+                <th style="width: 90px; text-align: center;">Payment</th>
+                <th style="width: 90px; text-align: center;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 400);
+  };
+  const editPhotographerOptions = useMemo(() => {
+    const base = [{ value: '', label: 'Unassigned (Assign Later)', dotColor: 'bg-neutral-300' }];
+    if (editBookingPhotographers.length > 0) {
+      return [
+        ...base,
+        ...editBookingPhotographers.map(p => {
+          const name = `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Photographer';
+          const isAvail = !p.hasConflict && p.is_available;
+          const statusText = isAvail ? 'Available (On Duty)' : (p.conflictReason ? `Off Duty (${p.conflictReason})` : 'Off Duty');
+          return {
+            value: p.id,
+            label: `${name} — ${statusText}`,
+            dotColor: isAvail ? 'bg-emerald-500' : 'bg-neutral-400',
+          };
+        }),
+      ];
+    }
+    return [
+      ...base,
+      ...availablePhotographers
+        .filter(p => (!p.profile?.role || p.profile.role.toLowerCase() === 'photographer') && p.profile?.role?.toLowerCase() !== 'admin')
+        .map(p => {
+          const name = `${p.profile?.first_name || ''} ${p.profile?.last_name || ''}`.trim() || 'Photographer';
+          const spec = p.specialization ? ` (${p.specialization})` : '';
+          return {
+            value: p.id,
+            label: `${name}${spec}`,
+            dotColor: 'bg-indigo-500',
+          };
+        }),
+    ];
+  }, [editBookingPhotographers, availablePhotographers]);
 
   const editServiceOptions = [
     { value: '', label: 'Select photography service package...', dotColor: 'bg-neutral-300' },
@@ -1165,27 +1739,7 @@ export default function AdminBookings({ initialSection }) {
   const isDeletedTab = activeNavTab === 'DELETED';
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-screen-2xl mx-auto pb-16 font-body">
-
-      {/* ── Toast Notification ───────────────────────────────────────── */}
-      <AnimatePresence>
-        {actionNotice && (
-          <motion.div
-            initial={{ opacity: 0, y: 16, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 16, scale: 0.95 }}
-            transition={{ duration: 0.18 }}
-            className="fixed bottom-6 right-6 z-50 bg-neutral-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-neutral-700 flex items-center gap-2 text-xs font-semibold"
-          >
-            {actionNotice.type === 'success' ? (
-              <CheckCircle2 size={16} className="text-gold" />
-            ) : (
-              <AlertCircle size={16} className="text-neutral-400" />
-            )}
-            <span>{actionNotice.text}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div className="w-full animate-fade-in pb-16 font-body">
 
       {/* ── 1. Luxury Dark Hero Banner adapted for Booking Management ─────── */}
       <AdminHeroBanner
@@ -1212,181 +1766,93 @@ export default function AdminBookings({ initialSection }) {
         onRefresh={() => { fetchBookings(); fetchCounts(); }}
         isRefreshing={loading}
         onExport={handleExportCSV}
-        extraTools={[
+      />
+
+      {/* ── Page Content Container ───────────────────────────────────── */}
+      <div className="space-y-6 max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-7 mt-6 sm:mt-7">
+
+      {/* ── Toast Notification ───────────────────────────────────────── */}
+      <AnimatePresence>
+        {actionNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.95 }}
+            transition={{ duration: 0.18 }}
+            className="fixed bottom-6 right-6 z-50 bg-neutral-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-neutral-700 flex items-center gap-2 text-xs font-semibold"
+          >
+            {actionNotice.type === 'success' ? (
+              <CheckCircle2 size={16} className="text-gold" />
+            ) : (
+              <AlertCircle size={16} className="text-neutral-400" />
+            )}
+            <span>{actionNotice.text}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── 2. Unified Luxury Studio KPI Overview Metric Strip ─────────────── */}
+      <CategorizedMetricStrip
+        loading={loading}
+        columns="grid-cols-2 sm:grid-cols-3 lg:grid-cols-5"
+        cards={[
           {
-            label: 'Scan QR Pass',
-            onClick: () => setIsQrScannerOpen(true),
-            icon: QrCode,
-            iconColor: 'text-gold'
+            key: 'ALL',
+            label: 'TOTAL',
+            subtitle: 'Active studio orders',
+            value: counts.total,
+            isActive: activeNavTab === 'ALL',
+            onClick: () => handleNavTabClick('ALL'),
           },
           {
-            label: 'Check Photographers',
-            onClick: () => {
-              setIsPhotographerAvailabilityOpen(true);
-              handleLoadPhotographerAvailability(availDate, availTime);
-            },
-            icon: Camera,
-            iconColor: 'text-gold'
+            key: 'PENDING',
+            label: 'PENDING',
+            subtitle: 'Awaiting scheduling & review',
+            value: counts.pending,
+            isActive: activeNavTab === 'PENDING',
+            onClick: () => handleNavTabClick('PENDING'),
           },
           {
-            label: 'School Pictorial Tool',
-            onClick: () => {
-              setIsSchoolSchedulerOpen(true);
-              fetchSchoolBatches();
-            },
-            icon: GraduationCap,
-            iconColor: 'text-gold'
+            key: 'READY',
+            label: 'READY',
+            subtitle: 'Ready for client pickup',
+            value: counts.ready,
+            isActive: activeNavTab === 'READY',
+            onClick: () => handleNavTabClick('READY'),
           },
-          { label: 'Workstation Hub', href: '/admin/workstation', icon: ArrowRightLeft, iconColor: 'text-gold' },
-          { label: 'Record Payment', href: '/admin/payments', icon: CreditCard, iconColor: 'text-gold' },
-          { label: 'Photographers', href: '/admin/photographers', icon: Camera, iconColor: 'text-neutral-400' },
+          {
+            key: 'COMPLETED',
+            label: 'COMPLETED',
+            subtitle: 'Fulfilled & closed orders',
+            value: counts.completed,
+            isActive: activeNavTab === 'COMPLETED',
+            onClick: () => handleNavTabClick('COMPLETED'),
+          },
+          {
+            key: 'DELETED',
+            label: 'ARCHIVED',
+            subtitle: 'Trash & soft deleted',
+            value: counts.deleted,
+            isActive: activeNavTab === 'DELETED',
+            onClick: () => handleNavTabClick('DELETED'),
+          },
         ]}
       />
 
-      {/* ── 2. KPI Overview Metric Strip (5 Primary Queues) ──────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-        {[
-          { label: 'Active orders', val: counts.total, key: 'ALL', icon: CalendarDays, color: 'text-primary' },
-          { label: 'Pending', val: counts.pending, key: 'PENDING', icon: Clock, color: 'text-gold-dark' },
-          { label: 'Ready', val: counts.ready, key: 'READY', icon: Package, color: 'text-gold-dark' },
-          { label: 'Completed', val: counts.completed, key: 'COMPLETED', icon: CheckCircle, color: 'text-emerald-700' },
-          { label: 'Trash Cycle', val: counts.deleted, key: 'DELETED', icon: Trash2, color: 'text-rose-600' },
-        ].map((kpi, idx) => (
-          <motion.button
-            key={idx}
-            type="button"
-            whileHover={{ y: -2 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => handleNavTabClick(kpi.key)}
-            className={`p-3 sm:p-4 rounded-2xl border text-left transition-all cursor-pointer select-none bg-white hover:border-gold/60 hover:shadow-xs ${
-              activeNavTab === kpi.key
-                ? 'border-gold ring-2 ring-gold/20 bg-gold/5 shadow-xs'
-                : 'border-neutral-200/90 shadow-2xs'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 truncate">
-                {kpi.label}
-              </span>
-              <kpi.icon size={14} className={kpi.color} />
-            </div>
-            <p className={`text-xl sm:text-2xl font-heading font-bold ${kpi.color}`}>
-              <AnimatedCounter value={kpi.val} />
-            </p>
-          </motion.button>
-        ))}
-      </div>
-
-      {/* ── 2.2. Sectional Records Navigation Bar ──────────────────────── */}
-      <div className="bg-white rounded-2xl border border-neutral-200/90 p-2 sm:p-2.5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-2.5">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {/* Section 1: Active orders */}
-          <button
-            type="button"
-            onClick={() => {
-              navigate('/admin/bookings');
-              handleNavTabClick('ALL');
-            }}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
-              activeNavTab !== 'COMPLETED' && activeNavTab !== 'DELETED'
-                ? 'bg-neutral-900 text-white shadow-xs'
-                : 'text-neutral-600 hover:text-primary hover:bg-neutral-100'
-            }`}
-          >
-            <CalendarDays size={14} className={activeNavTab !== 'COMPLETED' && activeNavTab !== 'DELETED' ? 'text-gold' : 'text-neutral-400'} />
-            <span>Active orders</span>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-              activeNavTab !== 'COMPLETED' && activeNavTab !== 'DELETED'
-                ? 'bg-neutral-800 text-gold border border-gold/30'
-                : 'bg-neutral-200 text-neutral-700'
-            }`}>
-              {counts.total}
-            </span>
-          </button>
-
-          {/* Section 2: Completed */}
-          <button
-            type="button"
-            onClick={() => {
-              navigate('/admin/done-orders');
-              handleNavTabClick('COMPLETED');
-            }}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
-              activeNavTab === 'COMPLETED'
-                ? 'bg-emerald-900 text-white shadow-xs'
-                : 'text-neutral-600 hover:text-emerald-700 hover:bg-emerald-50'
-            }`}
-          >
-            <CheckCircle2 size={14} className={activeNavTab === 'COMPLETED' ? 'text-emerald-300' : 'text-emerald-600'} />
-            <span>Completed</span>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-              activeNavTab === 'COMPLETED'
-                ? 'bg-emerald-800 text-emerald-200 border border-emerald-400/40'
-                : 'bg-emerald-100 text-emerald-800'
-            }`}>
-              {counts.completed}
-            </span>
-          </button>
-
-          {/* Section 3: Trash Cycle Management */}
-          <button
-            type="button"
-            onClick={() => {
-              navigate('/admin/trash');
-              handleNavTabClick('DELETED');
-            }}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
-              activeNavTab === 'DELETED'
-                ? 'bg-rose-900 text-white shadow-xs'
-                : 'text-neutral-600 hover:text-rose-700 hover:bg-rose-50'
-            }`}
-          >
-            <Trash2 size={14} className={activeNavTab === 'DELETED' ? 'text-rose-300' : 'text-rose-600'} />
-            <span>Trash Cycle</span>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-              activeNavTab === 'DELETED'
-                ? 'bg-rose-800 text-rose-200 border border-rose-400/40'
-                : 'bg-rose-100 text-rose-800'
-            }`}>
-              {counts.deleted}
-            </span>
-          </button>
-        </div>
-
-
-
-        {/* Trash Actions when in Trash tab */}
-        {activeNavTab === 'DELETED' && (
-          <div className="flex items-center gap-2">
-            {counts.deleted > 0 && (
-              <button
-                type="button"
-                onClick={() => setIsEmptyTrashModalOpen(true)}
-                className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Trash2 size={13} />
-                <span>Empty Entire Trash</span>
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-
-
-      {/* ── 2.5. School Pictorial Batch Scheduling Alert & Action Banner ── */}
-      {pendingSchoolCount > 0 && !isDeletedTab && activeNavTab !== 'COMPLETED' && (
-        <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in shadow-xs">
+      {/* ── 2.5. School Pictorial Batch Scheduling Alert (Table View Only) ── */}
+      {pendingSchoolCount > 0 && !isDeletedTab && activeNavTab !== 'COMPLETED' && viewMode === 'table' && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-[#FAF7F2] to-amber-500/5 border border-amber-300/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in shadow-2xs">
           <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-900 flex items-center justify-center shrink-0 border border-amber-500/30">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-900 flex items-center justify-center shrink-0 border border-amber-400/40">
               <GraduationCap size={20} />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="text-sm font-heading font-bold text-primary">
-                  {pendingSchoolCount} Student{pendingSchoolCount > 1 ? 's' : ''} Awaiting School Pictorial Schedule
+                <h4 className="text-sm font-heading font-bold text-neutral-900 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                  <span>{pendingSchoolCount} Student{pendingSchoolCount > 1 ? 's' : ''} Awaiting School Pictorial Schedule</span>
                 </h4>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-900 border border-amber-500/40">
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
                   {schoolBatchesList.length} School Batch{schoolBatchesList.length > 1 ? 'es' : ''}
                 </span>
               </div>
@@ -1420,19 +1886,97 @@ export default function AdminBookings({ initialSection }) {
         </div>
       )}
 
-      {/* ── 3. Search & Filter Toolbar ────────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-neutral-200/90 p-4 sm:p-5 shadow-xs">
-        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+      {/* ── 2.6. Completed Students Reschedule & Absentee Makeup Tool ── */}
+      {activeNavTab === 'COMPLETED' && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-[#FAF7F2] to-amber-500/5 border border-amber-300/80 shadow-xs space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-900 flex items-center justify-center shrink-0 border border-amber-400/40">
+                <RotateCcw size={16} />
+              </div>
+              <div>
+                <h4 className="text-xs sm:text-sm font-bold text-amber-950 flex items-center gap-2">
+                  <span>Reschedule Absent Student(s) · Post-Pictorial Makeup Tool</span>
+                </h4>
+                <p className="text-[11px] text-amber-900/80 font-body">
+                  Identify students who were unable to attend the completed pictorial date. Rescheduling removes them from Completed and pushes them back into active orders / pending for makeup.
+                </p>
+              </div>
+            </div>
+            <span className="text-xs font-bold text-amber-800 bg-amber-100/90 px-2.5 py-1 rounded-lg border border-amber-300 self-start sm:self-auto shrink-0">
+              Safety Mechanism
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end pt-1">
+            <div className="sm:col-span-5">
+              <label className="block text-[11px] font-bold text-amber-950 mb-1">
+                Select Absent Student from Completed
+              </label>
+              <select
+                value={rescheduleStudentId}
+                onChange={e => setRescheduleStudentId(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white border border-amber-300 rounded-xl text-xs font-semibold text-neutral-900 outline-none focus:ring-2 focus:ring-amber-400"
+              >
+                <option value="">-- Choose Student Unable to Attend / Absent --</option>
+                {completedSchoolStudents.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.school} {s.section ? `· ${s.section}` : ''}) {s.isRescheduled ? '· [Previously Rescheduled]' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="sm:col-span-3">
+              <label className="block text-[11px] font-bold text-amber-950 mb-1">
+                Makeup Date (Optional)
+              </label>
+              <input
+                type="date"
+                value={rescheduleNewDate}
+                onChange={e => setRescheduleNewDate(e.target.value)}
+                placeholder="Leave blank for pending"
+                className="w-full px-3 py-2.5 bg-white border border-amber-300 rounded-xl text-xs font-semibold text-neutral-900 outline-none focus:ring-2 focus:ring-amber-400"
+              />
+            </div>
+
+            <div className="sm:col-span-4">
+              <button
+                type="button"
+                disabled={!rescheduleStudentId || isReschedulingSingleStudent}
+                onClick={handleRescheduleSingleStudent}
+                className="w-full px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50 shadow-xs flex items-center justify-center gap-2"
+              >
+                {isReschedulingSingleStudent ? (
+                  <>
+                    <RefreshCw size={13} className="animate-spin" />
+                    <span>Pushing to Active Queue...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw size={13} />
+                    <span>Reschedule & Push to Active/Pending</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 3. Streamlined Search & Filter Toolbar ──────────────────────── */}
+      <div className="bg-white rounded-2xl border border-neutral-200/90 p-3 sm:p-4 shadow-xs space-y-3">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           
           {/* Search Bar with Quick QR Scanner Trigger */}
-          <div className="sm:col-span-6 relative">
+          <div className="relative flex-1 min-w-[220px]">
             <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
             <input
               type="text"
-              placeholder="Search by booking #, client, school..."
+              placeholder="Search by booking #, client, school, section..."
               value={liveSearch}
               onChange={e => handleSearchChange(e.target.value)}
-              className="w-full h-9 pl-9 pr-16 bg-neutral-50 hover:bg-neutral-100/60 focus:bg-white rounded-xl text-xs sm:text-sm font-body border border-neutral-200 focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all shadow-2xs"
+              className="w-full h-9.5 pl-9 pr-16 bg-neutral-50 hover:bg-neutral-100/60 focus:bg-white rounded-xl text-xs sm:text-sm font-body border border-neutral-200 focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all shadow-2xs"
             />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
               {liveSearch && (
@@ -1448,7 +1992,7 @@ export default function AdminBookings({ initialSection }) {
               <button
                 type="button"
                 onClick={() => setIsQrScannerOpen(true)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-gold hover:bg-gold/10 transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-gold hover:bg-gold/10 transition-colors cursor-pointer"
                 title="Scan Customer QR Pass"
               >
                 <QrCode size={15} />
@@ -1456,46 +2000,620 @@ export default function AdminBookings({ initialSection }) {
             </div>
           </div>
 
-          {/* Status Dropdown */}
-          <div className="sm:col-span-3">
-            <CustomDropdown
-              value={statusFilter}
-              onChange={val => { setStatus(val); setPage(1); }}
-              options={statusDropdownOptions}
-              placeholder="All Statuses"
-              className="w-full"
-              popoverWidth="w-56"
-            />
-          </div>
+          {/* Streamlined Controls: Sort, Status, and View Mode */}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
+            
+            {/* Sort & Grouping Dropdown */}
+            <div className="w-36 sm:w-44">
+              <CustomDropdown
+                value={sortBy}
+                onChange={val => setSortBy(val)}
+                options={sortDropdownOptions}
+                placeholder="Sort"
+                className="w-full"
+                popoverWidth="w-52"
+              />
+            </div>
 
-          {/* Payment Dropdown */}
-          <div className="sm:col-span-3">
-            <CustomDropdown
-              value={paymentFilter}
-              onChange={val => { setPayment(val); setPage(1); }}
-              options={paymentDropdownOptions}
-              placeholder="All Payments"
-              className="w-full"
-              popoverWidth="w-52"
-            />
-          </div>
+            {/* Status Dropdown */}
+            <div className="w-36 sm:w-44">
+              <CustomDropdown
+                value={statusFilter}
+                onChange={val => { setStatus(val); setPage(1); }}
+                options={statusDropdownOptions}
+                placeholder="All Statuses"
+                className="w-full"
+                popoverWidth="w-56"
+              />
+            </div>
 
+            {/* View Mode: Complete Tables (Default Button) & School Batches (Icon) */}
+            <div className="flex items-center bg-neutral-100 p-1 rounded-xl border border-neutral-200/80 shrink-0">
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  viewMode === 'table'
+                    ? 'bg-white text-neutral-900 shadow-2xs'
+                    : 'text-neutral-500 hover:text-neutral-800'
+                }`}
+                title="Complete Tables (Master View)"
+              >
+                <Table size={13} className={viewMode === 'table' ? 'text-gold' : ''} />
+                <span>Complete Tables</span>
+              </button>
+
+              <div className="relative group">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('batch')}
+                  className={`relative p-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center ${
+                    viewMode === 'batch'
+                      ? 'bg-white text-neutral-900 shadow-2xs'
+                      : 'text-neutral-500 hover:text-neutral-800'
+                  }`}
+                  title={pendingSchoolCount > 0 ? `${pendingSchoolCount} Pending Schedule` : 'School Batches'}
+                  aria-label="School Batches"
+                >
+                  <GraduationCap size={15} className={viewMode === 'batch' ? 'text-gold' : ''} />
+                  {pendingSchoolCount > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-2 w-2 pointer-events-none">
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500 border border-white"></span>
+                    </span>
+                  )}
+                </button>
+                {/* Notification Tooltip on Hover */}
+                <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-neutral-900 text-white text-xs font-bold shadow-lg whitespace-nowrap z-30">
+                  {pendingSchoolCount > 0 ? (
+                    <>
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                      <span>{pendingSchoolCount} Pending Schedule</span>
+                    </>
+                  ) : (
+                    <span>School Batches</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Clear Filters (if active) */}
+            {(statusFilter || paymentFilter || search || sortBy !== 'created_at') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStatus('');
+                  setPayment('');
+                  setSearch('');
+                  setLiveSearch('');
+                  setSortBy('created_at');
+                }}
+                className="p-2 rounded-xl text-neutral-400 hover:text-rose-600 hover:bg-rose-50 border border-neutral-200 transition-colors cursor-pointer shrink-0"
+                title="Reset all filters"
+              >
+                <RotateCcw size={14} />
+              </button>
+            )}
+
+            {/* Empty Entire Trash (when on Deleted tab) */}
+            {isDeletedTab && counts.deleted > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsEmptyTrashModalOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                title="Permanently empty all soft-deleted records"
+              >
+                <Trash2 size={13} />
+                <span>Empty Trash</span>
+              </button>
+            )}
+
+          </div>
         </div>
       </div>
 
-      {/* ── 5. Main Bookings Table (Active vs Deleted) ──────────────────── */}
-      <div className="bg-white rounded-2xl border border-neutral-200/90 shadow-xs overflow-hidden">
+      {/* ── 5. Main Bookings View: School Batches vs Flat Table ──────────── */}
+      {viewMode === 'batch' && !isDeletedTab ? (
+        <div className="space-y-4 sm:space-y-5">
+          {/* School Partner Directory & Sorting Control Toolbar */}
+          <div className="p-4 sm:p-5 bg-white rounded-2xl border border-neutral-200/90 shadow-2xs space-y-3.5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold-dark flex items-center justify-center shrink-0">
+                  <GraduationCap size={18} />
+                </div>
+                <div>
+                  <h3 className="font-heading text-sm sm:text-base font-bold text-neutral-900 leading-tight">
+                    Partner School Directories & Batches
+                  </h3>
+                  <p className="text-xs text-neutral-500 font-body">
+                    Organize, sort, and inspect registered student cohorts across partner campuses.
+                  </p>
+                </div>
+              </div>
+
+              {/* Roster & Quick Global Actions */}
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => handlePrintClassRoster()}
+                  className="px-3 py-1.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Print master call-sheet for all schools"
+                >
+                  <Printer size={13} />
+                  <span>Print Master Roster</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={areAllCollapsed ? handleExpandAllSchools : handleCollapseAllSchools}
+                  className="px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-black text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title={areAllCollapsed ? "Expand all school batches" : "Collapse all school batches"}
+                >
+                  <ChevronDown
+                    size={14}
+                    className={`transition-transform duration-200 ${areAllCollapsed ? '-rotate-90' : 'rotate-0'}`}
+                  />
+                  <span>{areAllCollapsed ? 'Expand All' : 'Collapse All'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Directory Filter, Search & Multi-Sort Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5 pt-1 border-t border-neutral-100">
+              {/* Search School / Campus / Section */}
+              <div className="lg:col-span-5 relative">
+                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+                <input
+                  type="text"
+                  value={schoolSearch}
+                  onChange={(e) => setSchoolSearch(e.target.value)}
+                  placeholder="Filter by school name, campus, or section..."
+                  className="w-full pl-9 pr-8 py-2 rounded-xl bg-neutral-50/80 border border-neutral-200 text-xs font-medium text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold transition-all"
+                />
+                {schoolSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setSchoolSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 p-0.5 cursor-pointer"
+                    title="Clear filter"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+
+              {/* Status Filter Chips */}
+              <div className="lg:col-span-4 flex items-center gap-1.5 overflow-x-auto py-0.5">
+                {[
+                  { key: 'ALL', label: `All (${totalSchoolsCount})` },
+                  { key: 'PENDING', label: `Awaiting Schedule (${pendingSchoolsCount})` },
+                  { key: 'CONFIRMED', label: `All Confirmed (${confirmedSchoolsCount})` },
+                ].map(chip => (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    onClick={() => setSchoolStatusFilter(chip.key)}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                      schoolStatusFilter === chip.key
+                        ? 'bg-neutral-900 text-white shadow-xs'
+                        : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                    }`}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sort School Directory Dropdown */}
+              <div className="lg:col-span-3">
+                <select
+                  value={schoolSortBy}
+                  onChange={(e) => setSchoolSortBy(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-neutral-50/80 border border-neutral-200 text-xs font-semibold text-neutral-800 focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold transition-all cursor-pointer"
+                  title="Sort registered partner schools"
+                >
+                  <option value="pending_desc">Sort: Action Needed First</option>
+                  <option value="name_asc">Sort: School Name (A to Z)</option>
+                  <option value="name_desc">Sort: School Name (Z to A)</option>
+                  <option value="students_desc">Sort: Largest Cohorts First</option>
+                  <option value="students_asc">Sort: Smallest Cohorts First</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {categorizedSchoolPlaces.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-neutral-200 p-12 text-center shadow-xs">
+              <GraduationCap size={40} className="mx-auto text-neutral-300 mb-3" />
+              <h3 className="font-heading text-base font-bold text-primary">No Matching School Batches</h3>
+              <p className="text-xs text-neutral-500 mt-1 max-w-md mx-auto">
+                No school partner records match your current directory filters or search queries.
+              </p>
+              {(schoolSearch || schoolStatusFilter !== 'ALL') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSchoolSearch('');
+                    setSchoolStatusFilter('ALL');
+                  }}
+                  className="mt-4 px-4 py-2 rounded-xl bg-neutral-100 text-neutral-800 text-xs font-semibold hover:bg-neutral-200 transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCcw size={13} />
+                  <span>Reset Directory Filters</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            categorizedSchoolPlaces.map((schoolPlace) => {
+              const isStudioGroup = schoolPlace.schoolName === 'Studio Direct / General';
+              const isCollapsed = !!collapsedSchools[schoolPlace.schoolName];
+
+              return (
+                <div
+                  key={schoolPlace.schoolName}
+                  className="bg-white rounded-2xl border border-neutral-200/90 shadow-xs overflow-hidden transition-all hover:border-gold/50"
+                >
+                  {/* School Place Header (Collapsible Accordion) */}
+                  <div
+                    onClick={() => toggleSchoolCollapse(schoolPlace.schoolName)}
+                    className="p-4 sm:p-5 bg-gradient-to-r from-neutral-950 via-neutral-900 to-[#1e1e1e] text-white flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer select-none group"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 via-gold to-amber-500 text-neutral-950 flex items-center justify-center shrink-0 shadow-md">
+                        {isStudioGroup ? (
+                          <Building2 size={24} className="stroke-[2.2]" />
+                        ) : (
+                          <GraduationCap size={24} className="stroke-[2.5]" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-heading text-base sm:text-lg font-bold text-white group-hover:text-gold transition-colors">
+                            {schoolPlace.schoolName}
+                          </h3>
+                          {schoolPlace.campus && (
+                            <span className="text-[11px] font-medium text-neutral-300 bg-white/10 px-2.5 py-0.5 rounded-full border border-white/10">
+                              {schoolPlace.campus}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          <span className="text-[11px] font-semibold text-gold bg-gold/15 px-2.5 py-0.5 rounded-full border border-gold/30">
+                            {schoolPlace.totalStudents} Student{schoolPlace.totalStudents === 1 ? '' : 's'}
+                          </span>
+                          <span className="text-[11px] font-medium text-neutral-400">
+                            {Object.keys(schoolPlace.sectionsMap).length} Section{Object.keys(schoolPlace.sectionsMap).length === 1 ? '' : 's'}
+                          </span>
+                          {schoolPlace.pendingScheduleCount > 0 ? (
+                            <span
+                              title={`${schoolPlace.pendingScheduleCount} Pending Schedule`}
+                              className="text-[11px] font-semibold text-amber-200 bg-amber-500/20 px-2.5 py-0.5 rounded-full border border-amber-400/40 flex items-center gap-1.5"
+                            >
+                              <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                              <span>{schoolPlace.pendingScheduleCount} Pending Schedule</span>
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-semibold text-emerald-300 bg-emerald-500/20 px-2.5 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1">
+                              <CheckCircle2 size={11} /> All Confirmed
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* School Level Actions & Accordion Toggle */}
+                    <div className="flex items-center gap-2 self-start md:self-center shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePrintClassRoster(schoolPlace.schoolName);
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-neutral-200 border border-white/20 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+                        title="Print official school call-sheet roster"
+                      >
+                        <Printer size={13} />
+                        <span>Print Class Roster</span>
+                      </button>
+
+                      {!isStudioGroup && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenSchoolScheduler(schoolPlace.schoolName, 'ALL');
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-400 via-gold to-amber-500 text-neutral-950 text-xs font-heading font-black tracking-wider shadow-md shadow-gold/25 hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+                          title="Schedule and broadcast to this school"
+                        >
+                          <Megaphone size={13} />
+                          <span>Schedule & Broadcast</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSchoolCollapse(schoolPlace.schoolName);
+                        }}
+                        className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-neutral-200 border border-white/20 transition-all cursor-pointer ml-1"
+                        title={isCollapsed ? 'Expand school batch' : 'Collapse school batch'}
+                        aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+                      >
+                        <ChevronDown size={15} className={`transition-transform duration-200 ${isCollapsed ? '-rotate-90' : 'rotate-0'}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Collapsed Preview Summary */}
+                  {isCollapsed ? (
+                    <div
+                      onClick={() => toggleSchoolCollapse(schoolPlace.schoolName)}
+                      className="px-5 py-3.5 bg-neutral-50/90 hover:bg-neutral-100/80 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-600 cursor-pointer transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="font-semibold text-neutral-900">{schoolPlace.schoolName}</span>
+                        <span>•</span>
+                        <span>{Object.keys(schoolPlace.sectionsMap).length} sections</span>
+                        <span>•</span>
+                        <span>{schoolPlace.totalStudents} students registered</span>
+                      </span>
+                      <span className="font-semibold text-gold-dark hover:text-gold flex items-center gap-1">
+                        Click to expand sections & roster <ChevronDown size={13} className="-rotate-90" />
+                      </span>
+                    </div>
+                  ) : (
+                    /* Sections Categorized Sub-Blocks */
+                    <div className="p-4 sm:p-5 space-y-4 bg-neutral-50/50">
+                      {Object.entries(schoolPlace.sectionsMap).map(([sectionName, sectionBookings]) => {
+                        const sectionPendingCount = sectionBookings.filter(b => !b.event_date || b.status === 'PENDING').length;
+
+                        return (
+                          <div
+                            key={sectionName}
+                            className="bg-white rounded-xl border border-neutral-200/90 shadow-2xs overflow-hidden"
+                          >
+                            {/* Section Bar */}
+                            <div className="px-4 py-2.5 bg-neutral-100/70 border-b border-neutral-200/80 flex items-center justify-between gap-2.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="w-2.5 h-2.5 rounded-full bg-gold shrink-0" />
+                                <h4 className="font-heading text-xs sm:text-sm font-bold text-neutral-900">
+                                  Section: <span className="text-gold-dark">{sectionName}</span>
+                                </h4>
+                                <span className="text-[11px] font-medium text-neutral-500">
+                                  ({sectionBookings.length} student{sectionBookings.length === 1 ? '' : 's'})
+                                </span>
+                                {sectionPendingCount > 0 ? (
+                                  <span
+                                    title={`${sectionPendingCount} Pending Schedule`}
+                                    className="text-xs font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200/90 flex items-center gap-1.5"
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                                    <span>{sectionPendingCount} Pending Schedule</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                                    <CheckCircle2 size={10} /> Confirmed
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Section Students Table */}
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full text-xs font-body">
+                                <thead>
+                                  <tr className="border-b border-neutral-100 bg-neutral-50/50 text-xs font-bold uppercase tracking-wider text-neutral-400 text-left">
+                                    <th className="px-4 py-2.5">Booking #</th>
+                                    <th className="px-4 py-2.5">Student / Client</th>
+                                    <th className="px-4 py-2.5">Service Package</th>
+                                    <th className="px-4 py-2.5">Pictorial Schedule</th>
+                                    <th className="px-4 py-2.5">Shoot Location</th>
+                                    <th className="px-4 py-2.5">Lead Photographer</th>
+                                    <th className="px-4 py-2.5">Status</th>
+                                    <th className="px-4 py-2.5 text-right">Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-neutral-100">
+                                  {sectionBookings.map((b) => {
+                                    const cust = b.customer;
+                                    const sizeBadge = getCustomerSize(cust, b);
+                                    const isPending = !b.event_date || b.status === 'PENDING';
+
+                                    return (
+                                      <tr
+                                        key={b.id}
+                                        onClick={() => setInspectingBooking(b)}
+                                        className="hover:bg-gold/8 cursor-pointer transition-colors"
+                                      >
+                                        {/* Booking # */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                          <div className="flex items-center gap-1.5">
+                                            <span className="font-mono text-xs font-bold text-gold">
+                                              {b.booking_number}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleCopyRef(b.booking_number, e);
+                                              }}
+                                              className="text-neutral-300 hover:text-gold p-0.5 cursor-pointer"
+                                              title="Copy booking number"
+                                            >
+                                              {copiedRef === b.booking_number ? <Check size={11} className="text-gold" /> : <Copy size={11} />}
+                                            </button>
+                                          </div>
+                                        </td>
+
+                                        {/* Student / Customer */}
+                                        <td className="px-4 py-3">
+                                          <div className="space-y-0.5">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <span className="font-bold text-neutral-900 text-xs">
+                                                {getBookingStudentName(b)}
+                                              </span>
+                                              {b.participant_details?.booking_for === 'someone_else' ? (
+                                                <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200">
+                                                  For: {b.participant_details.full_name}{b.participant_details.relationship ? ` (${b.participant_details.relationship})` : ''}
+                                                </span>
+                                              ) : (
+                                                <span className="text-[11px] font-medium text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded-full border border-neutral-200">
+                                                  Direct Student
+                                                </span>
+                                              )}
+                                              {sizeBadge && (
+                                                <span className="text-[11px] font-mono font-medium px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 border border-neutral-200">
+                                                  {sizeBadge}
+                                                </span>
+                                              )}
+                                            </div>
+                                            {b.student_details?.student_id && (
+                                              <p className="text-xs text-neutral-400 font-mono">
+                                                ID: {b.student_details.student_id}
+                                              </p>
+                                            )}
+                                          </div>
+                                        </td>
+
+                                        {/* Package */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                          <div className="space-y-0.5">
+                                            <span className="text-xs font-medium text-neutral-800">
+                                              {b.service?.name || 'School Pictorial'}
+                                            </span>
+                                            {b.tier_name && (
+                                              <div>
+                                                <span className="text-[11px] font-bold uppercase text-gold-dark bg-gold/10 px-1.5 py-0.5 rounded border border-gold/20">
+                                                  {b.tier_name}
+                                                </span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </td>
+
+                                        {/* Pictorial Schedule */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                          {isPending ? (
+                                            <span
+                                              title="Schedule TBA"
+                                              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-900 bg-amber-50/80 px-2 py-0.5 rounded-md border border-amber-200/80"
+                                            >
+                                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                                              <span>Schedule TBA</span>
+                                            </span>
+                                          ) : (
+                                            <div>
+                                              <span className="font-semibold text-xs text-primary flex items-center gap-1">
+                                                <CalendarDays size={11} className="text-gold-dark" /> {fmtDate(b.event_date)}
+                                              </span>
+                                              <p className="text-xs text-neutral-500 font-mono mt-0.5">
+                                                {formatTime(b.preferred_time)}
+                                              </p>
+                                            </div>
+                                          )}
+                                        </td>
+
+                                        {/* Shoot Location */}
+                                        <td className="px-4 py-3 max-w-[200px]">
+                                          {isPending ? (
+                                            <span className="text-xs text-neutral-400 italic">
+                                              Venue TBA
+                                            </span>
+                                          ) : (
+                                            <div className="flex items-center gap-1 text-xs text-neutral-800 truncate" title={b.location}>
+                                              <MapPin size={11} className="text-gold shrink-0" />
+                                              <span className="truncate">{b.location}</span>
+                                            </div>
+                                          )}
+                                        </td>
+
+                                        {/* Lead Photographer */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                          {b.photographer ? (
+                                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-800">
+                                              <Camera size={12} className="text-gold shrink-0" />
+                                              <span>
+                                                {`${b.photographer.first_name || b.photographer.profile?.first_name || ''} ${b.photographer.last_name || b.photographer.profile?.last_name || ''}`.trim() || 'Assigned Lead'}
+                                              </span>
+                                            </span>
+                                          ) : (
+                                            <span className="text-[11px] text-neutral-400 italic">
+                                              Unassigned
+                                            </span>
+                                          )}
+                                        </td>
+
+                                        {/* Status Column */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                          <BookingLifecycleBadge
+                                            status={(!b.event_date && (b.student_details?.school || (b.notes || '').includes('School Pictorial') || (b.notes || '').includes('SCHOOL_PARTNER'))) ? 'PENDING' : b.status}
+                                            showStatus={true}
+                                            showPayment={false}
+                                          />
+                                        </td>
+
+                                        {/* Actions */}
+                                        <td className="px-4 py-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                          <div className="flex items-center justify-end gap-1.5">
+                                            <button
+                                              type="button"
+                                              onClick={() => setInspectingBooking(b)}
+                                              className="p-1.5 rounded-lg text-neutral-400 hover:text-primary hover:bg-neutral-100 transition-colors cursor-pointer"
+                                              title="Inspect student details"
+                                            >
+                                              <Eye size={13} />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenEditModal(b)}
+                                              className="p-1.5 rounded-lg text-neutral-400 hover:text-gold hover:bg-gold/10 transition-colors cursor-pointer"
+                                              title="Edit booking"
+                                            >
+                                              <Edit3 size={13} />
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-neutral-200/90 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm font-body">
             <thead>
-              <tr className="bg-neutral-50/80 border-b border-neutral-200 text-[11px] sm:text-xs font-bold uppercase tracking-wider text-neutral-500 text-left">
+              <tr className="bg-neutral-50/80 border-b border-neutral-200 text-xs font-bold uppercase tracking-wider text-neutral-600 text-left">
                 <th className="px-5 sm:px-6 py-3.5 sm:py-4">
                   <div className="flex items-center gap-1.5 cursor-pointer select-none" onClick={() => setSortAsc(!sortAsc)}>
                     <span>Booking #</span>
                     <ArrowUpDown size={12} className="text-neutral-400" />
                   </div>
                 </th>
-                <th className="px-5 sm:px-6 py-3.5 sm:py-4">Customer</th>
+                <th className="px-5 sm:px-6 py-3.5 sm:py-4">
+                  <div 
+                    className="flex items-center gap-1.5 cursor-pointer select-none hover:text-gold transition-colors"
+                    onClick={() => {
+                      setSortBy(prev => prev === 'student_name_asc' ? 'student_name_desc' : 'student_name_asc');
+                    }}
+                    title="Click to sort by Student Name (Alphabetical A-Z)"
+                  >
+                    <span>Customer / Student</span>
+                    <ArrowUpDown size={12} className={sortBy.startsWith('student_name') ? "text-gold" : "text-neutral-400"} />
+                  </div>
+                </th>
                 <th className="px-5 sm:px-6 py-3.5 sm:py-4 hidden md:table-cell">Service</th>
                 <th className="px-5 sm:px-6 py-3.5 sm:py-4 hidden lg:table-cell">
                   <div className="flex items-center gap-1.5 cursor-pointer select-none" onClick={() => { setSortBy('event_date'); setSortAsc(!sortAsc); }}>
@@ -1504,20 +2622,21 @@ export default function AdminBookings({ initialSection }) {
                   </div>
                 </th>
                 <th className="px-5 sm:px-6 py-3.5 sm:py-4">Status</th>
+                <th className="px-5 sm:px-6 py-3.5 sm:py-4 hidden xl:table-cell">Lead Photographer</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
               {loading ? (
                 [...Array(5)].map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    <td colSpan={5} className="px-5 sm:px-6 py-5">
+                    <td colSpan={6} className="px-5 sm:px-6 py-5">
                       <div className="h-6 bg-neutral-100 rounded-lg w-full" />
                     </td>
                   </tr>
                 ))
-              ) : bookings.length === 0 ? (
+              ) : displayedBookings.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-16 text-center">
+                  <td colSpan={6} className="py-16 text-center">
                     {isDeletedTab ? (
                       <>
                         <Trash2 size={34} className="mx-auto text-neutral-300 mb-2.5" />
@@ -1534,7 +2653,7 @@ export default function AdminBookings({ initialSection }) {
                   </td>
                 </tr>
               ) : (
-                bookings.map((b) => {
+                displayedBookings.map((b) => {
                   const cust = b.customer;
                   const sizeBadge = getCustomerSize(cust, b);
 
@@ -1576,37 +2695,71 @@ export default function AdminBookings({ initialSection }) {
                               )}
                             </button>
                           </div>
-                          <p className="font-mono text-[10px] text-neutral-400">
+                          <p className="font-mono text-xs text-neutral-400">
                             ID: {b.id.slice(0, 8)}...
                           </p>
                         </div>
                       </td>
 
-                      {/* Customer with Size & University */}
+                      {/* Customer / Participant with Size & Details */}
                       <td className="px-5 sm:px-6 py-4 sm:py-4.5">
                         <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setInspectingBooking(b);
-                              }}
-                              className="font-semibold text-neutral-900 text-sm sm:text-base hover:text-gold transition-colors text-left cursor-pointer"
-                              title="Inspect customer details"
-                            >
-                              {cust ? `${cust.first_name} ${cust.last_name}` : '—'}
-                            </button>
-                            {sizeBadge && (
-                              <span className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 border border-neutral-200">
-                                {sizeBadge}
+                          {b.participant_details?.booking_for === 'someone_else' ? (
+                            <>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setInspectingBooking(b);
+                                  }}
+                                  className="font-bold text-neutral-900 text-sm sm:text-base hover:text-gold transition-colors text-left cursor-pointer"
+                                  title="Inspect participant details"
+                                >
+                                  {b.participant_details.full_name}
+                                </button>
+                                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200">
+                                  For: {b.participant_details.full_name}{b.participant_details.relationship ? ` (${b.participant_details.relationship})` : ''}
+                                </span>
+                              </div>
+                              <p className="text-xs text-neutral-500 truncate max-w-[220px]">
+                                Account Owner: <span className="font-semibold text-neutral-700">{cust ? `${cust.first_name} ${cust.last_name}` : '—'}</span>
+                              </p>
+                            </>
+                          ) : (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setInspectingBooking(b);
+                                }}
+                                className="font-semibold text-neutral-900 text-sm sm:text-base hover:text-gold transition-colors text-left cursor-pointer"
+                                title="Inspect customer details"
+                              >
+                                {cust ? `${cust.first_name} ${cust.last_name}` : '—'}
+                              </button>
+                              <span className="text-xs font-medium text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-full border border-neutral-200/80">
+                                Direct Student
                               </span>
-                            )}
-                          </div>
-                          {(cust?.studio_specs?.university || cust?.studio_specs?.degree) && (
+                              {sizeBadge && (
+                                <span className="text-xs font-mono font-medium px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 border border-neutral-200">
+                                  {sizeBadge}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {b.student_details?.student_name && (!b.participant_details?.full_name || b.student_details.student_name.toLowerCase() !== b.participant_details.full_name.toLowerCase()) && (
+                            <p className="text-xs text-neutral-600 flex items-center gap-1 truncate max-w-[200px]">
+                              <span className="text-xs text-neutral-400 font-medium uppercase">Student:</span>
+                              <span className="font-semibold text-primary truncate">{b.student_details.student_name}</span>
+                            </p>
+                          )}
+                          {(b.student_details?.school || cust?.studio_specs?.university || cust?.studio_specs?.degree) && (
                             <p className="text-xs text-neutral-500 flex items-center gap-1 truncate max-w-[200px]">
                               <GraduationCap size={12} className="text-gold-dark shrink-0" />
-                              <span className="truncate">{cust.studio_specs.university || cust.studio_specs.degree}</span>
+                              <span className="truncate">{b.student_details?.school || cust?.studio_specs?.university || cust?.studio_specs?.degree}</span>
                             </p>
                           )}
                         </div>
@@ -1619,7 +2772,7 @@ export default function AdminBookings({ initialSection }) {
                             {b.service?.name || 'Studio Photography'}
                           </p>
                           {b.tier_name && (
-                            <span className="text-[10px] font-bold uppercase text-gold-dark bg-gold/10 px-2 py-0.5 rounded border border-gold/20 inline-block">
+                            <span className="text-xs font-bold uppercase text-gold-dark bg-gold/10 px-2 py-0.5 rounded border border-gold/20 inline-block">
                               {b.tier_name}
                             </span>
                           )}
@@ -1633,33 +2786,47 @@ export default function AdminBookings({ initialSection }) {
                             <CalendarDays size={13} className="text-gold-dark flex-shrink-0" />
                             {b.event_date ? (
                               <span>{fmtDate(b.event_date)}</span>
-                            ) : (b.student_details?.booking_mode === 'SCHOOL_PARTNER' || (b.notes || '').includes('School Pictorial') || (b.notes || '').includes('Official School Partner') || (b.notes || '').includes('School Partner Agreement')) ? (
-                              <span className="text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                School Pictorial
-                              </span>
                             ) : (
-                              <span className="text-neutral-400">Date Pending</span>
+                              <span
+                                title="Schedule TBA"
+                                className="text-[11px] font-semibold text-amber-900 bg-amber-50/80 px-2 py-0.5 rounded-md border border-amber-200/80 inline-flex items-center gap-1.5"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                                <span>Schedule TBA</span>
+                              </span>
                             )}
                           </div>
-                          {b.preferred_time ? (
+                          {b.preferred_time && (
                             <p className="text-xs text-neutral-400 pl-4">
                               {formatTime(b.preferred_time)}
                             </p>
-                          ) : (b.student_details?.booking_mode === 'SCHOOL_PARTNER' || (b.notes || '').includes('School Pictorial') || (b.notes || '').includes('Official School Partner') || (b.notes || '').includes('School Partner Agreement')) ? (
-                            <p className="text-[10px] text-amber-700 pl-4 italic">
-                              Schedule TBD
-                            </p>
-                          ) : null}
+                          )}
                         </div>
                       </td>
 
                       {/* Status Column */}
                       <td className="px-5 sm:px-6 py-4 sm:py-4.5">
                         <BookingLifecycleBadge
-                          status={b.status}
+                          status={(!b.event_date && (b.student_details?.school || (b.notes || '').includes('School Pictorial') || (b.notes || '').includes('SCHOOL_PARTNER'))) ? 'PENDING' : b.status}
                           showStatus={true}
                           showPayment={false}
                         />
+                      </td>
+
+                      {/* Lead Photographer Column */}
+                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 hidden xl:table-cell whitespace-nowrap">
+                        {b.photographer ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-800">
+                            <Camera size={13} className="text-gold shrink-0" />
+                            <span>
+                              {`${b.photographer.first_name || b.photographer.profile?.first_name || ''} ${b.photographer.last_name || b.photographer.profile?.last_name || ''}`.trim() || 'Assigned Lead'}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-neutral-400 italic">
+                            Unassigned
+                          </span>
+                        )}
                       </td>
 
 
@@ -1703,6 +2870,7 @@ export default function AdminBookings({ initialSection }) {
           )}
         </div>
       </div>
+      )}
 
       {/* ── 6. Create Booking Modal (INSERT CRUD) ──────────────────────── */}
       {isCreateModalOpen && (
@@ -1711,7 +2879,7 @@ export default function AdminBookings({ initialSection }) {
             {/* Modal Header */}
             <div className="px-6 py-4 bg-gradient-to-r from-neutral-950 via-[#141414] to-primary text-white flex items-center justify-between">
               <div>
-                <span className="text-[10px] uppercase font-bold text-gold bg-gold/15 px-2.5 py-0.5 rounded-full border border-gold/30">
+                <span className="text-xs uppercase font-bold text-gold bg-gold/15 px-2.5 py-0.5 rounded-full border border-gold/30">
                   Database Insertion
                 </span>
                 <h3 className="font-heading text-lg font-bold text-white mt-1">Create New Booking</h3>
@@ -1776,7 +2944,7 @@ export default function AdminBookings({ initialSection }) {
                 ) : (
                   <div className="grid grid-cols-3 gap-2 p-3 bg-neutral-50 rounded-2xl border border-neutral-200">
                     <div>
-                      <label className="block text-[10px] text-neutral-500 font-semibold mb-1">First Name *</label>
+                      <label className="block text-xs text-neutral-500 font-semibold mb-1">First Name *</label>
                       <input
                         type="text"
                         placeholder="e.g. Maria"
@@ -1787,7 +2955,7 @@ export default function AdminBookings({ initialSection }) {
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] text-neutral-500 font-semibold mb-1">Last Name *</label>
+                      <label className="block text-xs text-neutral-500 font-semibold mb-1">Last Name *</label>
                       <input
                         type="text"
                         placeholder="e.g. Santos"
@@ -1798,7 +2966,7 @@ export default function AdminBookings({ initialSection }) {
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] text-neutral-500 font-semibold mb-1">Phone Number</label>
+                      <label className="block text-xs text-neutral-500 font-semibold mb-1">Phone Number</label>
                       <input
                         type="text"
                         placeholder="0917..."
@@ -1937,7 +3105,7 @@ export default function AdminBookings({ initialSection }) {
                 <div className="p-3 bg-neutral-50/70 rounded-xl border border-neutral-200/80 space-y-2.5">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div>
-                      <span className="block text-[10px] text-neutral-500 font-semibold mb-1">School / University</span>
+                      <span className="block text-xs text-neutral-500 font-semibold mb-1">School / University</span>
                       <input
                         type="text"
                         placeholder="e.g. University of San Carlos"
@@ -1947,7 +3115,7 @@ export default function AdminBookings({ initialSection }) {
                       />
                     </div>
                     <div>
-                      <span className="block text-[10px] text-neutral-500 font-semibold mb-1">Degree / Strand</span>
+                      <span className="block text-xs text-neutral-500 font-semibold mb-1">Degree / Strand</span>
                       <input
                         type="text"
                         placeholder="e.g. BS Computer Science"
@@ -1957,7 +3125,7 @@ export default function AdminBookings({ initialSection }) {
                       />
                     </div>
                     <div>
-                      <span className="block text-[10px] text-neutral-500 font-semibold mb-1">Student ID</span>
+                      <span className="block text-xs text-neutral-500 font-semibold mb-1">Student ID</span>
                       <input
                         type="text"
                         placeholder="e.g. 21-0492-381"
@@ -1970,7 +3138,7 @@ export default function AdminBookings({ initialSection }) {
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div>
-                      <span className="block text-[10px] text-neutral-500 font-semibold mb-1">Campus / Section</span>
+                      <span className="block text-xs text-neutral-500 font-semibold mb-1">Campus / Section</span>
                       <input
                         type="text"
                         placeholder="e.g. Main Campus / 4-A"
@@ -1980,7 +3148,7 @@ export default function AdminBookings({ initialSection }) {
                       />
                     </div>
                     <div>
-                      <span className="block text-[10px] text-neutral-500 font-semibold mb-1">Toga Size</span>
+                      <span className="block text-xs text-neutral-500 font-semibold mb-1">Toga Size</span>
                       <input
                         type="text"
                         placeholder="e.g. S, M, L, XL"
@@ -1990,7 +3158,7 @@ export default function AdminBookings({ initialSection }) {
                       />
                     </div>
                     <div>
-                      <span className="block text-[10px] text-neutral-500 font-semibold mb-1">Height</span>
+                      <span className="block text-xs text-neutral-500 font-semibold mb-1">Height</span>
                       <input
                         type="text"
                         placeholder="e.g. 5'7 or 170cm"
@@ -2135,7 +3303,7 @@ export default function AdminBookings({ initialSection }) {
                               : 'text-neutral-400 hover:text-neutral-700 hover:bg-white/60 font-medium'
                           }`}
                         >
-                          <span className={`text-[9px] font-mono leading-none mb-0.5 ${isActive ? 'text-gold' : 'text-neutral-400'}`}>
+                          <span className={`text-[11px] font-mono leading-none mb-0.5 ${isActive ? 'text-gold' : 'text-neutral-400'}`}>
                             {idx + 1}
                           </span>
                           <span className="text-[11px] truncate w-full leading-tight">
@@ -2155,7 +3323,7 @@ export default function AdminBookings({ initialSection }) {
                   
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div>
-                      <span className="block text-[10px] text-neutral-400 font-semibold mb-0.5">First Name</span>
+                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">First Name</span>
                       <input
                         type="text"
                         value={editingBooking.first_name || ''}
@@ -2164,7 +3332,7 @@ export default function AdminBookings({ initialSection }) {
                       />
                     </div>
                     <div>
-                      <span className="block text-[10px] text-neutral-400 font-semibold mb-0.5">Last Name</span>
+                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">Last Name</span>
                       <input
                         type="text"
                         value={editingBooking.last_name || ''}
@@ -2173,7 +3341,7 @@ export default function AdminBookings({ initialSection }) {
                       />
                     </div>
                     <div>
-                      <span className="block text-[10px] text-neutral-400 font-semibold mb-0.5">Phone</span>
+                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">Phone</span>
                       <input
                         type="text"
                         value={editingBooking.phone || ''}
@@ -2195,7 +3363,7 @@ export default function AdminBookings({ initialSection }) {
                   <div className="p-3 bg-neutral-50/70 rounded-xl border border-neutral-200/80 space-y-2.5">
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                       <div>
-                        <span className="block text-[10px] text-neutral-500 font-semibold mb-1">School / University</span>
+                        <span className="block text-xs text-neutral-500 font-semibold mb-1">School / University</span>
                         <input
                           type="text"
                           value={editingBooking.school || ''}
@@ -2205,7 +3373,7 @@ export default function AdminBookings({ initialSection }) {
                         />
                       </div>
                       <div>
-                        <span className="block text-[10px] text-neutral-500 font-semibold mb-1">Degree / Strand</span>
+                        <span className="block text-xs text-neutral-500 font-semibold mb-1">Degree / Strand</span>
                         <input
                           type="text"
                           value={editingBooking.degree || ''}
@@ -2215,7 +3383,7 @@ export default function AdminBookings({ initialSection }) {
                         />
                       </div>
                       <div>
-                        <span className="block text-[10px] text-neutral-500 font-semibold mb-1">Student ID</span>
+                        <span className="block text-xs text-neutral-500 font-semibold mb-1">Student ID</span>
                         <input
                           type="text"
                           value={editingBooking.student_id || ''}
@@ -2228,7 +3396,7 @@ export default function AdminBookings({ initialSection }) {
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                       <div>
-                        <span className="block text-[10px] text-neutral-500 font-semibold mb-1">Campus / Section</span>
+                        <span className="block text-xs text-neutral-500 font-semibold mb-1">Campus / Section</span>
                         <input
                           type="text"
                           value={editingBooking.section || editingBooking.campus || ''}
@@ -2238,7 +3406,7 @@ export default function AdminBookings({ initialSection }) {
                         />
                       </div>
                       <div>
-                        <span className="block text-[10px] text-neutral-500 font-semibold mb-1">Toga Size</span>
+                        <span className="block text-xs text-neutral-500 font-semibold mb-1">Toga Size</span>
                         <input
                           type="text"
                           value={editingBooking.toga_size || ''}
@@ -2248,7 +3416,7 @@ export default function AdminBookings({ initialSection }) {
                         />
                       </div>
                       <div>
-                        <span className="block text-[10px] text-neutral-500 font-semibold mb-1">Height</span>
+                        <span className="block text-xs text-neutral-500 font-semibold mb-1">Height</span>
                         <input
                           type="text"
                           value={editingBooking.height || ''}
@@ -2275,7 +3443,7 @@ export default function AdminBookings({ initialSection }) {
                       />
                     </div>
                     <div>
-                      <span className="block text-[10px] text-neutral-400 font-semibold mb-0.5">Total Amount (₱)</span>
+                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">Total Amount (₱)</span>
                       <input
                         type="number"
                         min="0"
@@ -2293,7 +3461,7 @@ export default function AdminBookings({ initialSection }) {
                       />
                     </div>
                     <div>
-                      <span className="block text-[10px] text-neutral-400 font-semibold mb-0.5">Paid / Deposit (₱)</span>
+                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">Paid / Deposit (₱)</span>
                       <div className="relative flex items-center">
                         <input
                           type="number"
@@ -2341,19 +3509,46 @@ export default function AdminBookings({ initialSection }) {
                       popoverWidth="w-72"
                     />
 
-                    <CustomDropdown
-                      value={editingBooking.photographer_id || ''}
-                      onChange={val => setEditingBooking({ ...editingBooking, photographer_id: val })}
-                      options={editPhotographerOptions}
-                      label="Assigned Photographer"
-                      className="w-full"
-                      popoverWidth="w-72"
-                    />
+                    <div className="space-y-1.5">
+                      <CustomDropdown
+                        value={editingBooking.photographer_id || ''}
+                        onChange={val => setEditingBooking({ ...editingBooking, photographer_id: val })}
+                        options={editPhotographerOptions}
+                        label="Assigned Lead Photographer"
+                        className="w-full"
+                        popoverWidth="w-80"
+                      />
+                      {editingBooking.event_date && (
+                        (() => {
+                          const assignedPh = editBookingPhotographers.find(p => p.id === editingBooking.photographer_id);
+                          if (!assignedPh) {
+                            return (
+                              <div className="text-[11px] text-neutral-400 italic flex items-center gap-1 mt-1">
+                                <Camera size={12} className="text-neutral-400" />
+                                <span>No lead assigned yet · Only verified photographer accounts eligible</span>
+                              </div>
+                            );
+                          }
+                          const isAvail = !assignedPh.hasConflict && assignedPh.is_available;
+                          return (
+                            <div className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-between border mt-1.5 ${
+                              isAvail ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'
+                            }`}>
+                              <span className="flex items-center gap-1.5 truncate">
+                                {isAvail ? <CheckCircle2 size={13} className="text-emerald-600 shrink-0" /> : <AlertTriangle size={13} className="text-amber-600 shrink-0" />}
+                                <span className="truncate">{isAvail ? `On Duty on ${fmtDate(editingBooking.event_date)}` : (assignedPh.conflictReason || 'Not scheduled on this date')}</span>
+                              </span>
+                              <span className="text-xs text-neutral-500 font-normal shrink-0 ml-1">Photographer Account</span>
+                            </div>
+                          );
+                        })()
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div>
-                      <span className="block text-[10px] text-neutral-400 font-semibold mb-0.5">Date</span>
+                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">Date</span>
                       <input
                         type="date"
                         value={editingBooking.event_date ? editingBooking.event_date.split('T')[0] : ''}
@@ -2362,7 +3557,7 @@ export default function AdminBookings({ initialSection }) {
                       />
                     </div>
                     <div>
-                      <span className="block text-[10px] text-neutral-400 font-semibold mb-0.5">Time</span>
+                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">Time</span>
                       <input
                         type="time"
                         value={editingBooking.preferred_time || ''}
@@ -2371,7 +3566,7 @@ export default function AdminBookings({ initialSection }) {
                       />
                     </div>
                     <div>
-                      <span className="block text-[10px] text-neutral-400 font-semibold mb-0.5">Studio / Location</span>
+                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">Studio / Location</span>
                       <input
                         type="text"
                         value={editingBooking.location || ''}
@@ -2395,7 +3590,7 @@ export default function AdminBookings({ initialSection }) {
                           Intake Notes & Client Requests
                         </span>
                       </div>
-                      <span className="text-[10px] text-neutral-400 font-mono">
+                      <span className="text-xs text-neutral-400 font-mono">
                         Syncs to Order & Invoice
                       </span>
                     </div>
@@ -2404,11 +3599,11 @@ export default function AdminBookings({ initialSection }) {
                     {editingBooking.reference_images?.length > 0 && (
                       <div className="space-y-1.5 pb-2.5 border-b border-neutral-200/70">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
+                          <span className="text-xs font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
                             <FileImage size={12} className="text-gold-dark" />
                             Client Reference Pegs ({editingBooking.reference_images.length})
                           </span>
-                          <span className="text-[9px] text-neutral-400">Click to enlarge</span>
+                          <span className="text-[11px] text-neutral-400">Click to enlarge</span>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 p-2 bg-white rounded-xl border border-neutral-200/80">
@@ -2433,7 +3628,7 @@ export default function AdminBookings({ initialSection }) {
                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1 text-white">
                                   <Maximize2 size={14} />
                                 </div>
-                                <span className="absolute bottom-0.5 right-0.5 px-1 rounded bg-black/60 text-[8px] text-white font-mono">
+                                <span className="absolute bottom-0.5 right-0.5 px-1 rounded bg-black/60 text-[10px] text-white font-mono">
                                   #{idx + 1}
                                 </span>
                               </div>
@@ -2445,7 +3640,7 @@ export default function AdminBookings({ initialSection }) {
 
                     {/* Textarea for Special Instructions / Notes */}
                     <div className="space-y-1">
-                      <span className="block text-[10px] text-neutral-400 font-semibold">Special Instructions & Client Notes</span>
+                      <span className="block text-xs text-neutral-400 font-semibold">Special Instructions & Client Notes</span>
                       <textarea
                         rows={3}
                         value={editingBooking.client_remarks || ''}
@@ -2843,7 +4038,7 @@ export default function AdminBookings({ initialSection }) {
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-heading text-xs font-bold text-primary">{name}</span>
-                              <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-600">
+                              <span className="text-xs font-medium px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-600">
                                 {p.specialization || 'Studio Specialist'}
                               </span>
                             </div>
@@ -2861,11 +4056,11 @@ export default function AdminBookings({ initialSection }) {
 
                         <div className="shrink-0 flex items-center gap-2 self-end sm:self-center">
                           {p.hasConflict ? (
-                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
+                            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
                               <AlertCircle size={11} /> Busy / Conflict
                             </span>
                           ) : (
-                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
                               <CheckCircle2 size={11} /> Available
                             </span>
                           )}
@@ -2898,242 +4093,568 @@ export default function AdminBookings({ initialSection }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5"
             onClick={() => setIsSchoolSchedulerOpen(false)}
           >
             <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
               transition={{ duration: 0.2 }}
-              className="bg-white rounded-2xl sm:rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-neutral-200 flex flex-col max-h-[92vh] overflow-hidden"
+              className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl border border-neutral-200/90 flex flex-col max-h-[92vh] overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
-            <div className="flex items-center justify-between pb-4 border-b border-neutral-100 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-gold/15 text-gold-dark flex items-center justify-center shadow-xs">
-                  <Megaphone size={18} />
-                </div>
-                <div>
-                  <h3 className="font-heading text-base sm:text-lg text-primary font-bold">School Pictorial Schedule & Announcement</h3>
-                  <p className="text-xs text-neutral-400 font-body">Confirm photoshoot dates, assign photographers, and broadcast announcements to students.</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsSchoolSchedulerOpen(false)}
-                className="p-1.5 rounded-xl hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleBatchScheduleSubmit} className="overflow-y-auto space-y-4 my-4 pr-1 flex-1">
-              {/* Batch Selector */}
-              <div>
-                <label className="block text-xs font-bold text-primary mb-1.5">
-                  Select School Batch <span className="text-red-500">*</span>
-                </label>
-                {schoolBatchesList.length === 0 ? (
-                  <div className="p-4 rounded-xl border border-dashed border-neutral-200 bg-neutral-50 text-center text-xs text-neutral-500">
-                    No pending school partner bookings found. Students must book with school agreement to appear here.
+              {/* Clean Minimal Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-neutral-100 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gold/15 text-gold-dark flex items-center justify-center shadow-xs">
+                    <CalendarDays size={20} />
                   </div>
-                ) : (
-                  <div className="space-y-2">
-                    {schoolBatchesList.map(batch => {
-                      const isSelected = selectedBatchKey === batch.key;
-                      return (
-                        <div
-                          key={batch.key}
-                          onClick={() => handleSelectBatch(batch.key)}
-                          className={`p-3 rounded-xl border-2 cursor-pointer transition-all flex items-center justify-between ${
-                            isSelected
-                              ? 'border-primary bg-primary/5 shadow-xs'
-                              : 'border-neutral-200 bg-white hover:border-gold/40'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <GraduationCap size={16} className={isSelected ? 'text-gold' : 'text-neutral-400'} />
-                            <div className="min-w-0">
-                              <span className="font-heading text-xs font-bold text-primary block truncate">
-                                {batch.school}
-                              </span>
-                              <p className="text-[11px] text-neutral-500 font-body truncate">
-                                Section: {batch.section} {batch.campus ? `· ${batch.campus}` : ''}
-                              </p>
-                            </div>
-                          </div>
-                          <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-gold/15 text-primary shrink-0 ml-2">
-                            {batch.count} student{batch.count > 1 ? 's' : ''} awaiting
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Schedule Date & Time */}
-              <div className="grid sm:grid-cols-2 gap-3 pt-2">
-                <div>
-                  <label className="block text-xs font-bold text-primary mb-1">
-                    Confirmed Pictorial Date <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={batchEventDate}
-                    onChange={e => setBatchEventDate(e.target.value)}
-                    className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-semibold text-primary outline-none focus:ring-2 focus:ring-gold/30"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-primary mb-1">
-                    Starting Time Slot <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={batchPreferredTime}
-                    onChange={e => setBatchPreferredTime(e.target.value)}
-                    className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-semibold text-primary outline-none focus:ring-2 focus:ring-gold/30"
-                  >
-                    <option value="08:00:00">8:00 AM – 9:00 AM (Morning Slot)</option>
-                    <option value="09:00:00">9:00 AM – 10:00 AM (Morning Slot)</option>
-                    <option value="10:00:00">10:00 AM – 11:00 AM (Morning Slot)</option>
-                    <option value="13:00:00">1:00 PM – 2:00 PM (Afternoon Slot)</option>
-                    <option value="14:00:00">2:00 PM – 3:00 PM (Afternoon Slot)</option>
-                    <option value="15:00:00">3:00 PM – 4:00 PM (Afternoon Slot)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Venue Selection */}
-              <div className="pt-2">
-                <label className="block text-xs font-bold text-primary mb-1.5">
-                  Confirmed Pictorial Venue
-                </label>
-                <div className="grid sm:grid-cols-2 gap-2.5">
-                  <div
-                    onClick={() => setBatchLocationType('CAMPUS')}
-                    className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                      batchLocationType === 'CAMPUS'
-                        ? 'border-primary bg-primary/5 font-semibold'
-                        : 'border-neutral-200 bg-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 text-xs text-primary font-bold">
-                      <GraduationCap size={15} className="text-gold" /> School Campus (On-site)
-                    </div>
-                    <p className="text-[11px] text-neutral-500 font-body mt-0.5 truncate">
-                      {batchCustomAddress || 'Campus hall / auditorium'}
-                    </p>
-                  </div>
-
-                  <div
-                    onClick={() => setBatchLocationType('STUDIO')}
-                    className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                      batchLocationType === 'STUDIO'
-                        ? 'border-primary bg-primary/5 font-semibold'
-                        : 'border-neutral-200 bg-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 text-xs text-primary font-bold">
-                      <Building2 size={15} className="text-gold" /> E-Kodak Studio
-                    </div>
-                    <p className="text-[11px] text-neutral-500 font-body mt-0.5">
-                      311 Rizal Street, City of Naga, Cebu
-                    </p>
+                  <div>
+                    <h3 className="font-heading text-base sm:text-lg text-primary font-bold">School Pictorial Scheduler</h3>
+                    <p className="text-xs text-neutral-400 font-body">Batch session scheduling & student attendance management</p>
                   </div>
                 </div>
-
-                {batchLocationType === 'CAMPUS' && (
-                  <div className="mt-2">
-                    <label className="block text-[11px] font-semibold text-neutral-500 mb-1">
-                      Campus Hall or Room Landmark (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={batchCustomAddress}
-                      onChange={e => setBatchCustomAddress(e.target.value)}
-                      placeholder="e.g., Campus AVR / 3rd Floor Gymnasium"
-                      className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-body outline-none focus:ring-2 focus:ring-gold/30"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Photographer Assignment with Live Availability Check */}
-              <div className="pt-2">
-                <label className="block text-xs font-bold text-primary mb-1 flex items-center justify-between">
-                  <span>Assign Lead Photographer</span>
-                  <span className="text-[10px] text-neutral-400 font-normal">Optional</span>
-                </label>
-                <select
-                  value={batchPhotographerId}
-                  onChange={e => setBatchPhotographerId(e.target.value)}
-                  className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-body font-semibold text-primary outline-none focus:ring-2 focus:ring-gold/30"
-                >
-                  <option value="">Assign Later (Schedule Only)</option>
-                  {batchPhotographersAvailability.map(p => {
-                    const name = `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Photographer';
-                    const conflictText = p.hasConflict ? ` [CONFLICT: ${p.conflictReason}]` : ' [Available]';
-                    return (
-                      <option key={p.id} value={p.id} disabled={p.hasConflict}>
-                        {name} ({p.specialization || 'Photographer'}) — {p.activeWorkloadCount || 0} active shoots{conflictText}
-                      </option>
-                    );
-                  })}
-                </select>
-                {batchEventDate && batchPhotographersAvailability.length === 0 && (
-                  <p className="text-[11px] text-neutral-400 mt-1">Loading photographer availability for selected date...</p>
-                )}
-              </div>
-
-              {/* Announcement Message */}
-              <div className="pt-2">
-                <label className="block text-xs font-bold text-primary mb-1">
-                  Broadcast Announcement Message <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  rows={3}
-                  required
-                  value={batchAnnouncementText}
-                  onChange={e => setBatchAnnouncementText(e.target.value)}
-                  placeholder="Official message broadcasted to students in notification & announcement banner..."
-                  className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-body outline-none focus:ring-2 focus:ring-gold/30 resize-none"
-                />
-                <p className="text-[11px] text-neutral-400 mt-1">
-                  This message will be instantly sent as an in-app notification to all registered students in this batch.
-                </p>
-              </div>
-
-              {/* Submit Buttons */}
-              <div className="pt-4 border-t border-neutral-100 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setIsSchoolSchedulerOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold rounded-xl border border-neutral-200 text-neutral-600 hover:bg-neutral-50 cursor-pointer"
+                  className="p-2 rounded-xl hover:bg-neutral-100 text-neutral-400 hover:text-neutral-700 transition-colors cursor-pointer"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isBatchSubmitting || schoolBatchesList.length === 0}
-                  className="btn-gold text-xs py-2 px-4 shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  {isBatchSubmitting ? (
-                    <>
-                      <RefreshCw size={13} className="animate-spin" />
-                      Broadcasting...
-                    </>
-                  ) : (
-                    <>
-                      <Megaphone size={14} />
-                      Confirm Schedule & Broadcast
-                    </>
-                  )}
+                  <X size={18} />
                 </button>
               </div>
-            </form>
+
+              <form onSubmit={handleBatchScheduleSubmit} className="overflow-y-auto space-y-4 my-4 pr-1 flex-1 font-body custom-scrollbar">
+                {/* ── Box 1: School Partner & Target Section Selection ── */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-neutral-50/70 border border-neutral-200/80 space-y-3.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* School Partner Dropdown */}
+                    <div>
+                      <label className="block text-xs font-bold text-primary mb-1.5">
+                        School Partner <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        required
+                        value={selectedBatchSchool}
+                        onChange={e => {
+                          const sch = e.target.value;
+                          setSelectedBatchSchool(sch);
+                          setSelectedBatchSection('ALL');
+                          setBatchCustomAddress('');
+                          setRescheduleStudentId('');
+                          const found = schoolBatchesList.find(b => b.school.toLowerCase() === sch.toLowerCase());
+                          if (found) {
+                            setSelectedBatchKey(found.key);
+                          }
+                          const gen = generateAnnouncementText(
+                            sch,
+                            'ALL',
+                            batchEventDate,
+                            batchStartTime,
+                            batchEndTime,
+                            batchLocationType,
+                            '',
+                            batchPhotographerId,
+                            allowRescheduleProtection
+                          );
+                          setBatchAnnouncementText(gen);
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs font-semibold text-primary outline-none focus:ring-2 focus:ring-gold/30 transition-shadow"
+                      >
+                        <option value="">-- Select Partner School --</option>
+                        {uniqueSchools.map(sch => (
+                          <option key={sch.name} value={sch.name}>
+                            {sch.name} ({sch.count} student{sch.count > 1 ? 's' : ''})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Section Dropdown (Appears once School is selected) */}
+                    <div>
+                      <label className="block text-xs font-bold text-primary mb-1.5">
+                        Target Section <span className="text-red-500">*</span>
+                      </label>
+                      {selectedBatchSchool ? (
+                        <select
+                          value={selectedBatchSection}
+                          onChange={e => {
+                            const sec = e.target.value;
+                            setSelectedBatchSection(sec);
+                            setRescheduleStudentId('');
+                            const gen = generateAnnouncementText(
+                              selectedBatchSchool,
+                              sec,
+                              batchEventDate,
+                              batchStartTime,
+                              batchEndTime,
+                              batchLocationType,
+                              batchCustomAddress,
+                              batchPhotographerId,
+                              allowRescheduleProtection
+                            );
+                            setBatchAnnouncementText(gen);
+                          }}
+                          className="w-full px-3.5 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs font-semibold text-primary outline-none focus:ring-2 focus:ring-gold/30 transition-shadow"
+                        >
+                          <option value="ALL">All Sections (Entire School Batch)</option>
+                          {sectionsForSelectedSchool.map(sec => (
+                            <option key={sec} value={sec}>
+                              Section {sec}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="px-3.5 py-2.5 bg-neutral-100/60 border border-neutral-200 rounded-xl text-xs text-neutral-400 italic">
+                          Choose school first to select sections...
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Summary Bar */}
+                  {selectedBatchSchool && (
+                    <div className="flex items-center justify-between text-xs pt-2.5 border-t border-neutral-200/60 text-neutral-600">
+                      <span>
+                        Target Batch: <strong className="text-primary font-bold">{targetStudentCount} student{targetStudentCount !== 1 ? 's' : ''}</strong>
+                      </span>
+                      {selectedBatchSection !== 'ALL' && (
+                        <span className="font-semibold text-neutral-500">Section {selectedBatchSection}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Box 2: STEP 1 · Scheduled Date & Time Slot (Highlighted Process 1) ── */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-white border-2 border-gold/40 shadow-xs space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-6 h-6 rounded-full bg-gold text-neutral-950 flex items-center justify-center text-xs font-black shrink-0 shadow-xs">
+                        1
+                      </span>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-primary">
+                        Step 1 · Scheduled Date & Time Slot
+                      </h4>
+                    </div>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-gold/10 text-gold-dark border border-gold/20 uppercase tracking-wider">
+                      First Process
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                    <div>
+                      <label className="block text-[11px] font-bold text-neutral-700 mb-1.5">
+                        Pictorial Date <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        disabled={!selectedBatchSchool}
+                        value={batchEventDate}
+                        onChange={e => {
+                          const newDate = e.target.value;
+                          setBatchEventDate(newDate);
+                          setBatchPhotographerId('');
+                          const gen = generateAnnouncementText(
+                            selectedBatchSchool,
+                            selectedBatchSection,
+                            newDate,
+                            batchStartTime,
+                            batchEndTime,
+                            batchLocationType,
+                            batchCustomAddress,
+                            '',
+                            allowRescheduleProtection,
+                            batchPhotographersAvailability
+                          );
+                          setBatchAnnouncementText(gen);
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-semibold text-primary outline-none focus:ring-2 focus:ring-gold/30 disabled:opacity-50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-neutral-700 mb-1.5">
+                        Start Time <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="time"
+                        required
+                        disabled={!selectedBatchSchool}
+                        value={batchStartTime}
+                        onChange={e => {
+                          setBatchStartTime(e.target.value);
+                          const gen = generateAnnouncementText(
+                            selectedBatchSchool,
+                            selectedBatchSection,
+                            batchEventDate,
+                            e.target.value,
+                            batchEndTime,
+                            batchLocationType,
+                            batchCustomAddress,
+                            batchPhotographerId,
+                            allowRescheduleProtection
+                          );
+                          setBatchAnnouncementText(gen);
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-semibold text-primary outline-none focus:ring-2 focus:ring-gold/30 disabled:opacity-50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-neutral-700 mb-1.5">
+                        End Time <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="time"
+                        required
+                        disabled={!selectedBatchSchool}
+                        value={batchEndTime}
+                        onChange={e => {
+                          setBatchEndTime(e.target.value);
+                          const gen = generateAnnouncementText(
+                            selectedBatchSchool,
+                            selectedBatchSection,
+                            batchEventDate,
+                            batchStartTime,
+                            e.target.value,
+                            batchLocationType,
+                            batchCustomAddress,
+                            batchPhotographerId,
+                            allowRescheduleProtection
+                          );
+                          setBatchAnnouncementText(gen);
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-semibold text-primary outline-none focus:ring-2 focus:ring-gold/30 disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Box 3: STEP 2 · Confirmed Pictorial Venue (Highlighted Process 2) ── */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-white border-2 border-gold/40 shadow-xs space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-6 h-6 rounded-full bg-gold text-neutral-950 flex items-center justify-center text-xs font-black shrink-0 shadow-xs">
+                        2
+                      </span>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-primary">
+                        Step 2 · Confirmed Pictorial Venue
+                      </h4>
+                    </div>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-gold/10 text-gold-dark border border-gold/20 uppercase tracking-wider">
+                      Second Process
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBatchLocationType('CAMPUS');
+                        const gen = generateAnnouncementText(
+                          selectedBatchSchool,
+                          selectedBatchSection,
+                          batchEventDate,
+                          batchStartTime,
+                          batchEndTime,
+                          'CAMPUS',
+                          batchCustomAddress,
+                          batchPhotographerId,
+                          allowRescheduleProtection
+                        );
+                        setBatchAnnouncementText(gen);
+                      }}
+                      className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-all ${
+                        batchLocationType === 'CAMPUS'
+                          ? 'border-primary bg-primary/5 font-semibold shadow-xs ring-1 ring-primary/20'
+                          : 'border-neutral-200 bg-white hover:border-gold/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 text-xs text-primary font-bold">
+                        <GraduationCap size={16} className="text-gold" />
+                        <span>School Campus (On-site)</span>
+                      </div>
+                      <p className="text-[11px] text-neutral-500 font-body mt-1 truncate">
+                        {selectedBatchSchool ? `${selectedBatchSchool} Campus` : 'School partner premises'}
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBatchLocationType('STUDIO');
+                        const gen = generateAnnouncementText(
+                          selectedBatchSchool,
+                          selectedBatchSection,
+                          batchEventDate,
+                          batchStartTime,
+                          batchEndTime,
+                          'STUDIO',
+                          '',
+                          batchPhotographerId,
+                          allowRescheduleProtection
+                        );
+                        setBatchAnnouncementText(gen);
+                      }}
+                      className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-all ${
+                        batchLocationType === 'STUDIO'
+                          ? 'border-primary bg-primary/5 font-semibold shadow-xs ring-1 ring-primary/20'
+                          : 'border-neutral-200 bg-white hover:border-gold/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 text-xs text-primary font-bold">
+                        <Building2 size={16} className="text-gold" />
+                        <span>E-Kodak Studio</span>
+                      </div>
+                      <p className="text-[11px] text-neutral-500 font-body mt-1">
+                        311 Rizal Street, City of Naga
+                      </p>
+                    </button>
+                  </div>
+
+                  {batchLocationType === 'CAMPUS' && (
+                    <div className="pt-1">
+                      <label className="block text-[11px] font-semibold text-neutral-600 mb-1">
+                        Room or Hall Landmark (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={batchCustomAddress}
+                        onChange={e => {
+                          setBatchCustomAddress(e.target.value);
+                          const gen = generateAnnouncementText(
+                            selectedBatchSchool,
+                            selectedBatchSection,
+                            batchEventDate,
+                            batchStartTime,
+                            batchEndTime,
+                            batchLocationType,
+                            e.target.value,
+                            batchPhotographerId,
+                            allowRescheduleProtection
+                          );
+                          setBatchAnnouncementText(gen);
+                        }}
+                        placeholder="e.g. Auditorium, Gymnasium, Room 302"
+                        className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-body outline-none focus:ring-2 focus:ring-gold/30"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Box 4: Assigned Lead Photographer ── */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-neutral-50/70 border border-neutral-200/80 space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <label className="text-xs font-bold text-primary flex items-center gap-1.5">
+                      <Camera size={14} className="text-gold" />
+                      <span>Assigned Lead Photographer</span>
+                    </label>
+                    {(() => {
+                      const assignedPh = batchPhotographersAvailability.find(p => p.id === batchPhotographerId);
+                      const isAvail = assignedPh && !assignedPh.hasConflict && assignedPh.is_available;
+                      if (isAvail) {
+                        return (
+                          <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-2xs">
+                            <CheckCircle2 size={12} className="text-emerald-600" />
+                            <span>On Duty: {assignedPh.first_name} {assignedPh.last_name} ({batchEventDate ? fmtDate(batchEventDate) : 'Date'})</span>
+                          </span>
+                        );
+                      }
+                      if (batchPhotographerId && assignedPh && (assignedPh.hasConflict || !assignedPh.is_available)) {
+                        return (
+                          <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-2xs">
+                            <AlertTriangle size={12} className="text-amber-600" />
+                            <span>{assignedPh.conflictReason || 'Schedule Notice'}</span>
+                          </span>
+                        );
+                      }
+                      const hasAnyAvail = batchPhotographersAvailability.some(p => !p.hasConflict && p.is_available);
+                      if (batchEventDate && !hasAnyAvail) {
+                        return (
+                          <span className="text-[11px] font-medium text-neutral-500 bg-neutral-100 border border-neutral-200 px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
+                            <span>No photographers on duty for {fmtDate(batchEventDate)}</span>
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className="text-[11px] font-medium text-neutral-500 bg-neutral-100 border border-neutral-200 px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
+                          <span>Verified Photographers Only</span>
+                        </span>
+                      );
+                    })()}
+                  </div>
+
+                  <div className="relative">
+                    <select
+                      value={batchPhotographerId}
+                      onChange={e => {
+                        const pid = e.target.value;
+                        setBatchPhotographerId(pid);
+                        const gen = generateAnnouncementText(
+                          selectedBatchSchool,
+                          selectedBatchSection,
+                          batchEventDate,
+                          batchStartTime,
+                          batchEndTime,
+                          batchLocationType,
+                          batchCustomAddress,
+                          pid,
+                          allowRescheduleProtection,
+                          batchPhotographersAvailability
+                        );
+                        setBatchAnnouncementText(gen);
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs font-semibold text-primary outline-none focus:ring-2 focus:ring-gold/30 appearance-none pr-9 transition-all cursor-pointer shadow-2xs hover:border-neutral-300"
+                    >
+                      <option value="">-- No Lead Assigned Yet (Optional) --</option>
+                      {batchPhotographersAvailability.map(p => {
+                        const name = `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Photographer';
+                        const isAvail = !p.hasConflict && p.is_available;
+                        const statusTag = isAvail 
+                          ? '✓ Available (On Duty)' 
+                          : (p.conflictReason ? `Off Duty (${p.conflictReason})` : 'Off Duty');
+                        return (
+                          <option key={p.id} value={p.id}>
+                            {name} — {statusTag}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+                  </div>
+
+                  {batchPhotographerId ? (
+                    (() => {
+                      const photog = batchPhotographersAvailability.find(p => p.id === batchPhotographerId);
+                      if (!photog) return null;
+                      const name = `${photog.first_name || ''} ${photog.last_name || ''}`.trim() || 'Photographer';
+                      const isAvail = !photog.hasConflict && photog.is_available;
+                      return (
+                        <div className={`w-full px-3.5 py-2.5 rounded-xl border flex items-center justify-between text-xs font-semibold ${
+                          isAvail 
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                            : 'bg-amber-50 text-amber-800 border-amber-200'
+                        }`}>
+                          <div className="flex items-center gap-2 truncate">
+                            {isAvail ? (
+                              <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                            ) : (
+                              <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+                            )}
+                            <span className="truncate">
+                              {isAvail 
+                                ? `${name} is verified on duty and synced with the announcement message.`
+                                : `${name} · ${photog.conflictReason || 'Not scheduled for duty on this date.'}`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 ml-2">
+                            <span className={`text-xs px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
+                              isAvail ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {isAvail ? 'Assigned' : 'Conflict'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBatchPhotographerId('');
+                                setBatchAnnouncementText(generateAnnouncementText(
+                                  selectedBatchSchool,
+                                  selectedBatchSection,
+                                  batchEventDate,
+                                  batchStartTime,
+                                  batchEndTime,
+                                  batchLocationType,
+                                  batchCustomAddress,
+                                  '',
+                                  allowRescheduleProtection,
+                                  batchPhotographersAvailability
+                                ));
+                              }}
+                              className="text-[11px] text-neutral-500 hover:text-neutral-800 underline cursor-pointer"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <p className="text-[11px] text-neutral-400 italic">
+                      {batchEventDate 
+                        ? (batchPhotographersAvailability.some(p => !p.hasConflict && p.is_available)
+                            ? `Photographers available on ${fmtDate(batchEventDate)} can be selected above.`
+                            : `No photographers have duty shifts scheduled on ${fmtDate(batchEventDate)}. Assignment is optional.`)
+                        : 'Select a pictorial date to check photographer duty shifts.'}
+                    </p>
+                  )}
+                </div>
+
+                {/* ── Box 5: Broadcast Announcement Message ── */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-neutral-50/70 border border-neutral-200/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-primary">
+                      Broadcast Announcement Message <span className="text-red-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const gen = generateAnnouncementText(
+                          selectedBatchSchool,
+                          selectedBatchSection,
+                          batchEventDate,
+                          batchStartTime,
+                          batchEndTime,
+                          batchLocationType,
+                          batchCustomAddress,
+                          batchPhotographerId,
+                          allowRescheduleProtection
+                        );
+                        setBatchAnnouncementText(gen);
+                      }}
+                      className="text-xs font-bold text-gold-dark hover:text-primary flex items-center gap-1 cursor-pointer"
+                    >
+                      <RefreshCw size={10} /> Auto-format Message
+                    </button>
+                  </div>
+                  <textarea
+                    rows={2}
+                    required
+                    value={batchAnnouncementText}
+                    onChange={e => setBatchAnnouncementText(e.target.value)}
+                    placeholder="Official message broadcasted to students..."
+                    className="w-full p-3 bg-white border border-neutral-200 rounded-xl text-xs font-body outline-none focus:ring-2 focus:ring-gold/30 resize-none text-neutral-800"
+                  />
+                </div>
+
+                {/* ── Footer Actions ── */}
+                <div className="pt-4 border-t border-neutral-100 flex items-center justify-end gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsSchoolSchedulerOpen(false)}
+                    className="px-4 py-2.5 text-xs font-semibold rounded-xl border border-neutral-200 text-neutral-600 hover:bg-neutral-50 cursor-pointer transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isBatchSubmitting || !selectedBatchSchool || !batchEventDate}
+                    className="btn-gold text-xs py-2.5 px-5 shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50 font-bold"
+                  >
+                    {isBatchSubmitting ? (
+                      <>
+                        <RefreshCw size={13} className="animate-spin" />
+                        Broadcasting...
+                      </>
+                    ) : (
+                      <>
+                        <Megaphone size={14} />
+                        Confirm Schedule & Broadcast {targetStudentCount > 0 ? `(${targetStudentCount})` : ''}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </motion.div>
         )}
@@ -3162,6 +4683,7 @@ export default function AdminBookings({ initialSection }) {
         onClose={() => setIsQrScannerOpen(false)}
       />
 
+      </div>
     </div>
   );
 }

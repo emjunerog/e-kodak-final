@@ -23,6 +23,9 @@ import {
 } from 'lucide-react-native';
 
 import GlassCard from '../components/GlassCard';
+import GlassBackground from '../components/GlassBackground';
+import GlassHeader from '../components/GlassHeader';
+import PremiumIcon from '../components/PremiumIcon';
 import GoldButton from '../components/GoldButton';
 import { useTheme } from '../context/ThemeContext';
 import {
@@ -108,23 +111,15 @@ export default function SettingsScreen({ navigation }) {
         backgroundColor={colors.bg.base}
       />
 
-      {/* ── Editorial Header ── */}
-      <LinearGradient
-        colors={gradients.darkStudio}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={[styles.header, { borderBottomColor: colors.gold.border }]}
-      >
-        <View style={styles.headerTop}>
-          <View style={[styles.headerIconRing, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
-            <Settings size={20} color={colors.gold.light} />
-          </View>
-          <View>
-            <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Studio Settings</Text>
-            <Text style={[styles.headerSub, { color: colors.text.secondary }]}>Preferences & studio customization</Text>
-          </View>
-        </View>
-      </LinearGradient>
+      {/* Ambient glass backdrop */}
+      <GlassBackground />
+
+      {/* ── Frosted Editorial Header ── */}
+      <GlassHeader
+        icon={Settings}
+        title="Studio Settings"
+        subtitle="Preferences & studio customization"
+      />
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -193,9 +188,7 @@ export default function SettingsScreen({ navigation }) {
             {/* Notifications */}
             <View style={styles.settingRow}>
               <View style={styles.settingLeft}>
-                <View style={[styles.iconBox, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
-                  <Bell size={16} color={colors.gold.light} />
-                </View>
+                <PremiumIcon icon={Bell} size={16} box={36} tone="soft" />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.settingTitle, { color: colors.text.primary }]}>Push Notifications</Text>
                   <Text style={[styles.settingDesc, { color: colors.text.secondary }]}>Receive live alerts when shoot status updates.</Text>
@@ -214,9 +207,7 @@ export default function SettingsScreen({ navigation }) {
             {/* Haptic Feedback */}
             <View style={styles.settingRow}>
               <View style={styles.settingLeft}>
-                <View style={[styles.iconBox, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
-                  <Vibrate size={16} color={colors.gold.light} />
-                </View>
+                <PremiumIcon icon={Vibrate} size={16} box={36} tone="soft" />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.settingTitle, { color: colors.text.primary }]}>Tactile Haptics</Text>
                   <Text style={[styles.settingDesc, { color: colors.text.secondary }]}>Subtle vibration on button taps and QR scans.</Text>
@@ -235,9 +226,7 @@ export default function SettingsScreen({ navigation }) {
             {/* Darkroom Contrast */}
             <View style={styles.settingRow}>
               <View style={styles.settingLeft}>
-                <View style={[styles.iconBox, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
-                  <Eye size={16} color={colors.gold.light} />
-                </View>
+                <PremiumIcon icon={Eye} size={16} box={36} tone="soft" />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.settingTitle, { color: colors.text.primary }]}>High Contrast Edges</Text>
                   <Text style={[styles.settingDesc, { color: colors.text.secondary }]}>Enriched gold card borders for bright daylight.</Text>
@@ -262,9 +251,7 @@ export default function SettingsScreen({ navigation }) {
           >
             <GlassCard glow highlight style={styles.staffCard}>
               <View style={styles.staffCardRow}>
-                <View style={[styles.staffIconRing, { backgroundColor: colors.gold.bg, borderColor: colors.gold.borderLight }]}>
-                  <Lock size={20} color={colors.gold.light} />
-                </View>
+                <PremiumIcon icon={Lock} size={20} box={44} tone="gold" glow />
                 <View style={{ flex: 1 }}>
                   <View style={styles.staffBadgeRow}>
                     <Text style={[styles.staffTitle, { color: colors.text.primary }]}>Photographer & Staff Portal</Text>
@@ -407,7 +394,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontFamily: Typography.fontBodySemi,
     fontSize: 10,
-    letterSpacing: 1.8,
+    letterSpacing: 2,
     marginBottom: Spacing[2],
     paddingLeft: Spacing[1],
   },
@@ -420,22 +407,22 @@ const styles = StyleSheet.create({
   },
   themeOptionBtn: {
     flex: 1,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     borderWidth: 1.5,
-    paddingVertical: Spacing[4],
+    paddingVertical: 18,
     paddingHorizontal: Spacing[3],
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 8,
     position: 'relative',
   },
   activeThemeIndicator: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    top: 10,
+    right: 10,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
   themeOptionTitle: {
     fontFamily: Typography.fontHeadingSemi,
@@ -449,7 +436,7 @@ const styles = StyleSheet.create({
 
   // Preferences Card
   settingsCard: {
-    borderRadius: Radius.xl,
+    borderRadius: Radius['2xl'],
     overflow: 'hidden',
   },
   settingRow: {
@@ -484,14 +471,14 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   divider: {
-    height: 1,
+    height: StyleSheet.hairlineWidth,
     marginHorizontal: Spacing[4],
-    opacity: 0.25,
+    opacity: 0.35,
   },
 
   // Staff Portal Card
   staffCard: {
-    borderRadius: Radius.xl,
+    borderRadius: Radius['2xl'],
     padding: Spacing[4],
   },
   staffCardRow: {
@@ -519,15 +506,15 @@ const styles = StyleSheet.create({
     fontSize: Typography.size.sm,
   },
   staffPill: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: Radius.full,
     borderWidth: 1,
   },
   staffPillText: {
     fontFamily: Typography.fontBodySemi,
     fontSize: 9,
-    letterSpacing: 0.6,
+    letterSpacing: 0.8,
   },
   staffDesc: {
     fontFamily: Typography.fontBody,
@@ -537,7 +524,7 @@ const styles = StyleSheet.create({
 
   // Info Card
   infoCard: {
-    borderRadius: Radius.xl,
+    borderRadius: Radius['2xl'],
     padding: Spacing[4],
     gap: Spacing[3],
   },
@@ -559,7 +546,7 @@ const styles = StyleSheet.create({
 
   // Data Card
   dataCard: {
-    borderRadius: Radius.xl,
+    borderRadius: Radius['2xl'],
     overflow: 'hidden',
   },
   dataActionRow: {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -41,13 +41,15 @@ import {
   Layers,
   LayoutList,
   LayoutGrid,
+  RefreshCw,
 } from 'lucide-react';
 import Toast from '../../components/ui/Toast';
+import CustomDropdown from '../../components/ui/CustomDropdown';
 import { supabase } from '../../lib/supabase';
 import { createTransferLog } from '../../services/workstationService';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
+import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import PhotographerBookingCard from '../../components/photographer/PhotographerBookingCard';
-import CustomDropdown from '../../components/ui/CustomDropdown';
 import BookingLifecycleBadge from '../../components/admin/BookingLifecycleBadge';
 
 export default function PhotographerBookings() {
@@ -58,17 +60,21 @@ export default function PhotographerBookings() {
 
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
+  const bookingsRef = useRef(bookings);
+  bookingsRef.current = bookings;
 
   // Shift & Availability Status
   const [isAvailable, setIsAvailable] = useState(true);
   const [togglingAvailability, setTogglingAvailability] = useState(false);
 
-  // Search, Filters & Sorting
+  // Search, Filters & View Mode
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all'); // all | upcoming | in_progress | completed | [specific]
-  const [sortBy, setSortBy] = useState('date_asc');
+  const [statusFilter, setStatusFilter] = useState('all'); // all | upcoming | in_progress | completed
+  const [timeframeFilter, setTimeframeFilter] = useState('all'); // all | today | this_week | upcoming | past
+  const [serviceFilter, setServiceFilter] = useState('all');
   const [viewMode, setViewMode] = useState('detailed'); // 'detailed' | 'grid'
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [updatingId, setUpdatingId] = useState(null);
@@ -97,9 +103,14 @@ export default function PhotographerBookings() {
   const [issuePriority, setIssuePriority] = useState('HIGH');
   const [reportingIssue, setReportingIssue] = useState(false);
 
-  const loadBookings = async () => {
+  const loadBookings = async (isManual = false) => {
     if (!user?.id) return;
-    setLoading(true);
+    const hasData = bookingsRef.current.length > 0;
+    if (isManual || hasData) {
+      setIsRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError('');
     try {
       const [bookingsRes, profileRes] = await Promise.all([
@@ -112,8 +123,8 @@ export default function PhotographerBookings() {
       } else {
         const data = bookingsRes.data || [];
         setBookings(data);
-        // In My Bookings, expand all booking cards by default so full order details are visible and wide immediately
-        if (data.length > 0) {
+        // In My Bookings, expand all booking cards by default on initial load
+        if (data.length > 0 && bookingsRef.current.length === 0) {
           setExpandedIds(new Set(data.map(b => b.id)));
         }
       }
@@ -126,6 +137,7 @@ export default function PhotographerBookings() {
       setError('An unexpected error occurred while loading bookings.');
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -173,6 +185,34 @@ export default function PhotographerBookings() {
     return { total, upcoming, inProgress, completed };
   }, [bookings]);
 
+  // Dynamic Service Options
+  const serviceOptions = useMemo(() => {
+    const set = new Set();
+    bookings.forEach(b => {
+      const name = b.service?.name || b.tier_name;
+      if (name) set.add(name);
+    });
+    const arr = Array.from(set).sort();
+    if (arr.length <= 1) return [];
+    return [
+      { value: 'all', label: 'All Services' },
+      ...arr.map(s => ({ value: s, label: s })),
+    ];
+  }, [bookings]);
+
+  // Useful Timeframe Options
+  const timeframeOptions = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const todayCount = bookings.filter(b => b.event_date === today).length;
+    return [
+      { value: 'all', label: 'All Dates' },
+      { value: 'today', label: "Today's Shoots", badge: todayCount > 0 ? `${todayCount}` : undefined },
+      { value: 'this_week', label: 'This Week' },
+      { value: 'upcoming', label: 'Upcoming Dates' },
+      { value: 'past', label: 'Past Shoots' },
+    ];
+  }, [bookings]);
+
   // Filter & Sort Bookings
   const filteredBookings = useMemo(() => {
     let list = bookings.filter(b => {
@@ -191,37 +231,58 @@ export default function PhotographerBookings() {
 
       if (!matchSearch) return false;
 
-      if (statusFilter === 'all') return true;
+      // Status KPI Filter
       if (statusFilter === 'upcoming') {
-        return ['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED'].includes(b.status);
+        if (!['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED'].includes(b.status)) return false;
+      } else if (statusFilter === 'in_progress') {
+        if (!['CAPTURE', 'EDITING', 'PRINTING'].includes(b.status)) return false;
+      } else if (statusFilter === 'completed') {
+        if (!['READY', 'COMPLETED'].includes(b.status)) return false;
+      } else if (statusFilter !== 'all') {
+        if (b.status !== statusFilter) return false;
       }
-      if (statusFilter === 'in_progress') {
-        return ['CAPTURE', 'EDITING', 'PRINTING'].includes(b.status);
+
+      // Timeframe Filter
+      if (timeframeFilter === 'today') {
+        const today = new Date().toISOString().split('T')[0];
+        if (b.event_date !== today) return false;
+      } else if (timeframeFilter === 'this_week') {
+        if (!b.event_date) return false;
+        const d = new Date(b.event_date);
+        const now = new Date();
+        const day = now.getDay();
+        const diffToMonday = (day === 0 ? -6 : 1) - day;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + diffToMonday);
+        monday.setHours(0, 0, 0, 0);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        sunday.setHours(23, 59, 59, 999);
+        if (d < monday || d > sunday) return false;
+      } else if (timeframeFilter === 'upcoming') {
+        const today = new Date().toISOString().split('T')[0];
+        if (!b.event_date || b.event_date < today) return false;
+      } else if (timeframeFilter === 'past') {
+        const today = new Date().toISOString().split('T')[0];
+        if (!b.event_date || b.event_date >= today) return false;
       }
-      if (statusFilter === 'completed') {
-        return ['READY', 'COMPLETED'].includes(b.status);
+
+      // Service Filter
+      if (serviceFilter !== 'all') {
+        const serviceName = b.service?.name || b.tier_name;
+        if (serviceName !== serviceFilter) return false;
       }
-      return b.status === statusFilter;
+
+      return true;
     });
 
+    // Natural chronological sort by scheduled shoot date
     list.sort((a, b) => {
-      if (sortBy === 'date_asc') {
-        return new Date(a.event_date || '9999-12-31') - new Date(b.event_date || '9999-12-31');
-      }
-      if (sortBy === 'date_desc') {
-        return new Date(b.event_date || '0000-01-01') - new Date(a.event_date || '0000-01-01');
-      }
-      if (sortBy === 'booking_asc') {
-        return (a.booking_number || '').localeCompare(b.booking_number || '');
-      }
-      if (sortBy === 'booking_desc') {
-        return (b.booking_number || '').localeCompare(a.booking_number || '');
-      }
-      return 0;
+      return new Date(a.event_date || '9999-12-31') - new Date(b.event_date || '9999-12-31');
     });
 
     return list;
-  }, [bookings, search, statusFilter, sortBy]);
+  }, [bookings, search, statusFilter, timeframeFilter, serviceFilter]);
 
   // Card Expand Controls (Detailed in a click)
   const handleToggleExpand = (id) => {
@@ -234,16 +295,6 @@ export default function PhotographerBookings() {
       }
       return next;
     });
-  };
-
-  const allExpanded = filteredBookings.length > 0 && filteredBookings.every(b => expandedIds.has(b.id));
-
-  const handleToggleExpandAll = () => {
-    if (allExpanded) {
-      setExpandedIds(new Set());
-    } else {
-      setExpandedIds(new Set(filteredBookings.map(b => b.id)));
-    }
   };
 
   // Workflow Step 4: Accept Assignment
@@ -422,7 +473,7 @@ export default function PhotographerBookings() {
     : `${counts.total} assigned shoot${counts.total !== 1 ? 's' : ''} · ${counts.upcoming} upcoming · Status: ${isAvailable ? 'Available' : 'Off Duty'}`;
 
   return (
-    <div className="space-y-8 animate-fade-in max-w-screen-2xl mx-auto pb-16 font-body">
+    <div className="w-full pb-16 animate-fade-in font-body">
       {toast && <Toast type={toast.type} message={toast.message} onDismiss={() => setToast(null)} />}
 
       {/* ── 1. Luxury Dark Hero Banner with Live Philippine Studio Clock ──────── */}
@@ -442,8 +493,8 @@ export default function PhotographerBookings() {
           href: '/photographer/uploads',
           icon: Upload,
         }}
-        onRefresh={loadBookings}
-        isRefreshing={loading}
+        onRefresh={() => loadBookings(true)}
+        isRefreshing={isRefreshing || loading}
         extraTools={[
           {
             label: isAvailable ? 'Shift: Available' : 'Shift: Off Duty',
@@ -467,126 +518,141 @@ export default function PhotographerBookings() {
         ]}
       />
 
-      {/* ── 2. KPI Metric Strip ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {[
-          { key: 'all', label: 'Total Assigned', count: counts.total, sub: 'All assigned shoots', icon: CalendarDays, color: 'text-primary' },
-          { key: 'upcoming', label: 'Upcoming / Confirmed', count: counts.upcoming, sub: 'Ready for capture', icon: Clock, color: 'text-gold-dark' },
-          { key: 'in_progress', label: 'In Production', count: counts.inProgress, sub: 'Capture or editing', icon: Camera, color: 'text-primary' },
-          { key: 'completed', label: 'Ready & Completed', count: counts.completed, sub: 'Finished sessions', icon: CheckCircle2, color: 'text-emerald-600' },
-        ].map(kpi => (
-          <button
-            key={kpi.key}
-            type="button"
-            onClick={() => setStatusFilter(kpi.key)}
-            className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none bg-white hover:border-gold/60 hover:shadow-xs ${
-              statusFilter === kpi.key
-                ? 'border-gold ring-2 ring-gold/20 bg-gold/5'
-                : 'border-neutral-200/90 shadow-2xs'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-                {kpi.label}
-              </span>
-              <kpi.icon size={16} className={kpi.color} />
-            </div>
-            <p className={`text-2xl sm:text-3xl font-heading font-bold ${kpi.color}`}>
-              {loading ? '—' : kpi.count}
-            </p>
-            <span className="text-[11px] text-neutral-500 mt-0.5 block font-body">
-              {kpi.sub}
-            </span>
-          </button>
-        ))}
-      </div>
+      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
 
-      {/* ── 3. Streamlined Search & Filter Toolbar ─────────────────────────── */}
-      <div className="rounded-2xl p-3 sm:p-4 bg-white border border-neutral-200/80 shadow-2xs">
-        <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
+      {/* ── 2. KPI Metric Strip (Unified Luxury Studio KPI Cards) ─────────────── */}
+      <CategorizedMetricStrip
+        loading={loading}
+        columns="grid-cols-2 lg:grid-cols-4"
+        cards={[
+          {
+            key: 'all',
+            label: 'TOTAL',
+            subtitle: 'ALL ASSIGNED SHOOTS',
+            value: counts.total,
+            isActive: statusFilter === 'all',
+            onClick: () => setStatusFilter('all')
+          },
+          {
+            key: 'upcoming',
+            label: 'UPCOMING',
+            subtitle: 'READY FOR CAPTURE',
+            value: counts.upcoming,
+            isActive: statusFilter === 'upcoming',
+            onClick: () => setStatusFilter('upcoming')
+          },
+          {
+            key: 'in_progress',
+            label: 'IN PRODUCTION',
+            subtitle: 'CAPTURE OR EDITING',
+            value: counts.inProgress,
+            isActive: statusFilter === 'in_progress',
+            onClick: () => setStatusFilter('in_progress')
+          },
+          {
+            key: 'completed',
+            label: 'COMPLETED',
+            subtitle: 'FINISHED SESSIONS',
+            value: counts.completed,
+            isActive: statusFilter === 'completed',
+            onClick: () => setStatusFilter('completed')
+          }
+        ]}
+      />
+
+      {/* Error Alert */}
+      {error && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700 text-xs font-semibold">
+          <AlertCircle size={18} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* ── 3. Integrated Assigned Shoots Station Box ──────────────────────── */}
+      <div className="rounded-3xl bg-white border border-neutral-200/80 shadow-xs overflow-hidden">
+        {/* Integrated Header: Title, Active Filter Badge, Search, Dropdowns & View Toggle */}
+        <div className="p-4 sm:p-5 border-b border-neutral-100/90 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3.5 bg-neutral-50/50">
           
-          {/* Search Input */}
-          <div className="relative flex-1 min-w-[240px]">
-            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
-            <input
-              type="text"
-              placeholder="Search booking #, client, service, school, or strand..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-body focus:ring-2 focus:ring-gold/20 focus:border-gold outline-none transition-all"
-            />
-            {search && (
+          {/* Left: Section Title & Active Filter Tag */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h3 className="font-heading text-base sm:text-lg font-bold text-neutral-900 leading-tight">
+              Assigned Shoots
+            </h3>
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-white text-neutral-700 border border-neutral-200/90 shadow-2xs">
+              {filteredBookings.length} {filteredBookings.length === 1 ? 'session' : 'sessions'}
+            </span>
+
+            {(statusFilter !== 'all' || timeframeFilter !== 'all' || serviceFilter !== 'all' || search) && (
               <button
                 type="button"
-                onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 p-0.5 rounded cursor-pointer"
-                title="Clear search"
+                onClick={() => {
+                  setStatusFilter('all');
+                  setTimeframeFilter('all');
+                  setServiceFilter('all');
+                  setSearch('');
+                }}
+                className="text-[11px] font-bold text-gold hover:text-gold-dark flex items-center gap-1 transition-colors cursor-pointer ml-1"
+                title="Reset all filters"
               >
-                <X size={13} />
+                <span>Reset filters</span>
+                <X size={12} />
               </button>
             )}
           </div>
 
-          {/* Clean Controls Row */}
-          <div className="flex flex-wrap items-center gap-2">
-            
-            {/* Quick Status Filter Pills */}
-            <div className="flex items-center gap-1 bg-neutral-100 p-0.5 rounded-xl border border-neutral-200/80 overflow-x-auto">
-              {[
-                { key: 'all', label: 'All', count: counts.total },
-                { key: 'upcoming', label: 'Upcoming', count: counts.upcoming },
-                { key: 'in_progress', label: 'In Bay', count: counts.inProgress },
-                { key: 'completed', label: 'Ready', count: counts.completed },
-              ].map(tab => (
+          {/* Right: Integrated Search Input, Dropdowns & View Mode Toggle */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Search Input */}
+            <div className="relative flex-1 min-w-[190px] sm:w-60">
+              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+              <input
+                type="text"
+                placeholder="Search booking #, client, service..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 bg-white border border-neutral-200/80 rounded-xl text-xs font-body focus:ring-2 focus:ring-gold/20 focus:border-gold outline-none transition-all shadow-2xs"
+              />
+              {search && (
                 <button
-                  key={tab.key}
                   type="button"
-                  onClick={() => setStatusFilter(tab.key)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                    statusFilter === tab.key
-                      ? 'bg-white text-primary shadow-2xs'
-                      : 'text-neutral-500 hover:text-primary'
-                  }`}
+                  onClick={() => setSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 p-0.5 cursor-pointer"
+                  title="Clear search"
                 >
-                  <span>{tab.label}</span>
-                  <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                    statusFilter === tab.key ? 'bg-neutral-900 text-white' : 'bg-neutral-200/70 text-neutral-600'
-                  }`}>
-                    {tab.count}
-                  </span>
+                  <X size={12} />
                 </button>
-              ))}
+              )}
             </div>
 
-            {/* Sort Dropdown */}
-            <CustomDropdown
-              value={sortBy}
-              onChange={setSortBy}
-              options={[
-                { value: 'date_asc', label: 'Earliest Shoot' },
-                { value: 'date_desc', label: 'Latest Shoot' },
-                { value: 'booking_asc', label: 'Booking # (Asc)' },
-                { value: 'booking_desc', label: 'Booking # (Desc)' },
-              ]}
-              label=""
-              placeholder="Sort..."
-              className="w-36 sm:w-40"
-              popoverWidth="w-44"
-            />
+            {/* Timeframe Dropdown */}
+            <div className="w-38 sm:w-42 shrink-0">
+              <CustomDropdown
+                value={timeframeFilter}
+                onChange={setTimeframeFilter}
+                options={timeframeOptions}
+                icon={CalendarDays}
+                popoverWidth="w-52"
+                align="right"
+              />
+            </div>
 
-            {/* Expand / Collapse All Details */}
-            <button
-              type="button"
-              onClick={handleToggleExpandAll}
-              className="px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 text-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
-              title={allExpanded ? 'Collapse all' : 'Expand all'}
-            >
-              {allExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              <span className="hidden sm:inline">{allExpanded ? 'Collapse All' : 'Expand All'}</span>
-            </button>
+            {/* Service Dropdown (shown when multiple services exist) */}
+            {serviceOptions.length > 0 && (
+              <div className="w-38 sm:w-42 shrink-0">
+                <CustomDropdown
+                  value={serviceFilter}
+                  onChange={setServiceFilter}
+                  options={serviceOptions}
+                  icon={Camera}
+                  popoverWidth="w-52"
+                  align="right"
+                />
+              </div>
+            )}
 
-            {/* Layout Toggle (Stack vs 2-Col Grid) */}
-            <div className="flex items-center rounded-xl bg-neutral-100 p-0.5 border border-neutral-200 shrink-0">
+            {/* Layout Toggle (List vs Grid) */}
+            <div className="flex items-center rounded-xl bg-neutral-100 p-0.5 border border-neutral-200/80 shrink-0">
               <button
                 type="button"
                 onClick={() => setViewMode('detailed')}
@@ -595,7 +661,7 @@ export default function PhotographerBookings() {
                     ? 'bg-white text-primary shadow-2xs'
                     : 'text-neutral-500 hover:text-primary'
                 }`}
-                title="Full-Width Stack View"
+                title="List View"
               >
                 <LayoutList size={14} />
               </button>
@@ -607,85 +673,87 @@ export default function PhotographerBookings() {
                     ? 'bg-white text-primary shadow-2xs'
                     : 'text-neutral-500 hover:text-primary'
                 }`}
-                title="2-Column Grid View"
+                title="Grid View"
               >
                 <LayoutGrid size={14} />
               </button>
             </div>
-
           </div>
         </div>
-      </div>
 
-      {/* Error Alert */}
-      {error && (
-        <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700 text-xs font-semibold">
-          <AlertCircle size={18} />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* ── 4. Detailed Bookings Feed (In a click inspection) ────────────────── */}
-      {loading ? (
-        <div className="py-24 text-center bg-white rounded-3xl border border-neutral-200/80 shadow-xs">
-          <Loader2 size={32} className="animate-spin text-gold mx-auto mb-3" />
-          <p className="text-xs text-neutral-400 font-body">Synchronizing assigned shoot records…</p>
-        </div>
-      ) : filteredBookings.length === 0 ? (
-        <div className="py-20 text-center bg-white rounded-3xl border border-dashed border-neutral-300 p-8 shadow-xs max-w-2xl mx-auto">
-          <div className="w-16 h-16 rounded-2xl bg-gold/10 ring-8 ring-gold/5 flex items-center justify-center text-gold mx-auto mb-3 shadow-xs">
-            <Camera size={28} />
-          </div>
-          <h3 className="font-heading text-lg font-bold text-primary">No Matching Bookings Found</h3>
-          <p className="text-xs text-neutral-500 mt-1 max-w-md mx-auto leading-relaxed font-body">
-            {search
-              ? `No shoots matched "${search}". Try adjusting your keywords or clearing the status filter.`
-              : 'There are currently no photoshoot orders assigned to your bay under this filter. New bookings will appear here once scheduled by studio administration.'}
-          </p>
-          {(search || statusFilter !== 'all') && (
-            <button
-              type="button"
-              onClick={() => { setSearch(''); setStatusFilter('all'); }}
-              className="mt-4 px-4 py-2 rounded-xl bg-neutral-900 hover:bg-black text-gold text-xs font-semibold transition-colors cursor-pointer"
-            >
-              Clear All Filters
-            </button>
+        {/* Box Body: Bookings List OR Integrated Empty State */}
+        <div className="p-4 sm:p-6">
+          {loading && bookings.length === 0 ? (
+            <div className="py-20 text-center">
+              <Loader2 size={30} className="animate-spin text-gold mx-auto mb-3" />
+              <p className="text-xs text-neutral-400 font-body">Synchronizing assigned shoot records…</p>
+            </div>
+          ) : filteredBookings.length === 0 ? (
+            <div className="py-16 sm:py-20 text-center max-w-md mx-auto">
+              <div className="w-14 h-14 rounded-2xl bg-gold/10 ring-6 ring-gold/5 flex items-center justify-center text-gold mx-auto mb-3.5 shadow-2xs">
+                <Camera size={26} />
+              </div>
+              <h4 className="font-heading text-lg font-bold text-neutral-900">
+                No Matching Bookings Found
+              </h4>
+              <p className="text-xs text-neutral-500 mt-1.5 leading-relaxed font-body">
+                {search || statusFilter !== 'all' || timeframeFilter !== 'all' || serviceFilter !== 'all'
+                  ? 'No shoots match your current combination of filters. Try adjusting or clearing them.'
+                  : 'There are currently no photoshoot orders assigned to your bay under this filter. New bookings will appear here once scheduled by studio administration.'}
+              </p>
+              {(search || statusFilter !== 'all' || timeframeFilter !== 'all' || serviceFilter !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch('');
+                    setStatusFilter('all');
+                    setTimeframeFilter('all');
+                    setServiceFilter('all');
+                  }}
+                  className="mt-4 px-4 py-2 rounded-xl bg-neutral-900 hover:bg-black text-gold text-xs font-bold transition-all shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <RefreshCw size={12} />
+                  <span>Reset All Filters</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className={`${viewMode === 'grid' ? 'grid grid-cols-1 lg:grid-cols-2 gap-4' : 'space-y-4'} ${isRefreshing ? 'opacity-70 transition-opacity' : 'opacity-100 transition-opacity'}`}>
+              {filteredBookings.map(b => (
+                <PhotographerBookingCard
+                  key={b.id}
+                  booking={b}
+                  isExpanded={expandedIds.has(b.id)}
+                  onToggleExpand={() => handleToggleExpand(b.id)}
+                  updatingId={updatingId}
+                  onAccept={handleAccept}
+                  onDecline={(booking) => {
+                    setSelectedBooking(booking);
+                    setDeclineReason('');
+                    setDeclineModalOpen(true);
+                  }}
+                  onAdvanceStatus={(targetId, targetStatus) => handleAdvanceStatus(targetId, targetStatus)}
+                  onReschedule={(booking) => {
+                    setSelectedBooking(booking);
+                    setProposedDate(booking.event_date || '');
+                    setProposedTime(booking.preferred_time || '');
+                    setRescheduleReason('');
+                    setRescheduleModalOpen(true);
+                  }}
+                  onReportIssue={(booking) => {
+                    setSelectedBooking(booking);
+                    setIssueTitle(`Bay Issue - #${booking.booking_number}`);
+                    setIssueMessage('');
+                    setIssuePriority('HIGH');
+                    setIssueModalOpen(true);
+                  }}
+                />
+              ))}
+            </div>
           )}
         </div>
-      ) : (
-        <div className={viewMode === 'grid' ? 'grid grid-cols-1 lg:grid-cols-2 gap-5' : 'space-y-4'}>
-          {filteredBookings.map(b => (
-            <PhotographerBookingCard
-              key={b.id}
-              booking={b}
-              isExpanded={expandedIds.has(b.id)}
-              onToggleExpand={() => handleToggleExpand(b.id)}
-              updatingId={updatingId}
-              onAccept={handleAccept}
-              onDecline={(booking) => {
-                setSelectedBooking(booking);
-                setDeclineReason('');
-                setDeclineModalOpen(true);
-              }}
-              onAdvanceStatus={(targetId, targetStatus) => handleAdvanceStatus(targetId, targetStatus)}
-              onReschedule={(booking) => {
-                setSelectedBooking(booking);
-                setProposedDate(booking.event_date || '');
-                setProposedTime(booking.preferred_time || '');
-                setRescheduleReason('');
-                setRescheduleModalOpen(true);
-              }}
-              onReportIssue={(booking) => {
-                setSelectedBooking(booking);
-                setIssueTitle(`Bay Issue - #${booking.booking_number}`);
-                setIssueMessage('');
-                setIssuePriority('HIGH');
-                setIssueModalOpen(true);
-              }}
-            />
-          ))}
-        </div>
-      )}
+      </div>
+      </div>
 
       {/* ── Decline Assignment Modal Dialog ─────────────────────────────────── */}
       {declineModalOpen && selectedBooking && (

@@ -1,13 +1,17 @@
 /**
- * GlassCard.jsx
- * Premium frosted glass-effect card for the luxury studio aesthetic.
- * Features dark acrylic translucent gradient, subtle gold hairline border,
- * top-edge specular highlight reflection, and optional gold glow.
+ * GlassCard.jsx — True glassmorphism card.
+ * Same API: { children, style, glow, gradient, highlight, borderGold }
+ *  + optional { blurred=true, intensity }.
+ * Renders a real hardware BlurView foundation with a light translucent
+ * wash and a softened gradient veil, finished with a hairline border and
+ * a top specular highlight. Set blurred={false} to fall back to the
+ * plain translucent fill (e.g. inside already-blurred sheets).
  */
 
 import React from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
 import { Radius, Shadow } from '../theme';
 
@@ -18,9 +22,13 @@ export default function GlassCard({
   gradient = true,
   highlight = true,
   borderGold = false,
+  blurred = true,
+  intensity,
 }) {
   const { isDark, colors, gradients } = useTheme();
-  const cardBorder = borderGold ? colors.gold.borderLight : colors.gold.border;
+  const cardBorder = borderGold || glow
+    ? colors.gold.borderLight
+    : (colors.surface?.hairline || colors.gold.border);
 
   return (
     <View
@@ -28,32 +36,42 @@ export default function GlassCard({
         styles.container,
         {
           borderColor: cardBorder,
-          shadowColor: isDark ? '#000000' : '#A89270',
-          shadowOpacity: isDark ? 0.45 : 0.12,
+          backgroundColor: isDark ? 'rgba(24, 22, 26, 0.58)' : 'rgba(255, 255, 255, 0.72)',
+          shadowColor: isDark ? '#000000' : '#6B5530',
+          shadowOpacity: isDark ? 0.28 : 0.08,
         },
         glow && {
           shadowColor: colors.gold.DEFAULT,
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: isDark ? 0.35 : 0.22,
-          shadowRadius: 20,
-          elevation: Platform.OS === 'android' ? 4 : 16,
-          borderColor: colors.gold.borderLight,
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: isDark ? 0.22 : 0.14,
+          shadowRadius: 22,
+          elevation: Platform.OS === 'android' ? 4 : 12,
         },
         style,
       ]}
     >
-      {gradient ? (
-        <LinearGradient
-          colors={gradients.glassCard}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0.8, y: 1 }}
+      {/* Real frosted-glass foundation */}
+      {blurred && (
+        <BlurView
+          intensity={intensity ?? (isDark ? 45 : 32)}
+          tint={isDark ? 'dark' : 'light'}
           style={StyleSheet.absoluteFill}
         />
-      ) : (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg.card }]} />
       )}
 
-      {/* Top Specular Edge Highlight */}
+      {/* Soft gradient veil (kept subtle so content stays legible) */}
+      {gradient && (
+        <View style={[StyleSheet.absoluteFill, { opacity: 0.5 }]}>
+          <LinearGradient
+            colors={gradients.glassCard}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0.8, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
+      )}
+
+      {/* Top specular edge highlight */}
       {highlight && (
         <LinearGradient
           colors={gradients.glassHighlight}
@@ -75,15 +93,18 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
     ...Shadow.card,
-    elevation: Platform.OS === 'android' ? 3 : 14,
+    shadowRadius: 18,
+    elevation: Platform.OS === 'android' ? 2 : 10,
   },
 
   specularHighlight: {
     position: 'absolute',
     top: 0,
-    left: 0,
-    right: 0,
-    height: 1.5,
+    left: 18,
+    right: 18,
+    height: 1,
+    borderRadius: 1,
+    opacity: 0.9,
     zIndex: 1,
   },
 });

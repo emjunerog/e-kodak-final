@@ -15,6 +15,7 @@ import {
   ScrollView, TouchableOpacity, Modal, Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import {
   Heart, Sparkles, X, Sliders, Image as ImageIcon,
@@ -38,22 +39,15 @@ export default function StudioPhotoReel({ galleryItems = [], onPhotoLike }) {
   const [showBefore, setShowBefore] = useState(false);
   const [likedMap, setLikedMap] = useState({});
 
-  const scrollX = useRef(new Animated.Value(0)).current;
   const heartScaleAnim = useRef(new Animated.Value(1)).current;
 
-  const handleScroll = Animated.event(
-    [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-    {
-      useNativeDriver: false,
-      listener: (event) => {
-        const offset = event.nativeEvent.contentOffset.x;
-        const index = Math.round(offset / SNAP_INTERVAL);
-        if (index !== activeIndex && index >= 0 && index < galleryItems.length) {
-          setActiveIndex(index);
-        }
-      },
+  const handleScroll = (event) => {
+    const offset = event.nativeEvent.contentOffset.x;
+    const index = Math.round(offset / SNAP_INTERVAL);
+    if (index !== activeIndex && index >= 0 && index < galleryItems.length) {
+      setActiveIndex(index);
     }
-  );
+  };
 
   const handleLike = async (photo) => {
     try {
@@ -219,6 +213,7 @@ export default function StudioPhotoReel({ galleryItems = [], onPhotoLike }) {
         onRequestClose={() => setSelectedPhoto(null)}
       >
         <View style={styles.modalOverlay}>
+          <BlurView intensity={isDark ? 60 : 40} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
           {/* Backdrop dismiss */}
           <TouchableOpacity
             style={StyleSheet.absoluteFill}
@@ -535,7 +530,7 @@ const getStyles = (colors, isDark) => StyleSheet.create({
   // Lightbox Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(5, 4, 3, 0.94)',
+    backgroundColor: 'rgba(5, 4, 3, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: Spacing[4],
@@ -574,7 +569,9 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: Radius.full,
-    backgroundColor: colors.bg.elevated,
+    backgroundColor: 'rgba(127, 127, 140, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.14)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -618,9 +615,9 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     gap: 6,
     paddingVertical: 8,
     borderRadius: Radius.md,
-    backgroundColor: colors.bg.elevated,
+    backgroundColor: 'rgba(127, 127, 140, 0.12)',
     borderWidth: 1,
-    borderColor: colors.gold.border,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   toggleBtnActive: {
     backgroundColor: colors.gold.DEFAULT,

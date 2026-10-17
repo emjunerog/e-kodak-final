@@ -83,20 +83,22 @@ export default {
         mono:    ["Inter", "system-ui", "sans-serif"],
       },
 
+      // Normalized to the standard 16px root scale (100% browser zoom).
+      // Display sizes are fluid (clamp) so headings are never oversized.
       fontSize: {
-        xs: ['0.875rem', { lineHeight: '1.375rem' }],
-        sm: ['0.9375rem', { lineHeight: '1.45rem' }],
-        base: ['1.0625rem', { lineHeight: '1.65rem' }],
-        lg: ['1.2rem', { lineHeight: '1.75rem' }],
-        xl: ['1.375rem', { lineHeight: '1.95rem' }],
-        '2xl': ['1.625rem', { lineHeight: '2.2rem' }],
-        '3xl': ['2rem', { lineHeight: '2.45rem' }],
-        '4xl': ['2.5rem', { lineHeight: '2.85rem' }],
-        "display-2xl": ["4.5rem",  { lineHeight: "1.1", letterSpacing: "-0.02em" }],
-        "display-xl":  ["3.75rem", { lineHeight: "1.1", letterSpacing: "-0.02em" }],
-        "display-lg":  ["3rem",    { lineHeight: "1.15", letterSpacing: "-0.01em" }],
-        "display-md":  ["2.25rem", { lineHeight: "1.2", letterSpacing: "-0.01em" }],
-        "display-sm":  ["1.875rem",{ lineHeight: "1.25" }],
+        xs: ['0.75rem', { lineHeight: '1.25rem' }],
+        sm: ['0.875rem', { lineHeight: '1.375rem' }],
+        base: ['1rem', { lineHeight: '1.5rem' }],
+        lg: ['1.125rem', { lineHeight: '1.75rem' }],
+        xl: ['1.25rem', { lineHeight: '1.875rem' }],
+        '2xl': ['1.5rem', { lineHeight: '2.1rem' }],
+        '3xl': ['1.875rem', { lineHeight: '2.35rem' }],
+        '4xl': ['2.25rem', { lineHeight: '2.75rem' }],
+        "display-2xl": ["clamp(2.75rem, 5.5vw, 4.5rem)",  { lineHeight: "1.08", letterSpacing: "-0.02em" }],
+        "display-xl":  ["clamp(2.5rem, 4.8vw, 3.75rem)",  { lineHeight: "1.1", letterSpacing: "-0.02em" }],
+        "display-lg":  ["clamp(2.125rem, 3.6vw, 3rem)",   { lineHeight: "1.15", letterSpacing: "-0.01em" }],
+        "display-md":  ["clamp(1.75rem, 2.8vw, 2.25rem)", { lineHeight: "1.2", letterSpacing: "-0.01em" }],
+        "display-sm":  ["clamp(1.5rem, 2.2vw, 1.875rem)", { lineHeight: "1.25" }],
       },
 
       // ─── Spacing ───────────────────────────────────────────────────────────
