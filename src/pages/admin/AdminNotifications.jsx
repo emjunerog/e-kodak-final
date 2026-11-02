@@ -703,12 +703,9 @@ export default function AdminNotifications() {
       {/* ── 1. Luxury Administrative Hero Banner ────────────────────────────── */}
       <AdminHeroBanner
         station="admin"
-        badgeLabel="Communications & Dispatch Hub"
-        badgeIcon={Bell}
         userName={profile?.full_name || user?.email?.split('@')[0] || 'Administrator'}
         title="Notifications & Multi-Channel Dispatch"
-        subtitle="Automated customer alerts, one-tap AI emails, and SMS bulletins with live customer & payment detection."
-        statusSummary={`${stats.totalCount} Total Alerts · ${stats.unreadCount} Unread · ${stats.ordersReadyCount} Orders Ready · ${stats.paymentsCount} Payments Verified`}
+        subtitle="Automated customer alerts, dispatch emails, and broadcast bulletins."
         primaryAction={{
           label: 'Compose Dispatch',
           icon: Send,
@@ -723,8 +720,8 @@ export default function AdminNotifications() {
         isRefreshing={loading}
       />
 
-      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Wrapper (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
       {/* Action Success Toast Banner */}
       {actionSuccessMsg && (

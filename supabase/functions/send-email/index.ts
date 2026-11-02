@@ -51,6 +51,7 @@
 // Deno SMTP — built into Supabase Edge Functions runtime
 // Rename this file to index.ts inside supabase/functions/send-email/
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SmtpClient } from 'https://deno.land/x/smtp@v0.7.0/mod.ts';
 
 const SMTP_HOST  = Deno.env.get('SMTP_HOST')  ?? 'smtp.gmail.com';
@@ -65,18 +66,78 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const EMAIL_REGEX = /^[^\s@,\r\n]+@[^\s@,\r\n]+\.[^\s@,\r\n]+$/;
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { to, subject, html, recipientName, bookingId, notificationType } = await req.json();
+    // 1. Authenticate caller via Supabase JWT
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Unauthorized: Missing Authorization bearer token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const token = authHeader.replace('Bearer ', '').trim();
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Unauthorized: Invalid or expired session token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 2. Parse & validate request body
+    const { to, subject, html, notificationType } = await req.json();
 
     if (!to || !subject || !html) {
       return new Response(
         JSON.stringify({ success: false, error: 'Missing required fields: to, subject, html' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const cleanTo = String(to).trim();
+    const cleanSubject = String(subject).replace(/[\r\n]+/g, ' ').trim();
+    if (!EMAIL_REGEX.test(cleanTo)) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Invalid recipient email address format' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 3. Enforce role-based authorization:
+    // Staff/admin/finance/photographer can email any studio client; customers can only trigger emails to their own address.
+    const { data: callerProfile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const callerRole = String(callerProfile?.role || '').toLowerCase();
+    const isStaffRole = ['admin', 'staff', 'finance', 'photographer'].includes(callerRole);
+    const isOwnEmail = user.email && user.email.toLowerCase() === cleanTo.toLowerCase();
+
+    if (!isStaffRole && !isOwnEmail) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Forbidden: Insufficient permissions to send external emails' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (notificationType === 'BROADCAST' && !isStaffRole) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Forbidden: Only studio staff may send broadcast notifications' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -90,24 +151,24 @@ serve(async (req) => {
       );
     }
 
-    // Connect and send via SMTP
+    // 4. Connect and send via SMTP
     const client = new SmtpClient();
     await client.connectTLS({ hostname: SMTP_HOST, port: SMTP_PORT, username: SMTP_USER, password: SMTP_PASS });
 
     await client.send({
       from:    `${FROM_NAME} <${FROM_EMAIL}>`,
-      to,
-      subject,
+      to:      cleanTo,
+      subject: cleanSubject,
       content: 'Please enable HTML email to view this message.',
-      html,
+      html:    String(html),
     });
 
     await client.close();
 
-    console.log(`[send-email] SMTP sent → ${to} | ${subject}`);
+    console.log(`[send-email] SMTP sent → ${cleanTo} | ${cleanSubject} (by ${user.id})`);
 
     return new Response(
-      JSON.stringify({ success: true, provider: 'smtp', to, subject }),
+      JSON.stringify({ success: true, provider: 'smtp', to: cleanTo, subject: cleanSubject }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

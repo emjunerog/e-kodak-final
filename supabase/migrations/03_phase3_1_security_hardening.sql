@@ -93,10 +93,11 @@ create or replace function public.trg_secure_booking_update()
 returns trigger as $$
 begin
   -- Immutable fields - these should NEVER change once a booking is created
+  -- Note: booking_token is permitted to change ONLY when rotated alongside booking_token_rotated_at
   if (NEW.id IS DISTINCT FROM OLD.id OR 
       NEW.booking_number IS DISTINCT FROM OLD.booking_number OR 
-      NEW.booking_token IS DISTINCT FROM OLD.booking_token OR 
-      NEW.customer_id IS DISTINCT FROM OLD.customer_id) then
+      NEW.customer_id IS DISTINCT FROM OLD.customer_id OR
+      (NEW.booking_token IS DISTINCT FROM OLD.booking_token AND NEW.booking_token_rotated_at IS NOT DISTINCT FROM OLD.booking_token_rotated_at)) then
     raise exception 'SECURITY VIOLATION: Attempted to modify immutable booking identity fields.';
   end if;
 

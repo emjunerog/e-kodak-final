@@ -129,33 +129,33 @@ export default function ProfilePage() {
     useEffect(() => {
         if (profile) {
             setFormData(prev => ({
-                firstName: profile.first_name || prev.firstName,
-                middleName: profile.middle_name || prev.middleName,
-                lastName: profile.last_name || prev.lastName,
-                phone: profile.phone || prev.phone,
-                address: profile.address || prev.address,
-                bio: profile.bio || prev.bio,
+                firstName: profile.first_name ?? prev.firstName,
+                middleName: profile.middle_name ?? prev.middleName,
+                lastName: profile.last_name ?? prev.lastName,
+                phone: profile.phone ?? prev.phone,
+                address: profile.address ?? prev.address,
+                bio: profile.bio ?? prev.bio,
             }));
 
             const s = profile.studio_specs || {};
             setStudioSpecs(prev => ({
-                university: s.university || prev.university,
-                campus: s.campus || prev.campus,
-                degree: s.degree || prev.degree,
-                gradYear: s.gradYear || prev.gradYear || '2026',
-                honors: s.honors || prev.honors || 'Regular Candidate',
-                studentId: s.student_id || s.studentId || prev.studentId,
-                section: s.section || prev.section,
-                togaSize: s.togaSize || prev.togaSize,
-                heightCm: s.height_cm || s.heightCm || prev.heightCm,
-                hoodDiscipline: s.hoodDiscipline || prev.hoodDiscipline,
-                photographerNotes: s.photographerNotes || prev.photographerNotes,
-                emergencyContactName: s.emergencyContactName || prev.emergencyContactName,
-                emergencyContactPhone: s.emergencyContactPhone || prev.emergencyContactPhone,
-                courier_recipient_name: s.courier_recipient_name || prev.courier_recipient_name,
-                courier_phone: s.courier_phone || prev.courier_phone,
-                shipping_address: s.shipping_address || prev.shipping_address,
-                delivery_instructions: s.delivery_instructions || prev.delivery_instructions,
+                university: s.university ?? prev.university,
+                campus: s.campus ?? prev.campus,
+                degree: s.degree ?? prev.degree,
+                gradYear: s.gradYear ?? prev.gradYear ?? '2026',
+                honors: s.honors ?? prev.honors ?? 'Regular Candidate',
+                studentId: s.student_id ?? s.studentId ?? prev.studentId,
+                section: s.section ?? prev.section,
+                togaSize: s.togaSize ?? prev.togaSize,
+                heightCm: s.height_cm ?? s.heightCm ?? prev.heightCm,
+                hoodDiscipline: s.hoodDiscipline ?? prev.hoodDiscipline,
+                photographerNotes: s.photographerNotes ?? prev.photographerNotes,
+                emergencyContactName: s.emergencyContactName ?? prev.emergencyContactName,
+                emergencyContactPhone: s.emergencyContactPhone ?? prev.emergencyContactPhone,
+                courier_recipient_name: s.courier_recipient_name ?? prev.courier_recipient_name,
+                courier_phone: s.courier_phone ?? prev.courier_phone,
+                shipping_address: s.shipping_address ?? prev.shipping_address,
+                delivery_instructions: s.delivery_instructions ?? prev.delivery_instructions,
                 preferred_courier: s.preferred_courier || s.fulfillment_mode || prev.preferred_courier || 'studio_pickup',
                 agreedModelRelease: s.agreedModelRelease !== undefined ? Boolean(s.agreedModelRelease) : prev.agreedModelRelease,
             }));
@@ -164,7 +164,7 @@ export default function ProfilePage() {
 
     // Load customer bookings to detect active session (Studio vs School)
     useEffect(() => {
-        if (!user) return;
+        if (!user?.id) return;
         let isMounted = true;
         getCustomerBookings(user.id).then(({ data }) => {
             if (isMounted && data) {
@@ -172,7 +172,7 @@ export default function ProfilePage() {
             }
         });
         return () => { isMounted = false; };
-    }, [user]);
+    }, [user?.id]);
 
     // Handle standard form changes
     const handleFormChange = (e) => {
@@ -279,15 +279,35 @@ export default function ProfilePage() {
         } catch (err) {
             console.warn('Storage upload fallback triggered:', err);
             const reader = new FileReader();
-            reader.onload = async () => {
-                try {
-                    const base64Url = reader.result;
-                    await updateProfile({ avatar_url: base64Url });
-                    setToast({ type: 'success', message: 'Profile portrait updated!' });
-                    setPhotoModalOpen(false);
-                } catch {
-                    setToast({ type: 'error', message: 'Could not set profile image.' });
-                }
+            reader.onload = () => {
+                const img = new Image();
+                img.onload = async () => {
+                    try {
+                        const maxDim = 256;
+                        let width = img.width || maxDim;
+                        let height = img.height || maxDim;
+                        if (width > height && width > maxDim) {
+                            height = Math.round((height * maxDim) / width);
+                            width = maxDim;
+                        } else if (height >= width && height > maxDim) {
+                            width = Math.round((width * maxDim) / height);
+                            height = maxDim;
+                        }
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                        await updateProfile({ avatar_url: compressedDataUrl });
+                        setToast({ type: 'success', message: 'Profile portrait updated!' });
+                        setPhotoModalOpen(false);
+                    } catch {
+                        setToast({ type: 'error', message: 'Could not set profile image.' });
+                    }
+                };
+                img.onerror = () => setToast({ type: 'error', message: 'Invalid image file.' });
+                img.src = reader.result;
             };
             reader.readAsDataURL(file);
         } finally {
@@ -560,7 +580,7 @@ export default function ProfilePage() {
     };
 
     return (
-        <div className="w-full max-w-screen-2xl mx-auto space-y-5 animate-fade-in pb-24 relative">
+        <div className="w-full px-4 sm:px-6 lg:px-8 pt-6 space-y-5 animate-fade-in pb-24 relative font-body">
             <Toast toast={toast} onClose={() => setToast(null)} />
 
             {/* ambient page glows */}
@@ -1070,10 +1090,10 @@ export default function ProfilePage() {
                                         <ImageIcon size={20} />
                                     </span>
                                     <div className="flex-1">
-                                        <h3 className="font-heading text-[14px] font-bold text-neutral-900 dark:text-white">Model release & lookbook consent</h3>
+                                        <h3 className="font-heading text-[14px] font-bold text-neutral-900 dark:text-white">Model release & showcase consent</h3>
                                         <p className="text-[12px] text-neutral-500 font-body mt-0.5 leading-relaxed">
                                             {studioSpecs.agreedModelRelease
-                                                ? 'Consented — your portrait may appear in the studio lookbook & showcase.'
+                                                ? 'Consented — your portrait may appear in the studio portfolio showcase.'
                                                 : 'Confidential — photos stay in your private proofing vault only.'}
                                         </p>
                                     </div>

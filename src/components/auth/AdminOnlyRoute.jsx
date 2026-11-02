@@ -1,8 +1,7 @@
 import React from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { ShieldAlert, ArrowLeft } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { ShieldAlert, ArrowLeft, Loader2 } from 'lucide-react';
 
 /**
  * AdminOnlyRoute
@@ -18,7 +17,7 @@ export default function AdminOnlyRoute({ children }) {
   if (loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
-        <i className="bi bi-arrow-repeat animate-spin text-3xl text-gold"></i>
+        <Loader2 className="animate-spin text-gold" size={32} />
       </div>
     );
   }

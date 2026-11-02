@@ -76,9 +76,9 @@ function cleanSchoolAndLocation(rawSchool, rawCampus, rawLocation) {
   }
 
   return {
-    school: school || 'Uling National High School',
-    campus: campus || 'City of Naga, Cebu',
-    venueAddress: venueAddress || 'Uling National High School · City of Naga, Cebu',
+    school: school || 'Not specified',
+    campus: campus || (school ? 'City of Naga, Cebu' : ''),
+    venueAddress: venueAddress || 'E-Kodak Studio · 311 Rizal Street, City of Naga, Cebu',
     mapUrl,
     isSchoolCampus,
   };
@@ -288,12 +288,12 @@ export default function BookingQuickInspector({
     active.location
   );
 
-  const strand = student.course || specs.degree || specs.course || 'STEM';
-  const studentId = student.student_id || specs.student_id || '1350691';
+  const strand = student.course || specs.degree || specs.course || '—';
+  const studentId = student.student_id || specs.student_id || '—';
 
   // Format section and batch cleanly without repeating "Batch"
-  const rawBatch = (student.batch || '2026').replace(/^Batch\s*/i, '').trim();
-  const rawSection = student.section || specs.section || 'Mayana';
+  const rawBatch = (student.batch || '').replace(/^Batch\s*/i, '').trim();
+  const rawSection = student.section || specs.section || '';
   const sectionGrade = rawSection
     ? (rawBatch ? `Batch ${rawBatch} · ${rawSection}` : rawSection)
     : (rawBatch ? `Batch ${rawBatch}` : '—');
@@ -301,8 +301,8 @@ export default function BookingQuickInspector({
   const fullName =
     `${active.customer?.first_name || ''} ${active.customer?.last_name || ''}`.trim() ||
     participant.full_name ||
-    'Abegail Alfante';
-  const email = (active.customer?.email || participant.email || 'abiigyl05@gmail.com').trim();
+    'Unspecified Client';
+  const email = (active.customer?.email || participant.email || '').trim();
   const hasEmail = isReal(email);
   const phone = (active.customer?.phone || participant.phone || '').trim();
   const hasPhone = isReal(phone);
@@ -310,7 +310,7 @@ export default function BookingQuickInspector({
 
   const initials =
     ((active.customer?.first_name?.[0] || '') + (active.customer?.last_name?.[0] || '')).toUpperCase() ||
-    'AA';
+    (fullName !== 'Unspecified Client' ? fullName.slice(0, 2).toUpperCase() : 'EK');
 
   const photographerName = active.photographer
     ? `${active.photographer.first_name || active.photographer.profile?.first_name || ''} ${
@@ -345,13 +345,13 @@ export default function BookingQuickInspector({
     {
       id: 'received',
       title: 'Received',
-      sub: shortDate(active.created_at) || 'Oct 7',
+      sub: shortDate(active.created_at) || 'Recorded',
       state: 'done',
     },
     {
       id: 'approved',
       title: 'Approved',
-      sub: isApproved ? (shortDate(active.updated_at) || 'Oct 7') : 'Pending',
+      sub: isApproved ? (shortDate(active.updated_at) || 'Approved') : 'Pending',
       state: isApproved ? 'done' : 'pending',
     },
     {
@@ -427,7 +427,7 @@ export default function BookingQuickInspector({
                     title="Click to copy booking reference"
                     className="inline-flex items-center gap-1.5 font-mono text-[11px] text-neutral-200 hover:text-white transition-colors cursor-pointer"
                   >
-                    #{active.booking_number || 'BK-2026-00002'}
+                    #{active.booking_number || (active.id ? String(active.id).slice(0, 8).toUpperCase() : 'UNASSIGNED')}
                     {copiedRef ? (
                       <Check size={11} className="text-[#c9a96e]" />
                     ) : (

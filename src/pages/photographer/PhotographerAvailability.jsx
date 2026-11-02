@@ -883,7 +883,6 @@ export default function PhotographerAvailability() {
         userName={displayName}
         title="Availability & Smart Calendar"
         subtitle="Set working hours, declare off-duty days, and coordinate team coverage."
-        statusSummary={summary}
         primaryAction={{ label: 'My Bookings', href: '/photographer/bookings', icon: CalendarDays }}
         secondaryAction={{ label: 'Dashboard', href: '/photographer', icon: Briefcase }}
         onRefresh={loadData}
@@ -904,8 +903,8 @@ export default function PhotographerAvailability() {
         ]}
       />
 
-      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Wrapper (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
       {/* ── Metric Summary Cards (Unified Luxury Studio KPI Cards) ────────── */}
       <CategorizedMetricStrip

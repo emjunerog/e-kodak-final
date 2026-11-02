@@ -23,12 +23,33 @@ export default function DashboardLayout() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [liveToast, setLiveToast] = useState(null);
 
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ekodak_customer_sidebar_collapsed');
+      return saved === 'true' || (saved !== null && JSON.parse(saved) === true);
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSidebarCollapsed = React.useCallback(() => {
+    setSidebarCollapsed((prev) => !prev);
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ekodak_customer_sidebar_collapsed', JSON.stringify(sidebarCollapsed));
+    } catch (e) {
+      console.warn('Failed to persist customer sidebar collapsed state:', e);
+    }
+  }, [sidebarCollapsed]);
+
   // Broadcast live customer presence while browsing customer portal
   useEffect(() => {
     if (!user) return;
     const cleanup = trackCustomerPresence(user, profile);
     return cleanup;
-  }, [user, profile]);
+  }, [user?.id]);
 
   const loadLayoutData = React.useCallback(async () => {
     if (!user) return;
@@ -43,7 +64,7 @@ export default function DashboardLayout() {
     } catch (err) {
       console.warn('DashboardLayout load error:', err);
     }
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     loadLayoutData();
@@ -129,7 +150,7 @@ export default function DashboardLayout() {
   }
 
   return (
-    <div className={`min-h-screen ${isBookingPage ? 'booking-gradient-bg text-neutral-100' : 'dashboard-gradient-bg text-neutral-900 dark:text-neutral-100'} flex flex-col font-body relative overflow-x-hidden transition-colors duration-500`}>
+    <div className={`h-screen w-full overflow-hidden ${isBookingPage ? 'booking-gradient-bg text-neutral-100' : 'dashboard-gradient-bg text-neutral-900 dark:text-neutral-100'} flex font-body font-light customer-portal-light-typography relative selection:bg-gold/20 selection:text-primary ${sidebarCollapsed ? 'customer-sidebar-collapsed' : ''}`}>
       {/* ── Premium Photography Studio Atmosphere with Extensive Gradients ──── */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
         {/* Subtle Photographic Studio Background Image with Multi-stop Gradient Blend */}
@@ -169,13 +190,16 @@ export default function DashboardLayout() {
         />
       )}
 
-      {/* Permanently Fixed Sidebar (desktop) / Responsive Slide-out Drawer (mobile & tablet) */}
+      {/* Permanently Fixed Sidebar (desktop) / Responsive Slide-out Drawer (mobile & tablet) with Collapsible Rail */}
       <aside 
         className={`
-          fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 shadow-2xl
-          transform transition-transform duration-300 ease-in-out flex flex-col h-screen
+          fixed inset-y-0 left-0 z-50 h-screen flex-shrink-0 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 shadow-2xl
+          overflow-hidden admin-sidebar-rail
+          ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}
+          w-64
+          lg:translate-x-0 lg:static lg:h-screen lg:flex lg:flex-col
           ${isBookingPage 
-            ? (sidebarOpen ? 'translate-x-0' : '-translate-x-full') 
+            ? (sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:hidden') 
             : (sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0')}
         `}
         aria-label="Studio navigation menu"
@@ -185,6 +209,8 @@ export default function DashboardLayout() {
           bookings={bookings} 
           unreadCount={unreadCount}
           onRequestLogout={() => setLogoutModalOpen(true)}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={toggleSidebarCollapsed}
         />
       </aside>
 
@@ -195,20 +221,22 @@ export default function DashboardLayout() {
         bookings={bookings}
       />
 
-      {/* Main Content Column — offset by sidebar width on desktop (lg:pl-64), full-width on booking */}
-      <div className={`flex-1 flex flex-col min-w-0 ${isBookingPage ? 'lg:pl-0' : 'lg:pl-64'}`}>
-        {/* Sticky Header — remains pinned at top of viewport when scrolling */}
-        <Header 
-          onMenuClick={() => setSidebarOpen(true)} 
-          unreadCount={unreadCount}
-          onRequestLogout={() => setLogoutModalOpen(true)}
-          onToggleSchedule={() => setScheduleOpen(prev => !prev)}
-          hasActiveBooking={hasActiveBooking}
-        />
-        
-        {/* Main page content area */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">
-          <Outlet context={{ bookings, refreshBookings: loadLayoutData, requestLogout: () => setLogoutModalOpen(true) }} />
+      {/* Main Content Column — Scrollable container with Clinging Top Header */}
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto no-scrollbar w-full min-w-0 flex flex-col">
+          {/* Clinging Studio Header — stays pinned at top of viewport when scrolling */}
+          <Header 
+            onMenuClick={() => setSidebarOpen(true)} 
+            unreadCount={unreadCount}
+            onRequestLogout={() => setLogoutModalOpen(true)}
+            onToggleSchedule={() => setScheduleOpen(prev => !prev)}
+            hasActiveBooking={hasActiveBooking}
+          />
+          
+          {/* Main page content area */}
+          <div className="flex-1 w-full min-w-0">
+            <Outlet context={{ bookings, refreshBookings: loadLayoutData, requestLogout: () => setLogoutModalOpen(true) }} />
+          </div>
         </main>
       </div>
 

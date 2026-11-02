@@ -481,8 +481,7 @@ export default function PhotographerBookings() {
         station="photographer"
         userName={displayName}
         title="My Assigned Bookings"
-        subtitle="Manage your scheduled photoshoot assignments, review client briefs, and coordinate with admin."
-        statusSummary={operationalSummary}
+        subtitle="Manage your scheduled photoshoot assignments, review client briefs, and coordinate shoots."
         primaryAction={{
           label: 'Availability Schedule',
           href: '/photographer/availability',
@@ -518,8 +517,8 @@ export default function PhotographerBookings() {
         ]}
       />
 
-      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Wrapper (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
       {/* ── 2. KPI Metric Strip (Unified Luxury Studio KPI Cards) ─────────────── */}
       <CategorizedMetricStrip

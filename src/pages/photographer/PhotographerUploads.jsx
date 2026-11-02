@@ -272,11 +272,9 @@ export default function PhotographerUploads() {
       {/* ── Hero Banner ─────────────────────────────────────────────────── */}
       <AdminHeroBanner
         station="photographer"
-        badgeLabel="Photographer Bay"
         userName={displayName}
         title="Photoshoot Outputs"
-        subtitle="Manage photoshoot sample sets and submit completed sets to Admin."
-        statusSummary={operationalSummary}
+        subtitle="Manage photoshoot sample sets and submit completed outputs to studio admin."
         primaryAction={{
           label: 'My Shoots Queue',
           href: '/photographer/bookings',
@@ -311,8 +309,8 @@ export default function PhotographerUploads() {
         ]}
       />
 
-      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Wrapper (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         {/* ── Left Column: Assigned Bookings Station Box ─────────────────────── */}

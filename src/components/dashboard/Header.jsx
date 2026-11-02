@@ -1,15 +1,60 @@
 import React, { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Menu, Bell, Camera, Sparkles, User, Settings, 
-  LogOut, ChevronDown, CalendarDays, LayoutDashboard,
-  Moon, Sun, Minimize2, Maximize2
+  Menu, Search, Camera, User, Settings, 
+  LogOut, ChevronDown, ChevronRight, CalendarDays,
+  LayoutDashboard, Layers, CreditCard, Sparkles, History,
+  Sun, Moon
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import LiveClock from './LiveClock';
 import CustomerNotificationDropdown from './CustomerNotificationDropdown';
 
+// ── Customer Breadcrumb label map ─────────────────────────────────────────────
+const LABELS = {
+  dashboard:     'Client Portal',
+  book:          'Book a Session',
+  bookings:      'Booking Records',
+  progress:      'Production Progress',
+  payments:      'Billing & Payments',
+  'soft-copies': 'Soft-copies',
+  gallery:       'Soft-copies',
+  activity:      'Activity Logs',
+  profile:       'My Profile & Badges',
+  settings:      'Settings & Transparency',
+  notifications: 'Notifications',
+};
+
+function Breadcrumb() {
+  const { pathname } = useLocation();
+  const segments = pathname.split('/').filter(Boolean);
+
+  return (
+    <nav aria-label="Breadcrumb" className="hidden lg:flex items-center gap-1.5 text-xs text-neutral-400 font-body font-light select-none">
+      <Link to="/dashboard" className="hover:text-gold text-neutral-300 transition-colors font-light">
+        Client Portal
+      </Link>
+      {segments.length === 1 && segments[0] === 'dashboard' ? (
+        <>
+          <ChevronRight size={13} className="text-neutral-600 flex-shrink-0" />
+          <span className="text-white font-light">Dashboard</span>
+        </>
+      ) : (
+        segments.slice(1).map((seg, i) => (
+          <React.Fragment key={seg}>
+            <ChevronRight size={13} className="text-neutral-600 flex-shrink-0" />
+            <span className={i === segments.length - 2 ? 'text-white font-light' : 'text-neutral-400 font-light'}>
+              {LABELS[seg] || seg}
+            </span>
+          </React.Fragment>
+        ))
+      )}
+    </nav>
+  );
+}
+
+// ── Clinging Studio Header ───────────────────────────────────────────────────
 export default function Header({ 
   onMenuClick, 
   unreadCount = 0, 
@@ -24,72 +69,42 @@ export default function Header({
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
-  // ── Dark Mode & Compact Density Reactive State ─────────────────────────────
+  // General Dark/Light Theme state synchronized with documentElement and localStorage
   const [isDarkMode, setIsDarkMode] = useState(() => {
     try {
       const saved = localStorage.getItem('ekodak_darkMode');
-      return saved !== null ? JSON.parse(saved) : document.documentElement.classList.contains('dark');
+      if (saved !== null) return JSON.parse(saved);
+      return typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
     } catch {
-      return document.documentElement.classList.contains('dark');
-    }
-  });
-
-  const [isCompactView, setIsCompactView] = useState(() => {
-    try {
-      const saved = localStorage.getItem('ekodak_compactView');
-      return saved !== null ? JSON.parse(saved) : document.documentElement.classList.contains('compact-layout');
-    } catch {
-      return document.documentElement.classList.contains('compact-layout');
+      return true;
     }
   });
 
   useEffect(() => {
-    const handleThemeUpdate = () => {
-      setIsDarkMode(document.documentElement.classList.contains('dark'));
+    const handleThemeUpdate = (e) => {
+      if (typeof e.detail?.darkMode === 'boolean') {
+        setIsDarkMode(e.detail.darkMode);
+      }
     };
-    const handleCompactUpdate = () => {
-      setIsCompactView(document.documentElement.classList.contains('compact-layout'));
-    };
-    window.addEventListener('ekodak_theme_changed', handleThemeUpdate);
-    window.addEventListener('ekodak_compact_changed', handleCompactUpdate);
-    return () => {
-      window.removeEventListener('ekodak_theme_changed', handleThemeUpdate);
-      window.removeEventListener('ekodak_compact_changed', handleCompactUpdate);
-    };
+    window.addEventListener('ekodak-theme-update', handleThemeUpdate);
+    return () => window.removeEventListener('ekodak-theme-update', handleThemeUpdate);
   }, []);
 
-  const toggleDarkMode = () => {
-    const nextDark = !isDarkMode;
-    setIsDarkMode(nextDark);
-    if (nextDark) {
+  const toggleTheme = () => {
+    const nextMode = !isDarkMode;
+    setIsDarkMode(nextMode);
+    if (nextMode) {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
-    localStorage.setItem('ekodak_darkMode', JSON.stringify(nextDark));
-    window.dispatchEvent(new CustomEvent('ekodak_theme_changed', { detail: { darkMode: nextDark } }));
+    try {
+      localStorage.setItem('ekodak_darkMode', JSON.stringify(nextMode));
+      window.dispatchEvent(new CustomEvent('ekodak-theme-update', { detail: { darkMode: nextMode } }));
+    } catch {}
   };
 
-  const toggleCompactView = () => {
-    const nextCompact = !isCompactView;
-    setIsCompactView(nextCompact);
-    if (nextCompact) {
-      document.documentElement.classList.add('compact-layout');
-    } else {
-      document.documentElement.classList.remove('compact-layout');
-    }
-    localStorage.setItem('ekodak_compactView', JSON.stringify(nextCompact));
-    window.dispatchEvent(new CustomEvent('ekodak_compact_changed', { detail: { compactView: nextCompact } }));
-  };
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 18) return 'Good afternoon';
-    return 'Good evening';
-  };
-
-  // Click outside to close profile dropdown
+  // Close profile dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -127,238 +142,242 @@ export default function Header({
   };
 
   const fullName = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Valued Client';
+  const initial = (profile?.first_name?.charAt(0) || user?.email?.charAt(0) || 'C').toUpperCase();
   const initials = `${profile?.first_name?.charAt(0) || ''}${profile?.last_name?.charAt(0) || ''}`.toUpperCase() || 'EK';
 
   return (
-    <header className="h-16 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between px-3 sm:px-6 sticky top-0 z-30 shadow-xs transition-colors">
-      {/* Left: Mobile/Tablet Hamburger + Logo OR Desktop Greeting */}
-      <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
-        {/* Menu button: shown on mobile & tablet (<lg), or on booking page */}
-        <button
-          type="button"
-          onClick={onMenuClick}
-          className={`${isBookingPage ? 'flex' : 'lg:hidden flex'} items-center justify-center p-2 rounded-xl text-neutral-600 dark:text-neutral-300 hover:text-primary dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors border border-transparent hover:border-neutral-200 dark:hover:border-neutral-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-gold/30 shrink-0`}
-          aria-label={isBookingPage ? "Reveal dashboard navigation" : "Open navigation menu"}
-          title={isBookingPage ? "Reveal dashboard navigation" : "Open navigation menu"}
-        >
-          {isBookingPage ? <LayoutDashboard size={20} className="text-gold" /> : <Menu size={20} />}
-        </button>
+    <header className="relative h-16 bg-gradient-to-r from-[#14100c] via-[#21180f] via-[#16151a] to-[#0f1726] border-none px-4 sm:px-6 lg:px-8 sticky top-0 z-30 flex-shrink-0 font-body before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-gold/50 before:to-transparent">
+      {/* ── Photographic Studio Background Texture & Ambient Lights (Clipped within header bounds) ── */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div 
+          className="absolute inset-0 bg-cover bg-center opacity-10 mix-blend-luminosity transition-opacity duration-500"
+          style={{
+            backgroundImage: `url('https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=1600&q=80&auto=format&fit=crop')`,
+          }}
+        />
 
-        {/* Compact Logo for Tablet and Mobile (when sidebar is hidden) */}
-        {!isBookingPage && (
-          <Link 
-            to="/dashboard" 
-            className="flex lg:hidden items-center gap-2 text-primary dark:text-neutral-100 hover:text-gold transition-colors group shrink-0"
-          >
-            <div className="w-8 h-8 rounded-xl bg-neutral-950 flex items-center justify-center p-1 shadow-xs border border-neutral-800 shrink-0">
-              <img src="/logo-mark.png" alt="E-Kodak" className="w-full h-full object-contain group-hover:scale-105 transition-transform" />
-            </div>
-            <div className="flex flex-col">
-              <span className="font-heading text-sm font-bold tracking-wide leading-none">E-KODAK</span>
-              <span className="text-[10px] uppercase tracking-widest text-neutral-400 font-body">Studio</span>
-            </div>
-          </Link>
-        )}
+        {/* ── Rich Radiant Multi-Stop Gradient Overlays ── */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_90%_100%_at_5%_100%,rgba(217,119,6,0.35),transparent_65%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_90%_at_35%_100%,rgba(180,83,9,0.25),transparent_65%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_75%_80%_at_95%_100%,rgba(30,58,138,0.25),transparent_60%)]" />
 
-        {/* Desktop Greeting (lg and above, where sidebar is always visible) */}
-        <div className="hidden lg:block truncate">
-          <p className="text-sm font-semibold text-primary dark:text-neutral-100 flex items-center gap-1.5 truncate">
-            <span>{getGreeting()},</span>
-            <span className="text-gold font-heading">{profile?.first_name || 'there'}</span>
-          </p>
-          <p className="text-[11px] text-neutral-400 font-body flex items-center gap-1">
-            <Sparkles size={10} className="text-gold" />
-            <span>E-Kodak Studio Client Portal</span>
-          </p>
-        </div>
+        {/* ── Ambient Gold Orbs ── */}
+        <div className="absolute -top-12 -left-10 w-60 h-60 bg-gradient-to-br from-amber-500/25 via-gold/15 to-transparent rounded-full blur-2xl" />
+        <div className="absolute -bottom-12 -right-10 w-60 h-60 bg-gradient-to-tl from-sky-600/15 via-amber-600/10 to-transparent rounded-full blur-2xl" />
       </div>
 
-      {/* Center: Live Time & Date Indicator on Desktop */}
-      <div className="hidden md:flex items-center">
-        <LiveClock variant="compact" />
-      </div>
-
-      {/* Right Controls: Quick Book + Schedule Drawer + Notifications + Profile Avatar */}
-      <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-        {/* Quick Book Button (Desktop shortcut) */}
-        {!isBookingPage && (
-          <Link
-            to="/dashboard/book"
-            className="btn-primary py-1.5 px-3 text-xs hidden lg:inline-flex items-center gap-1.5 shadow-xs"
-          >
-            <Camera size={14} /> Book Session
-          </Link>
-        )}
-
-        {/* Schedule & Progress Drawer Trigger */}
-        <button
-          type="button"
-          onClick={onToggleSchedule}
-          className="relative p-2 text-neutral-600 dark:text-neutral-300 hover:text-primary dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors border border-transparent hover:border-neutral-200 dark:hover:border-neutral-700 cursor-pointer"
-          aria-label="Studio Schedule & Progress"
-          title="Schedule & Active Session Progress"
-        >
-          <CalendarDays size={18} />
-          {hasActiveBooking && (
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-emerald-500 rounded-full ring-2 ring-white dark:ring-neutral-900 animate-pulse" />
-          )}
-        </button>
-
-        {/* Compact Density Mode Toggle */}
-        <button
-          type="button"
-          onClick={toggleCompactView}
-          className={`p-2 rounded-xl transition-all border cursor-pointer ${
-            isCompactView
-              ? 'bg-gold/15 text-gold border-gold/40 shadow-xs'
-              : 'text-neutral-600 dark:text-neutral-300 hover:text-primary dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 border-transparent hover:border-neutral-200 dark:hover:border-neutral-700'
-          }`}
-          aria-label={isCompactView ? "Switch to Standard Density" : "Switch to Compact Density"}
-          title={isCompactView ? "Compact View: ON (Click to expand)" : "Compact View: OFF (Click to compress layout)"}
-        >
-          {isCompactView ? <Minimize2 size={18} className="text-gold" /> : <Maximize2 size={18} />}
-        </button>
-
-        {/* Theme Dark/Light Mode Toggle */}
-        <button
-          type="button"
-          onClick={toggleDarkMode}
-          className="p-2 text-neutral-600 dark:text-neutral-300 hover:text-primary dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors border border-transparent hover:border-neutral-200 dark:hover:border-neutral-700 cursor-pointer"
-          aria-label={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
-          title={isDarkMode ? "Active Theme: Dark Mode (Click for Light Mode)" : "Active Theme: Light Mode (Click for Dark Mode)"}
-        >
-          {isDarkMode ? (
-            <Sun size={18} className="text-amber-400 hover:rotate-45 transition-transform" />
-          ) : (
-            <Moon size={18} className="text-neutral-600 hover:-rotate-12 transition-transform" />
-          )}
-        </button>
-
-        {/* Studio Notifications Modal Panel */}
-        <CustomerNotificationDropdown unreadCount={unreadCount} />
-
-        {/* User Profile Avatar Dropdown Menu */}
-        <div ref={dropdownRef} className="relative">
-          <button
+      <div className="relative z-10 w-full h-full flex items-center justify-between">
+        {/* Left: Mobile/Tablet Hamburger + Mobile Logo + Breadcrumb */}
+        <div className="flex items-center gap-3 min-w-0">
+          <motion.button
             type="button"
-            onClick={() => setProfileDropdownOpen(prev => !prev)}
-            aria-haspopup="true"
-            aria-expanded={profileDropdownOpen}
-            className={`flex items-center gap-1.5 p-1 rounded-xl transition-all border outline-none cursor-pointer ${
-              profileDropdownOpen
-                ? 'bg-neutral-100 dark:bg-neutral-800 border-gold shadow-xs ring-2 ring-gold/20'
-                : 'border-transparent hover:border-neutral-200 dark:hover:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800/60'
-            }`}
-            title="Account Menu"
+            whileTap={{ scale: 0.95 }}
+            onClick={onMenuClick}
+            className={`${isBookingPage ? 'flex' : 'lg:hidden flex'} p-2 -ml-2 text-neutral-300 hover:text-white hover:bg-white/[0.08] rounded-xl transition-colors flex-shrink-0 cursor-pointer`}
+            aria-label={isBookingPage ? "Reveal dashboard navigation" : "Open navigation menu"}
+            title={isBookingPage ? "Reveal dashboard navigation" : "Open navigation menu"}
           >
-            <div className="w-8 h-8 rounded-lg bg-gold/15 flex items-center justify-center text-gold font-heading font-bold overflow-hidden border border-gold/30">
-              {profile?.avatar_url ? (
-                <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-xs">{initials}</span>
-              )}
-            </div>
-            <ChevronDown
-              size={13}
-              className={`text-neutral-400 transition-transform duration-200 hidden sm:block ${
-                profileDropdownOpen ? 'rotate-180 text-gold' : ''
-              }`}
-            />
-          </button>
+            {isBookingPage ? <LayoutDashboard size={20} className="text-gold" /> : <Menu size={20} />}
+          </motion.button>
 
-          {/* Profile Dropdown Popover */}
-          {profileDropdownOpen && (
-            <div className="absolute right-0 top-full mt-2 w-72 backdrop-blur-md bg-white/95 dark:bg-neutral-900/95 border border-neutral-200/90 dark:border-neutral-700/80 ring-1 ring-black/5 dark:ring-white/10 rounded-2xl shadow-2xl shadow-neutral-900/15 dark:shadow-black/60 overflow-hidden z-50 animate-fade-in divide-y divide-neutral-100 dark:divide-neutral-800">
-              {/* Account Header */}
-              <div className="p-4 bg-neutral-50/70 dark:bg-neutral-900/80">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-gold/30 to-gold/10 p-0.5 shadow-xs shrink-0">
-                    <div className="w-full h-full rounded-[10px] bg-neutral-900 flex items-center justify-center text-gold font-heading font-bold text-sm overflow-hidden border border-gold/30">
-                      {profile?.avatar_url ? (
-                        <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
-                      ) : (
-                        <span>{initials}</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h4 className="text-sm font-bold text-primary dark:text-neutral-100 truncate font-heading">
-                      {fullName}
-                    </h4>
-                    <p className="text-xs text-neutral-400 font-body truncate">
-                      {user?.email || 'Authenticated Client'}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-1.5">
-                      <span className="text-xs font-body font-bold text-gold bg-gold/15 px-2 py-0.5 rounded-full border border-gold/30">
-                        #EK-{user?.id?.slice(0, 6)?.toUpperCase() || '2026'}
-                      </span>
-                      <span className="text-xs font-body text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
-                        Active
-                      </span>
-                    </div>
-                  </div>
-                </div>
+          {/* Compact Logo for Tablet and Mobile (when sidebar is hidden) */}
+          {!isBookingPage && (
+            <Link 
+              to="/dashboard" 
+              className="flex lg:hidden items-center gap-2 text-white hover:text-gold transition-colors group shrink-0"
+            >
+              <div className="w-8 h-8 rounded-xl bg-neutral-950 flex items-center justify-center p-1 shadow-xs border border-neutral-800 shrink-0">
+                <img src="/logo-mark.png" alt="E-Kodak" className="w-full h-full object-contain group-hover:scale-105 transition-transform" />
               </div>
-
-              {/* Navigation Actions */}
-              <div className="p-2 space-y-0.5 text-sm font-body">
-                <Link
-                  to="/dashboard/profile"
-                  onClick={() => setProfileDropdownOpen(false)}
-                  className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 hover:text-primary dark:hover:text-white transition-all font-medium text-xs"
-                >
-                  <User size={15} className="text-gold" />
-                  <span>My Profile & Badges</span>
-                </Link>
-
-                <Link
-                  to="/dashboard/book"
-                  onClick={() => setProfileDropdownOpen(false)}
-                  className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 hover:text-primary dark:hover:text-white transition-all font-medium text-xs"
-                >
-                  <Camera size={15} className="text-gold" />
-                  <span>Book Studio Session</span>
-                </Link>
-
-                <Link
-                  to="/dashboard/settings"
-                  onClick={() => setProfileDropdownOpen(false)}
-                  className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 hover:text-primary dark:hover:text-white transition-all font-medium text-xs"
-                >
-                  <Settings size={15} className="text-gold" />
-                  <span>Settings & Transparency</span>
-                </Link>
-
-                <Link
-                  to="/dashboard/notifications"
-                  onClick={() => setProfileDropdownOpen(false)}
-                  className="flex items-center justify-between px-3.5 py-2.5 rounded-xl text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 hover:text-primary dark:hover:text-white transition-all font-medium text-xs"
-                >
-                  <div className="flex items-center gap-3">
-                    <Bell size={15} className="text-gold" />
-                    <span>Notifications</span>
-                  </div>
-                  {unreadCount > 0 && (
-                    <span className="text-xs font-body font-bold text-red-500 bg-red-50 dark:bg-red-950/40 px-2 py-0.5 rounded-full">
-                      {unreadCount}
-                    </span>
-                  )}
-                </Link>
-              </div>
-
-              {/* Sign out */}
-              <div className="p-1.5">
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors text-left cursor-pointer"
-                >
-                  <LogOut size={15} />
-                  <span>Sign Out</span>
-                </button>
-              </div>
-            </div>
+              <span className="font-heading text-sm font-light tracking-wide">E-KODAK</span>
+            </Link>
           )}
+
+          {/* Customer Breadcrumbs Navigation */}
+          <Breadcrumb />
+        </div>
+
+        {/* Right Controls: Search, Quick Book, Schedule Drawer, Notifications & User Profile */}
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          {/* Quick Search Input */}
+          <div className="hidden sm:flex items-center relative">
+            <Search size={14} className="absolute left-3 text-neutral-400 pointer-events-none" />
+            <input
+              type="search"
+              name="customer_record_search"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck="false"
+              placeholder="Search bookings, receipts..."
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.target.value.trim()) {
+                  navigate(`/dashboard/bookings?search=${encodeURIComponent(e.target.value.trim())}`);
+                }
+              }}
+              className="pl-8 pr-3 h-9 bg-white/[0.06] border border-white/[0.08] hover:border-white/[0.15] rounded-full text-xs font-body text-white placeholder:text-neutral-400 focus:bg-white/[0.1] focus:border-gold/50 focus:ring-2 focus:ring-gold/15 transition-all outline-none w-36 md:w-52"
+            />
+          </div>
+
+          {/* Studio Notifications Dropdown */}
+          <CustomerNotificationDropdown unreadCount={unreadCount} />
+
+          {/* General Dark/Light Mode Toggle Icon beside profile */}
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.92 }}
+            onClick={toggleTheme}
+            className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] hover:border-gold/40 flex items-center justify-center text-neutral-300 hover:text-white transition-all cursor-pointer shrink-0"
+            title={isDarkMode ? "Switch to Light theme" : "Switch to Dark theme"}
+            aria-label={isDarkMode ? "Switch to Light theme" : "Switch to Dark theme"}
+          >
+            {isDarkMode ? (
+              <Sun size={15} className="text-amber-400 hover:rotate-45 transition-transform" />
+            ) : (
+              <Moon size={15} className="text-amber-300 hover:-rotate-12 transition-transform" />
+            )}
+          </motion.button>
+
+          {/* User Profile Avatar & Dropdown Menu */}
+          <div className="relative pl-1 border-l border-white/[0.1]" ref={dropdownRef}>
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.96 }}
+              onClick={() => setProfileDropdownOpen(prev => !prev)}
+              aria-haspopup="true"
+              aria-expanded={profileDropdownOpen}
+              className="flex items-center gap-1.5 p-0.5 rounded-full hover:ring-2 hover:ring-gold/30 transition-all outline-none cursor-pointer group"
+              title="Client Account Menu"
+            >
+              <div 
+                className="w-8 h-8 rounded-full bg-gold/15 flex items-center justify-center text-gold font-heading font-bold overflow-hidden ring-2 ring-gold/30 flex-shrink-0 group-hover:scale-105 transition-transform"
+                title={`${fullName} (#EK-${user?.id?.slice(0, 6)?.toUpperCase() || '2026'})`}
+              >
+                {profile?.avatar_url ? (
+                  <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-xs">{initials || initial}</span>
+                )}
+              </div>
+              <ChevronDown
+                size={12}
+                className={`text-neutral-400 group-hover:text-white transition-transform duration-200 hidden sm:block ${
+                  profileDropdownOpen ? 'rotate-180 text-gold' : ''
+                }`}
+              />
+            </motion.button>
+
+            {/* Luxury Profile Dropdown Popover */}
+            <AnimatePresence>
+              {profileDropdownOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                  transition={{ duration: 0.15, ease: 'easeOut' }}
+                  className="absolute right-0 top-full mt-2.5 w-72 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md rounded-2xl border border-neutral-200/90 dark:border-neutral-700/80 shadow-2xl shadow-neutral-900/15 dark:shadow-black/60 overflow-hidden z-50 font-body p-2"
+                >
+                  {/* Account Card Header */}
+                  <div className="p-3 bg-neutral-50/80 dark:bg-neutral-800/60 rounded-xl border border-neutral-100 dark:border-neutral-800 mb-1.5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gold/15 flex items-center justify-center text-gold font-heading font-bold overflow-hidden flex-shrink-0 ring-2 ring-gold/30 shadow-xs">
+                        {profile?.avatar_url ? (
+                          <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-sm">{initials || initial}</span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100 truncate">
+                          {fullName}
+                        </h4>
+                        <p className="text-[11px] text-neutral-400 font-body truncate">
+                          {user?.email || 'Authenticated Client'}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-gold/15 text-gold-dark dark:text-gold border border-gold/30">
+                            #EK-{user?.id?.slice(0, 6)?.toUpperCase() || '2026'}
+                          </span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Client
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Navigation Actions */}
+                  <div className="space-y-0.5">
+                    <Link
+                      to="/dashboard/profile"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 rounded-xl transition-colors text-left group"
+                    >
+                      <User size={14} className="text-gold group-hover:scale-110 transition-transform" />
+                      <span>My Profile &amp; Badges</span>
+                    </Link>
+
+                    <Link
+                      to="/dashboard/book"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 rounded-xl transition-colors text-left group"
+                    >
+                      <Camera size={14} className="text-gold group-hover:scale-110 transition-transform" />
+                      <span>Book Studio Session</span>
+                    </Link>
+
+                    <Link
+                      to="/dashboard/progress"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 rounded-xl transition-colors text-left group"
+                    >
+                      <Layers size={14} className="text-gold group-hover:scale-110 transition-transform" />
+                      <span>Production Progress</span>
+                    </Link>
+
+                    <Link
+                      to="/dashboard/payments"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 rounded-xl transition-colors text-left group"
+                    >
+                      <CreditCard size={14} className="text-gold group-hover:scale-110 transition-transform" />
+                      <span>Billing &amp; Payments</span>
+                    </Link>
+
+                    <Link
+                      to="/dashboard/activity"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 rounded-xl transition-colors text-left group"
+                    >
+                      <History size={14} className="text-gold group-hover:scale-110 transition-transform" />
+                      <span>Activity Audit</span>
+                    </Link>
+
+                    <Link
+                      to="/dashboard/settings"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 rounded-xl transition-colors text-left group"
+                    >
+                      <Settings size={14} className="text-gold group-hover:scale-110 transition-transform" />
+                      <span>Settings &amp; Transparency</span>
+                    </Link>
+                  </div>
+
+                  {/* Divider & Sign Out */}
+                  <div className="border-t border-neutral-100 dark:border-neutral-800 mt-1 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleSignOut}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition-colors text-left cursor-pointer"
+                    >
+                      <LogOut size={14} className="text-rose-500" />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
     </header>

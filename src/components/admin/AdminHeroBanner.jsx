@@ -85,9 +85,9 @@ export default function AdminHeroBanner({
       ],
     },
     photographer: {
-      label: 'Photographer Bay',
+      label: 'Photographer Station',
       icon: Camera,
-      defaultSummary: 'Production bay operational.',
+      defaultSummary: 'Photographer studio workspace active.',
       links: [
         { label: 'My Bookings',        href: '/photographer/bookings',      icon: CalendarDays,  iconColor: 'text-gold' },
         { label: 'Availability Calendar', href: '/photographer/availability', icon: ArrowRightLeft, iconColor: 'text-gold' },
@@ -98,11 +98,26 @@ export default function AdminHeroBanner({
 
   const currentStation = stationConfig[station] || stationConfig.admin;
   const BadgeIcon = CustomIcon || currentStation.icon;
-  // Only display badge if explicitly requested via badgeLabel (e.g. subpages) or if showBadge is true and not admin default
-  const displayLabel = showBadge === false || badgeLabel === null 
-    ? null 
-    : (badgeLabel !== undefined ? badgeLabel : (station === 'admin' ? null : currentStation.label));
-  const displaySummary = statusSummary || subtitle || creativeRemark || null;
+  // 1. Suppress station badge text above dashboard title in all headers
+  const displayLabel = null;
+
+  // 2. Clean, relevant subtitle below title to balance out the space and make each dashboard relevant
+  // Filter out any raw database count strings
+  const rawSummary = subtitle || creativeRemark || null;
+  const isDatabaseCount = typeof rawSummary === 'string' && (
+    rawSummary.includes('Total in Database') ||
+    rawSummary.includes('Awaiting Review') ||
+    rawSummary.includes('Ready for Release') ||
+    rawSummary.includes('Published to Portals') ||
+    rawSummary.includes('Recorded Transactions') ||
+    rawSummary.includes('Registered Photographers') ||
+    rawSummary.includes('Registered Clients') ||
+    rawSummary.includes('Total Personnel') ||
+    rawSummary.includes('Total Packages') ||
+    rawSummary.includes('Total Transmissions') ||
+    rawSummary.includes('Total Alerts')
+  );
+  const displaySummary = isDatabaseCount ? null : rawSummary;
   const stationLinks = currentStation.links || [];
 
   return (
@@ -114,21 +129,19 @@ export default function AdminHeroBanner({
         subtitle={displaySummary}
         badgeLabel={displayLabel}
         badgeIcon={BadgeIcon}
-        primaryAction={primaryAction}
-        secondaryAction={secondaryAction}
+        primaryAction={null}
+        secondaryAction={null}
         showStudioStatus={true}
         extraActions={
-          onRefresh ? (
-            <button
-              type="button"
-              onClick={onRefresh}
-              disabled={isRefreshing}
-              title="Refresh live metrics"
-              className="bg-white/[0.05] hover:bg-white/[0.09] active:scale-[0.98] text-neutral-300 hover:text-gold w-[46px] h-[46px] rounded-2xl transition-all backdrop-blur-md cursor-pointer flex items-center justify-center shadow-sm shadow-black/20"
-            >
-              <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-gold' : ''} />
-            </button>
-          ) : null
+          <button
+            type="button"
+            onClick={onRefresh || (() => window.location.reload())}
+            disabled={isRefreshing}
+            title="Refresh live metrics"
+            className="bg-white/[0.05] hover:bg-white/[0.09] active:scale-[0.98] text-neutral-300 hover:text-gold w-[48px] h-[48px] rounded-2xl transition-all backdrop-blur-md cursor-pointer flex items-center justify-center shadow-sm shadow-black/20 shrink-0"
+          >
+            <RefreshCw size={16} className={isRefreshing ? 'animate-spin text-gold' : ''} />
+          </button>
         }
       />
     </div>

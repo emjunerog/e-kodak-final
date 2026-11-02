@@ -61,7 +61,7 @@ export default function Gallery() {
 
   const filtered = activeCategory === "all"
     ? itemsList
-    : itemsList.filter((item) => item.category === activeCategory);
+    : itemsList.filter((item) => (item.category || '').toLowerCase() === activeCategory.toLowerCase());
 
   const openLightbox  = useCallback((idx) => setLightboxIndex(idx), []);
   const closeLightbox = useCallback(()    => setLightboxIndex(null), []);

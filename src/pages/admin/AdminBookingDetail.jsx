@@ -798,7 +798,7 @@ export default function AdminBookingDetail() {
   );
 
   return (
-    <div className="space-y-7 animate-fade-in w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 pb-20 font-body">
+    <div className="space-y-7 animate-fade-in w-full px-4 sm:px-6 lg:px-8 pb-20 font-body">
 
       {/* ── Global UI Feedback & Overlays ────────────────────────────────────── */}
       {toast && (

@@ -75,23 +75,19 @@ function timeAgo(dateString) {
 
 const CATEGORY_STYLES = {
   ADMIN_ACTION: {
-    badge: 'bg-rose-50 text-rose-700 border-rose-200',
-    dot: 'bg-rose-500',
+    badge: 'bg-amber-100/70 text-amber-950 border-amber-300/80',
     label: 'Admin Action'
   },
   STATUS_CHANGE: {
-    badge: 'bg-blue-50 text-blue-700 border-blue-200',
-    dot: 'bg-blue-500',
+    badge: 'bg-amber-50 text-amber-900 border-amber-200/80',
     label: 'Booking Status'
   },
   QR_SCAN: {
-    badge: 'bg-purple-50 text-purple-700 border-purple-200',
-    dot: 'bg-purple-500',
+    badge: 'bg-stone-100 text-stone-800 border-stone-200',
     label: 'QR Check-in'
   },
   PAYMENT: {
-    badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    dot: 'bg-emerald-500',
+    badge: 'bg-emerald-50 text-emerald-800 border-emerald-200/80',
     label: 'Payment Ledger'
   }
 };
@@ -293,12 +289,9 @@ export default function AdminSecurity() {
       {/* ── 1. Luxury Administrative Hero Banner ────────────────────────────── */}
       <AdminHeroBanner
         station="admin"
-        badgeLabel="System Security & Audit Console"
-        badgeIcon={ShieldCheck}
         userName={profile?.full_name || user?.email?.split('@')[0] || 'Administrator'}
         title="Security & Audit Command Center"
-        subtitle="Operational access control, real-time audit logging, database RLS enforcement, and client data confidentiality."
-        statusSummary={`${unifiedAuditLogs.length} Audited Events · 6 Database RLS Policies Active · TLS 1.3 Enforced`}
+        subtitle="Operational access control, real-time audit logging, database security, and client privacy."
         primaryAction={{
           label: 'Export Audit Log (CSV)',
           icon: DownloadCloud,
@@ -314,8 +307,8 @@ export default function AdminSecurity() {
         onExport={handleExportCSV}
       />
 
-      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Wrapper (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
       {/* ── 2. Real-Time System Security Posture Strip (Unified Luxury KPI Cards) ───────── */}
       <CategorizedMetricStrip
@@ -406,83 +399,138 @@ export default function AdminSecurity() {
       ═══════════════════════════════════════════════════════════════════════ */}
       {activeTab === 'audit' && (
         <div className="space-y-4 animate-fade-in">
-          {/* Toolbar: Category Filters + Search + Export */}
-          <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs space-y-3.5">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-              {/* Category Pills */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
-                {[
-                  { id: 'ALL', label: `All Events (${unifiedAuditLogs.length})` },
-                  { id: 'ADMIN_ACTION', label: `Admin Actions (${activityLogs.length})` },
-                  { id: 'STATUS_CHANGE', label: `Booking Lifecycle (${statusLogs.length})` },
-                  { id: 'QR_SCAN', label: `QR Check-ins (${qrLogs.length})` },
-                  { id: 'PAYMENT', label: `Payments (${payments.length})` },
-                ].map(cat => (
-                  <button
-                    key={cat.id}
-                    onClick={() => setCategoryFilter(cat.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                      categoryFilter === cat.id
-                        ? 'bg-primary text-white shadow-xs'
-                        : 'bg-neutral-100/80 text-neutral-600 hover:bg-neutral-200/60'
-                    }`}
-                  >
-                    {cat.label}
-                  </button>
-                ))}
+          {/* Unified Luxury Audit Card Hub */}
+          <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+            {/* Top hairline amber accent */}
+            <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
+
+            {/* Header Bar */}
+            <div className="p-4 sm:p-6 border-b border-[#c9a96e]/20 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-b from-[#faf7f2]/60 to-transparent">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-900/20 shrink-0">
+                  <ShieldCheck size={22} />
+                </div>
+                <div>
+                  <h2 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 tracking-tight">
+                    System &amp; Operational Audit Trail
+                  </h2>
+                  <p className="text-xs text-neutral-500">
+                    Showing <span className="font-bold text-neutral-800">{filteredLogs.length}</span> of {unifiedAuditLogs.length} chronological audit events recorded in Philippine Standard Time (PST).
+                  </p>
+                </div>
               </div>
 
-              {/* Search Box */}
-              <div className="relative w-full lg:w-80">
-                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
-                <input
-                  type="text"
-                  value={logSearch}
-                  onChange={e => setLogSearch(e.target.value)}
-                  placeholder="Search by booking #, client, actor, keyword..."
-                  className="w-full pl-9 pr-3.5 py-2 bg-white border border-neutral-200 rounded-xl text-xs font-body outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold transition-all"
-                />
-                {logSearch && (
+              {/* Actions: Export CSV & Refresh */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  className="h-9 px-3.5 rounded-xl border border-[#c9a96e]/30 bg-amber-50/50 hover:bg-amber-100/70 text-amber-900 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Download Filtered Log (CSV)"
+                >
+                  <DownloadCloud size={14} className="text-amber-700" />
+                  <span className="hidden sm:inline">Export CSV</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={loadData}
+                  disabled={loading}
+                  className="h-9 px-3 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-neutral-600 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Refresh Data"
+                >
+                  <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            </div>
+
+            {/* Filter controls inside card */}
+            <div className="p-4 sm:p-5 border-b border-[#c9a96e]/15 bg-neutral-50/40 space-y-3">
+              <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 justify-between">
+                {/* Search */}
+                <div className="relative flex-1">
+                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+                  <input
+                    type="text"
+                    value={logSearch}
+                    onChange={e => setLogSearch(e.target.value)}
+                    placeholder="Search by booking #, client, actor, keyword..."
+                    className="w-full pl-9 pr-8 py-2 bg-white border border-neutral-200/90 rounded-xl text-xs font-body outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all shadow-2xs"
+                  />
+                  {logSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setLogSearch('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Category Pills (clean, warm styling) */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+                  {[
+                    { id: 'ALL', label: `All Events (${unifiedAuditLogs.length})` },
+                    { id: 'ADMIN_ACTION', label: `Admin Actions (${activityLogs.length})` },
+                    { id: 'STATUS_CHANGE', label: `Booking Lifecycle (${statusLogs.length})` },
+                    { id: 'QR_SCAN', label: `QR Check-ins (${qrLogs.length})` },
+                    { id: 'PAYMENT', label: `Payments (${payments.length})` },
+                  ].map(cat => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setCategoryFilter(cat.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                        categoryFilter === cat.id
+                          ? 'bg-gradient-to-r from-amber-500 via-[#c9a96e] to-amber-600 text-neutral-900 font-bold shadow-xs'
+                          : 'bg-white border border-neutral-200/80 text-neutral-600 hover:bg-neutral-100/70'
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Active filter reset pill */}
+              {(categoryFilter !== 'ALL' || logSearch) && (
+                <div className="flex items-center gap-2 pt-2 border-t border-neutral-200/60 flex-wrap text-xs text-neutral-500">
+                  <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[11px]">Active Filter:</span>
+                  {logSearch && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
+                      Search: "{logSearch}"
+                      <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setLogSearch('')} />
+                    </span>
+                  )}
+                  {categoryFilter !== 'ALL' && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200/70 text-xs font-medium">
+                      Category: {categoryFilter.replace('_', ' ')}
+                      <X size={12} className="cursor-pointer text-amber-700 hover:text-amber-950" onClick={() => setCategoryFilter('ALL')} />
+                    </span>
+                  )}
                   <button
                     type="button"
-                    onClick={() => setLogSearch('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-primary text-xs"
+                    onClick={() => { setLogSearch(''); setCategoryFilter('ALL'); }}
+                    className="text-amber-700 hover:underline font-semibold text-xs ml-1 cursor-pointer"
                   >
-                    <X size={13} />
+                    Reset
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center justify-between text-xs text-neutral-500 pt-1 border-t border-neutral-200/60">
-              <span>
-                Showing <strong>{filteredLogs.length}</strong> of <strong>{unifiedAuditLogs.length}</strong> events recorded in Philippine Standard Time (PST).
-              </span>
-              <button
-                type="button"
-                onClick={handleExportCSV}
-                className="text-xs font-semibold text-gold hover:text-primary flex items-center gap-1.5 transition-colors"
-              >
-                <DownloadCloud size={13} />
-                Download Filtered Log (CSV)
-              </button>
-            </div>
-          </div>
-
-          {/* Unified Audit Log Table */}
-          <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden">
+            {/* Table Area */}
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs font-body">
-                <thead>
-                  <tr className="border-b border-neutral-200 text-xs font-bold text-neutral-400 uppercase tracking-wider bg-neutral-50/80">
-                    <th className="py-3 px-4">Timestamp (PST)</th>
-                    <th className="py-3 px-4">Category</th>
-                    <th className="py-3 px-4">Action / Event</th>
-                    <th className="py-3 px-4">Booking #</th>
-                    <th className="py-3 px-4">Client / Subject</th>
-                    <th className="py-3 px-4">Actor / Performed By</th>
-                    <th className="py-3 px-4">Details / Remarks</th>
-                    <th className="py-3 px-4 text-center">Status</th>
+              <table className="w-full text-left text-xs font-body border-collapse">
+                <thead className="sticky top-0 z-10 bg-[#faf7f2]/95 border-b border-[#c9a96e]/25 shadow-2xs backdrop-blur-md">
+                  <tr className="border-b border-neutral-200/80 text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
+                    <th className="py-3.5 px-4">Timestamp (PST)</th>
+                    <th className="py-3.5 px-4">Category</th>
+                    <th className="py-3.5 px-4">Action / Event</th>
+                    <th className="py-3.5 px-4">Booking #</th>
+                    <th className="py-3.5 px-4">Client / Subject</th>
+                    <th className="py-3.5 px-4">Actor / Performed By</th>
+                    <th className="py-3.5 px-4">Details / Remarks</th>
+                    <th className="py-3.5 px-4 text-center">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
@@ -505,10 +553,9 @@ export default function AdminSecurity() {
                             <span className="text-xs text-neutral-400">{fmt(item.rawTimestamp)}</span>
                           </td>
 
-                          {/* Category Badge */}
+                          {/* Category Badge (No colored dots) */}
                           <td className="py-3 px-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${catStyle.badge}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${catStyle.dot}`} />
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${catStyle.badge}`}>
                               {catStyle.label}
                             </span>
                           </td>
@@ -548,8 +595,8 @@ export default function AdminSecurity() {
 
                           {/* Status */}
                           <td className="py-3 px-4 text-center whitespace-nowrap">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <CheckCircle2 size={10} />
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-900 border border-amber-200/80">
+                              <CheckCircle2 size={11} className="text-amber-700" />
                               {item.status}
                             </span>
                           </td>
@@ -620,11 +667,12 @@ export default function AdminSecurity() {
           </div>
 
           {/* Role-Based Access Control (RBAC) Studio Matrix */}
-          <div className="bg-white p-5 rounded-2xl border border-neutral-200/80 shadow-xs space-y-4">
+          <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body p-5 space-y-4">
+            <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
             <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
               <div>
-                <h3 className="font-heading text-base font-bold text-primary flex items-center gap-2">
-                  <Users size={18} className="text-gold" />
+                <h3 className="font-heading text-base font-bold text-neutral-900 flex items-center gap-2">
+                  <Users size={18} className="text-[#c9a96e]" />
                   Role-Based Access Control (RBAC) Permission Matrix
                 </h3>
                 <p className="text-xs text-neutral-500 mt-0.5">
@@ -633,14 +681,14 @@ export default function AdminSecurity() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs font-body">
-                <thead>
-                  <tr className="border-b border-neutral-200 text-xs font-bold text-neutral-400 uppercase tracking-wider bg-neutral-50/80">
+            <div className="overflow-x-auto rounded-2xl border border-neutral-200/70">
+              <table className="w-full text-left text-xs font-body border-collapse">
+                <thead className="sticky top-0 z-10 bg-[#faf7f2]/95 border-b border-[#c9a96e]/25 shadow-2xs backdrop-blur-md">
+                  <tr className="border-b border-neutral-200/80 text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
                     <th className="py-3 px-3">Resource / Operation</th>
                     <th className="py-3 px-3">Level</th>
-                    <th className="py-3 px-3 font-bold text-primary">Administrator</th>
-                    <th className="py-3 px-3 text-gold font-bold">Staff</th>
+                    <th className="py-3 px-3 font-bold text-neutral-900">Administrator</th>
+                    <th className="py-3 px-3 text-amber-800 font-bold">Staff</th>
                     <th className="py-3 px-3 text-neutral-600">Photographer</th>
                     <th className="py-3 px-3 text-neutral-500">Customer</th>
                   </tr>
@@ -654,7 +702,7 @@ export default function AdminSecurity() {
                           {row.level}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 font-semibold text-emerald-700">{row.admin}</td>
+                      <td className="py-2.5 px-3 font-semibold text-emerald-800">{row.admin}</td>
                       <td className="py-2.5 px-3 font-medium text-neutral-700">{row.staff}</td>
                       <td className="py-2.5 px-3 text-neutral-600">{row.photographer}</td>
                       <td className="py-2.5 px-3 text-neutral-500">{row.customer}</td>

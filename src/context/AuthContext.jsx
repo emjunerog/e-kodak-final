@@ -1,10 +1,11 @@
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 
 const AuthContext = createContext({});
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const loadedUserIdRef = useRef(null);
   const [profile, setProfile] = useState(() => {
     try {
       if (typeof window === 'undefined') return null;
@@ -55,8 +56,9 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (data) {
-        setProfile(data);
+        setProfile((prev) => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data));
         saveProfileCache(data);
+        loadedUserIdRef.current = userId;
       } else {
         // Fallback: use only sessionStorage (tab-scoped — never localStorage)
         let fallback = null;
@@ -114,11 +116,16 @@ export const AuthProvider = ({ children }) => {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) console.error("Error getting auth session:", error.message);
         const currentUser = session?.user ?? null;
-        if (isMounted) setUser(currentUser);
+        if (isMounted) {
+          setUser((prev) =>
+            prev?.id === currentUser?.id && prev?.email === currentUser?.email ? prev : currentUser
+          );
+        }
 
         if (currentUser) {
           await fetchProfile(currentUser.id);
         } else {
+          loadedUserIdRef.current = null;
           if (isMounted) setProfile(null);
           saveProfileCache(null);
         }
@@ -133,14 +140,23 @@ export const AuthProvider = ({ children }) => {
     getSession();
 
     // Listen for auth changes (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, etc.)
+    // Guard against tab-visibility focus events re-triggering profile fetches and dashboard reloads
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         const currentUser = session?.user ?? null;
-        if (isMounted) setUser(currentUser);
+        if (isMounted) {
+          setUser((prev) =>
+            prev?.id === currentUser?.id && prev?.email === currentUser?.email ? prev : currentUser
+          );
+        }
         if (currentUser) {
-          await fetchProfile(currentUser.id);
+          const isAlreadyLoaded = loadedUserIdRef.current === currentUser.id;
+          if (!isAlreadyLoaded || event === 'USER_UPDATED') {
+            await fetchProfile(currentUser.id);
+          }
           if (isMounted) setLoading(false);
         } else {
+          loadedUserIdRef.current = null;
           if (isMounted) setProfile(null);
           saveProfileCache(null);
           if (isMounted) setLoading(false);

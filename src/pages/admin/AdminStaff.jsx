@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
-  Users, UserCheck, Plus, Search, X, Edit2, Trash2, Shield,
-  RefreshCw, CheckCircle2, AlertCircle, Phone, Mail, Camera,
-  CreditCard, Briefcase, Download, Activity, Check, Radio
+  Users, Plus, Search, X, Edit2, Trash2, Shield,
+  RefreshCw, CheckCircle2, AlertCircle, Mail, Camera,
+  CreditCard, Briefcase, Download
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
@@ -46,36 +46,27 @@ function fmtTimeOnly(d) {
 }
 
 function RoleBadge({ role }) {
-  switch ((role || '').toLowerCase()) {
-    case 'admin':
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-200">
-          <Shield size={11} className="text-amber-600" />
-          <span>Admin</span>
-        </span>
-      );
-    case 'finance':
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200">
-          <CreditCard size={11} className="text-emerald-600" />
-          <span>Finance</span>
-        </span>
-      );
-    case 'photographer':
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase tracking-wider bg-purple-50 text-purple-800 border border-purple-200">
-          <Camera size={11} className="text-purple-600" />
-          <span>Photographer</span>
-        </span>
-      );
-    default:
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase tracking-wider bg-blue-50 text-blue-800 border border-blue-200">
-          <Briefcase size={11} className="text-blue-600" />
-          <span>Staff</span>
-        </span>
-      );
+  const norm = (role || '').toLowerCase();
+  let label = 'Staff';
+  let Icon = Briefcase;
+
+  if (norm === 'admin') {
+    label = 'Admin';
+    Icon = Shield;
+  } else if (norm === 'finance') {
+    label = 'Finance';
+    Icon = CreditCard;
+  } else if (norm === 'photographer') {
+    label = 'Photographer';
+    Icon = Camera;
   }
+
+  return (
+    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
+      <Icon size={11} className="text-amber-600" />
+      <span>{label}</span>
+    </span>
+  );
 }
 
 export default function AdminStaff() {
@@ -92,8 +83,6 @@ export default function AdminStaff() {
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
-  const [presenceFilter, setPresenceFilter] = useState('ALL');
-  const [statusFilter, setStatusFilter] = useState('ALL');
 
   // Real-time live presence
   const [liveOnlineMap, setLiveOnlineMap] = useState(new Map());
@@ -165,7 +154,7 @@ export default function AdminStaff() {
     setTimeout(() => setActionSuccessMsg(null), 3500);
   };
 
-  // Stats calculation
+  // Stats calculation (real DB roles)
   const stats = useMemo(() => {
     const list = Array.isArray(workers) ? workers : [];
     const total = list.length;
@@ -173,6 +162,7 @@ export default function AdminStaff() {
     let photographers = 0;
     let finance = 0;
     let staff = 0;
+    let admin = 0;
     let active = 0;
 
     list.forEach(w => {
@@ -183,9 +173,10 @@ export default function AdminStaff() {
       if (r === 'photographer') photographers++;
       else if (r === 'finance') finance++;
       else if (r === 'staff') staff++;
+      else if (r === 'admin') admin++;
     });
 
-    return { total, online, photographers, finance, staff, active };
+    return { total, online, photographers, finance, staff, admin, active };
   }, [workers, liveOnlineMap]);
 
   // Filtered workers
@@ -194,12 +185,6 @@ export default function AdminStaff() {
     return list.filter(w => {
       if (!w || !w.email || !w.email.trim()) return false;
       if (roleFilter !== 'ALL' && (w.role || '').toLowerCase() !== (roleFilter || '').toLowerCase()) return false;
-      if (statusFilter === 'ACTIVE' && !w.is_active) return false;
-      if (statusFilter === 'INACTIVE' && w.is_active) return false;
-
-      const isOnline = liveOnlineMap instanceof Map ? liveOnlineMap.has(w.id) : false;
-      if (presenceFilter === 'ONLINE' && !isOnline) return false;
-      if (presenceFilter === 'OFFLINE' && isOnline) return false;
 
       if (!searchQuery || !searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
@@ -209,7 +194,7 @@ export default function AdminStaff() {
       const role = (w.role || '').toLowerCase();
       return name.includes(q) || email.includes(q) || phone.includes(q) || role.includes(q);
     });
-  }, [workers, roleFilter, statusFilter, presenceFilter, searchQuery, liveOnlineMap]);
+  }, [workers, roleFilter, searchQuery]);
 
   // Open Add Modal
   const openAdd = () => {
@@ -306,18 +291,18 @@ export default function AdminStaff() {
 
   // CSV Export
   const handleExportCsv = () => {
-    const headers = ['First Name', 'Last Name', 'Email', 'Role', 'Phone', 'Active Status', 'Live Presence'];
-    const rows = workers.map(w => {
+    const headers = ['Full Name', 'Email', 'Role', 'Phone', 'Specialization', 'Status'];
+    const rows = filteredWorkers.map(w => {
       const escape = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
-      const isOnline = liveOnlineMap.has(w.id);
+      const isOnline = liveOnlineMap instanceof Map && liveOnlineMap.has(w.id);
+      const fullName = `${w.first_name || ''} ${w.last_name || ''}`.trim() || 'Staff Member';
       return [
-        escape(w.first_name),
-        escape(w.last_name),
+        escape(fullName),
         escape(w.email),
         escape(w.role),
         escape(w.phone),
-        escape(w.is_active ? 'Active' : 'Inactive'),
-        escape(isOnline ? 'Online Now' : 'Offline')
+        escape(w.specialization || '—'),
+        escape(isOnline ? 'Online' : 'Offline')
       ].join(',');
     });
 
@@ -326,7 +311,7 @@ export default function AdminStaff() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `ekodak-workers-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `ekodak-workforce-${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
     showToast('Worker roster exported to CSV.');
@@ -337,12 +322,9 @@ export default function AdminStaff() {
       {/* ── 1. Hero Banner ─────────────────────────────────────────────────── */}
       <AdminHeroBanner
         station="admin"
-        badgeLabel="Personnel & Operations"
-        badgeIcon={UserCheck}
         userName={profile?.full_name || user?.email?.split('@')[0] || 'Administrator'}
         title="Studio Staff & Worker Management"
-        subtitle="Monitor worker active online status in real-time, provision team accounts (photographers, finance, staff), update credentials, and manage operational privileges."
-        statusSummary={`${stats.total} Total Personnel · ${stats.online} Live Online Now · ${stats.active} Active Accounts`}
+        subtitle="Provision team accounts, configure authorizations, and manage operational privileges."
         primaryAction={{
           label: 'Add Worker',
           icon: Plus,
@@ -357,8 +339,8 @@ export default function AdminStaff() {
         isRefreshing={isRefreshing || loading}
       />
 
-      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Wrapper (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
       {/* Action Toast */}
       {actionSuccessMsg && (
@@ -392,19 +374,16 @@ export default function AdminStaff() {
             label: 'PERSONNEL',
             subtitle: 'Registered workforce',
             value: stats.total,
-            isActive: roleFilter === 'ALL' && presenceFilter === 'ALL',
-            onClick: () => {
-              setRoleFilter('ALL');
-              setPresenceFilter('ALL');
-            },
+            isActive: roleFilter === 'ALL',
+            onClick: () => setRoleFilter('ALL'),
           },
           {
-            key: 'ONLINE',
-            label: 'LIVE PORTAL',
-            subtitle: 'Active right now',
-            value: stats.online,
-            isActive: presenceFilter === 'ONLINE',
-            onClick: () => setPresenceFilter(presenceFilter === 'ONLINE' ? 'ALL' : 'ONLINE'),
+            key: 'ADMIN',
+            label: 'ADMINS',
+            subtitle: 'System administrators',
+            value: stats.admin,
+            isActive: roleFilter === 'admin',
+            onClick: () => setRoleFilter(roleFilter === 'admin' ? 'ALL' : 'admin'),
           },
           {
             key: 'PHOTOGRAPHER',
@@ -433,131 +412,152 @@ export default function AdminStaff() {
         ]}
       />
 
-      {/* ── 3. Filters & Search Bar ────────────────────────────────────────── */}
-      <div className="bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3.5">
-        <div className="flex-1 relative">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search worker by name, email, phone, or role..."
-            className="w-full pl-9 pr-8 py-2 bg-neutral-50/60 border border-neutral-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold focus:bg-white transition-all"
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-primary">
-              <X size={13} />
-            </button>
+      {/* ── 3. Unified Luxury Workforce Hub ────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
+
+        {/* Header Controls Bar */}
+        <div className="p-4 sm:p-5 border-b border-neutral-100 flex-shrink-0 bg-white space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {/* Left: Station Icon & Title */}
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white shadow-sm ring-1 ring-amber-600/30 shrink-0">
+                <Users size={22} />
+              </div>
+              <div>
+                <h3 className="font-heading text-xl sm:text-2xl font-bold text-neutral-900 tracking-tight">
+                  Studio Workforce
+                </h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {filteredWorkers.length} {filteredWorkers.length === 1 ? 'member' : 'members'} listed • Real-time operational roster
+                </p>
+              </div>
+            </div>
+
+            {/* Right: Actions */}
+            <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                className="h-9 px-3.5 text-xs font-bold flex items-center gap-1.5 border border-neutral-200/80 hover:border-emerald-500/60 rounded-xl bg-white hover:bg-emerald-50/50 text-neutral-700 hover:text-emerald-900 shadow-2xs transition-all cursor-pointer"
+                title="Export Workforce to CSV"
+              >
+                <Download size={14} className="text-emerald-600" />
+                <span>Export CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={openAdd}
+                className="h-9 px-3.5 text-xs font-bold flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-[#c9a96e] to-amber-600 hover:brightness-105 text-neutral-900 shadow-xs transition-all cursor-pointer shrink-0 font-medium"
+                title="Add new worker profile"
+              >
+                <Plus size={14} className="stroke-[2.5]" />
+                <span>Add Worker</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => loadData(true)}
+                disabled={isRefreshing || loading}
+                className="w-9 h-9 flex items-center justify-center border border-neutral-200/80 hover:border-amber-400/60 rounded-xl bg-white hover:bg-amber-50/40 transition-colors disabled:opacity-50 text-neutral-600 hover:text-neutral-900 cursor-pointer shadow-2xs"
+                title="Refresh Personnel Roster"
+              >
+                <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-amber-600' : 'text-neutral-500'} />
+              </button>
+            </div>
+          </div>
+
+          {/* Search & Single Role Filter Row */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search worker by name, email, phone, or role..."
+                className="w-full h-9 pl-9 pr-8 bg-neutral-50/80 hover:bg-neutral-100/60 focus:bg-white rounded-xl text-xs sm:text-sm font-body border border-neutral-200/80 focus:border-[#c9a96e] focus:ring-2 focus:ring-[#c9a96e]/20 outline-none transition-all shadow-2xs"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
+            {/* Single Clean Role Filter (NO colored dots, no presence/status dropdowns) */}
+            <div className="w-full sm:w-64 shrink-0">
+              <CustomDropdown
+                value={roleFilter}
+                onChange={setRoleFilter}
+                options={[
+                  { value: 'ALL', label: `All Personnel (${stats.total})`, icon: Users },
+                  { value: 'photographer', label: `Photographers (${stats.photographers})`, icon: Camera },
+                  { value: 'finance', label: `Finance (${stats.finance})`, icon: CreditCard },
+                  { value: 'staff', label: `Front Desk Staff (${stats.staff})`, icon: Briefcase },
+                  { value: 'admin', label: `Administrators (${stats.admin})`, icon: Shield }
+                ]}
+                placeholder="Filter by Role"
+                icon={Briefcase}
+                className="w-full text-xs sm:text-sm"
+                popoverWidth="w-full min-w-[240px]"
+              />
+            </div>
+          </div>
+
+          {/* Active Filter Pill */}
+          {(roleFilter !== 'ALL' || searchQuery) && (
+            <div className="flex items-center gap-2 pt-2 border-t border-neutral-100 flex-wrap text-xs text-neutral-500">
+              <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[11px]">Active Filter:</span>
+              {searchQuery && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
+                  Keyword: "{searchQuery}"
+                  <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setSearchQuery('')} />
+                </span>
+              )}
+              {roleFilter !== 'ALL' && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200/70 text-xs font-medium">
+                  Role: {roleFilter.charAt(0).toUpperCase() + roleFilter.slice(1)}
+                  <X size={12} className="cursor-pointer text-amber-700 hover:text-amber-950" onClick={() => setRoleFilter('ALL')} />
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => { setSearchQuery(''); setRoleFilter('ALL'); }}
+                className="text-amber-700 hover:underline font-semibold text-xs ml-1 cursor-pointer"
+              >
+                Reset
+              </button>
+            </div>
           )}
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Role Filter */}
-          <div className="w-38 sm:w-44">
-            <CustomDropdown
-              value={roleFilter}
-              onChange={setRoleFilter}
-              options={[
-                { value: 'ALL', label: 'All Roles' },
-                { value: 'photographer', label: 'Photographers', icon: Camera },
-                { value: 'finance', label: 'Finance', icon: CreditCard },
-                { value: 'staff', label: 'Staff', icon: Briefcase },
-                { value: 'admin', label: 'Administrators', icon: Shield }
-              ]}
-              placeholder="Filter Role"
-              icon={Briefcase}
-              className="w-full"
-              popoverWidth="w-48"
-            />
-          </div>
-
-          {/* Presence Filter */}
-          <div className="w-38 sm:w-44">
-            <CustomDropdown
-              value={presenceFilter}
-              onChange={setPresenceFilter}
-              options={[
-                { value: 'ALL', label: 'All Presence', icon: Radio },
-                { value: 'ONLINE', label: '🟢 Online Now', dotColor: 'bg-emerald-500' },
-                { value: 'OFFLINE', label: '⚪ Offline', dotColor: 'bg-neutral-400' }
-              ]}
-              placeholder="Presence"
-              icon={Activity}
-              className="w-full"
-              popoverWidth="w-44"
-            />
-          </div>
-
-          {/* Status Filter */}
-          <div className="w-36 sm:w-40">
-            <CustomDropdown
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[
-                { value: 'ALL', label: 'All Status' },
-                { value: 'ACTIVE', label: 'Active', dotColor: 'bg-emerald-500' },
-                { value: 'INACTIVE', label: 'Inactive', dotColor: 'bg-neutral-400' }
-              ]}
-              placeholder="Account Status"
-              icon={UserCheck}
-              className="w-full"
-              popoverWidth="w-40"
-            />
-          </div>
-
-          {/* Quick 1-Click Refresh Button */}
-          <button
-            type="button"
-            onClick={() => loadData(true)}
-            disabled={isRefreshing}
-            className="py-1.5 px-3 rounded-xl border border-neutral-200 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 flex items-center gap-1.5 transition-colors disabled:opacity-50"
-            title="Refresh Personnel Roster"
-          >
-            <RefreshCw size={13} className={isRefreshing ? 'animate-spin text-gold' : 'text-neutral-500'} />
-            <span>{isRefreshing ? 'Refreshing…' : 'Refresh'}</span>
-          </button>
-
-          {(searchQuery || roleFilter !== 'ALL' || presenceFilter !== 'ALL' || statusFilter !== 'ALL') && (
-            <button
-              onClick={() => {
-                setSearchQuery('');
-                setRoleFilter('ALL');
-                setPresenceFilter('ALL');
-                setStatusFilter('ALL');
-              }}
-              className="py-1.5 px-2.5 rounded-xl border border-neutral-200 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 flex items-center gap-1 transition-colors"
-            >
-              <X size={12} /> Reset
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ── 4. Workers Table ───────────────────────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden">
+        {/* Table Area */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs font-body border-collapse">
-            <thead>
-              <tr className="bg-neutral-50/80 border-b border-neutral-200/80 text-xs font-bold text-neutral-500 uppercase tracking-wider">
-                <th className="px-5 py-3.5">Personnel</th>
-                <th className="px-4 py-3.5">Studio Role</th>
-                <th className="px-4 py-3.5">Contact</th>
-                <th className="px-4 py-3.5 text-center">Live Active Status</th>
-                <th className="px-4 py-3.5 text-center">Account Access</th>
-                <th className="px-5 py-3.5 text-right">Actions</th>
+          <table className="w-full text-left text-xs sm:text-sm font-body border-collapse">
+            <thead className="sticky top-0 z-10 bg-[#faf7f2]/95 border-b border-[#c9a96e]/25 shadow-2xs backdrop-blur-md">
+              <tr className="border-b border-neutral-200/80 text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
+                <th className="px-5 sm:px-6 py-3.5">Personnel</th>
+                <th className="px-4 sm:px-5 py-3.5">Studio Role</th>
+                <th className="px-4 sm:px-5 py-3.5">Contact</th>
+                <th className="px-4 sm:px-5 py-3.5 text-center">Status</th>
+                <th className="px-5 sm:px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className={`divide-y divide-neutral-100 ${isRefreshing ? 'opacity-70 transition-opacity' : 'opacity-100 transition-opacity'}`}>
               {loading && workers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-neutral-400">
-                    <RefreshCw size={18} className="animate-spin mx-auto mb-2 text-gold" />
+                  <td colSpan={5} className="py-12 text-center text-neutral-400">
+                    <RefreshCw size={18} className="animate-spin mx-auto mb-2 text-amber-600" />
                     <span>Loading studio workforce records...</span>
                   </td>
                 </tr>
               ) : filteredWorkers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-neutral-400">
+                  <td colSpan={5} className="py-12 text-center text-neutral-400">
                     No worker accounts match your search filters.
                   </td>
                 </tr>
@@ -571,9 +571,9 @@ export default function AdminStaff() {
                   const isPhotographer = (w.role || '').toLowerCase() === 'photographer';
 
                   return (
-                    <tr key={w.id} className="hover:bg-neutral-50/60 transition-colors">
+                    <tr key={w.id} className="hover:bg-amber-50/20 transition-colors">
                       {/* Name & Avatar */}
-                      <td className="px-5 py-4">
+                      <td className="px-5 sm:px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="relative shrink-0">
                             {w.avatar_url ? (
@@ -583,11 +583,11 @@ export default function AdminStaff() {
                                 className="w-9 h-9 rounded-full object-cover ring-1.5 ring-neutral-200"
                               />
                             ) : (
-                              <div className="w-9 h-9 rounded-full bg-gold/15 text-gold-dark ring-1.5 ring-gold/25 font-bold flex items-center justify-center text-xs">
+                              <div className="w-9 h-9 rounded-full bg-amber-500/15 text-amber-900 ring-1.5 ring-[#c9a96e]/25 font-bold flex items-center justify-center text-xs">
                                 {ini}
                               </div>
                             )}
-                            {/* Live Presence Pulse on Avatar */}
+                            {/* Online Indicator Badge on Avatar */}
                             {isOnline && (
                               <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3">
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-80" />
@@ -596,10 +596,10 @@ export default function AdminStaff() {
                             )}
                           </div>
                           <div className="min-w-0">
-                            <div className="font-bold text-primary text-sm leading-tight flex items-center gap-1.5">
+                            <div className="font-bold text-neutral-900 text-sm leading-tight flex items-center gap-1.5">
                               <span>{fullName}</span>
                               {isPhotographer && w.specialization && (
-                                <span className="text-xs font-normal text-neutral-400 truncate max-w-[140px]">
+                                <span className="text-xs font-normal text-neutral-400 truncate max-w-[160px]">
                                   • {w.specialization}
                                 </span>
                               )}
@@ -612,28 +612,28 @@ export default function AdminStaff() {
                         </div>
                       </td>
 
-                      {/* Role */}
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      {/* Studio Role */}
+                      <td className="px-4 sm:px-5 py-4 whitespace-nowrap">
                         <RoleBadge role={w.role} />
                       </td>
 
                       {/* Contact */}
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      <td className="px-4 sm:px-5 py-4 whitespace-nowrap">
                         <span className="text-neutral-700 font-medium text-xs">
                           {w.phone || '—'}
                         </span>
                       </td>
 
-                      {/* Live Status */}
-                      <td className="px-4 py-4 text-center whitespace-nowrap">
+                      {/* Status */}
+                      <td className="px-4 sm:px-5 py-4 text-center whitespace-nowrap">
                         {isOnline ? (
                           <div className="inline-flex flex-col items-center">
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              <span>Live Online</span>
+                              <span>Online</span>
                             </span>
                             {presence?.online_at && (
-                              <span className="text-[11.5px] text-neutral-400 mt-0.5">
+                              <span className="text-[11px] text-neutral-400 mt-0.5">
                                 Since {fmtTimeOnly(presence.online_at)}
                               </span>
                             )}
@@ -646,43 +646,13 @@ export default function AdminStaff() {
                         )}
                       </td>
 
-                      {/* Account Access & Availability */}
-                      <td className="px-4 py-4 text-center whitespace-nowrap">
-                        <div className="flex flex-col items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleActive(w)}
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border transition-colors ${
-                              w.is_active
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                                : 'bg-neutral-100 text-neutral-500 border-neutral-200 hover:bg-neutral-200'
-                            }`}
-                            title="Click to toggle worker account active status"
-                          >
-                            <span>{w.is_active ? 'Active' : 'Disabled'}</span>
-                          </button>
-
-                          {isPhotographer && (
-                            <button
-                              type="button"
-                              onClick={() => handleToggleAvailability(w)}
-                              className={`text-[11.5px] font-bold underline transition-colors ${
-                                w.is_available ? 'text-purple-600 hover:text-purple-800' : 'text-neutral-400 hover:text-neutral-600'
-                              }`}
-                            >
-                              {w.is_available ? 'Shooter Available' : 'Shooter Off-duty'}
-                            </button>
-                          )}
-                        </div>
-                      </td>
-
                       {/* Actions */}
-                      <td className="px-5 py-4 text-right whitespace-nowrap">
+                      <td className="px-5 sm:px-6 py-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             type="button"
                             onClick={() => openEdit(w)}
-                            className="p-1.5 text-neutral-500 hover:text-primary hover:bg-neutral-100 rounded-xl transition-colors border border-neutral-200"
+                            className="p-1.5 text-neutral-500 hover:text-amber-800 hover:bg-amber-50/60 rounded-xl transition-colors border border-neutral-200 cursor-pointer shadow-2xs"
                             title="Edit Account Details"
                           >
                             <Edit2 size={13} />
@@ -690,7 +660,7 @@ export default function AdminStaff() {
                           <button
                             type="button"
                             onClick={() => handleDelete(w)}
-                            className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-neutral-200 hover:border-red-200"
+                            className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-neutral-200 hover:border-red-200 cursor-pointer shadow-2xs"
                             title="Delete Worker Account"
                           >
                             <Trash2 size={13} />

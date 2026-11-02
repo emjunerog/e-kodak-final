@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { 
-  CheckCircle, 
-  Calendar, 
-  Bell, 
-  MessageSquare, 
-  Check, 
-  RefreshCw, 
-  AlertCircle, 
-  Loader2, 
+import {
+  CheckCircle,
+  Calendar,
+  Bell,
+  MessageSquare,
+  Check,
+  RefreshCw,
+  AlertCircle,
   CreditCard,
   Camera,
   ExternalLink,
@@ -21,9 +20,10 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { 
-  getCustomerUnifiedNotifications, 
-  markCustomerNotificationAsRead, 
+import { NotificationsSkeleton, SmartLoadingContainer } from '../../components/dashboard/skeletons';
+import {
+  getCustomerUnifiedNotifications,
+  markCustomerNotificationAsRead,
   markAllCustomerNotificationsAsRead,
   clearCustomerNotification,
   clearAllCustomerNotifications
@@ -34,12 +34,12 @@ function relativeTime(dateStr) {
   if (!dateStr) return '';
   const diff = Date.now() - new Date(dateStr).getTime();
   const minutes = Math.floor(diff / 60000);
-  const hours   = Math.floor(diff / 3600000);
-  const days    = Math.floor(diff / 86400000);
-  if (minutes < 1)  return 'Just now';
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (minutes < 1) return 'Just now';
   if (minutes < 60) return `${minutes}m ago`;
-  if (hours   < 24) return `${hours}h ago`;
-  if (days    < 7)  return `${days}d ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7) return `${days}d ago`;
   return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
 }
 
@@ -47,29 +47,29 @@ function groupLabel(dateStr) {
   if (!dateStr) return 'Earlier';
   const diff = Date.now() - new Date(dateStr).getTime();
   const days = Math.floor(diff / 86400000);
-  if (days < 1)  return 'Today';
-  if (days < 7)  return 'This Week';
+  if (days < 1) return 'Today';
+  if (days < 7) return 'This Week';
   return 'Earlier';
 }
 
 // Minimal understated icon mappings (category colors only through icons)
 const TYPE_META = {
-  booking_confirmed:   { icon: CheckCircle,   category: 'Booking',       color: 'text-emerald-700 bg-emerald-50/90 border-emerald-200/70' },
-  booking_submitted:   { icon: Calendar,      category: 'Booking',       color: 'text-blue-700 bg-blue-50/90 border-blue-200/70' },
-  booking_status:      { icon: Bell,          category: 'Booking',       color: 'text-amber-700 bg-amber-50/90 border-amber-200/70' },
-  payment_recorded:    { icon: CreditCard,    category: 'Payment',       color: 'text-emerald-700 bg-emerald-50/90 border-emerald-200/70' },
-  payment_required:    { icon: CreditCard,    category: 'Payment',       color: 'text-amber-700 bg-amber-50/90 border-amber-200/70' },
-  system_advisory:     { icon: Sparkles,      category: 'Studio Update', color: 'text-amber-700 bg-amber-50/90 border-amber-200/70' },
-  protocol:            { icon: Camera,        category: 'Studio Update', color: 'text-purple-700 bg-purple-50/90 border-purple-200/70' },
-  message:             { icon: MessageSquare, category: 'Studio Update', color: 'text-indigo-700 bg-indigo-50/90 border-indigo-200/70' },
-  BROADCAST:           { icon: Sparkles,      category: 'Studio Update', color: 'text-purple-700 bg-purple-50/90 border-purple-200/70' },
-  ORDER_READY:         { icon: Camera,        category: 'Gallery',       color: 'text-emerald-700 bg-emerald-50/90 border-emerald-200/70' },
-  BOOKING_CONFIRMED:   { icon: CheckCircle,   category: 'Booking',       color: 'text-emerald-700 bg-emerald-50/90 border-emerald-200/70' },
-  PAYMENT_RECEIVED:    { icon: CreditCard,    category: 'Payment',       color: 'text-blue-700 bg-blue-50/90 border-blue-200/70' },
-  gallery_ready:       { icon: Camera,        category: 'Gallery',       color: 'text-teal-700 bg-teal-50/90 border-teal-200/70' },
-  BOOKING_CANCELLED:   { icon: AlertCircle,   category: 'Booking',       color: 'text-rose-700 bg-rose-50/90 border-rose-200/70' },
-  BOOKING_DELETED:     { icon: AlertCircle,   category: 'Booking',       color: 'text-rose-700 bg-rose-50/90 border-rose-200/70' },
-  default:             { icon: Bell,          category: 'Notice',        color: 'text-neutral-600 bg-neutral-100 border-neutral-200' },
+  booking_confirmed: { icon: CheckCircle, category: 'Booking', color: 'text-emerald-700 bg-emerald-50/90 border-emerald-200/70' },
+  booking_submitted: { icon: Calendar, category: 'Booking', color: 'text-blue-700 bg-blue-50/90 border-blue-200/70' },
+  booking_status: { icon: Bell, category: 'Booking', color: 'text-amber-700 bg-amber-50/90 border-amber-200/70' },
+  payment_recorded: { icon: CreditCard, category: 'Payment', color: 'text-emerald-700 bg-emerald-50/90 border-emerald-200/70' },
+  payment_required: { icon: CreditCard, category: 'Payment', color: 'text-amber-700 bg-amber-50/90 border-amber-200/70' },
+  system_advisory: { icon: Sparkles, category: 'Studio Update', color: 'text-amber-700 bg-amber-50/90 border-amber-200/70' },
+  protocol: { icon: Camera, category: 'Studio Update', color: 'text-purple-700 bg-purple-50/90 border-purple-200/70' },
+  message: { icon: MessageSquare, category: 'Studio Update', color: 'text-indigo-700 bg-indigo-50/90 border-indigo-200/70' },
+  BROADCAST: { icon: Sparkles, category: 'Studio Update', color: 'text-purple-700 bg-purple-50/90 border-purple-200/70' },
+  ORDER_READY: { icon: Camera, category: 'Gallery', color: 'text-emerald-700 bg-emerald-50/90 border-emerald-200/70' },
+  BOOKING_CONFIRMED: { icon: CheckCircle, category: 'Booking', color: 'text-emerald-700 bg-emerald-50/90 border-emerald-200/70' },
+  PAYMENT_RECEIVED: { icon: CreditCard, category: 'Payment', color: 'text-blue-700 bg-blue-50/90 border-blue-200/70' },
+  gallery_ready: { icon: Camera, category: 'Gallery', color: 'text-teal-700 bg-teal-50/90 border-teal-200/70' },
+  BOOKING_CANCELLED: { icon: AlertCircle, category: 'Booking', color: 'text-rose-700 bg-rose-50/90 border-rose-200/70' },
+  BOOKING_DELETED: { icon: AlertCircle, category: 'Booking', color: 'text-rose-700 bg-rose-50/90 border-rose-200/70' },
+  default: { icon: Bell, category: 'Notice', color: 'text-neutral-600 bg-neutral-100 border-neutral-200' },
 };
 
 function getTypeMeta(type) {
@@ -82,7 +82,7 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [marking, setMarking] = useState(false);
-  
+
   // Simplified minimal filters: Tab ('ALL' | 'UNREAD') + Category Dropdown
   const [tabFilter, setTabFilter] = useState('ALL'); // 'ALL' | 'UNREAD'
   const [categoryFilter, setCategoryFilter] = useState('ALL'); // 'ALL' | 'BOOKINGS' | 'PAYMENTS' | 'GALLERY' | 'STUDIO'
@@ -121,7 +121,7 @@ export default function NotificationsPage() {
 
   // Load unified notifications
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!user?.id) return;
     setLoading(true);
     setError(null);
     try {
@@ -133,7 +133,7 @@ export default function NotificationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     load();
@@ -291,7 +291,7 @@ export default function NotificationsPage() {
   };
 
   return (
-    <div className="max-w-screen-2xl mx-auto w-full space-y-4 pb-16 font-body animate-fade-in">
+    <div className="w-full px-4 sm:px-6 lg:px-8 pt-6 space-y-4 pb-16 font-body animate-fade-in">
 
       {/* ── 1. Compact Premium E-KODAK Header ─────────────────────────────── */}
       <div className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-neutral-950 via-neutral-900 to-[#121c2d] border border-neutral-800/90 shadow-sm px-4.5 py-4 sm:px-6 sm:py-4.5 font-body">
@@ -404,11 +404,10 @@ export default function NotificationsPage() {
           <button
             type="button"
             onClick={() => setTabFilter('ALL')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              tabFilter === 'ALL'
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${tabFilter === 'ALL'
                 ? 'bg-neutral-900 text-white font-semibold shadow-xs'
                 : 'bg-white hover:bg-neutral-100 text-neutral-600 border border-neutral-200/80 shadow-2xs'
-            }`}
+              }`}
           >
             All
           </button>
@@ -417,11 +416,10 @@ export default function NotificationsPage() {
           <button
             type="button"
             onClick={() => setTabFilter('UNREAD')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
-              tabFilter === 'UNREAD'
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${tabFilter === 'UNREAD'
                 ? 'bg-neutral-900 text-white font-semibold shadow-xs'
                 : 'bg-white hover:bg-neutral-100 text-neutral-600 border border-neutral-200/80 shadow-2xs'
-            }`}
+              }`}
           >
             <span>Unread</span>
             {totalUnread > 0 && (
@@ -436,11 +434,10 @@ export default function NotificationsPage() {
             <button
               type="button"
               onClick={() => setShowFilterDropdown(!showFilterDropdown)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
-                categoryFilter !== 'ALL'
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${categoryFilter !== 'ALL'
                   ? 'bg-gold/15 text-neutral-900 border border-gold/40 font-semibold'
                   : 'bg-white hover:bg-neutral-100 text-neutral-600 border border-neutral-200/80 shadow-2xs'
-              }`}
+                }`}
             >
               <SlidersHorizontal size={12} className={categoryFilter !== 'ALL' ? 'text-gold' : 'text-neutral-400'} />
               <span>{categoryFilter === 'ALL' ? 'Filter' : categoryLabels[categoryFilter]}</span>
@@ -456,9 +453,8 @@ export default function NotificationsPage() {
                     setCategoryFilter('ALL');
                     setShowFilterDropdown(false);
                   }}
-                  className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-neutral-50 cursor-pointer ${
-                    categoryFilter === 'ALL' ? 'text-neutral-900 font-semibold bg-neutral-50' : 'text-neutral-600'
-                  }`}
+                  className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-neutral-50 cursor-pointer ${categoryFilter === 'ALL' ? 'text-neutral-900 font-semibold bg-neutral-50' : 'text-neutral-600'
+                    }`}
                 >
                   <span>All Categories</span>
                   <span className="text-neutral-400 text-xs">{notifications.length}</span>
@@ -470,9 +466,8 @@ export default function NotificationsPage() {
                     setCategoryFilter('BOOKINGS');
                     setShowFilterDropdown(false);
                   }}
-                  className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-neutral-50 cursor-pointer ${
-                    categoryFilter === 'BOOKINGS' ? 'text-neutral-900 font-semibold bg-neutral-50' : 'text-neutral-600'
-                  }`}
+                  className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-neutral-50 cursor-pointer ${categoryFilter === 'BOOKINGS' ? 'text-neutral-900 font-semibold bg-neutral-50' : 'text-neutral-600'
+                    }`}
                 >
                   <span>Bookings</span>
                   <span className="text-neutral-400 text-xs">{bookingsCount}</span>
@@ -483,9 +478,8 @@ export default function NotificationsPage() {
                     setCategoryFilter('PAYMENTS');
                     setShowFilterDropdown(false);
                   }}
-                  className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-neutral-50 cursor-pointer ${
-                    categoryFilter === 'PAYMENTS' ? 'text-neutral-900 font-semibold bg-neutral-50' : 'text-neutral-600'
-                  }`}
+                  className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-neutral-50 cursor-pointer ${categoryFilter === 'PAYMENTS' ? 'text-neutral-900 font-semibold bg-neutral-50' : 'text-neutral-600'
+                    }`}
                 >
                   <span>Payments</span>
                   <span className="text-neutral-400 text-xs">{paymentsCount}</span>
@@ -496,9 +490,8 @@ export default function NotificationsPage() {
                     setCategoryFilter('GALLERY');
                     setShowFilterDropdown(false);
                   }}
-                  className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-neutral-50 cursor-pointer ${
-                    categoryFilter === 'GALLERY' ? 'text-neutral-900 font-semibold bg-neutral-50' : 'text-neutral-600'
-                  }`}
+                  className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-neutral-50 cursor-pointer ${categoryFilter === 'GALLERY' ? 'text-neutral-900 font-semibold bg-neutral-50' : 'text-neutral-600'
+                    }`}
                 >
                   <span>Gallery</span>
                   <span className="text-neutral-400 text-xs">{galleryCount}</span>
@@ -509,9 +502,8 @@ export default function NotificationsPage() {
                     setCategoryFilter('STUDIO');
                     setShowFilterDropdown(false);
                   }}
-                  className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-neutral-50 cursor-pointer ${
-                    categoryFilter === 'STUDIO' ? 'text-neutral-900 font-semibold bg-neutral-50' : 'text-neutral-600'
-                  }`}
+                  className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-neutral-50 cursor-pointer ${categoryFilter === 'STUDIO' ? 'text-neutral-900 font-semibold bg-neutral-50' : 'text-neutral-600'
+                    }`}
                 >
                   <span>Studio Updates</span>
                   <span className="text-neutral-400 text-xs">{studioCount}</span>
@@ -567,19 +559,23 @@ export default function NotificationsPage() {
       )}
 
       {/* ── 3. Main Notification Container with Space After Each Notification ─ */}
-      {loading ? (
-        <div className="bg-white border border-neutral-200/80 rounded-2xl p-16 flex flex-col items-center justify-center gap-2.5 shadow-xs">
-          <Loader2 size={24} className="animate-spin text-gold" />
-          <p className="text-xs text-neutral-400 uppercase tracking-wider font-body">Loading bulletins...</p>
-        </div>
-      ) : displayedNotifications.length === 0 ? (
+      <SmartLoadingContainer
+        loading={loading}
+        hasData={notifications.length > 0}
+        error={error}
+        onRetry={load}
+        skeleton={<NotificationsSkeleton />}
+        delayMs={220}
+        title="Studio Notifications"
+      >
+        {displayedNotifications.length === 0 ? (
         <div className="bg-white border border-neutral-200/80 rounded-2xl p-12 text-center flex flex-col items-center max-w-sm mx-auto shadow-xs">
           <Bell size={20} className="text-neutral-300 mb-2" />
           <h3 className="text-sm font-semibold text-neutral-800 mb-0.5">
             No notifications
           </h3>
           <p className="text-xs text-neutral-400 leading-relaxed font-body">
-            {tabFilter === 'UNREAD' 
+            {tabFilter === 'UNREAD'
               ? 'You are all caught up. No unread studio notices.'
               : 'There are no notices matching your current filter.'}
           </p>
@@ -608,11 +604,10 @@ export default function NotificationsPage() {
                     <div
                       key={notif.id}
                       onMouseEnter={() => handleHoverRead(notif)}
-                      className={`rounded-xl border transition-all duration-300 overflow-hidden shadow-2xs group ${
-                        notif.is_read
+                      className={`rounded-xl border transition-all duration-300 overflow-hidden shadow-2xs group ${notif.is_read
                           ? 'bg-white hover:bg-neutral-50/80 border-neutral-200/80'
                           : 'bg-[#fffdfa] hover:bg-[#faf4e6] border-gold/40 shadow-xs'
-                      }`}
+                        }`}
                     >
                       {/* Scannable Row: icon → title + preview → timestamp → unread dot / chevron */}
                       <div
@@ -667,9 +662,8 @@ export default function NotificationsPage() {
 
                       {/* Smooth Expanding Section: closes previous smoothly when transfer occurs */}
                       <div
-                        className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
-                          isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0 pointer-events-none'
-                        }`}
+                        className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+                          }`}
                       >
                         <div className="overflow-hidden">
                           <div className="px-4.5 sm:px-6 pb-5 pt-3.5 bg-[#faf8f5] dark:bg-neutral-850/80 border-t border-neutral-100 dark:border-neutral-800 space-y-3.5 text-xs sm:text-sm text-neutral-700 dark:text-neutral-200 font-body">
@@ -732,6 +726,7 @@ export default function NotificationsPage() {
           ))}
         </div>
       )}
+      </SmartLoadingContainer>
     </div>
   );
 }

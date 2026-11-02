@@ -136,8 +136,16 @@ export async function updateStudioSettings(id, payload) {
     ...payload,
     updated_at: new Date().toISOString()
   };
-  if (id) {
-    const { data, error } = await supabase.from('studio_settings').update(updateData).eq('id', id).select().single();
+  let targetId = id;
+  if (!targetId) {
+    const { data: existing } = await supabase.from('studio_settings').select('id').limit(1).maybeSingle();
+    if (existing?.id) {
+      targetId = existing.id;
+    }
+  }
+
+  if (targetId) {
+    const { data, error } = await supabase.from('studio_settings').update(updateData).eq('id', targetId).select().single();
     return { data, error };
   } else {
     const { data, error } = await supabase.from('studio_settings').insert([updateData]).select().single();

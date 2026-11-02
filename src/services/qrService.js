@@ -210,6 +210,7 @@ export async function verifyQRPassScan({
 
     // 1. Look up booking by unique secure token or booking number
     let booking = null;
+    let lookupError = null;
     try {
       const { data: rpcBooking, error: rpcErr } = await supabase.rpc('get_booking_by_pass_token', {
         lookup_token: lookupToken
@@ -220,6 +221,7 @@ export async function verifyQRPassScan({
     } catch {}
 
     if (!booking) {
+      const safeToken = String(lookupToken).replace(/[,()*\\]/g, '').trim();
       let query = supabase
         .from('bookings')
         .select(`
@@ -240,21 +242,22 @@ export async function verifyQRPassScan({
           service:services!bookings_service_id_fkey(id, name, base_price)
         `);
 
-      // Check if UUID or booking number
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lookupToken);
+      // Check if UUID or booking number (exact match only)
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(safeToken);
       if (isUuid) {
-        query = query.or(`booking_token.eq.${lookupToken},id.eq.${lookupToken}`);
+        query = query.or(`booking_token.eq.${safeToken},id.eq.${safeToken}`);
       } else {
-        query = query.or(`booking_number.ilike.%${lookupToken}%,booking_token.eq.${lookupToken}`);
+        query = query.or(`booking_number.ilike.${safeToken},booking_token.eq.${safeToken}`);
       }
 
       const { data: bookingList, error: fetchError } = await query.limit(1);
+      lookupError = fetchError;
       if (!fetchError && bookingList?.[0]) {
         booking = bookingList[0];
       }
     }
 
-    if (fetchError || !booking) {
+    if (lookupError || !booking) {
       // Log failed attempt
       await logQRScan({
         bookingId: null,

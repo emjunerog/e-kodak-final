@@ -11,28 +11,31 @@ import {
   Search,
   Download,
   LayoutGrid,
+  Layers,
   Table as TableIcon,
   MoreVertical,
-  ArrowRightLeft,
   CreditCard,
   History,
   Copy,
   Check,
   Eye,
-  Camera,
   RefreshCw,
   GraduationCap,
   Heart,
   Video,
-  MapPin,
   Clock,
   Sparkles,
   X,
-  ChevronDown,
-  Layers,
   Building2,
-  Megaphone,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Megaphone,
+  MapPin,
+  Activity,
+  FolderPlus,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
@@ -40,6 +43,10 @@ import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStri
 import BookingLifecycleBadge from '../../components/admin/BookingLifecycleBadge';
 import BookingQuickInspector from '../../components/admin/BookingQuickInspector';
 import CustomDropdown from '../../components/ui/CustomDropdown';
+import StudioRevenueTrendChart from '../../components/admin/dashboard/StudioRevenueTrendChart';
+import StudioPackageShareChart from '../../components/admin/dashboard/StudioPackageShareChart';
+import { supabase } from '../../lib/supabase';
+import StudioOperationsHub from '../../components/admin/dashboard/StudioOperationsHub';
 import { getDashboardStats, getRecentBookings, getPendingBookings } from '../../services/adminService';
 import { updateBookingStatus, confirmAndScheduleBooking } from '../../services/bookingAdminService';
 import { getEffectivePaymentStatus } from '../../lib/bookingUtils';
@@ -152,6 +159,15 @@ function RowActionDropdown({ booking, onInspect, onFastConfirm }) {
             <span>Record Payment</span>
           </Link>
 
+          <Link
+            to={`/admin/photos?bookingId=${booking.id}`}
+            className="flex items-center gap-2.5 px-3.5 py-2 text-xs text-amber-900 hover:bg-amber-50 font-semibold"
+            onClick={() => setOpen(false)}
+          >
+            <FolderPlus size={13} className="text-amber-600" />
+            <span>Upload Soft Copies / Drive Link</span>
+          </Link>
+
           <button
             type="button"
             onClick={handleCopy}
@@ -181,6 +197,8 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
   const [pending, setPending] = useState([]);
+  const [servicesList, setServicesList] = useState([]);
+  const [activityLogs, setActivityLogs] = useState([]);
   const [loadingStats, setLoadingStats] = useState(true);
   const [loadingTables, setLoadingTables] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -193,6 +211,10 @@ export default function AdminDashboard() {
   const [dateFilter, setDateFilter] = useState('ALL');
   const [viewMode, setViewMode] = useState('table');
   const [activePreset, setActivePreset] = useState('ALL');
+
+  // Pagination State for All Records
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
 
   // Direct Management State
   const [inspectingBooking, setInspectingBooking] = useState(null);
@@ -221,10 +243,19 @@ export default function AdminDashboard() {
     setIsRefreshing(true);
     setError(null);
 
-    const [statsRes, recentRes, pendingRes] = await Promise.all([
+    const [statsRes, recentRes, pendingRes, servicesRes, logsRes] = await Promise.all([
       getDashboardStats({ forceFresh }),
-      getRecentBookings(15),
-      getPendingBookings(6),
+      getRecentBookings(1000), // Ingest all active studio booking records for full dashboard analytics
+      getPendingBookings(15),
+      supabase
+        .from('services')
+        .select('id, name, slug, category, base_price, is_active')
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('admin_activity_logs')
+        .select('id, action_type, entity_label, description, created_at')
+        .order('created_at', { ascending: false })
+        .limit(6),
     ]);
 
     if (statsRes.error || recentRes.error || pendingRes.error) {
@@ -235,6 +266,8 @@ export default function AdminDashboard() {
     if (statsRes.data) setStats(statsRes.data);
     if (recentRes.data) setRecent((recentRes.data || []).filter(b => !b.is_deleted));
     if (pendingRes.data) setPending((pendingRes.data || []).filter(b => !b.is_deleted));
+    if (servicesRes?.data) setServicesList(servicesRes.data);
+    if (logsRes?.data) setActivityLogs(logsRes.data);
     setLoadingStats(false);
     setLoadingTables(false);
     setIsRefreshing(false);
@@ -332,13 +365,19 @@ export default function AdminDashboard() {
       } else if (effectiveFilter === 'UNPAID') {
         matchesStatus = effPayStatus === 'UNPAID';
       } else if (effectiveFilter === 'PENDING') {
-        matchesStatus = b.status?.toUpperCase() === 'PENDING';
+        matchesStatus = ['PENDING', 'RESERVED'].includes(b.status?.toUpperCase());
       } else if (effectiveFilter === 'CONFIRMED') {
-        matchesStatus = b.status?.toUpperCase() === 'CONFIRMED';
+        matchesStatus = ['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED'].includes(b.status?.toUpperCase());
       } else if (effectiveFilter === 'CAPTURE' || effectiveFilter === 'PRODUCTION') {
-        matchesStatus = ['PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'EDITING', 'PRINTING', 'READY'].includes(b.status?.toUpperCase());
+        matchesStatus = ['CAPTURE', 'IN_PROGRESS'].includes(b.status?.toUpperCase());
+      } else if (effectiveFilter === 'EDITING') {
+        matchesStatus = b.status?.toUpperCase() === 'EDITING';
+      } else if (effectiveFilter === 'RETOUCHING') {
+        matchesStatus = b.status?.toUpperCase() === 'RETOUCHING';
+      } else if (effectiveFilter === 'FINALIZED') {
+        matchesStatus = ['FINALIZED', 'PRINTING'].includes(b.status?.toUpperCase());
       } else if (effectiveFilter === 'READY') {
-        matchesStatus = b.status?.toUpperCase() === 'READY';
+        matchesStatus = ['READY', 'UNDER_DELIVERY'].includes(b.status?.toUpperCase());
       } else if (effectiveFilter === 'COMPLETED') {
         matchesStatus = b.status?.toUpperCase() === 'COMPLETED';
       } else if (effectiveFilter !== 'ALL') {
@@ -389,6 +428,24 @@ export default function AdminDashboard() {
     });
   }, [recent, searchQuery, statusFilter, categoryFilter, dateFilter, activePreset]);
 
+  // Calculate total pages and sliced records for pagination
+  const totalPages = useMemo(() => {
+    if (pageSize === 'ALL') return 1;
+    return Math.max(1, Math.ceil(filteredBookings.length / Number(pageSize)));
+  }, [filteredBookings.length, pageSize]);
+
+  const paginatedBookings = useMemo(() => {
+    if (pageSize === 'ALL') return filteredBookings;
+    const size = Number(pageSize);
+    const start = (page - 1) * size;
+    return filteredBookings.slice(start, start + size);
+  }, [filteredBookings, page, pageSize]);
+
+  // Reset to first page when search or filter options change
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, statusFilter, categoryFilter, dateFilter, activePreset, pageSize]);
+
   // Export to CSV function
   const handleExportCSV = (recordsToExport = filteredBookings) => {
     if (recordsToExport.length === 0) return;
@@ -413,13 +470,17 @@ export default function AdminDashboard() {
     document.body.removeChild(link);
   };
 
-  // Multi-select helpers
+  // Multi-select helpers (page-aware for paginated view)
   const handleToggleSelectAll = () => {
-    if (selectedBookingIds.size === filteredBookings.length) {
-      setSelectedBookingIds(new Set());
+    const pageIds = paginatedBookings.map((b) => b.id);
+    const allSelectedOnPage = pageIds.length > 0 && pageIds.every((id) => selectedBookingIds.has(id));
+    const next = new Set(selectedBookingIds);
+    if (allSelectedOnPage) {
+      pageIds.forEach((id) => next.delete(id));
     } else {
-      setSelectedBookingIds(new Set(filteredBookings.map((b) => b.id)));
+      pageIds.forEach((id) => next.add(id));
     }
+    setSelectedBookingIds(next);
   };
 
   const handleToggleSelectRow = (id) => {
@@ -468,17 +529,20 @@ export default function AdminDashboard() {
     { value: 'ALL', label: 'Status', dotColor: 'bg-neutral-400', badge: stats?.total },
     { value: 'PENDING', label: '1. Booking Received', dotColor: 'bg-gold', badge: stats?.pending },
     { value: 'CONFIRMED', label: '2. Approved & Reserved', dotColor: 'bg-primary', badge: stats?.confirmed },
-    { value: 'CAPTURE', label: '3. Ongoing Pictorial', dotColor: 'bg-gold' },
-    { value: 'EDITING', label: '4. Editing', dotColor: 'bg-primary' },
-    { value: 'RETOUCHING', label: '5. Retouching', dotColor: 'bg-gold' },
-    { value: 'FINALIZED', label: '6. Booking Finalized', dotColor: 'bg-primary' },
-    { value: 'READY', label: '7. Ready for Pickup (Studio)', dotColor: 'bg-gold', badge: stats?.ready },
-    { value: 'UNDER_DELIVERY', label: '7. Under Delivery', dotColor: 'bg-primary' },
-    { value: 'COMPLETED', label: 'Completed', dotColor: 'bg-neutral-400', badge: stats?.completed },
+    { value: 'PHOTOGRAPHER_ASSIGNED', label: '3. Photographer Assigned', dotColor: 'bg-indigo-600' },
+    { value: 'CAPTURE', label: '4. Ongoing Pictorial', dotColor: 'bg-gold' },
+    { value: 'EDITING', label: '5. Editing', dotColor: 'bg-primary' },
+    { value: 'RETOUCHING', label: '6. Retouching', dotColor: 'bg-gold' },
+    { value: 'FINALIZED', label: '7. Booking Finalized', dotColor: 'bg-primary' },
+    { value: 'PRINTING', label: '8. Printing', dotColor: 'bg-gold' },
+    { value: 'READY', label: '9. Ready for Pickup (Studio)', dotColor: 'bg-gold', badge: stats?.ready },
+    { value: 'UNDER_DELIVERY', label: '10. Under Delivery', dotColor: 'bg-primary' },
+    { value: 'COMPLETED', label: '11. Completed', dotColor: 'bg-neutral-400', badge: stats?.completed },
     { value: 'PAID', label: 'Cleared (Paid Only)', dotColor: 'bg-neutral-400', badge: stats?.cleared },
     { value: 'DOWNPAYMENT', label: 'Downpayment Received', dotColor: 'bg-gold' },
     { value: 'UNPAID', label: 'Pending Clearance (Unpaid)', dotColor: 'bg-gold', badge: stats?.unpaid_partial },
     { value: 'CANCELLED', label: 'Cancelled / Void', dotColor: 'bg-neutral-300' },
+    { value: 'REJECTED', label: 'Rejected', dotColor: 'bg-rose-400' },
   ];
 
   // Date Filter Options
@@ -489,10 +553,20 @@ export default function AdminDashboard() {
     { value: 'THIS_MONTH', label: 'This Month' },
   ];
 
+  // Rows Per Page Options
+  const pageSizeOptions = [
+    { value: 10, label: '10 / page' },
+    { value: 15, label: '15 / page' },
+    { value: 25, label: '25 / page' },
+    { value: 50, label: '50 / page' },
+    { value: 100, label: '100 / page' },
+    { value: 'ALL', label: `All (${filteredBookings.length})` },
+  ];
+
   const userRole = profile?.role || 'admin';
 
   return (
-    <div className="w-full lg:flex-1 lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden animate-fade-in font-body">
+    <div className="w-full pb-16 animate-fade-in font-body space-y-5">
 
       {/* Toast Notification */}
       <AnimatePresence>
@@ -510,74 +584,112 @@ export default function AdminDashboard() {
         )}
       </AnimatePresence>
 
-      {/* ── 1. Locked Top Region (Hero Banner + KPI Cards) ─────────────── */}
-      <div className="flex-shrink-0">
-        <AdminHeroBanner
-          station={userRole}
-          userName={profile?.first_name || 'Administrator'}
-          showBadge={false}
-          badgeLabel={null}
-          creativeRemark="Where creative vision meets studio excellence · Ready for today's productions."
-          onRefresh={() => load(true)}
-          isRefreshing={isRefreshing}
-          onExport={() => handleExportCSV()}
+      {/* ── 1. Hero Banner ─────────────── */}
+      <AdminHeroBanner
+        station={userRole}
+        userName={profile?.first_name || 'Administrator'}
+        showBadge={false}
+        badgeLabel={null}
+        creativeRemark="Where creative vision meets studio excellence · Ready for today's productions."
+        onRefresh={() => load(true)}
+        isRefreshing={isRefreshing}
+      />
+
+      {/* ── Main Executive Studio Dashboard Section (Full Width Edge-to-Edge) ───── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-5">
+        {/* Error Alert */}
+        {error && (
+          <div className="flex items-center gap-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-3.5 py-2 text-xs font-body shadow-xs">
+            <AlertCircle size={15} className="flex-shrink-0 text-amber-600" />
+            <div className="flex-1">
+              <span className="font-semibold mr-1">Notice:</span>
+              <span className="text-amber-700">{error}</span>
+            </div>
+          </div>
+        )}
+
+        {/* ── Primary KPI Status Cards (Clean, direct title above number) ───── */}
+        <CategorizedMetricStrip
+          stats={stats}
+          loading={loadingStats}
+          activeFilter={statusFilter}
+          onSelectFilter={(filterKey) => {
+            setActivePreset('ALL');
+            setStatusFilter((prev) => (prev === filterKey ? 'ALL' : filterKey));
+            setPage(1);
+          }}
         />
 
-        {/* ── 2. Categorized Key Metrics (Locked inside top region) ───── */}
-        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-7 mt-2 sm:mt-2.5 mb-2 sm:mb-2.5">
-          {/* Error Alert */}
-          {error && (
-            <div className="mb-2 flex items-center gap-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-3.5 py-2 text-xs font-body shadow-xs">
-              <AlertCircle size={15} className="flex-shrink-0 text-amber-600" />
-              <div className="flex-1">
-                <span className="font-semibold mr-1">Notice:</span>
-                <span className="text-amber-700">{error}</span>
-              </div>
+        {/* ── Master Studio Intelligence Hub (Unified One Big Box Section) ── */}
+        <div className="relative rounded-3xl border border-[#c9a96e]/35 bg-white shadow-xs overflow-hidden font-body ring-1 ring-[#c9a96e]/15">
+          {/* Studio Signature Gold Top Accent Line */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-amber-600 via-[#c9a96e] to-amber-600" />
+
+
+          {/* Main Box Interior: Two Main Engines with Clean Subtle Divider */}
+          <div className="grid grid-cols-1 xl:grid-cols-12 divide-y xl:divide-y-0 xl:divide-x divide-neutral-200/80 items-stretch bg-white">
+            {/* Left: Revenue & Booking Trajectory */}
+            <div className="xl:col-span-6 p-4 sm:p-5 xl:p-6 flex flex-col justify-between bg-white">
+              <StudioRevenueTrendChart bookings={recent} loading={loadingTables} isEmbedded />
             </div>
-          )}
 
-          <CategorizedMetricStrip
-            stats={stats}
-            loading={loadingStats}
-            activeFilter={statusFilter}
-            onSelectFilter={(filterKey) => {
-              setActivePreset('ALL');
-              setStatusFilter((prev) => (prev === filterKey ? 'ALL' : filterKey));
-            }}
-          />
+            {/* Right: Service Demand */}
+            <div className="xl:col-span-6 p-4 sm:p-5 xl:p-6 flex flex-col justify-between bg-white">
+
+              <StudioPackageShareChart
+                bookings={recent}
+                services={servicesList}
+                loading={loadingTables}
+                activeServiceFilter={searchQuery}
+                onSelectService={(serviceName) => {
+                  setSearchQuery((prev) => (prev === serviceName ? '' : serviceName));
+                  setPage(1);
+                }}
+                isEmbedded
+              />
+            </div>
+          </div>
         </div>
-      </div>
 
-      {/* ── 3. Operational Bookings & Production Queue (Only this area scrolls) ── */}
-      <div className="w-full max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-7 pb-2.5 sm:pb-3 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
+        {/* ── Studio Operations Hub: Weekly Intake, Workflow Line Chart & Collections (Single Card) ── */}
+        <StudioOperationsHub
+          bookings={recent}
+          onSelectStatus={(key) => {
+            setActivePreset('ALL');
+            setStatusFilter((prev) => (prev === key ? 'ALL' : key));
+            setPage(1);
+          }}
+        />
 
-        {/* Unified Bookings & Production Queue Box */}
-        <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs lg:flex-1 lg:min-h-0 lg:flex lg:flex-col overflow-hidden">
+
+        {/* ── Master Operational Bookings & Production Queue (ALL Records with Pagination) ── */}
+        <div className="relative rounded-3xl border border-[#c9a96e]/35 bg-white shadow-xs overflow-hidden font-body ring-1 ring-[#c9a96e]/15">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-amber-600 via-[#c9a96e] to-amber-600" />
 
           {/* Section Header & Modular Control Bar */}
-          <div className="p-3.5 sm:p-4 space-y-3 border-b border-neutral-100 flex-shrink-0 bg-white">
+          <div className="p-4 sm:p-5 space-y-3.5 border-b border-neutral-100 flex-shrink-0 bg-white">
 
             {/* Header row */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="font-heading text-lg text-primary font-bold">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white shadow-sm ring-1 ring-amber-600/30 shrink-0">
+                  <Layers size={18} />
+                </div>
+                <h3 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 tracking-tight">
                   Bookings & Production Queue
                 </h3>
-                <p className="text-xs text-neutral-400 mt-0.5">
-                  Live studio workflow, schedules, and active customer orders
-                </p>
               </div>
 
               <div className="flex items-center gap-2.5">
                 {/* View switcher */}
-                <div className="flex items-center bg-neutral-100 p-0.5 rounded-xl border border-neutral-200/60 h-9">
+                <div className="flex items-center bg-neutral-100/90 p-0.5 rounded-xl border border-neutral-200/70 h-9">
                   <button
                     type="button"
                     onClick={() => setViewMode('table')}
-                    className={`h-7 px-2.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center ${
+                    className={`h-7 px-2.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center cursor-pointer ${
                       viewMode === 'table'
-                        ? 'bg-white text-primary shadow-xs'
-                        : 'text-neutral-500 hover:text-primary'
+                        ? 'bg-white text-neutral-900 shadow-xs border border-neutral-200/60 font-semibold'
+                        : 'text-neutral-500 hover:text-neutral-900'
                     }`}
                     title="Table View"
                   >
@@ -586,10 +698,10 @@ export default function AdminDashboard() {
                   <button
                     type="button"
                     onClick={() => setViewMode('cards')}
-                    className={`h-7 px-2.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center ${
+                    className={`h-7 px-2.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center cursor-pointer ${
                       viewMode === 'cards'
-                        ? 'bg-white text-primary shadow-xs'
-                        : 'text-neutral-500 hover:text-primary'
+                        ? 'bg-white text-neutral-900 shadow-xs border border-neutral-200/60 font-semibold'
+                        : 'text-neutral-500 hover:text-neutral-900'
                     }`}
                     title="Grid Cards View"
                   >
@@ -597,26 +709,27 @@ export default function AdminDashboard() {
                   </button>
                 </div>
 
-                {/* Refresh Button (Icon Only) */}
+                {/* Refresh Button */}
                 <button
                   type="button"
                   onClick={() => load(true)}
                   disabled={isRefreshing}
-                  className="w-9 h-9 flex items-center justify-center border border-neutral-200 hover:border-neutral-300 rounded-xl hover:bg-neutral-50 transition-colors disabled:opacity-50 text-neutral-600 hover:text-neutral-900 cursor-pointer shadow-2xs"
+                  className="w-9 h-9 flex items-center justify-center border border-neutral-200/80 hover:border-amber-400/60 rounded-xl bg-white hover:bg-amber-50/40 transition-colors disabled:opacity-50 text-neutral-600 hover:text-neutral-900 cursor-pointer shadow-2xs"
                   title="Refresh operational queue"
                   aria-label="Refresh queue"
                 >
-                  <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-gold' : 'text-neutral-500'} />
+                  <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-amber-600' : 'text-neutral-500'} />
                 </button>
 
+                {/* Export CSV Button */}
                 <button
                   type="button"
                   onClick={() => handleExportCSV()}
                   disabled={filteredBookings.length === 0}
-                  className="btn-ghost h-9 px-3.5 text-xs flex items-center gap-1.5 border border-neutral-200 rounded-xl hover:bg-neutral-50"
-                  title="Export to CSV"
+                  className="h-9 px-3.5 text-xs font-semibold flex items-center gap-1.5 border border-neutral-200/80 hover:border-amber-400/60 rounded-xl bg-white hover:bg-amber-50/40 text-neutral-700 hover:text-neutral-900 shadow-2xs transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  title="Export filtered records to CSV"
                 >
-                  <Download size={13} />
+                  <Download size={13} className="text-amber-700" />
                   <span className="hidden sm:inline">Export CSV</span>
                 </button>
               </div>
@@ -633,8 +746,18 @@ export default function AdminDashboard() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search client, ref #, service..."
-                  className="w-full h-10 pl-9 pr-4 bg-neutral-50 hover:bg-neutral-100/60 focus:bg-white rounded-xl text-sm font-body border border-neutral-200/80 focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all shadow-2xs"
+                  className="w-full h-9 pl-9 pr-8 bg-neutral-50/80 hover:bg-neutral-100/60 focus:bg-white rounded-xl text-xs sm:text-sm font-body border border-neutral-200/80 focus:border-[#c9a96e] focus:ring-2 focus:ring-[#c9a96e]/20 outline-none transition-all shadow-2xs"
                 />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+                    title="Clear search"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
               </div>
 
               {/* Category Dropdown */}
@@ -679,11 +802,11 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Queue View: Table vs Cards (within the same single box - scrollable queue body) */}
-          <div className="lg:flex-1 lg:min-h-0 overflow-y-auto overflow-x-auto">
+          {/* Queue View: Table vs Cards */}
+          <div className="overflow-x-auto min-h-[380px]">
             {loadingTables ? (
               <div className="p-6 space-y-3">
-                {[...Array(5)].map((_, i) => (
+                {[...Array(6)].map((_, i) => (
                   <div key={i} className="h-12 bg-neutral-100 rounded-xl animate-pulse" />
                 ))}
               </div>
@@ -691,216 +814,341 @@ export default function AdminDashboard() {
               <EmptyState message="No matching bookings found for the selected filter." />
             ) : viewMode === 'table' ? (
               <table className="w-full text-sm font-body">
-                <thead className="sticky top-0 z-10 bg-neutral-50 shadow-xs">
-                  <tr className="bg-neutral-50/95 border-b border-neutral-200 text-left text-xs font-bold text-neutral-600 uppercase tracking-wider backdrop-blur-xs">
-                    <th className="px-5 py-3 w-12 text-center">
+                <thead className="sticky top-0 z-10 bg-[#faf7f2]/95 border-b border-[#c9a96e]/25 shadow-2xs backdrop-blur-md">
+                  <tr className="text-left text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
+                    <th className="px-4 py-3.5 w-12 text-center">
                       <input
                         type="checkbox"
-                        checked={selectedBookingIds.size > 0 && selectedBookingIds.size === filteredBookings.length}
+                        checked={paginatedBookings.length > 0 && paginatedBookings.every((b) => selectedBookingIds.has(b.id))}
                         onChange={handleToggleSelectAll}
-                        className="rounded border-neutral-300 text-gold focus:ring-gold/30 cursor-pointer"
+                        className="rounded border-neutral-300 text-amber-600 focus:ring-amber-500/30 cursor-pointer accent-[#c9a96e]"
+                        title="Select all on this page"
                       />
                     </th>
-                    <th className="px-5 py-3 whitespace-nowrap">Ref #</th>
-                    <th className="px-5 py-3 min-w-[240px]">Client & Package</th>
-                    <th className="px-5 py-3 w-48 hidden md:table-cell">Schedule</th>
-                    <th className="px-5 py-3 min-w-[170px]">Order Progress</th>
-                    <th className="px-5 py-3 w-40 whitespace-nowrap">Payment Status</th>
-                    <th className="px-5 py-3 w-28 text-right">Quick Action</th>
+                    <th className="px-4 py-3.5 whitespace-nowrap">Ref #</th>
+                    <th className="px-4 py-3.5 min-w-[220px]">Client & Package</th>
+                    <th className="px-4 py-3.5 w-48 hidden md:table-cell">Schedule</th>
+                    <th className="px-4 py-3.5 min-w-[170px]">Order Progress</th>
+                    <th className="px-4 py-3.5 w-40 whitespace-nowrap">Payment Status</th>
+                    <th className="px-4 py-3.5 w-28 text-right">Quick Action</th>
                   </tr>
                 </thead>
-                  <tbody className="divide-y divide-neutral-100">
-                    {filteredBookings.map((booking) => {
-                      const isChecked = selectedBookingIds.has(booking.id);
-                      return (
-                        <tr
-                          key={booking.id}
-                          onClick={() => setInspectingBooking(booking)}
-                          title="Click row to inspect booking details"
-                          className={`hover:bg-gold/8 hover:shadow-xs transition-all duration-150 group cursor-pointer ${
-                            isChecked ? 'bg-amber-50/40' : ''
-                          }`}
-                        >
-                          {/* Selection Checkbox */}
-                          <td className="px-5 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => handleToggleSelectRow(booking.id)}
-                              className="rounded border-neutral-300 text-gold focus:ring-gold/30 cursor-pointer"
-                            />
-                          </td>
-
-                          {/* Reference Number */}
-                          <td className="px-5 py-3 whitespace-nowrap">
-                            <span className="font-mono text-xs font-bold text-gold group-hover:text-primary group-hover:underline transition-colors whitespace-nowrap">
-                              #{booking.booking_number}
-                            </span>
-                          </td>
-
-                          {/* Customer & Service */}
-                          <td className="px-5 py-3">
-                            <div className="space-y-0.5">
-                              <p className="font-semibold text-neutral-900 text-sm group-hover:text-gold-dark transition-colors">
-                                {booking.customer?.first_name} {booking.customer?.last_name}
-                              </p>
-                              <p className="text-xs text-neutral-500 truncate max-w-[240px]">
-                                {booking.service?.name || 'Studio Session'}
-                              </p>
-                            </div>
-                          </td>
-
-                          {/* Schedule */}
-                          <td className="px-5 py-3 hidden md:table-cell text-xs font-medium text-neutral-700">
-                            <div className="flex items-center gap-1.5">
-                              <CalendarDays size={13} className="text-neutral-400 flex-shrink-0" />
-                              <span>{formatDate(booking.event_date)}</span>
-                            </div>
-                          </td>
-
-                          {/* Order Progress */}
-                          <td className="px-5 py-3">
-                            <BookingLifecycleBadge
-                              status={booking.status}
-                              showStatus={true}
-                              showClearance={false}
-                            />
-                          </td>
-
-                          {/* Payment Status */}
-                          <td className="px-5 py-3 whitespace-nowrap">
-                            <BookingLifecycleBadge
-                              booking={booking}
-                              paymentStatus={booking.payment_status}
-                              showStatus={false}
-                              showClearance={true}
-                            />
-                          </td>
-
-                          {/* Direct Actions Cell */}
-                          <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-end gap-1.5">
-                              {/* Inspect button */}
-                              <button
-                                type="button"
-                                onClick={() => setInspectingBooking(booking)}
-                                className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-gold-dark hover:bg-gold/10 transition-colors cursor-pointer"
-                                title="Inspect Details"
-                              >
-                                <Eye size={15} />
-                              </button>
-
-                              {/* 3-Dot Action Menu */}
-                              <RowActionDropdown
-                                booking={booking}
-                                onInspect={(b) => setInspectingBooking(b)}
-                                onFastConfirm={handleFastConfirm}
-                              />
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              ) : (
-                /* Modular Cards View */
-                <div className="p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {filteredBookings.map((booking) => {
+                <tbody className="divide-y divide-neutral-100/90">
+                  {paginatedBookings.map((booking) => {
                     const isChecked = selectedBookingIds.has(booking.id);
                     return (
-                      <motion.div
+                      <tr
                         key={booking.id}
-                        whileHover={{ y: -2 }}
                         onClick={() => setInspectingBooking(booking)}
-                        className={`rounded-2xl p-4 border transition-all space-y-3 cursor-pointer ${
+                        title="Click row to inspect booking details"
+                        className={`transition-colors duration-150 group cursor-pointer ${
                           isChecked
-                            ? 'border-gold bg-amber-50/20 shadow-sm'
-                            : 'border-neutral-200/80 bg-white hover:border-gold/50 hover:shadow-md'
+                            ? 'bg-amber-50/60 border-l-2 border-l-amber-500'
+                            : 'hover:bg-[#faf7f2]/80'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={(e) => {
-                                e.stopPropagation();
-                                handleToggleSelectRow(booking.id);
-                              }}
-                              className="rounded border-neutral-300 text-gold focus:ring-gold/30 cursor-pointer"
-                            />
-                            <div>
-                              <span className="font-mono text-[11px] font-bold text-gold block">
-                                #{booking.booking_number}
-                              </span>
-                              <h4 className="font-semibold text-primary text-sm">
-                                {booking.customer?.first_name} {booking.customer?.last_name}
-                              </h4>
-                            </div>
-                          </div>
+                        {/* Selection Checkbox */}
+                        <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleSelectRow(booking.id)}
+                            className="rounded border-neutral-300 text-amber-600 focus:ring-amber-500/30 cursor-pointer accent-[#c9a96e]"
+                          />
+                        </td>
 
-                          <div onClick={(e) => e.stopPropagation()}>
+                        {/* Reference Number */}
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <span
+                            className="font-mono text-xs font-bold text-amber-800 group-hover:text-amber-950 group-hover:underline transition-colors cursor-pointer"
+                            title={`Booking #${booking.booking_number} · Click row to inspect complete record`}
+                          >
+                            #{booking.booking_number}
+                          </span>
+                        </td>
+
+                        {/* Customer & Service */}
+                        <td className="px-4 py-3.5">
+                          <div className="space-y-0.5">
+                            <p
+                              className="font-semibold text-neutral-900 text-sm group-hover:text-amber-900 transition-colors truncate"
+                              title={`Client: ${booking.customer?.first_name} ${booking.customer?.last_name || ''} (${booking.customer?.email || 'No email'})`}
+                            >
+                              {booking.customer?.first_name} {booking.customer?.last_name}
+                            </p>
+                            <p
+                              className="text-xs text-neutral-500 truncate max-w-[240px] flex items-center gap-1.5"
+                              title={`Package: ${booking.service?.name || 'Studio Session'} · Total: ₱${Number(booking.total_amount || 0).toLocaleString()}`}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#c9a96e]/70 shrink-0" />
+                              <span>{booking.service?.name || 'Studio Session'}</span>
+                              {Number(booking.total_amount) > 0 && (
+                                <span className="text-neutral-400 font-mono text-[11px]">· ₱{Number(booking.total_amount).toLocaleString()}</span>
+                              )}
+                            </p>
+                          </div>
+                        </td>
+
+                        {/* Schedule */}
+                        <td className="px-4 py-3.5 hidden md:table-cell text-xs font-medium text-neutral-700">
+                          {booking.event_date ? (
+                            <div
+                              className="flex items-center gap-1.5 text-xs font-medium text-neutral-800"
+                              title={`Session Date: ${new Date(booking.event_date).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}${booking.preferred_time ? ` at ${String(booking.preferred_time).slice(0, 5)}` : ''}`}
+                            >
+                              <CalendarDays size={13} className="text-amber-700 shrink-0" />
+                              <span>{formatDate(booking.event_date)}</span>
+                              {booking.preferred_time && (
+                                <span className="text-[11px] text-neutral-400 font-mono">· {String(booking.preferred_time).slice(0, 5)}</span>
+                              )}
+                            </div>
+                          ) : (
+                            <div
+                              className="flex items-center gap-1.5 text-xs font-medium text-neutral-400"
+                              title="Session date not yet scheduled"
+                            >
+                              <Clock size={13} className="text-neutral-400 shrink-0" />
+                              <span>Unscheduled</span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Order Progress */}
+                        <td
+                          className="px-4 py-3.5"
+                          title={`Lifecycle stage: ${booking.status || 'PENDING'}`}
+                        >
+                          <BookingLifecycleBadge
+                            status={booking.status}
+                            showStatus={true}
+                            showClearance={false}
+                            variant="text"
+                          />
+                        </td>
+
+                        {/* Payment Status */}
+                        <td
+                          className="px-4 py-3.5 whitespace-nowrap"
+                          title={`Payment clearance: ${booking.payment_status || 'UNPAID'} (Total: ₱${Number(booking.total_amount || 0).toLocaleString()})`}
+                        >
+                          <BookingLifecycleBadge
+                            booking={booking}
+                            paymentStatus={booking.payment_status}
+                            showStatus={false}
+                            showClearance={true}
+                            variant="text"
+                          />
+                        </td>
+
+                        {/* Direct Actions Cell */}
+                        <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1">
+                            {/* Inspect button */}
+                            <button
+                              type="button"
+                              onClick={() => setInspectingBooking(booking)}
+                              className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-amber-900 hover:bg-amber-500/10 border border-transparent hover:border-amber-300/40 transition-all cursor-pointer"
+                              title="Inspect Details"
+                            >
+                              <Eye size={15} />
+                            </button>
+
+                            {/* 3-Dot Action Menu */}
                             <RowActionDropdown
                               booking={booking}
                               onInspect={(b) => setInspectingBooking(b)}
                               onFastConfirm={handleFastConfirm}
                             />
                           </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              /* Modular Cards View */
+              <div className="p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {paginatedBookings.map((booking) => {
+                  const isChecked = selectedBookingIds.has(booking.id);
+                  return (
+                    <motion.div
+                      key={booking.id}
+                      whileHover={{ y: -2 }}
+                      onClick={() => setInspectingBooking(booking)}
+                      className={`rounded-2xl p-4 border transition-all space-y-3 cursor-pointer ${
+                        isChecked
+                          ? 'border-amber-500 bg-amber-50/30 shadow-xs'
+                          : 'border-neutral-200/80 bg-white hover:border-[#c9a96e]/60 hover:shadow-sm'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleToggleSelectRow(booking.id);
+                            }}
+                            className="rounded border-neutral-300 text-amber-600 focus:ring-amber-500/30 cursor-pointer accent-[#c9a96e]"
+                          />
+                          <div>
+                            <span className="font-mono text-xs font-bold text-amber-800">
+                              #{booking.booking_number}
+                            </span>
+                            <h4 className="font-semibold text-neutral-900 text-sm mt-0.5">
+                              {booking.customer?.first_name} {booking.customer?.last_name}
+                            </h4>
+                          </div>
                         </div>
 
-                        <div className="text-xs text-neutral-500 space-y-1">
-                          <p className="truncate font-medium text-neutral-700">
-                            {booking.service?.name || 'Photography Session'}
-                          </p>
-                          <p className="flex items-center gap-1.5">
-                            <CalendarDays size={12} className="text-neutral-400" />
-                            <span>{formatDate(booking.event_date)}</span>
-                          </p>
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <RowActionDropdown
+                            booking={booking}
+                            onInspect={(b) => setInspectingBooking(b)}
+                            onFastConfirm={handleFastConfirm}
+                          />
                         </div>
+                      </div>
 
-                        <div className="pt-2 border-t border-neutral-100 flex items-center justify-between">
+                      <div className="text-xs text-neutral-500 space-y-1.5">
+                        <p
+                          className="truncate font-medium text-neutral-700 flex items-center gap-1.5"
+                          title={`Service Package: ${booking.service?.name || 'Photography Session'} · Total: ₱${Number(booking.total_amount || 0).toLocaleString()}`}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#c9a96e]/70 shrink-0" />
+                          <span>{booking.service?.name || 'Photography Session'}</span>
+                        </p>
+                        <div
+                          className="flex items-center gap-1.5"
+                          title={booking.event_date ? `Reserved session date: ${new Date(booking.event_date).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}` : 'No date scheduled yet'}
+                        >
+                          {booking.event_date ? (
+                            <span className="flex items-center gap-1.5 text-xs font-medium text-neutral-800">
+                              <CalendarDays size={12} className="text-amber-700 shrink-0" />
+                              <span>{formatDate(booking.event_date)}</span>
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1.5 text-xs font-medium text-neutral-400">
+                              <Clock size={12} className="text-neutral-400 shrink-0" />
+                              <span>Unscheduled</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-2.5 border-t border-neutral-100 flex items-center justify-between">
+                        <div title={`Status: ${booking.status || 'PENDING'} · Clearance: ${booking.payment_status || 'UNPAID'}`}>
                           <BookingLifecycleBadge
                             booking={booking}
                             status={booking.status}
                             paymentStatus={booking.payment_status}
                             layout="inline"
+                            variant="text"
                           />
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setInspectingBooking(booking);
-                            }}
-                            className="text-xs text-gold hover:text-primary font-semibold flex items-center gap-1 transition-colors"
-                          >
-                            <span>Manage</span>
-                            <ArrowRight size={11} />
-                          </button>
                         </div>
-                      </motion.div>
-                    );
-                  })}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setInspectingBooking(booking);
+                          }}
+                          className="text-xs text-amber-700 hover:text-amber-900 font-semibold flex items-center gap-1 transition-colors cursor-pointer group"
+                          title={`Quick inspect & manage booking #${booking.booking_number}`}
+                        >
+                          <span>Manage</span>
+                          <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Table pagination & footer bar */}
+          <div className="p-3.5 sm:p-4 px-4 sm:px-6 border-t border-[#c9a96e]/20 bg-[#faf7f2]/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-neutral-600 font-body backdrop-blur-xs">
+            {/* Left side: Navigation buttons if multiple pages */}
+            <div className="flex items-center gap-2">
+              {pageSize !== 'ALL' && totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setPage(1)}
+                    disabled={page <= 1}
+                    className="w-7 h-7 rounded-lg border border-neutral-200/80 bg-white flex items-center justify-center text-neutral-600 hover:bg-amber-50/50 hover:text-amber-900 hover:border-amber-300/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                    title="First Page"
+                  >
+                    <ChevronsLeft size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                    className="w-7 h-7 rounded-lg border border-neutral-200/80 bg-white flex items-center justify-center text-neutral-600 hover:bg-amber-50/50 hover:text-amber-900 hover:border-amber-300/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                    title="Previous Page"
+                  >
+                    <ChevronLeft size={13} />
+                  </button>
+
+                  <span className="px-2 text-xs font-medium text-neutral-600">
+                    Page <strong className="text-neutral-900">{page}</strong> of <strong className="text-neutral-900">{totalPages}</strong>
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages}
+                    className="w-7 h-7 rounded-lg border border-neutral-200/80 bg-white flex items-center justify-center text-neutral-600 hover:bg-amber-50/50 hover:text-amber-900 hover:border-amber-300/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                    title="Next Page"
+                  >
+                    <ChevronRight size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage(totalPages)}
+                    disabled={page >= totalPages}
+                    className="w-7 h-7 rounded-lg border border-neutral-200/80 bg-white flex items-center justify-center text-neutral-600 hover:bg-amber-50/50 hover:text-amber-900 hover:border-amber-300/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                    title="Last Page"
+                  >
+                    <ChevronsRight size={13} />
+                  </button>
                 </div>
               )}
             </div>
 
-            {/* Table footer */}
-            <div className="p-3 sm:p-3.5 px-6 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-400 font-body bg-neutral-50/50 flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-gold inline-block animate-pulse" />
-                <span className="font-medium text-neutral-600">
-                  {filteredBookings.length} {filteredBookings.length === 1 ? 'record' : 'records'} loaded from live database
-                </span>
+            {/* Right side: Modern rows dropdown and Bookings Central link */}
+            <div className="flex items-center gap-3.5 sm:gap-5 justify-end ml-auto">
+              {/* Rows Per Page with Modern CustomDropdown */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-neutral-500 font-medium">Rows:</span>
+                <CustomDropdown
+                  value={pageSize}
+                  onChange={(val) => {
+                    const parsed = val === 'ALL' ? 'ALL' : Number(val);
+                    setPageSize(parsed);
+                    setPage(1);
+                  }}
+                  options={pageSizeOptions}
+                  popoverWidth="w-32"
+                  align="right"
+                  direction="up"
+                  size="sm"
+                  className="w-28"
+                />
               </div>
+
               <Link
                 to="/admin/bookings"
-                className="flex items-center gap-1 text-gold hover:text-primary font-semibold transition-colors"
+                className="flex items-center gap-1.5 text-amber-700 hover:text-amber-900 font-semibold transition-colors shrink-0 group"
               >
-                <span>Full Bookings Management</span>
-                <ArrowRight size={12} />
+                <span>Bookings Central</span>
+                <ArrowRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
               </Link>
             </div>
+          </div>
 
         </div>
 
@@ -1017,7 +1265,7 @@ export default function AdminDashboard() {
                     <span>Automated Customer Announcement</span>
                   </div>
                   <p className="text-neutral-600 leading-relaxed">
-                    Approving this reservation will lock in the pictorial date and studio bay location. The system will immediately notify the client to settle their downpayment in their Payment Dashboard and dispatch their session schedule confirmation.
+                    Approving this reservation will lock in the pictorial date and studio session venue. The system will immediately notify the client to settle their downpayment in their Payment Dashboard and dispatch their session schedule confirmation.
                   </p>
                 </div>
 

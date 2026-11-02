@@ -28,6 +28,7 @@
 
 export const GALLERY_CATEGORIES = [
   { id: "all", label: "All" },
+  { id: "community", label: "Best Captures" },
   { id: "portrait", label: "Portrait" },
   { id: "graduation", label: "Graduation" },
   { id: "event", label: "Events" },
@@ -38,6 +39,16 @@ export const GALLERY_CATEGORIES = [
 
 // ─── PLACEHOLDER GALLERY ITEMS — replace with real studio photos before launch ─
 export const GALLERY_ITEMS = [
+  // ── Customer Best Captures ───────────────────────────────────────────────────
+  {
+    id: "c1", category: "community",
+    title: "Class of 2026 Milestone Cap Toss",
+    description: "Shared by client Maria Santos — An unforgettable graduation shoot at E-Kodak Studio!",
+    image: "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=800&q=80&auto=format&fit=crop",
+    aspectRatio: "portrait",
+    likes: 188,
+    badges: ["Client Pick", "Verified Graduate"],
+  },
   // ── Portrait ─────────────────────────────────────────────────────────────────
   {
     id: "p1", category: "portrait",

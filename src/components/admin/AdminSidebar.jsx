@@ -37,7 +37,7 @@ function SidebarLink({ item, onClose, isCollapsed }) {
       onClick={onClose}
       title={isCollapsed ? item.name : undefined}
       className={({ isActive }) =>
-        `group relative flex items-center h-9 w-full rounded-xl select-none px-2 transition-colors duration-150 font-body ${
+        `group relative flex items-center h-10 w-full rounded-xl select-none px-2.5 transition-all duration-150 font-body ${
           isActive
             ? 'bg-neutral-900 text-white shadow-xs font-semibold'
             : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
@@ -115,10 +115,10 @@ SidebarLink.propTypes = {
 function NavSection({ label, items, onClose, isCollapsed }) {
   if (!items || items.length === 0) return null;
   return (
-    <div className="pt-2.5 border-t border-neutral-150/60">
-      <div className="h-4 px-2.5 flex items-center relative overflow-hidden mb-1">
+    <div className="pt-3.5 mt-1 border-t border-neutral-100">
+      <div className="h-5 px-3 flex items-center relative overflow-hidden mb-1.5">
         <p
-          className={`text-[9.5px] font-bold text-neutral-400 uppercase tracking-[0.09em] whitespace-nowrap transition-all duration-300 ease-[cubic-bezier(0.2,0,0,1)] ${
+          className={`text-[10px] font-bold text-neutral-400 uppercase tracking-[0.1em] whitespace-nowrap transition-all duration-300 ease-[cubic-bezier(0.2,0,0,1)] ${
             isCollapsed
               ? 'opacity-0 -translate-x-2 pointer-events-none'
               : 'opacity-100 translate-x-0'
@@ -127,12 +127,12 @@ function NavSection({ label, items, onClose, isCollapsed }) {
           {label}
         </p>
         <div
-          className={`absolute inset-x-3.5 top-2 h-px bg-neutral-100 transition-opacity duration-300 ${
+          className={`absolute inset-x-3.5 top-2.5 h-px bg-neutral-100 transition-opacity duration-300 ${
             isCollapsed ? 'opacity-100' : 'opacity-0'
           }`}
         />
       </div>
-      <div className="space-y-0.5">
+      <div className="space-y-1">
         {items.map((item) => (
           <SidebarLink
             key={item.path}
@@ -310,13 +310,13 @@ export default function AdminSidebar({ onClose, onOpenProfile, isCollapsed = fal
       </div>
 
       {/* Scrollable Navigation */}
-      <div className="flex-1 overflow-y-auto py-2.5 px-3 scrollbar-hide space-y-2.5">
+      <div className="flex-1 overflow-y-auto py-3.5 px-3.5 scrollbar-hide space-y-3.5">
         
         {/* 1. Core Daily Workflow */}
         <div>
-          <div className="h-4 px-2.5 flex items-center relative overflow-hidden mb-1">
+          <div className="h-5 px-3 flex items-center relative overflow-hidden mb-1.5">
             <p
-              className={`text-[9.5px] font-bold text-neutral-400 uppercase tracking-[0.09em] whitespace-nowrap transition-all duration-300 ease-[cubic-bezier(0.2,0,0,1)] ${
+              className={`text-[10px] font-bold text-neutral-400 uppercase tracking-[0.1em] whitespace-nowrap transition-all duration-300 ease-[cubic-bezier(0.2,0,0,1)] ${
                 isCollapsed
                   ? 'opacity-0 -translate-x-2 pointer-events-none'
                   : 'opacity-100 translate-x-0'
@@ -325,7 +325,7 @@ export default function AdminSidebar({ onClose, onOpenProfile, isCollapsed = fal
               Core Operations
             </p>
           </div>
-          <div className="space-y-0.5">
+          <div className="space-y-1">
             {coreNav.map((item) => (
               <SidebarLink
                 key={item.path}
@@ -349,26 +349,30 @@ export default function AdminSidebar({ onClose, onOpenProfile, isCollapsed = fal
       </div>
 
       {/* Profile Footer */}
-      <div className="flex-shrink-0 border-t border-neutral-100/80 p-3 pt-2.5 bg-neutral-50/50 space-y-1.5 overflow-hidden">
+      <div className="flex-shrink-0 border-t border-neutral-100 p-3 pt-3 pb-3.5 bg-neutral-50/70 space-y-2 overflow-hidden">
         {/* Profile Card */}
         <div
           onClick={() => {
             onClose?.();
             onOpenProfile?.();
           }}
-          className="h-11 w-full rounded-xl flex items-center px-2 transition-all duration-150 hover:bg-white hover:shadow-xs cursor-pointer select-none group min-w-0"
+          className="h-12 w-full rounded-xl flex items-center px-2.5 transition-all duration-150 hover:bg-white hover:shadow-xs cursor-pointer select-none group min-w-0"
           title={`${profile?.first_name || 'Admin'} ${profile?.last_name || ''} (${roleLabel}) - Edit Profile`}
         >
           {/* Avatar slot - exactly anchored at 40px center */}
           <div className="w-9 h-9 flex items-center justify-center shrink-0 relative">
-            <div className="w-8 h-8 rounded-full bg-gold/10 flex items-center justify-center text-gold font-heading font-bold overflow-hidden ring-2 ring-gold/25 group-hover:ring-gold/60 transition-all shrink-0">
+            <div className="w-9 h-9 rounded-full bg-gold/10 flex items-center justify-center text-gold font-heading font-bold overflow-hidden ring-2 ring-gold/25 group-hover:ring-gold/60 transition-all shrink-0">
               {profile?.avatar_url ? (
-                <img src={profile.avatar_url} alt="Avatar" className="w-8 h-8 rounded-full object-cover" />
+                <img
+                  src={profile.avatar_url}
+                  alt="Avatar"
+                  className="w-full h-full object-cover rounded-full block"
+                />
               ) : (
                 <span className="text-xs">{initial}</span>
               )}
             </div>
-            <span className="absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
           </div>
 
           {/* Sliding profile info */}
@@ -379,10 +383,10 @@ export default function AdminSidebar({ onClose, onOpenProfile, isCollapsed = fal
                 : 'opacity-100 max-w-[130px] translate-x-0'
             }`}
           >
-            <p className="text-[12.5px] font-semibold text-neutral-900 truncate group-hover:text-gold-dark transition-colors font-body leading-tight">
+            <p className="text-[13px] font-semibold text-neutral-900 truncate group-hover:text-gold-dark transition-colors font-body leading-tight">
               {profile?.first_name || 'Admin'} {profile?.last_name || ''}
             </p>
-            <p className="text-[10.5px] text-gold font-medium truncate font-body mt-0.5">
+            <p className="text-[11px] text-gold font-medium truncate font-body mt-0.5">
               {roleLabel}
             </p>
           </div>
@@ -415,7 +419,7 @@ export default function AdminSidebar({ onClose, onOpenProfile, isCollapsed = fal
         <button
           type="button"
           onClick={handleLogout}
-          className="h-9 w-full flex items-center px-2 rounded-xl hover:bg-rose-50 text-rose-600 transition-colors duration-150 cursor-pointer select-none border-0 outline-none group"
+          className="h-10 w-full flex items-center px-2.5 rounded-xl hover:bg-rose-50 text-rose-600 transition-colors duration-150 cursor-pointer select-none border-0 outline-none group"
           title={isCollapsed ? 'Sign Out' : undefined}
           aria-label="Sign Out"
         >

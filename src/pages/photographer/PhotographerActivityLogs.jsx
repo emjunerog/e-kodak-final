@@ -28,8 +28,7 @@ export default function PhotographerActivityLogs() {
         station="photographer"
         userName={displayName}
         title="Photographer Activity Logs"
-        subtitle="Live activity trail of your working schedule changes, shift commitments, and booking sessions."
-        statusSummary="Photographer Activity History Active"
+        subtitle="Live activity trail of your working schedule changes, shift commitments, and sessions."
         primaryAction={{
           label: 'Shoot Calendar',
           href: '/photographer/availability',
@@ -44,8 +43,8 @@ export default function PhotographerActivityLogs() {
         isRefreshing={false}
       />
 
-      {/* ── Unified Activity Logs Dashboard ──────────────────────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Unified Activity Logs Dashboard (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
         <AdminActivityLogs key={refreshKey} />
       </div>
     </div>

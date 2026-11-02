@@ -25,9 +25,8 @@ import {
   Copy, BookOpen, Layers, Trash2, AlertTriangle, History
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { getCustomers, deleteCustomer } from '../../services/adminService';
+import { getCustomers, deleteCustomer, getAdminServices } from '../../services/adminService';
 import { subscribeToCustomerPresence } from '../../services/presenceService';
-import { maskClientPII } from '../../lib/securityValidator';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import CustomDropdown from '../../components/ui/CustomDropdown';
@@ -149,12 +148,10 @@ export default function AdminCustomers() {
   // Search & Filter state
   const [search, setSearch] = useState('');
   const [query, setQuery]   = useState('');
-  const [presenceFilter, setPresenceFilter]       = useState('ALL');    // ALL | ONLINE | OFFLINE
-  const [statusFilter, setStatusFilter]           = useState('ALL');    // ALL | ACTIVE | INACTIVE
-  const [affiliationFilter, setAffiliationFilter] = useState('ALL');    // ALL | STUDENT | GENERAL
-
-  // Controlled PII Protection
-  const [maskPii, setMaskPii] = useState(true);
+  const [presenceFilter, setPresenceFilter] = useState('ALL'); // ALL | ONLINE | OFFLINE
+  const [statusFilter, setStatusFilter]     = useState('ALL'); // ALL | ACTIVE | INACTIVE
+  const [packageFilter, setPackageFilter]   = useState('ALL'); // ALL | <package_id>
+  const [servicesList, setServicesList]     = useState([]);
 
   // Live Presence State (Real-time tracking of active portal users)
   const [liveOnlineMap, setLiveOnlineMap] = useState(new Map());
@@ -176,7 +173,18 @@ export default function AdminCustomers() {
     return unsubscribe;
   }, []);
 
-  // ── 2. Load Customers from Database ────────────────────────────────────────
+  // ── 2. Load Studio Packages & Services ─────────────────────────────────────
+  useEffect(() => {
+    let isMounted = true;
+    getAdminServices().then(({ data }) => {
+      if (isMounted && data) {
+        setServicesList(data);
+      }
+    });
+    return () => { isMounted = false; };
+  }, []);
+
+  // ── 3. Load Customers from Database ────────────────────────────────────────
   const load = useCallback(async (forceFresh = false) => {
     const hasData = rowsRef.current.length > 0;
     if (forceFresh || hasData) {
@@ -216,7 +224,81 @@ export default function AdminCustomers() {
     return () => clearTimeout(timer);
   }, [search, query]);
 
-  // ── 3. Client-Side Filtering on Rows (Presence, Status, Affiliation) ───────
+  // ── 4. Detect Existing Studio Packages from Services Table & Customer Bookings ──
+  const detectedPackages = useMemo(() => {
+    const map = new Map();
+
+    // 1. First register all official studio packages from the services catalog
+    (servicesList || []).forEach((s) => {
+      if (!s) return;
+      const key = s.id;
+      const nameLower = (s.name || '').toLowerCase();
+      let icon = Layers;
+      if (nameLower.includes('senior') || nameLower.includes('college') || s.category === 'senior-high' || s.category === 'college') {
+        icon = GraduationCap;
+      } else if (nameLower.includes('photo') || s.category === 'wedding-photo') {
+        icon = Camera;
+      } else if (nameLower.includes('video') || s.category === 'wedding-video') {
+        icon = Camera;
+      }
+
+      map.set(key, {
+        id: s.id,
+        name: s.name,
+        slug: s.slug,
+        category: s.category,
+        icon,
+        count: 0,
+      });
+    });
+
+    // 2. Tally customer bookings and detect any uncatalogued or customized packages
+    rows.forEach((c) => {
+      const userPackages = new Set();
+      (c.bookings || []).forEach((b) => {
+        const svcId = b.service_id || b.service?.id;
+        const svcName = b.service?.name;
+        const svcSlug = b.service?.slug;
+
+        if (svcId && map.has(svcId)) {
+          userPackages.add(svcId);
+        } else if (svcName) {
+          let matchedKey = null;
+          for (const [k, v] of map.entries()) {
+            if (v.name.toLowerCase() === svcName.toLowerCase() || (svcSlug && v.slug === svcSlug)) {
+              matchedKey = k;
+              break;
+            }
+          }
+          if (matchedKey) {
+            userPackages.add(matchedKey);
+          } else {
+            const customKey = `custom_${svcName}`;
+            if (!map.has(customKey)) {
+              map.set(customKey, {
+                id: customKey,
+                name: svcName,
+                slug: svcSlug || customKey,
+                category: 'custom',
+                icon: Layers,
+                count: 0,
+              });
+            }
+            userPackages.add(customKey);
+          }
+        }
+      });
+
+      userPackages.forEach((pkgKey) => {
+        const p = map.get(pkgKey);
+        if (p) p.count++;
+      });
+    });
+
+    return Array.from(map.values());
+  }, [servicesList, rows]);
+
+  // ── 5. Client-Side Filtering on Rows (Presence, Status, Detected Package) ──
   const filteredRows = useMemo(() => {
     return rows.filter((c) => {
       // Presence Filter
@@ -228,46 +310,95 @@ export default function AdminCustomers() {
       if (statusFilter === 'ACTIVE' && !c.is_active) return false;
       if (statusFilter === 'INACTIVE' && c.is_active) return false;
 
-      // Affiliation Filter
-      const isStudent = Boolean(c.studio_specs?.university || c.studio_specs?.degree);
-      if (affiliationFilter === 'STUDENT' && !isStudent) return false;
-      if (affiliationFilter === 'GENERAL' && isStudent) return false;
+      // Package Filter (Detected Studio Packages)
+      if (packageFilter !== 'ALL') {
+        const hasMatchingPackage = (c.bookings || []).some((b) => {
+          if (b.service_id === packageFilter || b.service?.id === packageFilter) return true;
+          if (packageFilter.startsWith('custom_') && `custom_${b.service?.name}` === packageFilter) return true;
+          const targetPkg = detectedPackages.find((p) => p.id === packageFilter);
+          if (targetPkg && (b.service?.slug === targetPkg.slug || b.service?.name?.toLowerCase() === targetPkg.name?.toLowerCase())) return true;
+          return false;
+        });
+        if (!hasMatchingPackage) return false;
+      }
 
       return true;
     });
-  }, [rows, liveOnlineMap, presenceFilter, statusFilter, affiliationFilter]);
+  }, [rows, liveOnlineMap, presenceFilter, statusFilter, packageFilter, detectedPackages]);
 
-  // ── 4. KPI Metrics Calculations ───────────────────────────────────────────
+  // ── 6. KPI Metrics Calculations ───────────────────────────────────────────
   const kpiStats = useMemo(() => {
     let onlineCount = 0;
     let activeAccounts = 0;
-    let academicClients = 0;
+    let clientsWithPackageCount = 0;
 
     rows.forEach((c) => {
       if (liveOnlineMap.has(c.id)) onlineCount++;
       if (c.is_active) activeAccounts++;
-      if (c.studio_specs?.university || c.studio_specs?.degree) academicClients++;
+      if ((c.bookings || []).length > 0) clientsWithPackageCount++;
     });
 
-    // Also consider live users from map who may be in full count
     const totalLivePresence = liveOnlineMap.size;
 
     return {
       totalClients: total,
       liveOnline: Math.max(onlineCount, totalLivePresence),
       activeAccounts,
-      academicClients,
+      clientsWithPackages: clientsWithPackageCount,
     };
   }, [rows, total, liveOnlineMap]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  // ── 5. CSV Export Function ─────────────────────────────────────────────────
+  // Unified Directory Filter (detects existing packages + presence + status)
+  const directoryFilterValue = useMemo(() => {
+    if (packageFilter !== 'ALL') return `PKG:${packageFilter}`;
+    if (presenceFilter === 'ONLINE') return 'ONLINE';
+    if (statusFilter === 'INACTIVE') return 'INACTIVE';
+    if (statusFilter === 'ACTIVE') return 'ACTIVE';
+    return 'ALL';
+  }, [packageFilter, presenceFilter, statusFilter]);
+
+  const handleDirectoryFilterChange = (val) => {
+    setPresenceFilter('ALL');
+    setStatusFilter('ALL');
+    setPackageFilter('ALL');
+
+    if (val?.startsWith('PKG:')) {
+      setPackageFilter(val.replace('PKG:', ''));
+    } else if (val === 'ONLINE') {
+      setPresenceFilter('ONLINE');
+    } else if (val === 'ACTIVE') {
+      setStatusFilter('ACTIVE');
+    } else if (val === 'INACTIVE') {
+      setStatusFilter('INACTIVE');
+    }
+    setPage(1);
+  };
+
+  const directoryFilterOptions = useMemo(() => {
+    const options = [
+      { value: 'ALL', label: `All Clients (${total})`, icon: Users },
+    ];
+
+    // Detected studio packages
+    detectedPackages.forEach((pkg) => {
+      options.push({
+        value: `PKG:${pkg.id}`,
+        label: `${pkg.name} (${pkg.count})`,
+        icon: pkg.icon || Layers,
+      });
+    });
+
+    return options;
+  }, [total, detectedPackages]);
+
+  // ── 7. CSV Export Function ─────────────────────────────────────────────────
   const handleExportCSV = () => {
     if (!rows.length) return;
     const headers = [
       'Customer ID', 'Full Name', 'Phone', 'Address', 'University / School',
-      'Degree / Program', 'Live Presence', 'Account Status', 'Bookings Count', 'Registered Date'
+      'Degree / Program', 'Booked Packages', 'Live Presence', 'Account Status', 'Bookings Count', 'Registered Date'
     ];
 
     const csvRows = rows.map((c) => {
@@ -277,6 +408,11 @@ export default function AdminCustomers() {
       const address = (c.address || '').replace(/"/g, '""');
       const school = (c.studio_specs?.university || '').replace(/"/g, '""');
       const degree = (c.studio_specs?.degree || '').replace(/"/g, '""');
+      const bookedPackages = (c.bookings || [])
+        .map((b) => b.service?.name ? `${b.service.name}${b.tier_name ? ` (${b.tier_name})` : ''}` : null)
+        .filter(Boolean)
+        .join('; ')
+        .replace(/"/g, '""');
       const bookingsCount = c.bookings?.length || 0;
       const status = c.is_active ? 'Active' : 'Inactive';
       const registered = c.created_at ? new Date(c.created_at).toISOString().split('T')[0] : '';
@@ -288,6 +424,7 @@ export default function AdminCustomers() {
         `"${address}"`,
         `"${school}"`,
         `"${degree}"`,
+        `"${bookedPackages}"`,
         `"${isOnline}"`,
         `"${status}"`,
         bookingsCount,
@@ -338,11 +475,8 @@ export default function AdminCustomers() {
       {/* ── 1. Luxury Dark Hero Banner adapted for Customer Directory ───────── */}
       <AdminHeroBanner
         station={profile?.role || 'admin'}
-        badgeLabel="Customer Directory & Live Presence"
-        badgeIcon={Users}
         title="Customer Management"
-        subtitle="Monitor live client portal presence, academic credentials, and fitting custody."
-        statusSummary={`${total} Registered Clients · ${kpiStats.liveOnline} Live on Portal · ${kpiStats.activeAccounts} Active Accounts`}
+        subtitle="Monitor live client portal presence, academic credentials, and customer fittings."
         primaryAction={{
           label: 'New Booking',
           icon: Plus,
@@ -363,8 +497,8 @@ export default function AdminCustomers() {
         ]}
       />
 
-      {/* ── Page Content Container (Consistent Margin & Breathing Room) ───────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Container (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
       {/* ── 2. Unified Luxury Studio KPI Overview Metric Strip ─────────────── */}
       <CategorizedMetricStrip
@@ -376,11 +510,11 @@ export default function AdminCustomers() {
             label: 'TOTAL',
             subtitle: 'Registered customer database',
             value: total,
-            isActive: presenceFilter === 'ALL' && statusFilter === 'ALL' && affiliationFilter === 'ALL',
+            isActive: presenceFilter === 'ALL' && statusFilter === 'ALL' && packageFilter === 'ALL',
             onClick: () => {
               setPresenceFilter('ALL');
               setStatusFilter('ALL');
-              setAffiliationFilter('ALL');
+              setPackageFilter('ALL');
             },
           },
           {
@@ -389,7 +523,11 @@ export default function AdminCustomers() {
             subtitle: 'Active on dashboard now',
             value: kpiStats.liveOnline,
             isActive: presenceFilter === 'ONLINE',
-            onClick: () => setPresenceFilter(presenceFilter === 'ONLINE' ? 'ALL' : 'ONLINE'),
+            onClick: () => {
+              setPackageFilter('ALL');
+              setStatusFilter('ALL');
+              setPresenceFilter(presenceFilter === 'ONLINE' ? 'ALL' : 'ONLINE');
+            },
           },
           {
             key: 'ACTIVE',
@@ -397,186 +535,42 @@ export default function AdminCustomers() {
             subtitle: 'Verified credentials',
             value: kpiStats.activeAccounts,
             isActive: statusFilter === 'ACTIVE',
-            onClick: () => setStatusFilter(statusFilter === 'ACTIVE' ? 'ALL' : 'ACTIVE'),
+            onClick: () => {
+              setPackageFilter('ALL');
+              setPresenceFilter('ALL');
+              setStatusFilter(statusFilter === 'ACTIVE' ? 'ALL' : 'ACTIVE');
+            },
           },
           {
-            key: 'STUDENT',
-            label: 'ACADEMIC',
-            subtitle: 'University degree records',
-            value: kpiStats.academicClients,
-            isActive: affiliationFilter === 'STUDENT',
-            onClick: () => setAffiliationFilter(affiliationFilter === 'STUDENT' ? 'ALL' : 'STUDENT'),
+            key: 'PACKAGES',
+            label: 'PACKAGES',
+            subtitle: 'With booked studio package',
+            value: kpiStats.clientsWithPackages,
+            isActive: packageFilter !== 'ALL',
+            onClick: () => {
+              if (packageFilter !== 'ALL') {
+                setPackageFilter('ALL');
+              } else {
+                const firstWithClients = detectedPackages.find((p) => p.count > 0);
+                if (firstWithClients) {
+                  setPackageFilter(firstWithClients.id);
+                }
+              }
+            },
           },
         ]}
       />
 
       {actionSuccessMsg && (
-        <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl px-5 py-3.5 text-sm font-body animate-fade-in shadow-xs">
-          <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
-          <span className="font-semibold">{actionSuccessMsg}</span>
-        </div>
-      )}
-
-      {/* ── 3. Search & Filter Toolbar with CustomDropdown Components ───────── */}
-      <div className="bg-white rounded-2xl border border-neutral-200/90 p-4 sm:p-5 shadow-xs space-y-3.5">
-        <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
-
-          {/* Search Bar */}
-          <div className="relative flex-1 min-w-[260px] max-w-xl">
-            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by client name, phone, school, degree..."
-              className="w-full pl-10 pr-8 py-2.5 sm:py-3 bg-neutral-50 hover:bg-neutral-100/70 focus:bg-white rounded-xl text-xs sm:text-sm font-body border border-neutral-300/80 focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all shadow-2xs"
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 p-0.5 cursor-pointer"
-                title="Clear search"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-
-          {/* Filter Dropdowns & Real-time Launchers */}
-          <div className="flex items-center gap-2.5 flex-wrap justify-start xl:justify-end">
-            {/* Live Presence Filter */}
-            <div className="w-44 sm:w-48">
-              <CustomDropdown
-                value={presenceFilter}
-                onChange={setPresenceFilter}
-                options={[
-                  { value: 'ALL', label: 'All Presence', icon: Radio },
-                  { value: 'ONLINE', label: '🟢 Live on Dashboard', dotColor: 'bg-emerald-500' },
-                  { value: 'OFFLINE', label: '⚪ Offline Clients', dotColor: 'bg-neutral-400' },
-                ]}
-                placeholder="Live Presence"
-                icon={Activity}
-                className="w-full"
-                popoverWidth="w-56"
-              />
-            </div>
-
-            {/* Account Status Filter */}
-            <div className="w-38 sm:w-42">
-              <CustomDropdown
-                value={statusFilter}
-                onChange={setStatusFilter}
-                options={[
-                  { value: 'ALL', label: 'All Statuses' },
-                  { value: 'ACTIVE', label: 'Active Profiles', dotColor: 'bg-emerald-500' },
-                  { value: 'INACTIVE', label: 'Inactive / Suspended', dotColor: 'bg-neutral-400' },
-                ]}
-                placeholder="Account Status"
-                icon={CheckCircle2}
-                className="w-full"
-                popoverWidth="w-52"
-              />
-            </div>
-
-            {/* Affiliation / Client Type */}
-            <div className="w-44 sm:w-48">
-              <CustomDropdown
-                value={affiliationFilter}
-                onChange={setAffiliationFilter}
-                options={[
-                  { value: 'ALL', label: 'All Client Types' },
-                  { value: 'STUDENT', label: 'Academic / Student', icon: GraduationCap },
-                  { value: 'GENERAL', label: 'General Portrait' },
-                ]}
-                placeholder="Client Affiliation"
-                icon={GraduationCap}
-                className="w-full"
-                popoverWidth="w-56"
-              />
-            </div>
-
-            {/* Controlled PII Masking Security Button */}
-            <button
-              type="button"
-              onClick={() => setMaskPii(!maskPii)}
-              className="h-10 px-3.5 border border-neutral-300/80 bg-neutral-50 hover:bg-white hover:border-gold/60 rounded-xl text-xs sm:text-sm font-semibold text-neutral-700 transition-all inline-flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer"
-              title="Toggle Controlled PII Masking (Role Audit Enforced)"
-            >
-              {maskPii ? <Lock size={14} className="text-purple-600" /> : <Eye size={14} className="text-emerald-600" />}
-              <span>{maskPii ? 'Mask PII' : 'Reveal PII'}</span>
-            </button>
-
-            {/* Quick 1-Click Refresh Button */}
-            <button
-              type="button"
-              onClick={() => load(true)}
-              disabled={isRefreshing}
-              className="h-10 px-3.5 border border-neutral-300/80 bg-neutral-50 hover:bg-white hover:border-gold/60 rounded-xl text-xs sm:text-sm font-semibold text-neutral-700 transition-all inline-flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer disabled:opacity-50"
-              title="Refresh Customer Directory"
-            >
-              <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-gold' : 'text-neutral-500'} />
-              <span>{isRefreshing ? 'Refreshing…' : 'Refresh'}</span>
-            </button>
-          </div>
-
-        </div>
-
-        {/* Active Filters Pill Bar */}
-        {(presenceFilter !== 'ALL' || statusFilter !== 'ALL' || affiliationFilter !== 'ALL' || query) && (
-          <div className="flex items-center gap-2 pt-2.5 border-t border-neutral-100 flex-wrap text-xs text-neutral-500">
-            <span className="font-semibold text-neutral-400 uppercase tracking-wider text-xs">Active Filters:</span>
-            {query && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
-                Keyword: "{query}"
-                <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => { setSearch(''); setQuery(''); }} />
-              </span>
-            )}
-            {presenceFilter !== 'ALL' && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-medium">
-                {presenceFilter === 'ONLINE' ? 'Live on Portal' : 'Offline'}
-                <X size={12} className="cursor-pointer text-emerald-600 hover:text-emerald-900" onClick={() => setPresenceFilter('ALL')} />
-              </span>
-            )}
-            {statusFilter !== 'ALL' && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
-                {statusFilter === 'ACTIVE' ? 'Active Profiles' : 'Inactive / Suspended'}
-                <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setStatusFilter('ALL')} />
-              </span>
-            )}
-            {affiliationFilter !== 'ALL' && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
-                {affiliationFilter === 'STUDENT' ? 'Academic / Student' : 'General Portrait'}
-                <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setAffiliationFilter('ALL')} />
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setSearch('');
-                setQuery('');
-                setPresenceFilter('ALL');
-                setStatusFilter('ALL');
-                setAffiliationFilter('ALL');
-              }}
-              className="text-gold hover:underline font-semibold text-xs ml-1 cursor-pointer"
-            >
-              Reset all
-            </button>
-          </div>
-        )}
-      </div>
-
-      {actionSuccessMsg && (
-        <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl px-5 py-3.5 text-sm font-body animate-fade-in shadow-xs">
+        <div className="flex items-center justify-between gap-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl px-5 py-3.5 text-sm font-body animate-fade-in shadow-xs">
           <div className="flex items-center gap-2.5">
-            <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+            <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
             <span className="font-semibold">{actionSuccessMsg}</span>
           </div>
           <button
             type="button"
             onClick={() => setActionSuccessMsg(null)}
-            className="text-emerald-500 hover:text-emerald-700 p-1"
+            className="text-emerald-500 hover:text-emerald-700 p-1 cursor-pointer"
           >
             <X size={15} />
           </button>
@@ -590,8 +584,109 @@ export default function AdminCustomers() {
         </div>
       )}
 
-      {/* ── 4. Main Customer Records Table (Display All in One View, No Sideways Scroll) ── */}
-      <div className="bg-gradient-to-b from-white to-neutral-50/30 rounded-2xl border border-neutral-200/90 shadow-warm-sm overflow-hidden">
+      {/* ── 3. Unified Luxury Customer Directory Hub ─────────────────────── */}
+      <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+        {/* Luxury top accent hairline */}
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
+
+        {/* Header Controls Bar */}
+        <div className="p-4 sm:p-5 border-b border-neutral-100 flex-shrink-0 bg-white space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {/* Left: Station Icon & Station Title */}
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white shadow-sm ring-1 ring-amber-600/30 shrink-0">
+                <Users size={22} />
+              </div>
+              <h3 className="font-heading text-xl sm:text-2xl font-bold text-neutral-900 tracking-tight">
+                Customer Directory
+              </h3>
+            </div>
+
+            {/* Right: Actions & Tools */}
+            <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+              {/* Quick 1-Click Refresh Button */}
+              <button
+                type="button"
+                onClick={() => load(true)}
+                disabled={isRefreshing || loading}
+                className="w-9 h-9 flex items-center justify-center border border-neutral-200/80 hover:border-amber-400/60 rounded-xl bg-white hover:bg-amber-50/40 transition-colors disabled:opacity-50 text-neutral-600 hover:text-neutral-900 cursor-pointer shadow-2xs"
+                title="Refresh customer directory"
+              >
+                <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-amber-600' : 'text-neutral-500'} />
+              </button>
+            </div>
+          </div>
+
+          {/* Search & Unified Filter Controls Row */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
+            {/* Search Input */}
+            <div className="relative flex-1 min-w-[220px]">
+              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by client name, phone, school, degree..."
+                className="w-full h-9 pl-9 pr-8 bg-neutral-50/80 hover:bg-neutral-100/60 focus:bg-white rounded-xl text-xs sm:text-sm font-body border border-neutral-200/80 focus:border-[#c9a96e] focus:ring-2 focus:ring-[#c9a96e]/20 outline-none transition-all shadow-2xs"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                  title="Clear search"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
+            {/* Consolidated Client Filter Dropdown */}
+            <div className="w-full sm:w-72 shrink-0">
+              <CustomDropdown
+                value={directoryFilterValue}
+                onChange={handleDirectoryFilterChange}
+                options={directoryFilterOptions}
+                placeholder="Filter by Package"
+                icon={Filter}
+                className="w-full text-xs sm:text-sm"
+                popoverWidth="w-full min-w-[280px]"
+              />
+            </div>
+          </div>
+
+          {/* Active Filter Pill Bar */}
+          {(directoryFilterValue !== 'ALL' || query) && (
+            <div className="flex items-center gap-2 pt-2 border-t border-neutral-100 flex-wrap text-xs text-neutral-500">
+              <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[11px]">Active Filter:</span>
+              {query && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
+                  Keyword: "{query}"
+                  <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => { setSearch(''); setQuery(''); }} />
+                </span>
+              )}
+              {directoryFilterValue !== 'ALL' && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200/70 text-xs font-medium">
+                  {directoryFilterOptions.find((o) => o.value === directoryFilterValue)?.label || directoryFilterValue}
+                  <X size={12} className="cursor-pointer text-amber-700 hover:text-amber-950" onClick={() => handleDirectoryFilterChange('ALL')} />
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  setQuery('');
+                  handleDirectoryFilterChange('ALL');
+                }}
+                className="text-amber-700 hover:underline font-semibold text-xs ml-1 cursor-pointer"
+              >
+                Reset
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ── Table Content Area ── */}
         {loading && rows.length === 0 ? (
           <div className="p-8 space-y-4">
             {[...Array(6)].map((_, i) => (
@@ -599,26 +694,26 @@ export default function AdminCustomers() {
             ))}
           </div>
         ) : filteredRows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
+          <div className="flex flex-col items-center justify-center py-20 text-center px-4">
             <div className="w-16 h-16 rounded-3xl bg-neutral-100 text-neutral-400 flex items-center justify-center mb-4">
               <Users size={32} />
             </div>
             <h3 className="font-heading text-lg font-bold text-neutral-900">No Customers Found</h3>
             <p className="text-sm text-neutral-500 font-body max-w-sm mt-1">
-              {query || presenceFilter !== 'ALL' || statusFilter !== 'ALL' || affiliationFilter !== 'ALL'
-                ? 'No client profiles match your active search filters.'
+              {query || directoryFilterValue !== 'ALL'
+                ? 'No client profiles match your active search filter.'
                 : 'No client profiles registered in the database yet.'}
             </p>
           </div>
         ) : (
           <div className={`w-full overflow-hidden ${isRefreshing ? 'opacity-70 transition-opacity' : 'opacity-100 transition-opacity'}`}>
             <table className="w-full table-fixed text-sm font-body text-left">
-              <thead>
-                <tr className="border-b border-neutral-200/80 bg-gradient-to-r from-neutral-50 via-neutral-100/40 to-neutral-50 text-[11px] sm:text-xs font-bold uppercase tracking-wider text-neutral-500">
-                  <th className="w-[36%] px-5 sm:px-6 py-3.5 sm:py-4">Customer Profile</th>
-                  <th className="w-[26%] px-4 sm:px-5 py-3.5 sm:py-4">Contact & Location</th>
-                  <th className="w-[18%] px-4 sm:px-5 py-3.5 sm:py-4">Bookings</th>
-                  <th className="w-[20%] px-5 sm:px-6 py-3.5 sm:py-4 text-right">Actions</th>
+              <thead className="sticky top-0 z-10 bg-[#faf7f2]/95 border-b border-[#c9a96e]/25 shadow-2xs backdrop-blur-md">
+                <tr className="border-b border-neutral-200/80 text-[11px] font-bold uppercase tracking-wider text-neutral-600">
+                  <th className="w-[36%] px-5 sm:px-6 py-3.5">Customer Profile</th>
+                  <th className="w-[28%] px-4 sm:px-5 py-3.5">Contact & Location</th>
+                  <th className="w-[18%] px-4 sm:px-5 py-3.5">Bookings</th>
+                  <th className="w-[18%] px-5 sm:px-6 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
@@ -631,26 +726,32 @@ export default function AdminCustomers() {
                   const degree = c.studio_specs?.degree;
                   const isInactive = c.is_active === false;
 
+                  const bookedPackageNames = (c.bookings || [])
+                    .map((b) => {
+                      const name = b.service?.name;
+                      const tier = b.tier_name;
+                      if (!name && !tier) return null;
+                      return `${name || 'Studio Package'}${tier ? ` (${tier})` : ''}`;
+                    })
+                    .filter(Boolean);
+                  const primaryPackageName = bookedPackageNames[0];
+
                   return (
                     <tr
                       key={c.id}
                       className={`transition-all duration-150 ${
                         isInactive
-                          ? 'bg-gradient-to-r from-rose-500/12 via-rose-500/5 to-transparent border-l-4 border-l-rose-500 hover:from-rose-500/18 hover:via-rose-500/8'
-                          : 'hover:bg-neutral-50/70'
+                          ? 'bg-rose-50/40 border-l-4 border-l-rose-500 hover:bg-rose-50/70'
+                          : 'hover:bg-amber-50/20'
                       }`}
                     >
-
                       {/* Customer Profile & Academic Identification */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 min-w-0 align-middle">
-                        <div className={`flex items-center gap-3.5 min-w-0 ${
-                          isInactive ? 'p-1.5 -m-1.5 rounded-2xl bg-gradient-to-r from-rose-100/70 via-rose-50/40 to-transparent' : ''
-                        }`}>
+                      <td className="px-5 sm:px-6 py-4 min-w-0 align-middle">
+                        <div className="flex items-center gap-3.5 min-w-0">
                           <Avatar c={c} isLive={isLive} presenceInfo={presenceInfo} />
                           <div className="min-w-0 flex-1">
-                            {/* Inactive Account Indicator if inactive */}
                             {isInactive && (
-                              <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full border border-rose-300 mb-1 shadow-2xs">
+                              <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-300 mb-1 shadow-2xs">
                                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                                 <span>Inactive Account</span>
                               </div>
@@ -666,7 +767,7 @@ export default function AdminCustomers() {
                                 className="flex items-center gap-1.5 text-xs text-neutral-600 font-medium mt-0.5 truncate"
                                 title={`${university || ''} ${degree ? '• ' + degree : ''}`}
                               >
-                                <GraduationCap size={13} className="text-gold shrink-0" />
+                                <GraduationCap size={13} className="text-[#c9a96e] shrink-0" />
                                 <span className="truncate">{university || degree}</span>
                               </div>
                             ) : (
@@ -679,15 +780,15 @@ export default function AdminCustomers() {
                       </td>
 
                       {/* Contact Phone & Residential Address */}
-                      <td className="px-4 sm:px-5 py-4 sm:py-4.5 min-w-0 align-middle">
+                      <td className="px-4 sm:px-5 py-4 min-w-0 align-middle">
                         <div className="space-y-1 min-w-0">
                           {c.phone ? (
                             <a
                               href={`tel:${c.phone}`}
-                              className="hover:text-gold hover:underline inline-flex items-center gap-1.5 font-semibold text-xs sm:text-sm text-neutral-700 font-mono truncate max-w-full"
+                              className="hover:text-[#c9a96e] hover:underline inline-flex items-center gap-1.5 font-semibold text-xs sm:text-sm text-neutral-700 font-mono truncate max-w-full"
                             >
                               <Phone size={12} className="text-neutral-400 shrink-0" />
-                              <span className="truncate">{maskPii ? maskClientPII(c.phone, 'phone') : c.phone}</span>
+                              <span className="truncate">{c.phone}</span>
                             </a>
                           ) : (
                             <span className="text-neutral-400 text-xs italic block">—</span>
@@ -700,49 +801,55 @@ export default function AdminCustomers() {
                         </div>
                       </td>
 
-                      {/* Bookings */}
-                      <td className="px-4 sm:px-5 py-4 sm:py-4.5 align-middle">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {bookingsCount > 0 ? (
-                            <Link
-                              to={`/admin/bookings?search=${encodeURIComponent(fullName)}`}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-neutral-100 hover:bg-gold/15 text-neutral-800 hover:text-gold-dark transition-all border border-neutral-200/70 shrink-0 shadow-2xs"
-                              title="Filter bookings for this customer"
-                            >
-                              <CalendarDays size={13} className="text-gold" />
-                              <span>{bookingsCount} {bookingsCount === 1 ? 'Booking' : 'Bookings'}</span>
-                            </Link>
-                          ) : (
-                            <span className="text-xs text-neutral-400 italic">0 Bookings</span>
+                      {/* Bookings & Package */}
+                      <td className="px-4 sm:px-5 py-4 align-middle">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {bookingsCount > 0 ? (
+                              <Link
+                                to={`/admin/bookings?search=${encodeURIComponent(fullName)}`}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-neutral-100 hover:bg-amber-100/60 text-neutral-800 hover:text-amber-900 transition-all border border-neutral-200/70 shrink-0 shadow-2xs"
+                                title="Filter bookings for this customer"
+                              >
+                                <CalendarDays size={13} className="text-[#c9a96e]" />
+                                <span>{bookingsCount} {bookingsCount === 1 ? 'Booking' : 'Bookings'}</span>
+                              </Link>
+                            ) : (
+                              <span className="text-xs text-neutral-400 italic">0 Bookings</span>
+                            )}
+                          </div>
+                          {primaryPackageName && (
+                            <p className="text-[11px] text-amber-800/90 font-medium truncate max-w-[200px]" title={primaryPackageName}>
+                              {primaryPackageName}
+                            </p>
                           )}
                         </div>
                       </td>
 
                       {/* Actions */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 text-right align-middle">
+                      <td className="px-5 sm:px-6 py-4 text-right align-middle">
                         <div className="flex items-center justify-end gap-2">
                           <button
                             type="button"
                             onClick={() => setSelectedCustomerRecord(c)}
-                            className="px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-bold text-neutral-800 hover:text-gold bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-gold rounded-xl transition-all inline-flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                            className="px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-neutral-700 hover:text-[#c9a96e] bg-white hover:bg-amber-50/40 border border-neutral-200/80 hover:border-[#c9a96e]/60 rounded-xl transition-all inline-flex items-center gap-1.5 shadow-2xs cursor-pointer"
                             title="Inspect full profile, academic credentials & booking history"
                           >
-                            <FileText size={14} className="text-gold" />
+                            <FileText size={13} className="text-[#c9a96e]" />
                             <span>Details</span>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => setCustomerToDelete(c)}
-                            className="px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-bold text-rose-600 hover:text-rose-700 bg-white hover:bg-rose-50 border border-neutral-200 hover:border-rose-300 rounded-xl transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                            className="px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-rose-600 hover:text-rose-700 bg-white hover:bg-rose-50 border border-neutral-200/80 hover:border-rose-300 rounded-xl transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
                             title="Delete customer account"
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={13} />
                             <span>Delete</span>
                           </button>
                         </div>
                       </td>
-
                     </tr>
                   );
                 })}
@@ -789,9 +896,9 @@ export default function AdminCustomers() {
         const isOnline = liveOnlineMap.has(c.id);
         const presenceInfo = liveOnlineMap.get(c.id);
 
-        const displayPhone = c.phone ? (maskPii ? maskClientPII(c.phone, 'phone') : c.phone) : '—';
-        const displayCourierPhone = specs.courier_phone ? (maskPii ? maskClientPII(specs.courier_phone, 'phone') : specs.courier_phone) : null;
-        const displayEmergencyPhone = specs.emergencyContactPhone ? (maskPii ? maskClientPII(specs.emergencyContactPhone, 'phone') : specs.emergencyContactPhone) : null;
+        const displayPhone = c.phone || '—';
+        const displayCourierPhone = specs.courier_phone || null;
+        const displayEmergencyPhone = specs.emergencyContactPhone || null;
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/75 backdrop-blur-xs animate-fade-in">

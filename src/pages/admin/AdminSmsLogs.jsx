@@ -31,7 +31,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
-import StudioDropdown from '../../components/ui/StudioDropdown';
+import CustomDropdown from '../../components/ui/CustomDropdown';
 import { getSmsLogs, dispatchManualSms, deleteSmsLog, getRecentBookings } from '../../services/adminService';
 
 const PAGE_SIZE = 15;
@@ -443,12 +443,9 @@ export default function AdminSmsLogs() {
       {/* ── 1. Luxury Administrative Hero Banner ────────────────────────────── */}
       <AdminHeroBanner
         station="admin"
-        badgeLabel="Telco & Communications Gateway"
-        badgeIcon={Smartphone}
         userName={profile?.full_name || user?.email?.split('@')[0] || 'Administrator'}
         title="SMS Delivery Logs & Carrier Gateway"
-        subtitle="Real-time SMS dispatch audit trail, Philippine carrier delivery telemetry, and gateway balance monitoring."
-        statusSummary={`${stats.total} Total Transmissions · ${stats.delivered} Delivered (${stats.deliveryRate}%) · ${stats.queued} Queued · ${stats.failed} Errors`}
+        subtitle="Real-time SMS dispatch audit trail, Philippine carrier delivery telemetry, and gateway logs."
         primaryAction={{
           label: 'Quick Dispatch SMS',
           icon: Send,
@@ -463,8 +460,8 @@ export default function AdminSmsLogs() {
         isRefreshing={loading}
       />
 
-      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Wrapper (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
       {/* Action Success Toast Banner */}
       {actionSuccessMsg && (
@@ -585,146 +582,129 @@ export default function AdminSmsLogs() {
         </div>
       )}
 
-      {/* ── 4. Search & Filter Bar with StudioDropdown Integration ─────────── */}
-      <div className="bg-white rounded-2xl border border-neutral-200/80 p-4 shadow-xs space-y-3.5 font-body">
-        {/* Top Controls Row */}
-        <div className="flex items-center justify-between gap-3 flex-wrap lg:flex-nowrap">
-          {/* Status Tab Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 w-full lg:w-auto">
-            {[
-              { id: 'ALL',     label: `All Logs (${stats.total})`, icon: Layers },
-              { id: 'SENT',    label: `Delivered (${stats.delivered})`, icon: CheckCircle2 },
-              { id: 'PENDING', label: `Queued (${stats.queued})`, icon: Clock },
-              { id: 'FAILED',  label: `Failed (${stats.failed})`, icon: XCircle },
-            ].map(tab => {
-              const isActive = statusFilter === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setStatusFilter(tab.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                    isActive
-                      ? 'bg-primary text-white shadow-xs'
-                      : 'bg-neutral-100/80 text-neutral-600 hover:bg-neutral-200/60'
-                  }`}
-                >
-                  {tab.icon && <tab.icon size={13} />}
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
+      {/* ── 4. Unified Luxury SMS Logs Table Hub ──────────────────────────── */}
+      <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
 
-          {/* Search Input */}
-          <div className="relative w-full sm:w-72">
-            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search phone, recipient, #BK, message..."
-              className="w-full pl-9 pr-3.5 py-2 bg-neutral-50/60 border border-neutral-200 rounded-xl text-xs font-body outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold focus:bg-white transition-all"
-            />
-            {searchQuery && (
+        {/* Header Controls Bar */}
+        <div className="p-4 sm:p-5 border-b border-neutral-100 flex-shrink-0 bg-white space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {/* Left: Station Icon & Title */}
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white shadow-sm ring-1 ring-amber-600/30 shrink-0">
+                <MessageSquare size={22} />
+              </div>
+              <div>
+                <h3 className="font-heading text-xl sm:text-2xl font-bold text-neutral-900 tracking-tight">
+                  SMS Dispatch Logs
+                </h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {filteredRows.length} {filteredRows.length === 1 ? 'record' : 'records'} logged • Real-time carrier transmission
+                </p>
+              </div>
+            </div>
+
+            {/* Right: Actions */}
+            <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
               <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-primary text-xs"
+                type="button"
+                onClick={handleExportCsv}
+                className="h-9 px-3.5 text-xs font-bold flex items-center gap-1.5 border border-neutral-200/80 hover:border-emerald-500/60 rounded-xl bg-white hover:bg-emerald-50/50 text-neutral-700 hover:text-emerald-900 shadow-2xs transition-all cursor-pointer"
+                title="Export SMS Logs to CSV"
               >
-                <X size={13} />
+                <Download size={14} className="text-emerald-600" />
+                <span>Export CSV</span>
               </button>
-            )}
-          </div>
-        </div>
-
-        {/* Second Filter Row with StudioDropdowns */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 pt-2 border-t border-neutral-100 items-center">
-          {/* StudioDropdown: Filter by Booking / Customer */}
-          <div className="lg:col-span-6">
-            <label className="block text-[11.5px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
-              Filter by Booking or Client
-            </label>
-            <StudioDropdown
-              value={bookingFilter}
-              onChange={setBookingFilter}
-              options={bookingFilterOptions}
-              searchable={true}
-              placeholder="Filter by Booking Number or Customer..."
-              className="w-full"
-              triggerClassName="py-1.5 text-xs bg-neutral-50/50 border-neutral-200/80 rounded-xl"
-            />
-          </div>
-
-          {/* StudioDropdown: Filter by Carrier */}
-          <div className="lg:col-span-4">
-            <label className="block text-[11.5px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
-              Filter by Carrier Gateway
-            </label>
-            <StudioDropdown
-              value={carrierFilter}
-              onChange={setCarrierFilter}
-              options={carrierFilterOptions}
-              placeholder="All Gateways"
-              className="w-full"
-              triggerClassName="py-1.5 text-xs bg-neutral-50/50 border-neutral-200/80 rounded-xl"
-            />
-          </div>
-
-          {/* Clear Filters / Actions */}
-          <div className="lg:col-span-2 flex items-end justify-end pt-4 sm:pt-0">
-            {(searchQuery || statusFilter !== 'ALL' || carrierFilter !== 'ALL' || bookingFilter !== 'ALL') ? (
               <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setStatusFilter('ALL');
-                  setCarrierFilter('ALL');
-                  setBookingFilter('ALL');
-                }}
-                className="w-full py-2 px-3 rounded-xl border border-neutral-200 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 flex items-center justify-center gap-1 transition-colors"
-              >
-                <X size={12} />
-                Reset Filters
-              </button>
-            ) : (
-              <button
+                type="button"
                 onClick={() => setComposeModalOpen(true)}
-                className="w-full btn-primary py-2 px-3 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs"
+                className="h-9 px-3.5 text-xs font-bold flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-[#c9a96e] to-amber-600 hover:brightness-105 text-neutral-900 shadow-xs transition-all cursor-pointer shrink-0 font-medium"
+                title="Dispatch Manual SMS Message"
               >
-                <Send size={12} />
-                New SMS
+                <Send size={14} className="stroke-[2.5]" />
+                <span>Quick Dispatch</span>
               </button>
-            )}
+              <button
+                type="button"
+                onClick={() => loadLogs(true)}
+                disabled={loading}
+                className="w-9 h-9 flex items-center justify-center border border-neutral-200/80 hover:border-amber-400/60 rounded-xl bg-white hover:bg-amber-50/40 transition-colors disabled:opacity-50 text-neutral-600 hover:text-neutral-900 cursor-pointer shadow-2xs"
+                title="Refresh SMS Records"
+              >
+                <RefreshCw size={14} className={loading ? 'animate-spin text-amber-600' : 'text-neutral-500'} />
+              </button>
+            </div>
           </div>
+
+          {/* Search & Single Clean Status Filter Row */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search phone, recipient, #BK, message..."
+                className="w-full h-9 pl-9 pr-8 bg-neutral-50/80 hover:bg-neutral-100/60 focus:bg-white rounded-xl text-xs sm:text-sm font-body border border-neutral-200/80 focus:border-[#c9a96e] focus:ring-2 focus:ring-[#c9a96e]/20 outline-none transition-all shadow-2xs"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
+            {/* Single Clean Status Filter (NO colored dots, no unnecessary dropdown clutter) */}
+            <div className="w-full sm:w-64 shrink-0">
+              <CustomDropdown
+                value={statusFilter}
+                onChange={setStatusFilter}
+                options={[
+                  { value: 'ALL', label: `All Logs (${rows.length})`, icon: Layers },
+                  { value: 'SENT', label: `Delivered (${stats.delivered})`, icon: CheckCircle2 },
+                  { value: 'PENDING', label: `Queued (${stats.queued})`, icon: Clock },
+                  { value: 'FAILED', label: `Failed (${stats.failed})`, icon: XCircle },
+                ]}
+                placeholder="Filter Status"
+                icon={Layers}
+                className="w-full text-xs sm:text-sm"
+                popoverWidth="w-full min-w-[240px]"
+              />
+            </div>
+          </div>
+
+          {/* Active Filter Pill */}
+          {(statusFilter !== 'ALL' || searchQuery) && (
+            <div className="flex items-center gap-2 pt-2 border-t border-neutral-100 flex-wrap text-xs text-neutral-500">
+              <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[11px]">Active Filter:</span>
+              {searchQuery && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
+                  Keyword: "{searchQuery}"
+                  <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setSearchQuery('')} />
+                </span>
+              )}
+              {statusFilter !== 'ALL' && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200/70 text-xs font-medium">
+                  Status: {statusFilter}
+                  <X size={12} className="cursor-pointer text-amber-700 hover:text-amber-950" onClick={() => setStatusFilter('ALL')} />
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => { setSearchQuery(''); setStatusFilter('ALL'); setCarrierFilter('ALL'); setBookingFilter('ALL'); }}
+                className="text-amber-700 hover:underline font-semibold text-xs ml-1 cursor-pointer"
+              >
+                Reset
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Footer info strip */}
-        <div className="flex items-center justify-between text-xs text-neutral-500 pt-2 border-t border-neutral-100 flex-wrap gap-2">
-          <span>
-            Showing <strong>{paginatedRows.length}</strong> of <strong>{filteredRows.length}</strong> filtered records
-            {statusFilter !== 'ALL' && ` · Filter: ${statusFilter}`}
-            {carrierFilter !== 'ALL' && ` · Gateway: ${carrierFilter}`}
-          </span>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleExportCsv}
-              className="text-xs font-semibold text-neutral-600 hover:text-primary flex items-center gap-1 transition-colors"
-            >
-              <Download size={12} />
-              Export CSV
-            </button>
-            <button
-              onClick={() => setComposeModalOpen(true)}
-              className="text-xs font-semibold text-gold hover:text-primary flex items-center gap-1 transition-colors"
-            >
-              <Sparkles size={12} />
-              Quick Dispatch
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ── 5. Enhanced SMS Logs Table Container ───────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden font-body">
+        {/* Table Area */}
         {loading ? (
           <div className="p-6 space-y-3">
             {[...Array(6)].map((_, i) => (
@@ -734,16 +714,16 @@ export default function AdminSmsLogs() {
         ) : filteredRows.length === 0 ? (
           /* Empty State */
           <div className="p-12 text-center flex flex-col items-center justify-center">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-gold/20 to-gold/5 text-gold flex items-center justify-center mb-3 border border-gold/30">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center mb-3 border border-amber-200">
               <MessageSquare size={24} />
             </div>
-            <h3 className="font-heading text-lg font-bold text-primary">
+            <h3 className="font-heading text-lg font-bold text-neutral-900">
               {rows.length === 0 ? 'No SMS Messages Logged Yet' : 'No Messages Match Your Filters'}
             </h3>
             <p className="text-xs text-neutral-400 max-w-md mx-auto mt-1 leading-relaxed">
               {rows.length === 0
-                ? 'SMS logs will record real-time notifications dispatched via Semaphore PH, PhilSMS, or Twilio when client alerts are sent.'
-                : 'Try clearing your search query, carrier selection, or status filters.'}
+                ? 'SMS logs will record real-time notifications dispatched via Philippine carriers when client alerts are sent.'
+                : 'Try clearing your search query or status filter.'}
             </p>
 
             <div className="flex items-center gap-2 mt-5">
@@ -751,14 +731,14 @@ export default function AdminSmsLogs() {
                 <>
                   <button
                     onClick={() => setComposeModalOpen(true)}
-                    className="btn-primary py-2 px-4 text-xs font-bold inline-flex items-center gap-1.5 shadow-xs"
+                    className="h-9 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-[#c9a96e] to-amber-600 hover:brightness-105 text-neutral-900 text-xs font-bold inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
                   >
                     <Send size={13} />
                     Send First SMS
                   </button>
                   <button
                     onClick={handleSeedDemoLogs}
-                    className="py-2 px-4 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-xs font-semibold text-neutral-700 transition-colors"
+                    className="h-9 px-4 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-xs font-semibold text-neutral-700 transition-colors cursor-pointer"
                   >
                     Generate Demo Logs
                   </button>
@@ -771,7 +751,7 @@ export default function AdminSmsLogs() {
                     setCarrierFilter('ALL');
                     setBookingFilter('ALL');
                   }}
-                  className="btn-primary py-2 px-4 text-xs font-semibold"
+                  className="h-9 px-4 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-semibold cursor-pointer"
                 >
                   Clear All Filters
                 </button>
@@ -781,16 +761,16 @@ export default function AdminSmsLogs() {
         ) : (
           /* Table */
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-body border-collapse">
-              <thead>
-                <tr className="bg-neutral-50/80 border-b border-neutral-200/80 text-xs font-bold text-neutral-500 uppercase tracking-wider">
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Recipient &amp; Mobile</th>
-                  <th className="px-4 py-3 hidden md:table-cell">Carrier Network</th>
-                  <th className="px-4 py-3 hidden lg:table-cell">Booking Context</th>
-                  <th className="px-4 py-3">Message Payload</th>
-                  <th className="px-4 py-3 hidden sm:table-cell">Sent Time</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+            <table className="w-full text-left text-xs sm:text-sm font-body border-collapse">
+              <thead className="sticky top-0 z-10 bg-[#faf7f2]/95 border-b border-[#c9a96e]/25 shadow-2xs backdrop-blur-md">
+                <tr className="border-b border-neutral-200/80 text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
+                  <th className="px-4 py-3.5">Status</th>
+                  <th className="px-4 py-3.5">Recipient &amp; Mobile</th>
+                  <th className="px-4 py-3.5 hidden md:table-cell">Carrier Network</th>
+                  <th className="px-4 py-3.5 hidden lg:table-cell">Booking Context</th>
+                  <th className="px-4 py-3.5">Message Payload</th>
+                  <th className="px-4 py-3.5 hidden sm:table-cell">Sent Time</th>
+                  <th className="px-4 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
@@ -833,7 +813,7 @@ export default function AdminSmsLogs() {
 
                       {/* Carrier Network */}
                       <td className="px-4 py-3.5 hidden md:table-cell whitespace-nowrap">
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200/80">
                           {carrier}
                         </span>
                         <div className="text-[11.5px] text-neutral-400 mt-0.5">

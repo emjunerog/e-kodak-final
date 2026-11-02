@@ -58,12 +58,12 @@ create index if not exists idx_booking_deliveries_status on public.booking_deliv
 -- ── 3. QR SCAN LOGS (Analytics) ────────────────────────────────────────────────
 create table if not exists public.qr_scan_logs (
   id                  uuid        primary key default uuid_generate_v4(),
-  booking_id          uuid        not null references public.bookings(id) on delete cascade,
+  booking_id          uuid        references public.bookings(id) on delete cascade,
   scanned_by          uuid        references public.profiles(id) on delete set null,
   scan_type           text        not null check (scan_type in ('CUSTOMER_VIEW', 'STAFF_CHECKIN', 'PHOTOGRAPHER_CHECKIN', 'DELIVERY_CONFIRM', 'COMPANION_APP')),
   user_agent          text,
   ip_address          inet,
-  scan_result         text        not null default 'SUCCESS' check (scan_result in ('SUCCESS', 'EXPIRED', 'INVALID', 'REVOKED')),
+  scan_result         text        not null default 'SUCCESS' check (scan_result in ('SUCCESS', 'EXPIRED', 'INVALID', 'REVOKED', 'DELETED_PASS')),
   created_at          timestamptz not null default now()
 );
 

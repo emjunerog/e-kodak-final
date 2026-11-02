@@ -21,10 +21,8 @@ export default function AdminActivityLogsPage() {
       {/* ── 1. Luxury Executive Hero Banner ────────────────────────────────── */}
       <AdminHeroBanner
         station="admin"
-        badgeLabel="Studio Management • Audit Command"
-        badgeIcon={History}
         title="Administrative Activity Logs"
-        summary="Comprehensive movement detection and verified audit stream across all active studio administrators, staff, finance, and photographers."
+        subtitle="Comprehensive studio movement detection and verified audit stream across all stations."
         onRefresh={handleManualRefresh}
         isRefreshing={false}
         extraTools={[
@@ -34,8 +32,8 @@ export default function AdminActivityLogsPage() {
         ]}
       />
 
-      {/* ── 2. Main Activity Logs Stream & Filtering Dashboard ───────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── 2. Main Activity Logs Stream & Filtering Dashboard (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
         <AdminActivityLogs key={refreshTrigger} />
       </div>
 

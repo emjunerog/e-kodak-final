@@ -187,6 +187,7 @@ export async function getRecentBookings(limit = 50) {
           .eq('id', b.id)
           .then();
       }
+
       return {
         ...b,
         payment_status: effPayStatus,
@@ -267,7 +268,7 @@ export async function getCustomers({ page = 1, pageSize = 20, search = '', force
       .from('profiles')
       .select(`
         id, first_name, last_name, middle_name, phone, address, avatar_url, is_active, created_at, updated_at, role, bio, studio_specs,
-        bookings(id, booking_number, status, payment_status, total_amount, event_date, is_deleted, created_at)
+        bookings(id, booking_number, status, payment_status, total_amount, event_date, is_deleted, created_at, service_id, tier_name, service:services(id, name, slug, category))
       `, { count: 'exact' })
       .eq('role', 'customer')
       .order('created_at', { ascending: false })
@@ -924,8 +925,9 @@ export async function getPhotoOutputs({ page = 1, pageSize = 50 } = {}) {
       .from('photo_outputs')
       .select(`
         id, file_path, file_name, file_type, file_size, status, created_at, updated_at,
-        booking:bookings(id, booking_number, event_date, status,
-          customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, phone)
+        booking:bookings(id, booking_number, event_date, preferred_time, status, payment_status, total_amount, tier_name,
+          service:services(id, name, category),
+          customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, phone, email)
         ),
         uploader:profiles!photo_outputs_uploaded_by_fkey(first_name, last_name)
       `, { count: 'exact' })
@@ -1192,35 +1194,89 @@ export async function getBookingAuditLogs({ limit = 30 } = {}) {
 }
 
 /**
+ * getCompletedBookingsAwaitingOutputs
+ * -----------------------------------
+ * Returns completed bookings with their current soft-copy deliverable status.
+ * Used by admin photo outputs to proactively identify orders awaiting delivery.
+ */
+export async function getCompletedBookingsAwaitingOutputs() {
+  if (!isSupabaseConfigured) return { data: [], error: null };
+  try {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select(`
+        id,
+        booking_number,
+        event_date,
+        status,
+        payment_status,
+        tier_name,
+        created_at,
+        customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, phone, email),
+        service:services(id, name),
+        photo_outputs(id, file_name, file_path, file_type, status, created_at)
+      `)
+      .in('status', ['COMPLETED', 'CONFIRMED'])
+      .or('is_deleted.is.null,is_deleted.eq.false')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const mapped = (data || []).map(b => {
+      const outputs = b.photo_outputs || [];
+      const hasDriveFolder = outputs.some(o => o.file_type === 'gdrive_folder' || (o.file_path && o.file_path.includes('drive.google.com')));
+      const hasDeliverables = outputs.length > 0;
+      return {
+        ...b,
+        outputsCount: outputs.length,
+        hasDriveFolder,
+        hasDeliverables,
+        isAwaitingOutputs: outputs.length === 0 || (!hasDriveFolder && b.status === 'COMPLETED')
+      };
+    });
+
+    return { data: mapped, error: null };
+  } catch (err) {
+    console.error('getCompletedBookingsAwaitingOutputs error:', err);
+    return { data: [], error: err };
+  }
+}
+
+/**
  * uploadAdminPhotoOutput
  * ----------------------
  * Allows studio administrators or photographers to upload edited package deliverable photos
- * for a specific customer booking (e.g. 2x2 ID, Passport photo, Toga master, Barong formal).
+ * or link a Google Drive folder containing all soft copies without exhausting Supabase storage.
  */
 export async function uploadAdminPhotoOutput({ 
   bookingId, 
   file = null, 
-  deliverableType = '2x2 ID Photo', 
+  deliverableType = 'Soft Copies (Google Drive Folder)', 
   filePathOrUrl = '', 
+  customFileName = '',
+  isGoogleDrive = false,
   uploadedBy = null 
 }) {
   if (!isSupabaseConfigured) return { data: null, error: new Error('Supabase not configured') };
   try {
-    let resolvedPath = filePathOrUrl;
-    let fileName = `[${deliverableType}] Studio_Output_${Date.now().toString(36).toUpperCase()}.jpg`;
-    let fileSize = 1500000;
-    let fileType = 'image/jpeg';
+    let resolvedPath = (filePathOrUrl || '').trim();
+    const isDriveUrl = isGoogleDrive || (resolvedPath && (resolvedPath.includes('drive.google.com') || resolvedPath.includes('docs.google.com')));
+    const isFolder = isDriveUrl && (deliverableType.toLowerCase().includes('folder') || resolvedPath.includes('/folders/'));
+
+    let fileType = isFolder ? 'gdrive_folder' : (isDriveUrl ? 'gdrive_link' : 'image/jpeg');
+    let fileSize = 0;
+    let fileName = customFileName?.trim() || `[${deliverableType}] ${isFolder ? 'Google Drive Soft Copies Folder' : 'Studio Output'}`;
 
     if (file) {
       fileName = `[${deliverableType}] ${file.name}`;
       fileSize = file.size;
-      fileType = file.type;
+      fileType = file.type || 'image/jpeg';
       const safeBookingId = bookingId || 'general';
-      const storagePath = `${safeBookingId}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+      const storagePath = `deliverables/${safeBookingId}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
 
       try {
         const { error: uploadError } = await supabase.storage
-          .from('outputs')
+          .from('studio-assets')
           .upload(storagePath, file, {
             contentType: file.type,
             upsert: true
@@ -1228,7 +1284,7 @@ export async function uploadAdminPhotoOutput({
 
         if (!uploadError) {
           const { data: urlData } = supabase.storage
-            .from('outputs')
+            .from('studio-assets')
             .getPublicUrl(storagePath);
           resolvedPath = urlData?.publicUrl || storagePath;
         } else {
@@ -1240,7 +1296,7 @@ export async function uploadAdminPhotoOutput({
     }
 
     if (!resolvedPath) {
-      resolvedPath = filePathOrUrl || 'https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=1200&q=85&auto=format&fit=crop';
+      return { data: null, error: new Error('Please provide a valid file, Google Drive link, or image URL.') };
     }
 
     const { data, error } = await supabase
@@ -1251,7 +1307,7 @@ export async function uploadAdminPhotoOutput({
         file_name: fileName,
         file_type: fileType,
         file_size: fileSize,
-        status: 'READY',
+        status: 'RELEASED',
         uploaded_by: uploadedBy,
       })
       .select()

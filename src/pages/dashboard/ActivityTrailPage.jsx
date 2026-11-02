@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { Link } from "react-router-dom";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { Link, useOutletContext } from "react-router-dom";
 import {
   History,
   Search,
@@ -10,7 +10,6 @@ import {
   ArrowRight,
   ArrowUpRight,
   QrCode,
-  Loader2,
   Truck,
   UserCheck,
   Sliders,
@@ -33,7 +32,8 @@ import {
   Zap
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
-import { getCustomerBookings, getCustomerActivityAudit } from "../../services/bookingService";
+import { ActivityTrailSkeleton, SmartLoadingContainer } from "../../components/dashboard/skeletons";
+import { getCustomerBookings, getCustomerActivityAudit, getCachedCustomerBookings } from "../../services/bookingService";
 import ClientToolsHub from "../../components/dashboard/ClientToolsHub";
 import Toast from "../../components/ui/Toast";
 
@@ -352,9 +352,22 @@ function RenderStructuredChanges({ changes = [], category = "" }) {
 // ── Main Page Component ────────────────────────────────────────────────────────
 export default function ActivityTrailPage() {
   const { user } = useAuth();
-  const [bookings, setBookings] = useState([]);
+  const outletContext = useOutletContext();
+  const initialBookings = useMemo(() => {
+    if (outletContext?.bookings && Array.isArray(outletContext.bookings)) {
+      return outletContext.bookings.filter((b) => !b.is_deleted);
+    }
+    const cached = getCachedCustomerBookings(user?.id);
+    if (cached && Array.isArray(cached)) {
+      return cached.filter((b) => !b.is_deleted);
+    }
+    return [];
+  }, [outletContext?.bookings, user?.id]);
+
+  const [bookings, setBookings] = useState(initialBookings);
   const [dbEvents, setDbEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialBookings.length === 0);
+  const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState(null);
 
@@ -381,54 +394,44 @@ export default function ActivityTrailPage() {
     });
   };
 
-  const loadTrail = async (isRefresh = false) => {
+  const loadTrail = useCallback(async (isRefresh = false) => {
     if (!user) return;
     if (isRefresh) setRefreshing(true);
+    setError(null);
     try {
-      const { data: bData } = await getCustomerBookings(user.id);
-      const customerBookings = bData || [];
+      const { data: bData, error: bErr } = await getCustomerBookings(user.id);
+      if (bErr) setError(bErr);
+      const customerBookings = (bData || []).filter((b) => !b.is_deleted);
       setBookings(customerBookings);
 
       const bookingIds = customerBookings.map((b) => b.id).filter(Boolean);
-      const { data: auditData } = await getCustomerActivityAudit(user.id, bookingIds);
+      const { data: auditData, error: aErr } = await getCustomerActivityAudit(user.id, bookingIds);
+      if (aErr) setError(aErr);
       setDbEvents(auditData || []);
     } catch (err) {
       console.warn("Error loading activity logs:", err);
+      setError(err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
-    let isMounted = true;
-
-    (async () => {
-      try {
-        const { data: bData } = await getCustomerBookings(user.id);
-        const customerBookings = bData || [];
-        if (isMounted) setBookings(customerBookings);
-
-        const bookingIds = customerBookings.map((b) => b.id).filter(Boolean);
-        const { data: auditData } = await getCustomerActivityAudit(user.id, bookingIds);
-        if (isMounted) setDbEvents(auditData || []);
-      } catch (err) {
-        console.warn("Error loading activity logs:", err);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    })();
+    if (initialBookings.length > 0) {
+      setBookings(initialBookings);
+      setLoading(false);
+    }
+    loadTrail();
 
     const handleAuditUpdate = () => loadTrail();
     window.addEventListener("ekodak_audit_trail_updated", handleAuditUpdate);
 
     return () => {
-      isMounted = false;
       window.removeEventListener("ekodak_audit_trail_updated", handleAuditUpdate);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user?.id, loadTrail]);
 
   // Combine real database records & customer-initiated updates
   // FILTER RULE: If bookings have been deleted from database, strip all booking notifications and ghost booking references
@@ -664,7 +667,7 @@ export default function ActivityTrailPage() {
   ];
 
   return (
-    <div className="w-full max-w-screen-2xl mx-auto space-y-5 pb-24 relative animate-fade-in">
+    <div className="w-full px-4 sm:px-6 lg:px-8 pt-6 space-y-5 pb-24 relative animate-fade-in font-body">
       <Toast toast={toast} onClose={() => setToast(null)} />
 
       {/* ambient glows */}
@@ -835,26 +838,16 @@ export default function ActivityTrailPage() {
       </section>
 
       {/* ═══════════ TIMELINE ═══════════ */}
-      {loading ? (
-        <div className="rounded-[24px] bg-white dark:bg-[#12131a] border border-neutral-200/80 dark:border-white/10 p-8 sm:p-12 shadow-sm space-y-5">
-          <div className="flex flex-col items-center gap-3">
-            <span className="w-14 h-14 rounded-3xl bg-gradient-to-br from-gold-light to-gold-dark flex items-center justify-center shadow-lg shadow-gold/30">
-              <Loader2 size={24} className="animate-spin text-[#1a1408]" />
-            </span>
-            <p className="font-heading text-[15px] font-bold text-neutral-900 dark:text-white">Opening your archive…</p>
-            <p className="text-xs text-neutral-400 font-body">Fetching verified bookings, payments & audit events</p>
-          </div>
-          <div className="space-y-3 w-full">
-            {[0, 1, 2].map(i => (
-              <div key={i} className="rounded-2xl border border-neutral-200/70 dark:border-white/10 p-4 space-y-2.5 animate-pulse">
-                <div className="h-4 w-1/3 rounded-lg bg-neutral-200 dark:bg-white/10" />
-                <div className="h-3 w-2/3 rounded-lg bg-neutral-100 dark:bg-white/5" />
-                <div className="h-3 w-1/2 rounded-lg bg-neutral-100 dark:bg-white/5" />
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : groupedEvents.length > 0 ? (
+      <SmartLoadingContainer
+        loading={loading}
+        hasData={allEvents.length > 0}
+        error={error}
+        onRetry={() => loadTrail(true)}
+        skeleton={<ActivityTrailSkeleton />}
+        delayMs={220}
+        title="Activity Audit Trail"
+      >
+        {groupedEvents.length > 0 ? (
         <div className="rounded-[24px] bg-white dark:bg-[#12131a] border border-neutral-200/80 dark:border-white/10 p-5 sm:p-8 shadow-[0_20px_60px_-24px_rgba(0,0,0,0.25)]">
           <div className="relative pl-7 sm:pl-9 space-y-5 before:absolute before:left-[15px] sm:before:left-[19px] before:top-3 before:bottom-3 before:w-[2px] before:rounded-full before:bg-gradient-to-b before:from-gold-light before:via-gold/40 before:to-transparent">
             {groupedEvents.map((group) => {
@@ -1030,6 +1023,7 @@ export default function ActivityTrailPage() {
           </div>
         </div>
       )}
+      </SmartLoadingContainer>
 
       {/* QR Pass Modal Tool */}
       <ClientToolsHub

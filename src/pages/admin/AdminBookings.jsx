@@ -1744,15 +1744,12 @@ export default function AdminBookings({ initialSection }) {
       {/* ── 1. Luxury Dark Hero Banner adapted for Booking Management ─────── */}
       <AdminHeroBanner
         station={profile?.role || 'admin'}
-        badgeLabel={isDeletedTab ? 'Trash & Archives' : 'Booking Management'}
-        badgeIcon={isDeletedTab ? Trash2 : CalendarDays}
         title={isDeletedTab ? 'Trash & Deleted Bookings' : 'Bookings Management'}
         subtitle={
           isDeletedTab
-            ? 'Review archived bookings. Recover any record back to active queue or permanently purge.'
+            ? 'Review archived bookings, restore deleted records, or permanently purge.'
             : 'Review, schedule, and systematically manage all customer photography sessions.'
         }
-        statusSummary={`${counts.total || 0} Total in Database · ${counts.pending || 0} Awaiting Review · ${counts.inBay || 0} In Production`}
         primaryAction={{
           label: 'New Booking',
           icon: Plus,
@@ -1768,8 +1765,8 @@ export default function AdminBookings({ initialSection }) {
         onExport={handleExportCSV}
       />
 
-      {/* ── Page Content Container ───────────────────────────────────── */}
-      <div className="space-y-6 max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-7 mt-6 sm:mt-7">
+      {/* ── Page Content Container (Full Width Edge-to-Edge) ── */}
+      <div className="space-y-4 sm:space-y-5 w-full px-4 sm:px-6 lg:px-8 mt-2.5 sm:mt-3">
 
       {/* ── Toast Notification ───────────────────────────────────────── */}
       <AnimatePresence>
@@ -2104,6 +2101,32 @@ export default function AdminBookings({ initialSection }) {
               >
                 <Trash2 size={13} />
                 <span>Empty Trash</span>
+              </button>
+            )}
+
+            {/* Export CSV */}
+            {!isDeletedTab && (
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="h-9 px-3 rounded-xl border border-neutral-200/90 hover:bg-neutral-100 text-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                title="Export Bookings to CSV"
+              >
+                <Download size={13} className="text-neutral-500" />
+                <span className="hidden sm:inline">Export CSV</span>
+              </button>
+            )}
+
+            {/* New Booking Button */}
+            {!isDeletedTab && (
+              <button
+                type="button"
+                onClick={() => setIsCreateModalOpen(true)}
+                className="h-9 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer shrink-0"
+                title="Create New Booking"
+              >
+                <Plus size={14} />
+                <span>New Booking</span>
               </button>
             )}
 

@@ -110,20 +110,9 @@ export const customerPaymentService = {
         const paidSoFar = Math.max(paidFromRecords, recordedDown);
 
         const remaining = Math.max(0, total - paidSoFar);
-        const isPaid = (b.payment_status === 'paid' || remaining <= 0) && paidSoFar > 0;
-
-        // Proactively heal the database record if total_amount was previously 0.00
-        if ((parseFloat(b.total_amount) || 0) <= 0 && total > 0) {
-          supabase
-            .from('bookings')
-            .update({ 
-              total_amount: total, 
-              remaining_balance: remaining,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', b.id)
-            .then();
-        }
+        const isPaid =
+          String(b.payment_status || '').toUpperCase() === 'PAID' ||
+          (remaining <= 0 && paidSoFar > 0);
 
         const bookingRef = b.booking_number || `BK-${b.id.slice(0, 8)}`;
 

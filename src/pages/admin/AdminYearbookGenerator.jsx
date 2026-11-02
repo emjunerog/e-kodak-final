@@ -403,7 +403,7 @@ export default function AdminYearbookGenerator() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in font-body pb-16 max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 sm:mt-5">
+    <div className="space-y-6 animate-fade-in font-body pb-16 w-full px-4 sm:px-6 lg:px-8 mt-4 sm:mt-5">
       <style>{getPrintCss()}</style>
       
       {/* Toast Notification */}
@@ -624,16 +624,24 @@ export default function AdminYearbookGenerator() {
 
       {/* ── VIEW: Roster ───────────────────────────────────────────────── */}
       {viewMode === 'roster' && students.length > 0 && (
-        <section className="bg-white rounded-3xl border border-neutral-200/90 shadow-sm p-5 sm:p-6 space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div>
-              <h3 className="font-heading text-base font-bold text-neutral-900 flex items-center gap-2">
-                <Users size={18} className="text-amber-600" />
-                <span>Roster — {selectedSchool || 'All schools'}</span>
-              </h3>
-              <p className="text-xs text-neutral-500">
-                {bookStudents.length} in book · {excludedInvalidCount} incomplete · {otherSchoolCount} other schools · {duplicateCount} duplicates
-              </p>
+        <section className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+          {/* Top hairline amber accent */}
+          <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
+
+          {/* Header Bar */}
+          <div className="p-4 sm:p-6 border-b border-[#c9a96e]/20 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-b from-[#faf7f2]/60 to-transparent">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-900/20 shrink-0">
+                <Users size={22} />
+              </div>
+              <div>
+                <h3 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 tracking-tight">
+                  Roster — {selectedSchool || 'All schools'}
+                </h3>
+                <p className="text-xs text-neutral-500">
+                  {bookStudents.length} in book · {excludedInvalidCount} incomplete · {otherSchoolCount} other schools · {duplicateCount} duplicates
+                </p>
+              </div>
             </div>
 
             {/* Filter and Search Bar */}
@@ -643,7 +651,7 @@ export default function AdminYearbookGenerator() {
                 <select
                   value={filterSection}
                   onChange={(e) => setFilterSection(e.target.value)}
-                  className="py-1.5 px-3 bg-neutral-100 border border-neutral-200 rounded-xl text-xs font-medium text-neutral-800 focus:outline-none"
+                  className="py-1.5 px-3 bg-neutral-50 border border-neutral-200/90 rounded-xl text-xs font-medium text-neutral-800 focus:outline-none focus:border-amber-400"
                 >
                   <option value="ALL">All Sections</option>
                   {availableSections.map((sec) => (
@@ -658,7 +666,7 @@ export default function AdminYearbookGenerator() {
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="py-1.5 px-3 bg-neutral-100 border border-neutral-200 rounded-xl text-xs font-medium text-neutral-800 focus:outline-none"
+                className="py-1.5 px-3 bg-neutral-50 border border-neutral-200/90 rounded-xl text-xs font-medium text-neutral-800 focus:outline-none focus:border-amber-400"
               >
                 <option value="name-asc">Alphabetical (Surname A-Z)</option>
                 <option value="officers-first">Class Officers First</option>
@@ -673,33 +681,33 @@ export default function AdminYearbookGenerator() {
                   value={searchRoster}
                   onChange={(e) => setSearchRoster(e.target.value)}
                   placeholder="Search candidates..."
-                  className="pl-8 pr-3 py-1.5 bg-neutral-100/80 border border-neutral-200/80 rounded-full text-xs font-medium focus:bg-white focus:border-amber-500 outline-none w-48 sm:w-56"
+                  className="pl-8 pr-3 py-1.5 bg-neutral-50 border border-neutral-200/90 rounded-xl text-xs font-medium focus:bg-white focus:border-amber-400 outline-none w-48 sm:w-56"
                 />
               </div>
             </div>
           </div>
 
           {/* Table */}
-          <div className="overflow-x-auto rounded-2xl border border-neutral-100">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-neutral-50 text-neutral-500 uppercase tracking-wider font-semibold border-b border-neutral-100 text-xs">
-                <tr>
-                  <th className="py-3 px-4 w-10">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs font-body border-collapse">
+              <thead className="sticky top-0 z-10 bg-[#faf7f2]/95 border-b border-[#c9a96e]/25 shadow-2xs backdrop-blur-md">
+                <tr className="border-b border-neutral-200/80 text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
+                  <th className="py-3.5 px-4 w-10">
                     <input
                       type="checkbox"
                       checked={selectedStudentIds.size === students.length && students.length > 0}
                       onChange={handleSelectAll}
-                      className="rounded accent-amber-500 cursor-pointer"
+                      className="rounded accent-amber-600 cursor-pointer"
                     />
                   </th>
-                  <th className="py-3 px-4">Photo</th>
-                  <th className="py-3 px-4">Student &amp; ID</th>
-                  <th className="py-3 px-4">School</th>
-                  <th className="py-3 px-4">Section &amp; Program</th>
-                  <th className="py-3 px-4">Role</th>
-                  <th className="py-3 px-4">Motto</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                  <th className="py-3.5 px-4">Photo</th>
+                  <th className="py-3.5 px-4">Student &amp; ID</th>
+                  <th className="py-3.5 px-4">School</th>
+                  <th className="py-3.5 px-4">Section &amp; Program</th>
+                  <th className="py-3.5 px-4">Role</th>
+                  <th className="py-3.5 px-4">Motto</th>
+                  <th className="py-3.5 px-4">Status</th>
+                  <th className="py-3.5 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 font-medium text-neutral-700">

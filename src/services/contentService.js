@@ -237,6 +237,98 @@ export async function getGalleryItems() {
   });
 }
 
+/**
+ * Submit a customer best capture to the studio gallery showcase.
+ */
+export async function submitCustomerBestCapture({
+  bookingId = null,
+  title,
+  category = 'graduation',
+  imageUrl = '',
+  file = null,
+  description = '',
+  customerName = ''
+}) {
+  if (!isSupabaseConfigured) return { data: null, error: new Error('Database not configured') };
+  try {
+    let resolvedImageUrl = (imageUrl || '').trim();
+
+    if (file) {
+      try {
+        const safeName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+        const { error: upErr } = await supabase.storage
+          .from('booking-references')
+          .upload(`customer-captures/${safeName}`, file, { upsert: true });
+
+        if (!upErr) {
+          const { data: urlData } = supabase.storage
+            .from('booking-references')
+            .getPublicUrl(`customer-captures/${safeName}`);
+          if (urlData?.publicUrl) {
+            resolvedImageUrl = urlData.publicUrl;
+          }
+        }
+      } catch (uploadCatch) {
+        console.warn('Storage upload for customer capture caught:', uploadCatch);
+      }
+    }
+
+    if (!resolvedImageUrl) {
+      return { data: null, error: new Error('Please select an image deliverable or upload a photo.') };
+    }
+
+    const payload = {
+      title: (title || 'My Graduation Milestone').trim(),
+      category: (category || 'graduation').toLowerCase(),
+      image_url: resolvedImageUrl,
+      description: description.trim() 
+        ? `${description.trim()}${customerName ? ` — Shared by ${customerName}` : ''}` 
+        : (customerName ? `Shared by client ${customerName}` : ''),
+      is_public: true,
+      likes: 0,
+      sort_order: 10,
+      badges: ['Client Capture', 'Verified Graduate']
+    };
+    if (bookingId) payload.booking_id = bookingId;
+
+    const { data, error } = await supabase
+      .from('gallery_items')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (err) {
+    console.error('submitCustomerBestCapture error:', err);
+    return { data: null, error: err };
+  }
+}
+
+/**
+ * Fetch customer best captures for a specific user/booking.
+ */
+export async function getCustomerBestCaptures(bookingId = null) {
+  if (!isSupabaseConfigured) return { data: [], error: null };
+  try {
+    let query = supabase
+      .from('gallery_items')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (bookingId) {
+      query = query.eq('booking_id', bookingId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return { data: data || [], error: null };
+  } catch (err) {
+    console.error('getCustomerBestCaptures error:', err);
+    return { data: [], error: err };
+  }
+}
+
 // ── Announcements ─────────────────────────────────────────────────────────────
 
 /**

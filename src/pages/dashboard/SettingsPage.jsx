@@ -368,7 +368,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="max-w-screen-2xl mx-auto w-full animate-fade-in pb-20 space-y-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 pt-6 pb-20 space-y-6 animate-fade-in font-body">
       <Toast toast={toast} onClose={() => setToast(null)} />
       <ConfirmDialog dialog={dialog} onClose={() => setDialog(null)} />
 

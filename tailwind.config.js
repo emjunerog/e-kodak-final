@@ -103,10 +103,27 @@ export default {
 
       // ─── Spacing ───────────────────────────────────────────────────────────
       spacing: {
+        "4.5": "1.125rem",
+        "9.5": "2.375rem",
         "18": "4.5rem",
         "22": "5.5rem",
         "30": "7.5rem",
         "section": "6rem",   // Consistent section padding
+      },
+
+      // ─── Opacity scale ────────────────────────────────────────────────────
+      // Tailwind's default scale skips these values, which caused numerous
+      // `bg-gold/15`, `ring-gold/45`, `bg-gold/8` classes to be dropped.
+      opacity: {
+        "8": "0.08",
+        "12": "0.12",
+        "15": "0.15",
+        "18": "0.18",
+        "35": "0.35",
+        "45": "0.45",
+        "55": "0.55",
+        "65": "0.65",
+        "85": "0.85",
       },
 
       // ─── Border Radius ─────────────────────────────────────────────────────
@@ -117,6 +134,9 @@ export default {
 
       // ─── Box Shadow ────────────────────────────────────────────────────────
       boxShadow: {
+        // Aliases used throughout the admin workspace (Tailwind v3 has no xs/2xs).
+        "2xs":      "0 1px 1px 0 rgba(26, 23, 20, 0.04)",
+        "xs":       "0 1px 2px 0 rgba(26, 23, 20, 0.06)",
         "warm-sm":  "0 1px 3px 0 rgba(26, 23, 20, 0.08), 0 1px 2px -1px rgba(26, 23, 20, 0.06)",
         "warm-md":  "0 4px 16px -2px rgba(26, 23, 20, 0.12), 0 2px 6px -2px rgba(26, 23, 20, 0.08)",
         "warm-lg":  "0 10px 40px -4px rgba(26, 23, 20, 0.15), 0 4px 16px -4px rgba(26, 23, 20, 0.10)",

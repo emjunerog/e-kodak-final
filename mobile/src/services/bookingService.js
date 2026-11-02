@@ -316,30 +316,12 @@ export async function fetchBookingByToken(lookupToken) {
       if (byId) return await handleMatchedBooking(byId);
     }
 
-    // Strategy 4: partial booking_number match (for manual entry)
-    const { data: byPartial } = await supabase
-      .from('bookings')
-      .select(BOOKING_SELECT)
-      .ilike('booking_number', `%${token}%`)
-      .limit(1)
-      .maybeSingle();
-    if (byPartial) return await handleMatchedBooking(byPartial);
-
-    // Strategy 5: Graceful fallback to latest active studio booking in database
-    // Ensures real database booking (e.g. BK-2026-00001) loads smoothly even if old test pass 00007 was cached
-    const { data: latestBk } = await supabase
-      .from('bookings')
-      .select(BOOKING_SELECT)
-      .eq('is_deleted', false)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (latestBk) return await handleMatchedBooking(latestBk);
+    logQRScan({ bookingId: null, scanResult: 'INVALID' });
 
     return {
       data: null,
       error: new Error(
-        'No booking found for this pass. If this is an older booking, try entering your booking number (e.g. BK-000042) manually.'
+        'No booking found for this pass. Please scan your official E-Kodak QR code or enter your exact booking reference (e.g. BK-2026-00001).'
       ),
     };
   } catch (err) {
@@ -348,16 +330,18 @@ export async function fetchBookingByToken(lookupToken) {
 }
 
 /**
- * Fetch the latest active booking from Supabase
+ * Fetch the latest active booking for a specific authenticated customer.
+ * Never returns bookings without an explicit userId filter to prevent cross-customer data leaks.
  */
-export async function fetchLatestActiveBooking() {
-  if (!isSupabaseConfigured || !supabase) {
-    return { data: null, error: new Error('Supabase is not configured.') };
+export async function fetchLatestActiveBooking(userId) {
+  if (!isSupabaseConfigured || !supabase || !userId) {
+    return { data: null, error: new Error('User authentication is required to fetch bookings.') };
   }
   try {
     const { data, error } = await supabase
       .from('bookings')
       .select(BOOKING_SELECT)
+      .eq('customer_id', userId)
       .eq('is_deleted', false)
       .order('created_at', { ascending: false })
       .limit(1)

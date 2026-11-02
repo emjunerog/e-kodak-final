@@ -12,23 +12,30 @@ import { supabase } from '../../lib/supabase';
 import { validatePasswordStrength } from '../../lib/securityValidator';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
-import StudioDropdown from '../../components/ui/StudioDropdown';
 
 const ROLE_BADGE = {
-  admin: 'text-gold bg-gold/10 border-gold/20',
-  staff: 'text-blue-700 bg-blue-50 border-blue-100',
-  finance: 'text-emerald-700 bg-emerald-50 border-emerald-100',
+  admin: 'text-amber-800 bg-amber-50 border-amber-200/80',
+  staff: 'text-amber-800 bg-amber-50 border-amber-200/80',
+  finance: 'text-amber-800 bg-amber-50 border-amber-200/80',
 };
 
 const fmt = (d) => !d ? '—' : new Date(d).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' });
 
-function Section({ title, subtitle, action, children }) {
+function Section({ title, subtitle, action, children, icon: IconComponent }) {
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden">
-      <div className="px-5 sm:px-6 py-4 border-b border-neutral-100 flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h2 className="font-heading text-base font-bold text-primary">{title}</h2>
-          {subtitle && <p className="text-xs text-neutral-400 mt-0.5">{subtitle}</p>}
+    <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+      <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
+      <div className="px-5 sm:px-6 py-4 border-b border-[#c9a96e]/20 flex items-center justify-between flex-wrap gap-3 bg-gradient-to-b from-[#faf7f2]/60 to-transparent">
+        <div className="flex items-center gap-3">
+          {IconComponent && (
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-900/20 shrink-0">
+              <IconComponent size={20} />
+            </div>
+          )}
+          <div>
+            <h2 className="font-heading text-base font-bold text-neutral-900 tracking-tight">{title}</h2>
+            {subtitle && <p className="text-xs text-neutral-500 mt-0.5">{subtitle}</p>}
+          </div>
         </div>
         {action}
       </div>
@@ -141,12 +148,14 @@ export default function AdminSettings() {
         }
       };
 
-      await updateStudioSettings(settings?.id, payload);
+      const res = await updateStudioSettings(settings?.id, payload);
+      if (res?.error) throw res.error;
+      if (res?.data) setSettings(res.data);
       showToast('Studio Settings saved to Supabase successfully!');
       load();
     } catch (err) {
       console.error('Failed to save settings:', err);
-      alert('Failed to save settings: ' + err.message);
+      setError('Failed to save settings: ' + (err.message || 'Unknown database error'));
     } finally {
       setSavingSettings(false);
     }
@@ -222,7 +231,6 @@ export default function AdminSettings() {
   // Staff filtering
   const filteredStaff = useMemo(() => {
     return staff.filter(s => {
-      if (staffRoleFilter !== 'ALL' && s.role !== staffRoleFilter) return false;
       if (!staffSearch.trim()) return true;
       const q = staffSearch.toLowerCase();
       const name = `${s.first_name || ''} ${s.last_name || ''}`.toLowerCase();
@@ -230,26 +238,16 @@ export default function AdminSettings() {
       const role = (s.role || '').toLowerCase();
       return name.includes(q) || phone.includes(q) || role.includes(q);
     });
-  }, [staff, staffRoleFilter, staffSearch]);
-
-  const roleFilterOptions = [
-    { value: 'ALL', label: 'All Staff Roles', desc: 'Display all internal studio accounts' },
-    { value: 'admin', label: 'Administrators', desc: 'Full governance & settings access' },
-    { value: 'staff', label: 'Studio Staff', desc: 'Front desk & intake operations' },
-    { value: 'finance', label: 'Finance Officers', desc: 'Payments, ledger & balances' },
-  ];
+  }, [staff, staffSearch]);
 
   return (
     <div className="w-full pb-16 animate-fade-in font-body">
       {/* ── 1. Luxury Administrative Hero Banner ────────────────────────────── */}
       <AdminHeroBanner
         station="admin"
-        badgeLabel="Studio & Security Configuration"
-        badgeIcon={Settings}
         userName={profile?.full_name || user?.email?.split('@')[0] || 'Administrator'}
         title="Studio Settings & System Governance"
-        subtitle="Manage studio address, business hours, administrative credentials, security parameters, and staff accounts."
-        statusSummary={`${staff.length} Authorized Staff · ${settings ? 'Live Studio Info' : 'Synchronizing'} · TLS 1.3 Active`}
+        subtitle="Manage studio address, business hours, administrative credentials, and system governance."
         primaryAction={{
           label: 'Save Studio Info',
           icon: Save,
@@ -264,8 +262,8 @@ export default function AdminSettings() {
         isRefreshing={loading}
       />
 
-      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Wrapper (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
       {/* Action Success Toast */}
       {actionSuccessMsg && (
@@ -329,6 +327,7 @@ export default function AdminSettings() {
 
       {/* ── 3. Global Studio Settings Section ─────────────────────────────── */}
       <Section 
+        icon={Globe}
         title="Global Studio Identity & Operating Schedule"
         subtitle="Public parameters synchronized across booking receipts, confirmation emails, and studio footer."
         action={
@@ -487,7 +486,7 @@ export default function AdminSettings() {
       {/* ── 4. Account Credentials & System Info ───────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Administrator Account & Credentials */}
-        <Section title="Administrator Account & Security Credentials">
+        <Section icon={Key} title="Administrator Account & Security Credentials">
           <div className="flex items-center justify-between gap-4 flex-wrap pb-4 border-b border-neutral-100">
             <div className="flex items-center gap-3.5">
               <div className="w-12 h-12 rounded-2xl bg-gold/15 flex items-center justify-center text-gold font-heading text-base font-bold border border-gold/30 shrink-0">
@@ -543,8 +542,8 @@ export default function AdminSettings() {
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[11px] font-body">
             <div className="p-3 rounded-xl bg-neutral-50/80 border border-neutral-100">
               <span className="text-neutral-400 block uppercase text-xs font-bold tracking-wider">Session Status</span>
-              <span className="font-bold text-emerald-700 flex items-center gap-1 mt-1">
-                <CheckCircle2 size={12} /> Active & Authenticated
+              <span className="font-bold text-amber-900 flex items-center gap-1 mt-1">
+                <CheckCircle2 size={12} className="text-amber-600" /> Active & Authenticated
               </span>
             </div>
             <div className="p-3 rounded-xl bg-neutral-50/80 border border-neutral-100">
@@ -559,7 +558,7 @@ export default function AdminSettings() {
         </Section>
 
         {/* System Information */}
-        <Section title="System Architecture & Database Link">
+        <Section icon={ShieldCheck} title="System Architecture & Database Link">
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-body">
             {[
               { label: 'Platform Engine',  value: 'E-KODAK Photography Management' },
@@ -586,30 +585,39 @@ export default function AdminSettings() {
       </div>
 
       {/* ── 5. Staff Accounts Management ──────────────────────────────────── */}
-      <Section 
-        title="Authorized Personnel & Staff Accounts"
-        subtitle="Manage studio administrative roles, photographers, front desk staff, and ledger finance officers."
-        action={
-          <div className="flex items-center gap-2">
-            <div className="w-44">
-              <StudioDropdown
-                value={staffRoleFilter}
-                onChange={setStaffRoleFilter}
-                options={roleFilterOptions}
-                placeholder="Filter Role"
-              />
+      <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
+
+        <div className="p-4 sm:p-6 border-b border-[#c9a96e]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-b from-[#faf7f2]/60 to-transparent">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-900/20 shrink-0">
+              <Users size={22} />
             </div>
+            <div>
+              <h2 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 tracking-tight">
+                Authorized Personnel &amp; Staff Accounts
+              </h2>
+              <p className="text-xs text-neutral-500">
+                Displaying <span className="font-bold text-neutral-800">{filteredStaff.length}</span> verified personnel accounts registered in the studio database.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
             <button 
+              type="button"
               onClick={load} 
-              className="flex items-center gap-1.5 text-xs font-medium text-neutral-600 hover:text-primary border border-neutral-200 bg-white px-3 py-1.5 rounded-xl transition-all"
+              disabled={loading}
+              className="h-9 px-3.5 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-neutral-600 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              <RefreshCw size={12} />
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
               <span>Refresh</span>
             </button>
           </div>
-        }
-      >
-        <div className="mb-4">
+        </div>
+
+        {/* Filter Bar */}
+        <div className="p-4 sm:p-5 border-b border-[#c9a96e]/15 bg-neutral-50/40">
           <div className="relative">
             <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
             <input
@@ -617,56 +625,63 @@ export default function AdminSettings() {
               value={staffSearch}
               onChange={(e) => setStaffSearch(e.target.value)}
               placeholder="Search staff members by name, phone, or role..."
-              className="w-full pl-10 pr-9 py-2 bg-neutral-50/70 border border-neutral-200 rounded-xl text-xs text-neutral-700 placeholder-neutral-400 focus:outline-none focus:border-gold focus:bg-white transition-all"
+              className="w-full pl-10 pr-9 py-2 bg-white border border-neutral-200/90 rounded-xl text-xs text-neutral-700 placeholder-neutral-400 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20 transition-all shadow-2xs"
             />
             {staffSearch && (
-              <button onClick={() => setStaffSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
+              <button 
+                type="button"
+                onClick={() => setStaffSearch('')} 
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 cursor-pointer"
+              >
                 <X size={14} />
               </button>
             )}
           </div>
         </div>
 
-        {loading ? (
-          <div className="space-y-3">
-            {[...Array(3)].map((_, i) => <div key={i} className="h-12 bg-neutral-100 rounded-xl animate-pulse" />)}
-          </div>
-        ) : filteredStaff.length === 0 ? (
-          <div className="text-center py-8 text-neutral-400 text-xs">
-            <Users size={28} className="text-neutral-300 mx-auto mb-2" />
-            No staff accounts found matching your search.
-          </div>
-        ) : (
-          <div className="divide-y divide-neutral-100 border border-neutral-100 rounded-xl overflow-hidden">
-            {filteredStaff.map((s) => (
-              <div key={s.id} className="flex items-center justify-between gap-3 p-3.5 hover:bg-neutral-50/50 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-gold/15 flex items-center justify-center text-gold font-heading text-xs font-bold border border-gold/30 shrink-0">
-                    {s.first_name?.[0] || 'S'}{s.last_name?.[0] || 'T'}
+        {/* Content */}
+        <div className="p-4 sm:p-6">
+          {loading ? (
+            <div className="space-y-3">
+              {[...Array(3)].map((_, i) => <div key={i} className="h-14 bg-neutral-100 rounded-xl animate-pulse" />)}
+            </div>
+          ) : filteredStaff.length === 0 ? (
+            <div className="text-center py-10 text-neutral-400 text-xs">
+              <Users size={28} className="text-neutral-300 mx-auto mb-2" />
+              No staff accounts found matching your search.
+            </div>
+          ) : (
+            <div className="divide-y divide-neutral-100 border border-neutral-200/70 rounded-2xl overflow-hidden bg-white">
+              {filteredStaff.map((s) => (
+                <div key={s.id} className="flex items-center justify-between gap-3 p-3.5 hover:bg-neutral-50/50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-900 font-heading text-xs font-bold border border-amber-200/80 shrink-0">
+                      {s.first_name?.[0] || 'S'}{s.last_name?.[0] || 'T'}
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-primary">{s.first_name} {s.last_name}</p>
+                      <p className="text-[11px] text-neutral-400 font-body">
+                        {s.phone || 'No phone set'} · Joined {fmt(s.created_at)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-semibold text-primary">{s.first_name} {s.last_name}</p>
-                    <p className="text-[11px] text-neutral-400 font-body">
-                      {s.phone || 'No phone set'} · Joined {fmt(s.created_at)}
-                    </p>
-                  </div>
+                  <span className={`text-xs font-bold border px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${ROLE_BADGE[s.role] || 'text-neutral-500 bg-neutral-100 border-neutral-200'}`}>
+                    {s.role}
+                  </span>
                 </div>
-                <span className={`text-xs font-bold border px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${ROLE_BADGE[s.role] || 'text-neutral-500 bg-neutral-100 border-neutral-200'}`}>
-                  {s.role}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
 
-        <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-400 font-body">
-          <p className="flex items-start gap-1.5 text-[11px]">
-            <Info size={12} className="shrink-0 mt-0.5 text-neutral-500" />
-            To provision a new studio workstation account, register user on portal, then assign role in Supabase profiles table.
-          </p>
-          <span className="font-semibold text-neutral-500">{filteredStaff.length} Accounts Listed</span>
+          <div className="mt-4 pt-3 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-400 font-body">
+            <p className="flex items-start gap-1.5 text-[11px]">
+              <Info size={12} className="shrink-0 mt-0.5 text-neutral-500" />
+              To provision a new studio workstation account, register user on portal, then assign role in Supabase profiles table.
+            </p>
+            <span className="font-semibold text-neutral-500">{filteredStaff.length} Accounts Listed</span>
+          </div>
         </div>
-      </Section>
+      </div>
       </div>
 
       {/* ── Change Password Modal ── */}

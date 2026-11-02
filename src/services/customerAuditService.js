@@ -1,79 +1,8 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase.js';
-
 const STORAGE_KEY_PREFIX = 'ekodak_customer_audit_';
 
 /**
- * Generates initial baseline seed audit logs for an authentic user experience
- * if the user has no recorded local audit logs yet.
- */
-function getInitialSeedEvents(userId) {
-  const baseTime = new Date('2026-09-01T08:30:00.000Z').getTime();
-  
-  return [
-    {
-      id: `cust_seed_terms_${userId}`,
-      category: 'TERMS_SIGN',
-      title: 'Service Agreement & Model Release Signed',
-      description: 'Electronically signed studio terms, session conduct code, and model release.',
-      changes: [
-        'Electronic Signature: Verified (EK-SIG-99428-2026)',
-        'Model Release: Consented',
-        'Proofing Storage Policy: Acknowledged',
-        'Session Conduct Code: Agreed'
-      ],
-      timestamp: new Date(baseTime + 1000 * 60 * 120).toISOString(),
-      source: 'CUSTOMER_ACTION'
-    },
-    {
-      id: `cust_seed_delivery_${userId}`,
-      category: 'DELIVERY_UPDATE',
-      title: 'Delivery Destination Saved',
-      description: 'Selected Studio Direct Delivery with saved drop-off location and recipient details.',
-      changes: [
-        'Fulfillment: Direct Delivery',
-        'Recipient: Mark June Repunte (09102949414)',
-        'Address: Barangay Alpaco, Purok Sagrada 2B',
-        'Instructions: Near Alpaco, Barangay Hall'
-      ],
-      timestamp: new Date(baseTime + 1000 * 60 * 95).toISOString(),
-      source: 'CUSTOMER_ACTION'
-    },
-    {
-      id: `cust_seed_specs_${userId}`,
-      category: 'SPEC_UPDATE',
-      title: 'Wardrobe & Shoot Specs Saved',
-      description: 'Configured academic portrait wardrobe sizing and shoot styling preferences.',
-      changes: [
-        "Toga Size: S (5'2\" - 5'4\")",
-        'Inner Attire: M (Medium)',
-        'Academic Hood: IT / Computer Studies (Orange/Gold)',
-        'Backdrop: Classic Studio Grey',
-        'Retouching: Natural Texture Retouch',
-        'Makeup: Natural Matte Fresh'
-      ],
-      timestamp: new Date(baseTime + 1000 * 60 * 60).toISOString(),
-      source: 'CUSTOMER_ACTION'
-    },
-    {
-      id: `cust_seed_profile_${userId}`,
-      category: 'PROFILE_UPDATE',
-      title: 'Academic Profile Details Saved',
-      description: 'Updated university, degree candidacy, and graduation year details.',
-      changes: [
-        'University: Cebu Technological University (CTU)',
-        'Campus: CTU - Main Campus',
-        'Degree: Bachelor of Science in Information Technology',
-        'Graduation Year: 2026'
-      ],
-      timestamp: new Date(baseTime).toISOString(),
-      source: 'CUSTOMER_ACTION'
-    }
-  ];
-}
-
-/**
  * Retrieves customer audit logs from persistent localStorage.
- * Automatically seeds baseline events if empty.
+ * Filters out any legacy synthetic seed entries (`cust_seed_*`) so only authentic customer actions are returned.
  *
  * @param {string} userId
  * @returns {Array} Array of audit event objects
@@ -84,14 +13,15 @@ export function getCustomerAuditLogs(userId) {
     const raw = localStorage.getItem(`${STORAGE_KEY_PREFIX}${userId}`);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+      if (Array.isArray(parsed)) {
+        const realLogs = parsed.filter((entry) => !String(entry?.id || '').startsWith('cust_seed_'));
+        if (realLogs.length !== parsed.length) {
+          localStorage.setItem(`${STORAGE_KEY_PREFIX}${userId}`, JSON.stringify(realLogs));
+        }
+        return realLogs;
       }
     }
-    // Seed initial events if none recorded yet
-    const initial = getInitialSeedEvents(userId);
-    localStorage.setItem(`${STORAGE_KEY_PREFIX}${userId}`, JSON.stringify(initial));
-    return initial;
+    return [];
   } catch (err) {
     console.warn('Error reading customer audit logs:', err);
     return [];

@@ -328,7 +328,7 @@ export default function PhotographerDashboard() {
       <AdminHeroBanner
         station="photographer"
         userName={displayName}
-        statusSummary={operationalSummary}
+        creativeRemark="Where creative vision meets studio excellence · Ready for today's productions."
         primaryAction={{
           label: 'My Assigned Shoots',
           href: '/photographer/bookings',
@@ -358,8 +358,8 @@ export default function PhotographerDashboard() {
         ]}
       />
 
-      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Wrapper (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
       {/* Inline Feedback Banner */}
       {feedback && (

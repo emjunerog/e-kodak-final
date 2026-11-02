@@ -1,6 +1,6 @@
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { generateAndStoreQRCode, rotateBookingToken } from './qrService';
-import { getCustomerAuditLogs } from './customerAuditService';
+import { getCustomerAuditLogs, recordCustomerAction } from './customerAuditService';
 import {
   validateUploadFile,
   sanitizeFileName,
@@ -243,6 +243,8 @@ export async function createBooking(bookingData, referenceFiles = []) {
       })();
     }
 
+    invalidateCustomerBookingsCache(bookingData.customer_id);
+
     return { data, error: null };
   } catch (error) {
     console.error("Booking creation failed:", error);
@@ -342,14 +344,79 @@ export function parseParticipantDetailsFromNotes(notes) {
   return null;
 }
 
+export function parseDeliveryDetailsFromNotes(notes) {
+  if (!notes || typeof notes !== 'string') return null;
+
+  const match = notes.match(/\[DELIVERY\s*&\s*CLAIMING\s*DETAILS\]([\s\S]*?)(?=\n\n\[|$)/i);
+  if (!match) return null;
+
+  const block = match[1];
+  const modeRaw = block.match(/•\s*Fulfillment\s*Mode:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const recipient_name = block.match(/•\s*Recipient\s*Name:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const recipient_phone = block.match(/•\s*Recipient\s*Phone:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const region = block.match(/•\s*Region:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const province = block.match(/•\s*Province:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const city = block.match(/•\s*City\s*\/\s*Municipality:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const barangay = block.match(/•\s*Barangay:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const street = block.match(/•\s*Street\s*\/\s*House\s*No\.:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const delivery_address = block.match(/•\s*Delivery\s*Address:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const delivery_instructions = block.match(/•\s*Delivery\s*Instructions:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const saved_at = block.match(/•\s*Saved\s*At:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+
+  const fulfillment_mode = /delivery|courier|shipping/i.test(modeRaw) ? 'STUDIO_DELIVERY' : 'STUDIO_PICKUP';
+
+  return {
+    fulfillment_mode,
+    recipient_name: recipient_name === 'N/A' ? '' : recipient_name,
+    recipient_phone: recipient_phone === 'N/A' ? '' : recipient_phone,
+    region: region === 'N/A' ? '' : region,
+    province: province === 'N/A' ? '' : province,
+    city: city === 'N/A' ? '' : city,
+    barangay: barangay === 'N/A' ? '' : barangay,
+    street: street === 'N/A' ? '' : street,
+    delivery_address: delivery_address === 'N/A' ? '' : delivery_address,
+    delivery_instructions: delivery_instructions === 'N/A' ? '' : delivery_instructions,
+    saved_at: saved_at === 'N/A' ? '' : saved_at,
+  };
+}
+
+// ── In-Memory Booking Cache ──────────────────────────────────────────────────
+const customerBookingsCache = new Map();
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+export function getCachedCustomerBookings(customerId) {
+  if (!customerId) return null;
+  const entry = customerBookingsCache.get(customerId);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) return null;
+  return entry.data;
+}
+
+export function invalidateCustomerBookingsCache(customerId = null) {
+  if (customerId) {
+    customerBookingsCache.delete(customerId);
+  } else {
+    customerBookingsCache.clear();
+  }
+}
+
 // ── getCustomerBookings ───────────────────────────────────────────────────────
 
 /**
  * Retrieves all bookings for a specific customer, ordered by newest first.
+ * Supports smart in-memory caching to avoid skeleton flashing on stable networks.
  */
-export async function getCustomerBookings(customerId) {
+export async function getCustomerBookings(customerId, { forceRefresh = false } = {}) {
   if (!isSupabaseConfigured) {
     return { data: [], error: new Error("Database connection is not configured.") };
+  }
+
+  // Fast-path: return cached data immediately if available and fresh
+  if (!forceRefresh) {
+    const cached = getCachedCustomerBookings(customerId);
+    if (cached) {
+      return { data: cached, error: null, fromCache: true };
+    }
   }
 
   try {
@@ -359,7 +426,7 @@ export async function getCustomerBookings(customerId) {
       .from('bookings')
       .select(`
         *,
-        service:services(id, name, category, cover_image),
+        service:services(id, name, category, cover_image, inclusions, tiers),
         photographer:photographer_profiles!bookings_photographer_id_fkey(
           id,
           specialization,
@@ -377,7 +444,7 @@ export async function getCustomerBookings(customerId) {
         .from('bookings')
         .select(`
           *,
-          service:services(id, name, category, cover_image)
+          service:services(id, name, category, cover_image, inclusions, tiers)
         `)
         .eq('customer_id', customerId)
         .or('is_deleted.is.null,is_deleted.eq.false')
@@ -404,6 +471,33 @@ export async function getCustomerBookings(customerId) {
     if (Array.isArray(bookings)) {
       // Ensure zero deleted bookings leak into customer records
       bookings = bookings.filter(b => !b.is_deleted);
+
+      // Batch load photo_outputs so every booking knows if soft-copies are ready
+      if (bookings.length > 0) {
+        const bIds = bookings.map(b => b.id).filter(Boolean);
+        try {
+          const { data: outputs } = await supabase
+            .from('photo_outputs')
+            .select('id, booking_id, file_name, file_path, file_type, file_size, status, created_at')
+            .in('booking_id', bIds)
+            .order('created_at', { ascending: false });
+
+          if (outputs) {
+            const outputsByBooking = {};
+            outputs.forEach(o => {
+              if (!outputsByBooking[o.booking_id]) outputsByBooking[o.booking_id] = [];
+              outputsByBooking[o.booking_id].push(o);
+            });
+            bookings.forEach(b => {
+              b.photo_outputs = outputsByBooking[b.id] || [];
+              b.has_soft_copies = b.photo_outputs.length > 0;
+            });
+          }
+        } catch (oErr) {
+          console.warn("[getCustomerBookings] photo_outputs batch lookup skipped:", oErr);
+        }
+      }
+
       bookings.forEach(b => {
         if (!b.selected_add_ons || b.selected_add_ons.length === 0) {
           b.selected_add_ons = parseAddOnsFromNotes(b.notes);
@@ -414,7 +508,13 @@ export async function getCustomerBookings(customerId) {
         if (!b.participant_details) {
           b.participant_details = parseParticipantDetailsFromNotes(b.notes);
         }
+        if (!b.delivery_details) {
+          b.delivery_details = parseDeliveryDetailsFromNotes(b.notes);
+        }
       });
+    }
+    if (customerId && Array.isArray(bookings)) {
+      customerBookingsCache.set(customerId, { data: bookings, timestamp: Date.now() });
     }
     return { data: bookings, error: null };
   } catch (error) {
@@ -504,7 +604,39 @@ export async function getBookingById(bookingId) {
       }
     }
 
-    // 3. Metadata parsers
+    // 2.1 Safely resolve customer profile (avatar, email, phone, name)
+    if (booking.customer_id) {
+      try {
+        const { data: custProfile } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, email, phone, avatar_url')
+          .eq('id', booking.customer_id)
+          .maybeSingle();
+
+        if (custProfile) {
+          booking.customer = custProfile;
+        }
+      } catch (cErr) {
+        console.warn("[getBookingById] Customer profile lookup skipped:", cErr);
+      }
+    }
+
+    // 3. Attach photo_outputs if present in database
+    try {
+      const { data: outputs } = await supabase
+        .from('photo_outputs')
+        .select('id, booking_id, file_name, file_path, file_type, file_size, status, created_at')
+        .eq('booking_id', booking.id)
+        .order('created_at', { ascending: false });
+      if (outputs) {
+        booking.photo_outputs = outputs;
+        booking.has_soft_copies = outputs.length > 0;
+      }
+    } catch (oErr) {
+      console.warn("[getBookingById] photo_outputs lookup skipped:", oErr);
+    }
+
+    // 4. Metadata parsers
     if (!booking.selected_add_ons || booking.selected_add_ons.length === 0) {
       booking.selected_add_ons = parseAddOnsFromNotes(booking.notes);
     }
@@ -513,6 +645,9 @@ export async function getBookingById(bookingId) {
     }
     if (!booking.participant_details) {
       booking.participant_details = parseParticipantDetailsFromNotes(booking.notes);
+    }
+    if (!booking.delivery_details) {
+      booking.delivery_details = parseDeliveryDetailsFromNotes(booking.notes);
     }
 
     return { data: booking, error: null };
@@ -543,6 +678,8 @@ export async function cancelBooking(bookingId) {
       .single();
 
     if (error) throw error;
+    invalidateCustomerBookingsCache(data?.customer_id);
+
     return { data, error: null };
   } catch (error) {
     console.error("Failed to cancel booking:", error);
@@ -715,5 +852,195 @@ export async function getCustomerActivityAudit(userId, bookingIds = []) {
   } catch (error) {
     console.error('getCustomerActivityAudit error:', error);
     return { data: [], error };
+  }
+}
+
+// ── updateBookingYearbookMotto ────────────────────────────────────────────────
+
+/**
+ * Updates the yearbook motto in a booking's notes field and saves to Supabase.
+ *
+ * @param {string} bookingId - Booking UUID
+ * @param {string} newMotto - New motto string
+ * @param {string} currentNotes - Existing booking notes string
+ * @param {string} [userId] - Optional auth user ID for customer audit logging
+ * @returns {Promise<{ data: Object|null, updatedNotes: string|null, error: Error|null }>}
+ */
+export async function updateBookingYearbookMotto(bookingId, newMotto, currentNotes = '', userId = null) {
+  if (!isSupabaseConfigured) {
+    return { data: null, updatedNotes: null, error: new Error("Database connection is not configured.") };
+  }
+
+  const cleanMotto = String(newMotto || '').trim();
+  let updatedNotes = currentNotes || '';
+
+  if (/•\s*Yearbook\s*Motto:\s*([^\n\r]*)/i.test(updatedNotes)) {
+    updatedNotes = updatedNotes.replace(
+      /•\s*Yearbook\s*Motto:\s*([^\n\r]*)/i,
+      `• Yearbook Motto: ${cleanMotto || 'N/A'}`
+    );
+  } else if (updatedNotes.includes('[STUDENT DETAILS]')) {
+    updatedNotes = updatedNotes.replace(
+      '[STUDENT DETAILS]',
+      `[STUDENT DETAILS]\n• Yearbook Motto: ${cleanMotto || 'N/A'}`
+    );
+  } else {
+    updatedNotes = `${updatedNotes}\n\n[STUDENT DETAILS]\n• Yearbook Motto: ${cleanMotto || 'N/A'}`.trim();
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({
+        notes: updatedNotes,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bookingId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    if (userId) {
+      try {
+        recordCustomerAction({
+          userId,
+          category: 'PROFILE_UPDATE',
+          title: 'Yearbook Motto Updated',
+          description: cleanMotto ? `Yearbook motto saved: "${cleanMotto}"` : 'Yearbook motto reset.',
+          bookingId,
+          bookingNumber: data?.booking_number,
+          changes: [`Yearbook Motto: ${cleanMotto || 'N/A'}`]
+        });
+      } catch (err) {
+        console.warn('recordCustomerAction error:', err);
+      }
+    }
+
+    if (userId) {
+      invalidateCustomerBookingsCache(userId);
+    }
+    return { data, updatedNotes, error: null };
+  } catch (error) {
+    console.error("Failed to update yearbook motto:", error);
+    return { data: null, updatedNotes: null, error };
+  }
+}
+
+// ── updateBookingDeliveryDetails ──────────────────────────────────────────────
+
+/**
+ * Saves delivery & claiming details into the booking's notes column in Supabase
+ * and syncs with the customer's profile studio_specs for studio-wide visibility.
+ *
+ * @param {string} bookingId - Booking UUID
+ * @param {Object} deliveryData - { fulfillment_mode, recipient_name, recipient_phone, delivery_address, delivery_instructions }
+ * @param {string} currentNotes - Existing booking notes string
+ * @param {string} [userId] - Optional auth user ID for profile sync & customer audit logging
+ * @returns {Promise<{ data: Object|null, updatedNotes: string|null, deliveryDetails: Object|null, error: Error|null }>}
+ */
+export async function updateBookingDeliveryDetails(bookingId, deliveryData = {}, currentNotes = '', userId = null) {
+  if (!isSupabaseConfigured) {
+    return { data: null, updatedNotes: null, deliveryDetails: null, error: new Error("Database connection is not configured.") };
+  }
+
+  const mode = deliveryData.fulfillment_mode === 'STUDIO_DELIVERY' ? 'STUDIO_DELIVERY' : 'STUDIO_PICKUP';
+  const cleanRecipient = sanitizeText(deliveryData.recipient_name || '', 150);
+  const cleanPhone = sanitizeText(deliveryData.recipient_phone || '', 50);
+  const cleanRegion = sanitizeText(deliveryData.region || '', 120);
+  const cleanProvince = sanitizeText(deliveryData.province || '', 120);
+  const cleanCity = sanitizeText(deliveryData.city || '', 120);
+  const cleanBarangay = sanitizeText(deliveryData.barangay || '', 120);
+  const cleanStreet = sanitizeText(deliveryData.street || '', 200);
+  const cleanAddress = sanitizeText(deliveryData.delivery_address || '', 350);
+  const cleanInstructions = sanitizeText(deliveryData.delivery_instructions || '', 300);
+  const savedAtIso = deliveryData.saved_at || new Date().toISOString();
+
+  const deliveryBlock = [
+    '[DELIVERY & CLAIMING DETAILS]',
+    `• Fulfillment Mode: ${mode === 'STUDIO_DELIVERY' ? 'Direct Delivery' : 'Studio Pickup'}`,
+    `• Recipient Name: ${cleanRecipient || 'N/A'}`,
+    `• Recipient Phone: ${cleanPhone || 'N/A'}`,
+    ...(mode === 'STUDIO_DELIVERY'
+      ? [
+          `• Region: ${cleanRegion || 'N/A'}`,
+          `• Province: ${cleanProvince || 'N/A'}`,
+          `• City / Municipality: ${cleanCity || 'N/A'}`,
+          `• Barangay: ${cleanBarangay || 'N/A'}`,
+          `• Street / House No.: ${cleanStreet || 'N/A'}`,
+        ]
+      : []),
+    `• Delivery Address: ${mode === 'STUDIO_DELIVERY' ? (cleanAddress || 'N/A') : 'Studio Counter (311 Rizal Street, City of Naga, Cebu)'}`,
+    `• Delivery Instructions: ${cleanInstructions || 'N/A'}`,
+    `• Saved At: ${savedAtIso}`,
+  ].join('\n');
+
+  let updatedNotes = currentNotes || '';
+  if (/\[DELIVERY\s*&\s*CLAIMING\s*DETAILS\][\s\S]*?(?=\n\n\[|$)/i.test(updatedNotes)) {
+    updatedNotes = updatedNotes.replace(
+      /\[DELIVERY\s*&\s*CLAIMING\s*DETAILS\][\s\S]*?(?=\n\n\[|$)/i,
+      deliveryBlock
+    );
+  } else {
+    updatedNotes = updatedNotes ? `${updatedNotes.trim()}\n\n${deliveryBlock}` : deliveryBlock;
+  }
+
+  const deliveryDetails = {
+    fulfillment_mode: mode,
+    recipient_name: cleanRecipient,
+    recipient_phone: cleanPhone,
+    region: mode === 'STUDIO_DELIVERY' ? cleanRegion : '',
+    province: mode === 'STUDIO_DELIVERY' ? cleanProvince : '',
+    city: mode === 'STUDIO_DELIVERY' ? cleanCity : '',
+    barangay: mode === 'STUDIO_DELIVERY' ? cleanBarangay : '',
+    street: mode === 'STUDIO_DELIVERY' ? cleanStreet : '',
+    delivery_address: mode === 'STUDIO_DELIVERY' ? cleanAddress : 'Studio Counter (311 Rizal Street, City of Naga, Cebu)',
+    delivery_instructions: cleanInstructions,
+    saved_at: savedAtIso,
+  };
+
+  try {
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({
+        notes: updatedNotes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', bookingId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    if (userId) {
+      try {
+        recordCustomerAction({
+          userId,
+          category: 'DELIVERY_UPDATE',
+          title: mode === 'STUDIO_DELIVERY' ? 'Booking Delivery Address Saved' : 'Studio Counter Pickup Selected',
+          description: mode === 'STUDIO_DELIVERY'
+            ? `Saved delivery destination: ${cleanAddress || 'Specified address'}`
+            : 'Selected in-person claiming at E-Kodak Studio counter.',
+          bookingId,
+          bookingNumber: data?.booking_number,
+          changes: [
+            `Fulfillment: ${mode === 'STUDIO_DELIVERY' ? 'Direct Delivery' : 'Studio Pickup'}`,
+            cleanRecipient ? `Recipient: ${cleanRecipient}${cleanPhone ? ` (${cleanPhone})` : ''}` : null,
+            cleanAddress && mode === 'STUDIO_DELIVERY' ? `Address: ${cleanAddress}` : null,
+            cleanInstructions ? `Notes: ${cleanInstructions}` : null,
+          ].filter(Boolean),
+        });
+      } catch (err) {
+        console.warn('recordCustomerAction error:', err);
+      }
+    }
+
+    if (userId) {
+      invalidateCustomerBookingsCache(userId);
+    }
+    return { data, updatedNotes, deliveryDetails, error: null };
+  } catch (error) {
+    console.error("Failed to update booking delivery details:", error);
+    return { data: null, updatedNotes: null, deliveryDetails: null, error };
   }
 }

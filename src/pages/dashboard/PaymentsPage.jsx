@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { customerPaymentService } from '../../services/customerPaymentService';
+import { PaymentsSkeleton, SmartLoadingContainer } from '../../components/dashboard/skeletons';
 import { 
   CreditCard, 
   CheckCircle2, 
@@ -35,7 +36,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Toast from '../../components/ui/Toast';
 import { recordCustomerAction } from '../../services/customerAuditService';
 import DashboardHero from '../../components/dashboard/DashboardHero';
-import StatCard from '../../components/admin/StatCard';
+import SummaryStrip from '../../components/dashboard/SummaryStrip';
 
 // ── Animated Vectorized Financial Art Illustration ──────────────────────────────
 function AnimatedPaymentArt({ className = "w-44 h-32" }) {
@@ -201,6 +202,7 @@ function ExpandableBadge({
 export default function PaymentsPage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'history'
   const [billingData, setBillingData] = useState({
@@ -228,27 +230,30 @@ export default function PaymentsPage() {
   const showToast = (message, type = 'success') => setToast({ type, message });
 
   // Load Billing Information
-  const loadBilling = async () => {
+  const loadBilling = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
+    setError(null);
     try {
       const res = await customerPaymentService.getCustomerBillingData(user.id);
       if (res.success) {
         setBillingData(res);
       } else {
+        setError(new Error(res.error || 'Could not retrieve payment records'));
         showToast('Could not retrieve payment records', 'error');
       }
     } catch (err) {
       console.error(err);
+      setError(err);
       showToast('Error loading billing records', 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id]);
 
   useEffect(() => {
     loadBilling();
-  }, [user?.id]);
+  }, [user?.id, loadBilling]);
 
   const [submissionTimeElapsed, setSubmissionTimeElapsed] = useState(0);
   const [networkQuality, setNetworkQuality] = useState({
@@ -396,7 +401,7 @@ export default function PaymentsPage() {
   };
 
   return (
-    <div className="space-y-6 pb-12 font-body max-w-screen-2xl mx-auto w-full animate-fade-in">
+    <div className="w-full pb-16 font-body">
       
       {/* ── Premium Luxury Header Banner with Animated Vector Art ───────────────── */}
       <DashboardHero
@@ -420,33 +425,23 @@ export default function PaymentsPage() {
         }
       />
 
-      {/* ── Overview Metrics Strip (Matching DashboardHome Standard) ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard
-          label="Total Invoiced"
-          value={`₱${billingData.summary.totalInvoiced.toLocaleString()}`}
-          icon={Receipt}
-          color="gold"
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-6 pt-3 animate-fade-in">
+        <SummaryStrip
+          items={[
+            { label: 'Total invoiced', value: `₱${billingData.summary.totalInvoiced.toLocaleString()}` },
+            { label: 'Total paid', value: `₱${billingData.summary.totalPaid.toLocaleString()}`, tone: 'good' },
+            {
+              label: 'Outstanding',
+              value: `₱${billingData.summary.totalBalance.toLocaleString()}`,
+              tone: billingData.summary.totalBalance > 0 ? 'warn' : undefined,
+            },
+            {
+              label: 'Verification',
+              value: billingData.summary.pendingCount > 0 ? `${billingData.summary.pendingCount} pending` : 'Verified',
+              tone: billingData.summary.pendingCount > 0 ? 'warn' : 'good',
+            },
+          ]}
         />
-        <StatCard
-          label="Total Paid"
-          value={`₱${billingData.summary.totalPaid.toLocaleString()}`}
-          icon={CheckCircle2}
-          color="green"
-        />
-        <StatCard
-          label="Outstanding Balance"
-          value={`₱${billingData.summary.totalBalance.toLocaleString()}`}
-          icon={Clock}
-          color="amber"
-        />
-        <StatCard
-          label="Verification Status"
-          value={billingData.summary.pendingCount > 0 ? `${billingData.summary.pendingCount} Pending` : 'Verified'}
-          icon={ShieldCheck}
-          color={billingData.summary.pendingCount > 0 ? 'amber' : 'blue'}
-        />
-      </div>
 
       {/* ── Navigation Tabs ─────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-2">
@@ -490,12 +485,16 @@ export default function PaymentsPage() {
       </div>
 
       {/* ── Tab Content ─────────────────────────────────────────────────────── */}
-      {loading ? (
-        <div className="flex flex-col items-center justify-center p-16 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl">
-          <RefreshCw className="w-8 h-8 text-gold animate-spin mb-3" />
-          <p className="text-xs text-neutral-400 font-medium">Retrieving verified studio billing records...</p>
-        </div>
-      ) : activeTab === 'pending' ? (
+      <SmartLoadingContainer
+        loading={loading}
+        hasData={billingData.bookings.length > 0 || billingData.payments.length > 0}
+        error={error}
+        onRetry={loadBilling}
+        skeleton={<PaymentsSkeleton />}
+        delayMs={220}
+        title="Payment Invoices & Receipts"
+      >
+        {activeTab === 'pending' ? (
         /* PENDING INVOICES SECTION */
         <div className="space-y-5">
           
@@ -799,7 +798,8 @@ export default function PaymentsPage() {
             </div>
           )}
         </div>
-      )}
+        )}
+      </SmartLoadingContainer>
 
       {/* ── CUSTOMER PAYMENT ESTABLISHMENT MODAL (Clean, Friendly & Guided) ─────── */}
       {selectedBooking && (
@@ -1363,6 +1363,8 @@ export default function PaymentsPage() {
 
       {/* Local Toast Component */}
       <Toast toast={toast} onClose={() => setToast(null)} />
+
+      </div>
     </div>
   );
 }

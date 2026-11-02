@@ -253,6 +253,7 @@ export async function fetchAdminActivityLogs({
   offset = 0,
 } = {}) {
   try {
+    const profileJoin = role && role !== 'all' ? 'profiles!inner' : 'profiles';
     let query = supabase
       .from('admin_activity_logs')
       .select(`
@@ -268,7 +269,7 @@ export async function fetchAdminActivityLogs({
         details,
         ip_address,
         created_at,
-        admin_profile:profiles!inner (
+        admin_profile:${profileJoin} (
           id,
           first_name,
           last_name,
@@ -294,8 +295,10 @@ export async function fetchAdminActivityLogs({
     }
 
     if (search && search.trim()) {
-      const s = search.trim();
-      query = query.or(`description.ilike.%${s}%,entity_label.ilike.%${s}%,admin_name.ilike.%${s}%`);
+      const s = search.trim().replace(/[,()*\\]/g, '');
+      if (s) {
+        query = query.or(`description.ilike.%${s}%,entity_label.ilike.%${s}%,admin_name.ilike.%${s}%`);
+      }
     }
 
     query = query.range(offset, offset + limit - 1);

@@ -820,6 +820,157 @@ html.dark textarea {
   border-color: #33302a !important;
 }
 
+/* ── Dark & Light Form Controls & Autofill Protection ─────────────────────────────
+   Prevents WebKit/Blink (Chrome, Edge, Safari) from forcing a bright white/blue
+   autofill background on dark inputs or harsh clashing colors on light inputs. */
+.auth-input-dark {
+  color-scheme: dark !important;
+}
+
+.auth-input-dark:-webkit-autofill,
+.auth-input-dark:-webkit-autofill:hover, 
+.auth-input-dark:-webkit-autofill:focus,
+.auth-input-dark:-webkit-autofill:active,
+html.dark input:-webkit-autofill,
+html.dark input:-webkit-autofill:hover,
+html.dark input:-webkit-autofill:focus,
+html.dark input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #1c1d21 inset !important;
+  -webkit-text-fill-color: #f5f4f0 !important;
+  caret-color: #c9a96e !important;
+  border-color: #3b3a3e !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+.auth-input-light {
+  color-scheme: light !important;
+}
+
+.auth-input-light:-webkit-autofill,
+.auth-input-light:-webkit-autofill:hover, 
+.auth-input-light:-webkit-autofill:focus,
+.auth-input-light:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #f8f8f6 inset !important;
+  -webkit-text-fill-color: #1a1a1a !important;
+  caret-color: #c9a96e !important;
+  border-color: #e5e5e5 !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* ── Realistic Camera Shutter Curtain & Strobe Flash Animation ──────────── */
+
+/* Top Curtain: Rapid mechanical downward snap to center, then retracts */
+@keyframes shutterCurtainTop {
+  0% {
+    transform: translateY(-100%);
+  }
+  22% {
+    transform: translateY(0%);
+  }
+  38% {
+    transform: translateY(0%);
+  }
+  64% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(-100%);
+  }
+}
+
+/* Bottom Curtain: Rapid mechanical upward snap to center, then retracts */
+@keyframes shutterCurtainBottom {
+  0% {
+    transform: translateY(100%);
+  }
+  22% {
+    transform: translateY(0%);
+  }
+  38% {
+    transform: translateY(0%);
+  }
+  64% {
+    transform: translateY(100%);
+  }
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+/* Luminous camera flash blooming into sunlit Light Mode */
+@keyframes shutterFlashToLight {
+  0% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 0;
+  }
+  26% {
+    opacity: 1;
+  }
+  48% {
+    opacity: 0.92;
+  }
+  75% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+/* Crisp camera flash settling smoothly into darkroom Dark Mode */
+@keyframes shutterFlashToDark {
+  0% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 0;
+  }
+  26% {
+    opacity: 0.95;
+  }
+  46% {
+    opacity: 0.75;
+  }
+  75% {
+    opacity: 0.25;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.animate-shutter-curtain-top {
+  animation: shutterCurtainTop 0.54s cubic-bezier(0.16, 0.92, 0.3, 1) forwards;
+  will-change: transform;
+}
+
+.animate-shutter-curtain-bottom {
+  animation: shutterCurtainBottom 0.54s cubic-bezier(0.16, 0.92, 0.3, 1) forwards;
+  will-change: transform;
+}
+
+.animate-shutter-flash-light {
+  animation: shutterFlashToLight 0.58s cubic-bezier(0.18, 0.88, 0.28, 1) forwards;
+  will-change: opacity;
+}
+
+.animate-shutter-flash-dark {
+  animation: shutterFlashToDark 0.58s cubic-bezier(0.18, 0.88, 0.28, 1) forwards;
+  will-change: opacity;
+}
+
+/* ── Google Auth Button High-Contrast Text (Prevents Dark-Mode Color Bleed) ── */
+.google-auth-btn,
+.google-auth-btn *,
+.google-auth-btn span,
+.google-auth-btn p {
+  color: #111827 !important;
+}
+
 html.dark .btn-outline {
   border-color: #3a3731 !important;
   color: #ede9e1 !important;
@@ -1295,7 +1446,26 @@ body::-webkit-scrollbar,
   margin-right: 0 !important;
   width: 100% !important;
 }
+/* ── Customer Portal Signature Light Typography ────────────────────────── */
+.customer-portal-light-typography {
+  font-weight: 300;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
+.customer-portal-light-typography h1,
+.customer-portal-light-typography h2,
+.customer-portal-light-typography h3,
+.customer-portal-light-typography h4,
+.customer-portal-light-typography .font-heading {
+  font-weight: 300;
+  letter-spacing: -0.015em;
+}
+
+.customer-portal-light-typography b,
+.customer-portal-light-typography strong {
+  font-weight: 400;
+}
 
 /* ── Yearbook Studio Print Styles ────────────────────────────────────────── */
 @media print {

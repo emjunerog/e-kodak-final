@@ -254,8 +254,7 @@ export default function PhotographerProfile() {
         station="photographer"
         userName={fullName}
         title="Photographer Profile"
-        subtitle="Manage your personal photographer credentials, contact numbers, public bio, and avatar portrait."
-        statusSummary="Photographer Identity"
+        subtitle="Manage your personal photographer credentials, contact numbers, and avatar portrait."
         primaryAction={{
           label: 'Station Settings',
           href: '/photographer/settings',
@@ -270,8 +269,8 @@ export default function PhotographerProfile() {
         isRefreshing={loading}
       />
 
-      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Wrapper (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
       {loading ? (
         <div className="py-24 text-center rounded-3xl bg-white dark:bg-neutral-900 border border-neutral-200/90 dark:border-neutral-800 shadow-xs">

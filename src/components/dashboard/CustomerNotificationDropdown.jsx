@@ -215,15 +215,15 @@ export default function CustomerNotificationDropdown({ unreadCount: parentUnread
         aria-expanded={isOpen}
         aria-haspopup="dialog"
         title={unreadCount > 0 ? `${unreadCount} unread notices` : 'Studio Notifications'}
-        className={`relative p-2 rounded-xl transition-all border outline-none cursor-pointer ${
+        className={`relative h-9 w-9 flex items-center justify-center rounded-full transition-all border outline-none cursor-pointer shrink-0 ${
           isOpen
-            ? 'bg-neutral-100 dark:bg-neutral-800 text-primary dark:text-white border-gold/40 shadow-xs ring-2 ring-gold/20'
-            : 'text-neutral-600 dark:text-neutral-300 hover:text-primary dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 border-transparent hover:border-neutral-200 dark:hover:border-neutral-700'
+            ? 'bg-white/[0.14] text-white border-gold/40 shadow-xs ring-2 ring-gold/20'
+            : 'text-neutral-300 hover:text-white hover:bg-white/[0.08] border-white/[0.08] hover:border-white/[0.15]'
         }`}
       >
-        <Bell size={18} />
+        <Bell size={16} />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-gradient-to-r from-red-500 to-rose-600 text-white text-xs font-bold font-body px-1 rounded-full flex items-center justify-center border-2 border-white dark:border-neutral-900 shadow-xs animate-pulse pointer-events-none">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-gradient-to-r from-red-500 to-rose-600 text-white text-[10px] font-bold font-body px-1 rounded-full flex items-center justify-center border-2 border-neutral-900 shadow-xs animate-pulse pointer-events-none">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}

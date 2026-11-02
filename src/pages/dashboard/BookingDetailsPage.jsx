@@ -1,104 +1,161 @@
-import React, { useEffect, useState, useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { useParams, Link, useNavigate, useOutletContext } from 'react-router-dom';
 import {
-  ArrowLeft, Calendar, Clock, MapPin, QrCode,
-  FileImage, Info, Loader2, CheckCircle, XCircle, Camera,
-  GraduationCap, ExternalLink, Building, Truck, ShieldCheck,
-  Layers, ChevronRight, Download, Sparkles, CreditCard,
-  CheckCircle2, AlertCircle, School, Receipt, User
-} from "lucide-react";
+  ArrowLeft, Calendar, MapPin, CreditCard, Building, Store, Mail, Phone,
+  User, GraduationCap, QrCode, Maximize2, Loader2, AlertCircle, XCircle,
+  Printer, FileText, PenLine, Check, X, Quote, Truck
+} from 'lucide-react';
 
-import { useAuth } from "../../context/AuthContext";
-import { getBookingById, getReferenceImageUrl, cancelBooking, parseStudentDetailsFromNotes, parseParticipantDetailsFromNotes } from "../../services/bookingService";
-import { getStatusBadge, getStatusLabel, getPaymentLabel } from "../../lib/bookingUtils";
-import QRPass from "../../components/booking/QRPass";
-import Toast from "../../components/ui/Toast";
-import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import { useAuth } from '../../context/AuthContext';
+import { BookingDetailsSkeleton, SmartLoadingContainer } from '../../components/dashboard/skeletons';
+import {
+  getBookingById,
+  getCustomerBookings,
+  getCachedCustomerBookings,
+  cancelBooking,
+  parseStudentDetailsFromNotes,
+  parseParticipantDetailsFromNotes,
+  parseDeliveryDetailsFromNotes,
+  updateBookingYearbookMotto,
+  updateBookingDeliveryDetails
+} from '../../services/bookingService';
+import {
+  DEFAULT_REGION,
+  DEFAULT_PROVINCE,
+  DEFAULT_CITY,
+  getRegions,
+  getProvincesByRegion,
+  getCitiesByProvince,
+  getBarangaysByCity,
+  composeDeliveryAddress,
+  parseStructuredAddress,
+} from '../../data/philippineLocations';
+import { QRCodeSVG } from '../../lib/qr.tsx';
+import QRPass from '../../components/booking/QRPass';
+import Toast from '../../components/ui/Toast';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import StudioDropdown from '../../components/ui/StudioDropdown';
+import CredentialsDossierSheet from '../../components/booking/CredentialsDossierSheet';
 
-// Extract clean studio name and Google Maps URL without raw link clutter
+// Extract clean studio venue name and Google Maps link
 function getCleanLocation(locStr) {
   if (!locStr) {
     return {
-      name: "E-Kodak Studio, 311 Rizal Street, City of Naga, Cebu",
-      mapUrl: "https://www.google.com/maps/search/?api=1&query=311+Rizal+Street,+City+of+Naga,+Cebu"
+      name: 'Uling, City of Naga, Cebu',
+      mapUrl: 'https://www.google.com/maps/search/?api=1&query=311+Rizal+Street,+City+of+Naga,+Cebu',
     };
   }
   const match = locStr.match(/(https?:\/\/[^\s,]+)/i);
   const mapUrl = match ? match[1] : `https://maps.google.com/?q=${encodeURIComponent(locStr)}`;
   const cleanName = locStr
-    .replace(/(https?:\/\/[^\s,]+)/ig, "")
+    .replace(/(https?:\/\/[^\s,]+)/gi, '')
     .trim()
-    .replace(/,\s*$/, "")
-    .trim() || "E-Kodak Studio, 311 Rizal Street, City of Naga, Cebu";
+    .replace(/,\s*$/, '')
+    .trim() || 'Uling, City of Naga, Cebu';
 
   return { name: cleanName, mapUrl };
 }
 
-// Strip machine-generated student details and add-on blocks from notes
-function getCleanUserNotes(notes) {
-  if (!notes) return "";
-  return notes
-    .replace(/\[STUDENT & YEARBOOK DETAILS\][\s\S]*?(?=(\n\n\[|$))/gi, "")
-    .replace(/\[SELECTED ADD-ONS\][\s\S]*?(?=(\n\n\[|$))/gi, "")
-    .trim();
-}
-
-// 7-Stage Studio Milestone definitions matching BookingProgressPage
-const STUDIO_STAGES = [
-  { step: 1, title: "Order Registered", desc: "Logged in studio calendar" },
-  { step: 2, title: "Wardrobe & Sizing", desc: "Attire & toga allocation" },
-  { step: 3, title: "Camera Bay Shoot", desc: "Studio portrait capture" },
-  { step: 4, title: "Digital Proofing", desc: "Client gallery review" },
-  { step: 5, title: "Master Retouching", desc: "High-end aesthetic polish" },
-  { step: 6, title: "Print & Framing", desc: "Archival lab production" },
-  { step: 7, title: "Studio Handover", desc: "In-person claiming at desk" },
-];
-
 export default function BookingDetailsPage() {
   const { id } = useParams();
-  const { user, profile } = useAuth();
+  const navigate = useNavigate();
+  const { user, profile, updateProfile } = useAuth();
+  const outletContext = useOutletContext();
 
-  const [booking, setBooking] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const initialBookings = useMemo(() => {
+    if (outletContext?.bookings && Array.isArray(outletContext.bookings)) {
+      return outletContext.bookings.filter((b) => !b.is_deleted);
+    }
+    const cached = getCachedCustomerBookings(user?.id);
+    if (cached && Array.isArray(cached)) {
+      return cached.filter((b) => !b.is_deleted);
+    }
+    return [];
+  }, [outletContext?.bookings, user?.id]);
+
+  const initialTargetBooking = useMemo(() => {
+    if (initialBookings.length === 0) return null;
+    if (id) {
+      return initialBookings.find(b => String(b.id) === String(id) || String(b.booking_number) === String(id)) || null;
+    }
+    return initialBookings.find(b => b.status !== 'CANCELLED') || initialBookings[0] || null;
+  }, [initialBookings, id]);
+
+  const [booking, setBooking] = useState(initialTargetBooking);
+  const [allUserBookings, setAllUserBookings] = useState(initialBookings);
+  const [loading, setLoading] = useState(!initialTargetBooking);
+  const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
   const [dialog, setDialog] = useState(null);
   const [cancelling, setCancelling] = useState(false);
-  const [lightboxImg, setLightboxImg] = useState(null);
-  const [showQRModal, setShowQRModal] = useState(false);
+  const [isQRModalOpen, setIsQRModalOpen] = useState(false);
+  const [isDossierPreviewOpen, setIsDossierPreviewOpen] = useState(false);
+  const [printDocType, setPrintDocType] = useState('credentials');
+  const [isEditingMotto, setIsEditingMotto] = useState(false);
+  const [mottoInput, setMottoInput] = useState('');
+  const [savingMotto, setSavingMotto] = useState(false);
+  const [isEditingDelivery, setIsEditingDelivery] = useState(false);
+  const [savingDelivery, setSavingDelivery] = useState(false);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const [deliveryForm, setDeliveryForm] = useState({
+    fulfillment_mode: 'STUDIO_DELIVERY',
+    recipient_name: '',
+    recipient_phone: '',
+    region: DEFAULT_REGION,
+    province: DEFAULT_PROVINCE,
+    city: DEFAULT_CITY,
+    barangay: '',
+    street: '',
+    delivery_address: '',
+    delivery_instructions: '',
+  });
+
+  const loadData = useCallback(async () => {
+    if (!user?.id) return;
+    setError('');
+    try {
+      if (id) {
+        const { data, error: bErr } = await getBookingById(id);
+        if (bErr) setError(bErr.message || 'Error loading booking');
+        else if (data) setBooking(data);
+
+        const bRes = await getCustomerBookings(user.id);
+        if (bRes?.data) setAllUserBookings(bRes.data.filter(b => !b.is_deleted));
+      } else {
+        const { data, error: bErr } = await getCustomerBookings(user.id);
+        if (bErr) {
+          setError(bErr.message || 'Error loading bookings');
+          return;
+        }
+        const activeList = (data || []).filter(b => !b.is_deleted);
+        setAllUserBookings(activeList);
+
+        if (activeList.length === 0) {
+          setBooking(null);
+          return;
+        }
+
+        const target = activeList.find(b => b.status !== 'CANCELLED') || activeList[0];
+        const { data: fullData, error: fErr } = await getBookingById(target.id);
+        if (fErr) setError(fErr.message || 'Error loading booking');
+        else if (fullData) setBooking(fullData);
+      }
+    } catch (err) {
+      console.warn('BookingDetailsPage loadData error:', err);
+      setError(err?.message || 'Network error fetching booking');
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id, id]);
 
   useEffect(() => {
-    if (!user) return;
-    getBookingById(id).then(({ data, error }) => {
-      if (error) setError(error.message);
-      else setBooking(data);
+    if (!user?.id) return;
+    if (initialTargetBooking) {
+      setBooking(initialTargetBooking);
       setLoading(false);
-    });
-  }, [user, id]);
-
-  const handleCancelClick = () => {
-    setDialog({
-      title: "Cancel This Booking?",
-      message: "This will permanently cancel your session. If you paid a downpayment, please contact our studio desk for the refund policy.",
-      confirmLabel: "Yes, Cancel Booking",
-      cancelLabel: "Keep Booking",
-      confirmClass: "bg-red-600 text-white hover:bg-red-700",
-      icon: XCircle,
-      iconColor: "text-red-500",
-      iconBg: "bg-red-50",
-      onConfirm: async () => {
-        setCancelling(true);
-        const { error } = await cancelBooking(id);
-        setCancelling(false);
-        if (error) {
-          setToast({ type: "error", message: "Failed to cancel booking. Please try again." });
-        } else {
-          setBooking(prev => ({ ...prev, status: "CANCELLED" }));
-          setToast({ type: "success", message: "Booking cancelled successfully." });
-        }
-      },
-    });
-  };
+    }
+    loadData();
+  }, [user?.id, id, loadData]);
 
   // Structured Student Dossier parsing
   const studentDossier = useMemo(() => {
@@ -113,19 +170,24 @@ export default function BookingDetailsPage() {
     const strandMatch = booking.notes?.match(/•\s*(?:Degree|Program|Strand|Course)(?:\s*(?:\/|\&)\s*(?:Program|Strand|Course))?:\s*([^\n\r]+)/i);
     const campusMatch = booking.notes?.match(/•\s*Campus\s*(?:\/\s*Address)?:\s*([^\n\r]+)/i);
     const batchMatch = booking.notes?.match(/•\s*Batch:\s*([^\n\r]+)/i);
+    const schoolMatch = booking.notes?.match(/•\s*School:\s*([^\n\r]+)/i);
 
-    const student_name = existing.student_name || parsed.student_name || nameMatch?.[1]?.trim() || "";
-    const middle_name = existing.middle_name || parsed.middle_name || middleMatch?.[1]?.trim() || "";
-    const yearbook_motto = existing.yearbook_motto || parsed.yearbook_motto || mottoMatch?.[1]?.trim() || "";
-    const school = existing.school || parsed.school || "";
-    const batch = existing.batch || parsed.batch || batchMatch?.[1]?.trim() || "";
-    const section = existing.section || parsed.section || "";
-    const student_id = existing.student_id || parsed.student_id || "";
-    const course = existing.course || parsed.course || strandMatch?.[1]?.trim() || "";
-    const school_address = existing.school_address || parsed.school_address || campusMatch?.[1]?.trim() || "";
-    const education_type = existing.education_type || parsed.education_type || typeMatch?.[1]?.trim() || "";
+    const student_name = existing.student_name || parsed.student_name || nameMatch?.[1]?.trim() || '';
+    const middle_name = existing.middle_name || parsed.middle_name || middleMatch?.[1]?.trim() || '';
+    const yearbook_motto = existing.yearbook_motto || parsed.yearbook_motto || mottoMatch?.[1]?.trim() || '';
+    const rawSchool = existing.school || parsed.school || schoolMatch?.[1]?.trim() || '';
+    const batch = existing.batch || parsed.batch || batchMatch?.[1]?.trim() || '';
+    const section = existing.section || parsed.section || '';
+    const student_id = existing.student_id || parsed.student_id || '';
+    const course = existing.course || parsed.course || strandMatch?.[1]?.trim() || '';
+    const school_address = existing.school_address || parsed.school_address || campusMatch?.[1]?.trim() || '';
+    const education_type = existing.education_type || parsed.education_type || typeMatch?.[1]?.trim() || '';
 
-    if (!school && !section && !student_id && !course && !batch && !student_name) return null;
+    // Smart school resolution: if school string is an address or missing "High School"
+    let school = rawSchool;
+    if (!school || (/uling/i.test(school) && !/high school/i.test(school))) {
+      school = 'Uling National High School';
+    }
 
     return {
       student_name,
@@ -137,46 +199,101 @@ export default function BookingDetailsPage() {
       student_id,
       course,
       school_address,
-      education_type
+      education_type,
     };
   }, [booking]);
 
-  // Clean notes without duplicate machine text
-  const cleanNotes = useMemo(() => {
-    return booking ? getCleanUserNotes(booking.notes) : "";
-  }, [booking]);
-
-  // Studio Fulfillment Mode from profile or default
-  const fulfillmentMode = useMemo(() => {
+  // Delivery & Claiming details resolved from booking notes or profile studio_specs
+  const deliveryDetails = useMemo(() => {
+    const parsedFromBooking = booking?.delivery_details || parseDeliveryDetailsFromNotes(booking?.notes);
     const specs = profile?.studio_specs || {};
-    return specs.fulfillment_mode === "STUDIO_DELIVERY" || specs.preferred_courier === "studio_delivery"
-      ? "STUDIO_DELIVERY"
-      : "STUDIO_PICKUP";
-  }, [profile]);
+    const hasBookingDelivery = Boolean(parsedFromBooking);
+    const hasProfileDelivery = Boolean(
+      specs.shipping_address &&
+      !specs.shipping_address.startsWith('Studio Pickup') &&
+      !specs.shipping_address.startsWith('Studio Counter')
+    );
 
-  // Current stage computation for the 7-stage pipeline
-  const stageInfo = useMemo(() => {
-    if (!booking) return { currentStep: 2, pct: 30, label: "Stage 2/7 · Wardrobe Calibration" };
-    const s = (booking.status || "PENDING").toUpperCase();
-    if (s === "COMPLETED") return { currentStep: 7, pct: 100, label: "Stage 7/7 · Studio Ready & Handover" };
-    if (s === "CONFIRMED") return { currentStep: 3, pct: 50, label: "Stage 3/7 · Camera Bay Session Ready" };
-    if (s === "IN_PROGRESS" || s === "CAPTURE" || s === "EDITING") return { currentStep: 5, pct: 70, label: "Stage 5/7 · Master Retouching & Polish" };
-    if (s === "CANCELLED" || s === "REJECTED") return { currentStep: 1, pct: 10, label: "Order Concluded" };
-    return { currentStep: 2, pct: 30, label: "Stage 2/7 · Wardrobe & Sizing Calibration" };
-  }, [booking]);
+    // Default fulfillment mode is Home Delivery ('STUDIO_DELIVERY') unless Studio Pick-up is explicitly selected
+    const mode = parsedFromBooking?.fulfillment_mode
+      || (specs.fulfillment_mode === 'STUDIO_PICKUP' || specs.preferred_courier === 'studio_pickup'
+        ? 'STUDIO_PICKUP'
+        : 'STUDIO_DELIVERY');
+
+    const recipient_name = parsedFromBooking?.recipient_name
+      || specs.courier_recipient_name
+      || `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim()
+      || '';
+    const recipient_phone = parsedFromBooking?.recipient_phone
+      || specs.courier_phone
+      || profile?.phone
+      || '';
+    const delivery_address = parsedFromBooking?.delivery_address
+      || (mode === 'STUDIO_DELIVERY' ? (specs.shipping_address || profile?.address || '') : '');
+    const delivery_instructions = parsedFromBooking?.delivery_instructions
+      || specs.delivery_instructions
+      || '';
+
+    const structured = parseStructuredAddress(delivery_address, {
+      region: parsedFromBooking?.region || specs.delivery_region || '',
+      province: parsedFromBooking?.province || specs.delivery_province || '',
+      city: parsedFromBooking?.city || specs.delivery_city || '',
+      barangay: parsedFromBooking?.barangay || specs.delivery_barangay || '',
+      street: parsedFromBooking?.street || specs.delivery_street || '',
+    });
+
+    const saved_at = parsedFromBooking?.saved_at || specs.delivery_saved_at || '';
+    const isConfigured = hasBookingDelivery || hasProfileDelivery || Boolean(specs.fulfillment_mode);
+
+    return {
+      fulfillment_mode: mode,
+      recipient_name,
+      recipient_phone,
+      region: structured.region,
+      province: structured.province,
+      city: structured.city,
+      barangay: structured.barangay,
+      street: structured.street,
+      delivery_address,
+      delivery_instructions,
+      saved_at,
+      isConfigured,
+    };
+  }, [booking, profile]);
+
+  // 3-minute grace window after saving address/selection to allow switching to Studio Pick-up
+  const canSwitchFulfillment = useMemo(() => {
+    if (!deliveryDetails.saved_at) return true;
+    const savedTime = new Date(deliveryDetails.saved_at).getTime();
+    if (Number.isNaN(savedTime)) return true;
+    return nowTick - savedTime < 3 * 60 * 1000;
+  }, [deliveryDetails.saved_at, nowTick]);
+
+  useEffect(() => {
+    if (!deliveryDetails.saved_at) return;
+    const savedTime = new Date(deliveryDetails.saved_at).getTime();
+    if (Number.isNaN(savedTime) || Date.now() - savedTime >= 3 * 60 * 1000) return;
+
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [deliveryDetails.saved_at]);
+
+  // Studio Fulfillment Mode from resolved deliveryDetails
+  const fulfillmentMode = deliveryDetails.fulfillment_mode;
 
   // Financial breakdown & downpayment state
   const financialInfo = useMemo(() => {
-    if (!booking) return { totalAmount: 0, downPaid: 0, remBalance: 0, needsDownpayment: false, downRequired: 0 };
-    const totalAmount = Number(booking.total_amount || 0);
-    const downPaid = Number(booking.down_payment_amount || 0);
+    if (!booking) return { totalAmount: 1750, downPaid: 875, remBalance: 875, needsDownpayment: false };
+    const totalAmount = Number(booking.total_amount || 1750);
+    const downPaid = Number(booking.down_payment_amount || (totalAmount > 0 ? totalAmount * 0.5 : 875));
     const remBalance = booking.remaining_balance !== undefined && booking.remaining_balance !== null
       ? Number(booking.remaining_balance)
       : Math.max(0, totalAmount - downPaid);
     const isUnpaid = !booking.payment_status || (booking.payment_status || '').toUpperCase() === 'UNPAID';
     const needsDownpayment = (isUnpaid || remBalance > 0) && (!booking.down_payment_confirmed && downPaid === 0);
-    const downRequired = Math.min(remBalance, Math.max(500, Math.round(totalAmount * 0.5)));
-    return { totalAmount, downPaid, remBalance, needsDownpayment, downRequired };
+    return { totalAmount, downPaid, remBalance, needsDownpayment };
   }, [booking]);
 
   // Participant & Beneficiary details
@@ -185,24 +302,100 @@ export default function BookingDetailsPage() {
     return booking.participant_details || parseParticipantDetailsFromNotes(booking.notes);
   }, [booking]);
 
-  if (loading) {
+  // Synchronize motto input with student dossier when not editing
+  useEffect(() => {
+    if (!isEditingMotto && studentDossier?.yearbook_motto) {
+      setMottoInput(studentDossier.yearbook_motto === 'N/A' ? '' : studentDossier.yearbook_motto);
+    }
+  }, [studentDossier?.yearbook_motto, isEditingMotto]);
+
+  // Synchronize delivery form when not editing
+  useEffect(() => {
+    if (!isEditingDelivery && deliveryDetails) {
+      const region = deliveryDetails.region || DEFAULT_REGION;
+      const province = deliveryDetails.province || DEFAULT_PROVINCE;
+      const city = deliveryDetails.city || DEFAULT_CITY;
+      const barangay = deliveryDetails.barangay || '';
+      const street = deliveryDetails.street || '';
+      const rawAddr =
+        deliveryDetails.delivery_address && !deliveryDetails.delivery_address.startsWith('Studio Counter')
+          ? deliveryDetails.delivery_address
+          : '';
+      const composed = composeDeliveryAddress({ street, barangay, city, province, region });
+
+      setDeliveryForm({
+        fulfillment_mode: deliveryDetails.fulfillment_mode || 'STUDIO_DELIVERY',
+        recipient_name: deliveryDetails.recipient_name || '',
+        recipient_phone: deliveryDetails.recipient_phone || '',
+        region,
+        province,
+        city,
+        barangay,
+        street,
+        delivery_address: rawAddr || composed,
+        delivery_instructions: deliveryDetails.delivery_instructions || '',
+      });
+    }
+  }, [deliveryDetails, isEditingDelivery]);
+
+  if (loading && !booking) {
     return (
-      <div className="h-full min-h-[50vh] flex flex-col items-center justify-center">
-        <Loader2 className="animate-spin text-gold" size={36} />
-        <span className="text-xs font-body text-neutral-400 mt-3">Loading Session Details...</span>
-      </div>
+      <SmartLoadingContainer
+        loading={loading}
+        hasData={false}
+        error={error}
+        onRetry={loadData}
+        skeleton={<BookingDetailsSkeleton />}
+        delayMs={220}
+        title="Booking Details"
+      />
     );
   }
 
-  if (error || !booking) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center text-center p-8">
-        <div className="w-16 h-16 rounded-full bg-red-50 text-red-500 flex items-center justify-center mb-4">
-          <AlertCircle size={28} />
+  if (!booking) {
+    if (error) {
+      return (
+        <SmartLoadingContainer
+          loading={loading}
+          hasData={false}
+          error={error}
+          onRetry={loadData}
+          skeleton={<BookingDetailsSkeleton />}
+          title="Booking Details"
+        />
+      );
+    }
+
+    if (allUserBookings.length === 0) {
+      return (
+        <div className="h-full min-h-[55vh] flex flex-col items-center justify-center text-center p-8 max-w-md mx-auto animate-fade-in">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-4 border border-amber-500/20">
+            <GraduationCap size={32} />
+          </div>
+          <h2 className="font-heading text-2xl text-neutral-900 dark:text-white font-bold mb-2">No Active Booking Records</h2>
+          <p className="text-xs text-neutral-500 mb-6 leading-relaxed">
+            You don't have an active studio booking yet. Reserve your graduation portrait session today to get your pictorial schedule and gate pass!
+          </p>
+          <Link
+            to="/dashboard/book"
+            className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold uppercase tracking-wider transition-colors shadow-sm"
+          >
+            Book a Session Now
+          </Link>
         </div>
-        <h1 className="text-2xl font-heading text-primary dark:text-white mb-2">Booking Not Found</h1>
-        <p className="font-body text-neutral-500 max-w-md mb-6">{error || "The session record could not be located."}</p>
-        <Link to="/dashboard/bookings" className="btn-primary">Back to My Bookings</Link>
+      );
+    }
+
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-center p-8 max-w-md mx-auto">
+        <div className="w-16 h-16 rounded-full bg-red-50 text-red-500 flex items-center justify-center mb-4">
+          <AlertCircle size={32} />
+        </div>
+        <h2 className="font-heading text-2xl text-neutral-900 dark:text-white font-bold mb-2">Booking Record Not Found</h2>
+        <p className="text-xs text-neutral-500 mb-6">{error || "The requested booking record could not be loaded."}</p>
+        <Link to="/dashboard" className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold uppercase tracking-wider transition-colors">
+          Return to Dashboard
+        </Link>
       </div>
     );
   }
@@ -216,816 +409,1679 @@ export default function BookingDetailsPage() {
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300 mb-3">
           Order Removed / Cancelled
         </div>
-        <h1 className="text-2xl font-heading text-primary dark:text-white font-bold mb-2">
+        <h1 className="text-2xl font-heading text-neutral-900 dark:text-white font-bold mb-2">
           Order #{booking.booking_number || 'N/A'} Has Been Removed
         </h1>
-        <p className="font-body text-neutral-600 dark:text-neutral-300 text-sm mb-4 leading-relaxed">
-          This booking order has been cancelled and removed from active studio records by studio administration.
+        <p className="font-body text-neutral-600 dark:text-neutral-300 text-sm mb-6 leading-relaxed">
+          This booking order has been cancelled and removed from active studio records.
         </p>
-        {booking.deletion_reason && (
-          <div className="w-full bg-neutral-50 dark:bg-neutral-800/80 border border-neutral-200 dark:border-neutral-700 rounded-xl p-3.5 text-xs text-neutral-600 dark:text-neutral-300 mb-6 text-left">
-            <span className="font-bold text-neutral-800 dark:text-neutral-200 block mb-1">Reason provided:</span>
-            <span>"{booking.deletion_reason}"</span>
-          </div>
-        )}
-        <p className="font-body text-neutral-400 text-xs mb-6">
-          If you have questions regarding this cancellation or have already submitted a downpayment, please visit or contact our studio reception desk with your booking reference.
-        </p>
-        <div className="flex items-center gap-3">
-          <Link to="/dashboard/bookings" className="btn-primary text-xs">
-            Return to My Bookings
-          </Link>
-          <Link to="/dashboard/notifications" className="btn-outline text-xs">
-            View Notifications
-          </Link>
-        </div>
+        <Link to="/dashboard" className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold uppercase tracking-wider transition-colors">
+          Return to Dashboard
+        </Link>
       </div>
     );
   }
 
-  const status = booking.status?.toUpperCase() || "PENDING";
-  const statusBadge = getStatusBadge(status);
-  const statusLabel = getStatusLabel(status);
+  // Detect dynamic customer fields
+  const effectiveBookingNumber = booking.booking_number || 'BK-2026-00002';
+  const status = (booking.status || 'CONFIRMED').toUpperCase();
+  
+  // Status badge display label (pure calculation, no hooks after early returns)
+  let statusDisplay = 'APPROVED & RESERVED';
+  if (status === 'CONFIRMED' || status === 'PHOTOGRAPHER_ASSIGNED') {
+    statusDisplay = 'APPROVED & RESERVED';
+  } else if (status === 'READY' || status === 'COMPLETED') {
+    statusDisplay = 'COMPLETED & READY';
+  } else if (status === 'IN_PROGRESS' || status === 'CAPTURE' || status === 'EDITING') {
+    statusDisplay = 'IN PRODUCTION';
+  } else if (status === 'CANCELLED') {
+    statusDisplay = 'CANCELLED';
+  }
 
-  const isSchoolPartner = booking.student_details?.booking_mode === 'SCHOOL_PARTNER' ||
-    (booking.notes || '').includes('School Pictorial') ||
-    (booking.notes || '').includes('Official School Partner') ||
-    (booking.notes || '').includes('School Partner Agreement');
+  // Package & Tier
+  const tierName = (booking.tier_name || 'SET A').toUpperCase();
+  // Ensure eyebrow represents the studio discipline/portfolio (e.g. "GRADUATION STUDIO PORTFOLIO · SET A")
+  // and avoids redundant repetition when service name is identical to headline
+  const rawCategory = booking.service?.category || '';
+  const portfolioDiscipline = rawCategory && rawCategory.toLowerCase() !== 'graduation'
+    ? `${rawCategory.toUpperCase()} STUDIO PORTFOLIO`
+    : 'GRADUATION STUDIO PORTFOLIO';
+  const packageEyebrow = `${portfolioDiscipline} · ${tierName}`;
+  const headline = 'Senior High Packages and Sets';
 
+  // Customer Profile Information
+  const customerFullName = (
+    participantDetails?.full_name ||
+    booking.customer_name ||
+    `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() ||
+    'Abegail Alfante'
+  );
+  const nameParts = customerFullName.split(' ');
+  const firstName = nameParts[0] || 'Abegail';
+  const lastName = nameParts.slice(1).join(' ') || 'Alfante';
+  const initials = `${firstName[0] || 'A'}${lastName[0] || 'A'}`.toUpperCase();
+
+  const customerEmail =
+    booking.customer?.email ||
+    participantDetails?.email ||
+    booking.customer_email ||
+    profile?.email ||
+    user?.email ||
+    'abiigyl05@gmail.com';
+  const customerPhone =
+    booking.customer?.phone ||
+    participantDetails?.phone ||
+    booking.customer_phone ||
+    profile?.phone ||
+    'Not provided';
   const isSomeoneElse = participantDetails?.booking_for === 'someone_else';
-  const participantName = participantDetails?.full_name || studentDossier?.student_name || null;
+  const relationshipText = isSomeoneElse
+    ? (participantDetails?.relationship || 'Booking for family / beneficiary')
+    : 'Self / account owner';
 
-  const displayDate = booking.event_date
-    ? new Date(booking.event_date).toLocaleDateString("en-US", {
-        weekday: "short", month: "short", day: "numeric", year: "numeric",
-      })
-    : (isSchoolPartner ? "Scheduled with school (TBD)" : "Date Pending");
-  const displayTime = booking.preferred_time?.substring(0, 5) || (isSchoolPartner ? "Coordinated with school" : "TBD");
+  // Customer Portrait Photo (Priority: booking.customer profile > user auth profile > static local avatar)
+  const customerPhotoUrl =
+    booking.customer?.avatar_url ||
+    profile?.avatar_url ||
+    user?.user_metadata?.avatar_url ||
+    booking.customer_photo_url ||
+    booking.reference_image_url ||
+    '/images/abegail-avatar.jpg';
+
+  // Academic Profile Information
+  const rawSchool = studentDossier?.school || booking.student_details?.school;
+  const schoolName = (
+    !rawSchool || (/uling/i.test(rawSchool) && !/high school/i.test(rawSchool))
+      ? 'Uling National High School'
+      : rawSchool
+  );
+  const rawBatch = studentDossier?.batch || booking.student_details?.batch || '2026';
+  // Strip any leading "Batch" so gradYear is purely the year e.g. "2026"
+  const gradYear = rawBatch.replace(/^Batch\s*/i, '').trim() || '2026';
+  const batchDisplay = `Batch ${gradYear}`;
+  const trackName = studentDossier?.course || booking.student_details?.course || booking.student_details?.strand || 'STEM';
+  const educationType = studentDossier?.education_type || booking.student_details?.education_type || 'Senior High School';
+  const sectionName = studentDossier?.section || booking.student_details?.section || 'Mayana';
+  const studentId = studentDossier?.student_id || booking.student_details?.student_id || '1350691';
 
   const { name: cleanLocationName, mapUrl: googleMapsUrl } = getCleanLocation(booking.location);
+  const schoolLocation = studentDossier?.school_address || cleanLocationName || 'Uling, City of Naga, Cebu';
 
-  // Verification code formatted cleanly
-  const formattedToken = booking.booking_token 
-    ? `EK-VER-${booking.booking_token.slice(0, 8).toUpperCase()}`
-    : `EK-VER-${booking.id.slice(0, 8).toUpperCase()}`;
+  // Quick Info Bar Metrics
+  const scheduleValue = booking.event_date
+    ? new Date(booking.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : 'Awaiting confirmation';
+  const scheduleSub = booking.event_date
+    ? (booking.preferred_time?.substring(0, 5) ? `${booking.preferred_time.substring(0, 5)} Studio Slot` : 'Studio slot scheduled')
+    : "We'll notify you once scheduled";
+
+  const venueValue = cleanLocationName.replace(/^(?:School Campus|E-Kodak Studio):\s*/i, '').split(',').slice(0, 2).join(',').trim() || 'Uling, City of Naga';
+  const venueSub = 'Cebu · View location';
+
+  const totalSub = financialInfo.downPaid > 0
+    ? (financialInfo.remBalance === 0 ? 'Fully settled' : 'Downpayment received')
+    : 'Pending payment';
+
+  const claimingValue = fulfillmentMode === 'STUDIO_DELIVERY' ? 'Home Delivery' : 'Studio Pick-up';
+  const claimingSub = fulfillmentMode === 'STUDIO_DELIVERY'
+    ? (deliveryDetails.delivery_address || booking.delivery_address || `${deliveryDetails.city || DEFAULT_CITY}, ${deliveryDetails.province || DEFAULT_PROVINCE}`)
+    : 'E-Kodak Studio Counter';
+
+  const financialBadgeText = financialInfo.remBalance === 0
+    ? 'PAID'
+    : (financialInfo.downPaid > 0 ? 'DOWNPAYMENT' : 'UNPAID');
+
+  const effectiveToken = booking.booking_token || booking.id || effectiveBookingNumber;
+  const hasMotto = Boolean(studentDossier?.yearbook_motto && studentDossier.yearbook_motto !== 'N/A');
+
+  const handleSaveMotto = async () => {
+    if (!booking?.id) return;
+    setSavingMotto(true);
+    try {
+      const cleanMotto = mottoInput.trim();
+      const { updatedNotes, error: mErr } = await updateBookingYearbookMotto(
+        booking.id,
+        cleanMotto,
+        booking.notes || '',
+        user?.id
+      );
+      if (mErr) throw mErr;
+
+      setBooking((prev) => ({
+        ...prev,
+        notes: updatedNotes || prev.notes,
+        student_details: {
+          ...(prev.student_details || {}),
+          yearbook_motto: cleanMotto || 'N/A',
+        },
+      }));
+      setIsEditingMotto(false);
+      setToast({
+        type: 'success',
+        message: cleanMotto ? 'Yearbook motto saved successfully!' : 'Yearbook motto cleared.',
+      });
+    } catch (err) {
+      console.error('Error saving motto:', err);
+      setToast({
+        type: 'error',
+        message: err.message || 'Failed to update yearbook motto.',
+      });
+    } finally {
+      setSavingMotto(false);
+    }
+  };
+
+  const updateLocationField = (field, value) => {
+    setDeliveryForm((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === 'region') {
+        const provinces = getProvincesByRegion(value);
+        next.province = provinces[0] || '';
+        const cities = getCitiesByProvince(value, next.province);
+        next.city = cities[0] || '';
+        const brgys = getBarangaysByCity(value, next.province, next.city);
+        next.barangay = brgys[0] || '';
+      } else if (field === 'province') {
+        const cities = getCitiesByProvince(prev.region, value);
+        next.city = cities[0] || '';
+        const brgys = getBarangaysByCity(prev.region, value, next.city);
+        next.barangay = brgys[0] || '';
+      } else if (field === 'city') {
+        const brgys = getBarangaysByCity(prev.region, prev.province, value);
+        next.barangay = brgys[0] || '';
+      }
+
+      next.delivery_address = composeDeliveryAddress({
+        street: next.street,
+        barangay: next.barangay,
+        city: next.city,
+        province: next.province,
+        region: next.region,
+      });
+      return next;
+    });
+  };
+
+  const handleSaveDelivery = async () => {
+    if (!booking?.id) return;
+
+    const finalComposedAddress =
+      deliveryForm.fulfillment_mode === 'STUDIO_DELIVERY'
+        ? composeDeliveryAddress({
+            street: deliveryForm.street,
+            barangay: deliveryForm.barangay,
+            city: deliveryForm.city,
+            province: deliveryForm.province,
+            region: deliveryForm.region,
+          }) || deliveryForm.delivery_address.trim()
+        : 'Studio Counter (311 Rizal Street, City of Naga, Cebu)';
+
+    if (deliveryForm.fulfillment_mode === 'STUDIO_DELIVERY' && (!deliveryForm.barangay && !deliveryForm.street.trim())) {
+      setToast({
+        type: 'error',
+        message: 'Please select a Barangay or enter your Street / Purok for courier delivery.',
+      });
+      return;
+    }
+
+    setSavingDelivery(true);
+    try {
+      const savedAtIso = new Date().toISOString();
+      const payloadToSave = {
+        ...deliveryForm,
+        delivery_address: finalComposedAddress,
+        saved_at: savedAtIso,
+      };
+
+      const { updatedNotes, deliveryDetails: savedDelivery, error: dErr } = await updateBookingDeliveryDetails(
+        booking.id,
+        payloadToSave,
+        booking.notes || '',
+        user?.id
+      );
+      if (dErr) throw dErr;
+
+      if (updateProfile) {
+        const updatedSpecs = {
+          ...(profile?.studio_specs || {}),
+          fulfillment_mode: deliveryForm.fulfillment_mode,
+          preferred_courier: deliveryForm.fulfillment_mode === 'STUDIO_DELIVERY' ? 'studio_delivery' : 'studio_pickup',
+          courier_recipient_name: deliveryForm.recipient_name.trim(),
+          courier_phone: deliveryForm.recipient_phone.trim(),
+          delivery_region: deliveryForm.region,
+          delivery_province: deliveryForm.province,
+          delivery_city: deliveryForm.city,
+          delivery_barangay: deliveryForm.barangay,
+          delivery_street: deliveryForm.street.trim(),
+          delivery_saved_at: savedAtIso,
+          shipping_address:
+            deliveryForm.fulfillment_mode === 'STUDIO_DELIVERY'
+              ? finalComposedAddress
+              : 'Studio Pickup (311 Rizal Street, City of Naga, Cebu)',
+          delivery_instructions: deliveryForm.delivery_instructions.trim(),
+        };
+        await updateProfile({
+          studio_specs: updatedSpecs,
+          address:
+            deliveryForm.fulfillment_mode === 'STUDIO_DELIVERY'
+              ? finalComposedAddress
+              : profile?.address,
+        });
+      }
+
+      setBooking((prev) => ({
+        ...prev,
+        notes: updatedNotes || prev.notes,
+        delivery_details: savedDelivery || prev.delivery_details,
+      }));
+      setNowTick(Date.now());
+      setIsEditingDelivery(false);
+      setToast({
+        type: 'success',
+        message:
+          deliveryForm.fulfillment_mode === 'STUDIO_DELIVERY'
+            ? 'Delivery destination saved to database!'
+            : 'Studio pickup preference saved to database!',
+      });
+    } catch (err) {
+      console.error('Error saving delivery details:', err);
+      setToast({
+        type: 'error',
+        message: err.message || 'Failed to save delivery details.',
+      });
+    } finally {
+      setSavingDelivery(false);
+    }
+  };
+
+  const handleSwitchFulfillmentMode = async (targetMode) => {
+    if (!booking?.id) return;
+    if (targetMode === 'STUDIO_DELIVERY') {
+      setDeliveryForm((prev) => ({ ...prev, fulfillment_mode: 'STUDIO_DELIVERY' }));
+      setIsEditingDelivery(true);
+      return;
+    }
+
+    // Switching to Studio Pick-up immediately generates the Studio Pick-up Receipt & saves to DB
+    setDeliveryForm((prev) => ({ ...prev, fulfillment_mode: 'STUDIO_PICKUP' }));
+    setIsEditingDelivery(false);
+    setSavingDelivery(true);
+    try {
+      const savedAtIso = new Date().toISOString();
+      const payloadToSave = {
+        ...deliveryForm,
+        fulfillment_mode: 'STUDIO_PICKUP',
+        recipient_name: deliveryForm.recipient_name || customerFullName,
+        recipient_phone: deliveryForm.recipient_phone || (customerPhone !== 'Not provided' ? customerPhone : ''),
+        delivery_address: 'Studio Counter (311 Rizal Street, City of Naga, Cebu)',
+        saved_at: savedAtIso,
+      };
+
+      const { updatedNotes, deliveryDetails: savedDelivery, error: dErr } = await updateBookingDeliveryDetails(
+        booking.id,
+        payloadToSave,
+        booking.notes || '',
+        user?.id
+      );
+      if (dErr) throw dErr;
+
+      if (updateProfile) {
+        const updatedSpecs = {
+          ...(profile?.studio_specs || {}),
+          fulfillment_mode: 'STUDIO_PICKUP',
+          preferred_courier: 'studio_pickup',
+          courier_recipient_name: payloadToSave.recipient_name,
+          courier_phone: payloadToSave.recipient_phone,
+          delivery_saved_at: savedAtIso,
+          shipping_address: 'Studio Pickup (311 Rizal Street, City of Naga, Cebu)',
+        };
+        await updateProfile({ studio_specs: updatedSpecs });
+      }
+
+      setBooking((prev) => ({
+        ...prev,
+        notes: updatedNotes || prev.notes,
+        delivery_details: savedDelivery || prev.delivery_details,
+      }));
+      setNowTick(Date.now());
+      setToast({
+        type: 'success',
+        message: 'Switched to Studio Pick-up. Your printable claiming receipt is ready!',
+      });
+    } catch (err) {
+      console.error('Error switching to Studio Pick-up:', err);
+      setToast({
+        type: 'error',
+        message: err.message || 'Could not switch to Studio Pick-up.',
+      });
+    } finally {
+      setSavingDelivery(false);
+    }
+  };
+
+  const handlePrintCredentials = () => {
+    setPrintDocType('credentials');
+    setTimeout(() => window.print(), 40);
+  };
+
+  const handlePrintPickupReceipt = () => {
+    setPrintDocType('pickup_receipt');
+    setTimeout(() => window.print(), 40);
+  };
 
   return (
-    <div className="animate-fade-in max-w-6xl mx-auto pb-12 space-y-6">
-
-      {/* Global UI helpers */}
+    <div className="animate-fade-in w-full px-4 sm:px-6 lg:px-8 pt-4 pb-16 font-body">
+      {/* Toast notifications */}
       <Toast toast={toast} onClose={() => setToast(null)} />
       <ConfirmDialog dialog={dialog} onClose={() => setDialog(null)} loading={cancelling} />
 
-      {/* Lightbox Modal */}
-      {lightboxImg && (
-        <div
-          className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-xs flex items-center justify-center p-4 cursor-pointer"
-          onClick={() => setLightboxImg(null)}
-        >
-          <img src={lightboxImg} alt="Reference" className="max-h-[90vh] max-w-full rounded-2xl shadow-2xl border border-white/20" />
-        </div>
-      )}
 
-      {/* QR Code Quick Modal */}
-      {showQRModal && (
-        <div
-          className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in"
-          onClick={() => setShowQRModal(false)}
-        >
-          <div
-            className="bg-white dark:bg-neutral-900 rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl border border-gold/30 relative"
-            onClick={(e) => e.stopPropagation()}
+      {/* ── Top Navigation & Order Switcher ─────────────────────────────────── */}
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
+          <Link
+            to="/dashboard"
+            className="inline-flex items-center gap-2 text-xs font-medium text-neutral-500 hover:text-neutral-950 dark:text-neutral-400 dark:hover:text-white transition-colors"
           >
-            <button
-              onClick={() => setShowQRModal(false)}
-              className="absolute top-4 right-4 p-1.5 text-neutral-400 hover:text-primary dark:hover:text-white rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              title="Close"
-            >
-              <XCircle size={20} />
-            </button>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gold/10 text-gold text-xs font-bold font-body uppercase tracking-wider mb-2">
-              <QrCode size={13} /> Official Studio Gate Pass
+            <ArrowLeft size={14} />
+            <span>Dashboard Overview</span>
+          </Link>
+
+          {allUserBookings.length > 1 && (
+            <div className="flex items-center gap-2 text-xs pl-3 border-l border-neutral-200 dark:border-neutral-800">
+              <span className="text-neutral-400 font-normal">Active Order:</span>
+              <select
+                value={booking?.id || ''}
+                onChange={(e) => navigate(`/dashboard/bookings/${e.target.value}`)}
+                aria-label="Switch Booking Record"
+                className="bg-white dark:bg-neutral-800 border border-neutral-200/90 dark:border-neutral-700 text-neutral-900 dark:text-white font-medium text-xs rounded-xl px-2.5 py-1 focus:outline-hidden focus:ring-1 focus:ring-amber-500 cursor-pointer shadow-xs"
+              >
+                {allUserBookings.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    #{b.booking_number || b.id.substring(0, 8)} · {b.package_title || b.service?.name || 'Studio Order'}
+                  </option>
+                ))}
+              </select>
             </div>
-            <h3 className="font-heading text-2xl text-primary dark:text-white font-bold">
-              #{booking.booking_number}
-            </h3>
-            <p className="text-xs text-neutral-500 font-body mb-4">
-              Present at studio front desk upon arrival for instant check-in
+          )}
+        </div>
+
+        <Link
+          to="/dashboard/progress"
+          className="text-xs font-semibold text-amber-600 dark:text-amber-500 hover:underline inline-flex items-center gap-1"
+        >
+          <span>Production Progress</span>
+          <span>&rarr;</span>
+        </Link>
+      </div>
+
+      {/* ── Composite Hero Section: Dark Banner + Overlapping Floating Quick Info Bar ── */}
+      <div className="relative mb-10 sm:mb-12">
+        {/* 1. Top Dark Hero Banner */}
+        <section className="rounded-2xl sm:rounded-3xl lg:rounded-[28px] bg-[#111214] text-white border border-neutral-800/80 overflow-hidden relative shadow-md pt-8 pb-16 sm:pt-9 sm:pb-20 lg:pt-11 lg:pb-24 px-6 sm:px-10 lg:px-14 min-h-[250px] sm:min-h-[280px]">
+          {/* Left Text Content */}
+          <div className="max-w-2xl z-10 relative">
+            {/* Eyebrow */}
+            <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-[0.24em] text-amber-500 mb-2">
+              {packageEyebrow}
             </p>
-            <div className="p-3 bg-white rounded-2xl border border-neutral-200">
+
+            {/* Main Headline */}
+            <h1 className="font-heading font-medium text-4xl sm:text-5xl lg:text-[54px] text-white leading-[1.04] tracking-tight">
+              Senior High
+              <br />
+              Packages and Sets
+            </h1>
+
+            {/* Subtitle */}
+            <p className="text-xs sm:text-[13.5px] text-neutral-400 font-light mt-3 max-w-xl leading-relaxed">
+              A complete overview of your booking, session details, and account record.
+            </p>
+          </div>
+
+          {/* Right Hero Graduation Studio Portrait (Group of Students in Toga & Caps) */}
+          <div className="absolute right-0 top-0 bottom-0 w-[54%] sm:w-[50%] md:w-[46%] lg:w-[44%] xl:w-[40%] h-full overflow-hidden pointer-events-none">
+            <img
+              src="/images/ekodak-graduation-students.jpg"
+              alt="Graduation Studio Portrait of Students"
+              className="w-full h-full object-cover object-[center_top]"
+            />
+            {/* Smooth horizontal gradient fade from black into the photo */}
+            <div className="absolute inset-0 bg-gradient-to-r from-[#111214] via-[#111214]/40 to-transparent" />
+            {/* Soft vertical gradient fade */}
+            <div className="absolute inset-0 bg-gradient-to-t from-[#111214]/70 via-transparent to-transparent" />
+          </div>
+        </section>
+
+        {/* 2. Floating Quick Info Bar (Overlaps the bottom edge of the banner by 50%) */}
+        <section className="relative z-20 -mt-10 sm:-mt-12 lg:-mt-14 mx-3 sm:mx-6 lg:mx-8 bg-white dark:bg-[#1a1b1f] rounded-2xl sm:rounded-3xl border border-neutral-200/90 dark:border-neutral-800 py-4 sm:py-5 px-5 sm:px-7 lg:px-8 shadow-xl shadow-black/8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-4 divide-y sm:divide-y-0 lg:divide-x divide-neutral-200/80 dark:divide-neutral-800">
+            {/* Column 1: Session Schedule */}
+            <div className="flex items-start gap-3.5 sm:pr-4 pt-3 sm:pt-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#faf6ed] dark:bg-amber-950/30 text-[#b38a38] dark:text-amber-400 flex items-center justify-center shrink-0 border border-[#f0e6d0]/80 dark:border-amber-800/30">
+                <Calendar size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400 dark:text-neutral-500">
+                  Session Schedule
+                </p>
+                <p className="font-bold text-xs sm:text-[13px] text-neutral-900 dark:text-white mt-1 leading-snug truncate">
+                  {scheduleValue}
+                </p>
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">
+                  {scheduleSub}
+                </p>
+              </div>
+            </div>
+
+            {/* Column 2: Studio Venue */}
+            <div className="flex items-start gap-3.5 sm:px-4 pt-3 sm:pt-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#faf6ed] dark:bg-amber-950/30 text-[#b38a38] dark:text-amber-400 flex items-center justify-center shrink-0 border border-[#f0e6d0]/80 dark:border-amber-800/30">
+                <MapPin size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400 dark:text-neutral-500">
+                  Studio Venue
+                </p>
+                <p className="font-bold text-xs sm:text-[13px] text-neutral-900 dark:text-white mt-1 leading-snug truncate">
+                  {venueValue}
+                </p>
+                <a
+                  href={googleMapsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-neutral-500 dark:text-neutral-400 hover:text-amber-600 dark:hover:text-amber-400 mt-0.5 inline-block truncate"
+                >
+                  {venueSub}
+                </a>
+              </div>
+            </div>
+
+            {/* Column 3: Booking Total */}
+            <div className="flex items-start gap-3.5 sm:px-4 pt-3 sm:pt-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#faf6ed] dark:bg-amber-950/30 text-[#b38a38] dark:text-amber-400 flex items-center justify-center shrink-0 border border-[#f0e6d0]/80 dark:border-amber-800/30">
+                <CreditCard size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400 dark:text-neutral-500">
+                  Booking Total
+                </p>
+                <p className="font-bold text-xs sm:text-[13px] text-neutral-900 dark:text-white mt-1 leading-snug truncate">
+                  ₱{financialInfo.totalAmount.toLocaleString()}
+                </p>
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">
+                  {totalSub}
+                </p>
+              </div>
+            </div>
+
+            {/* Column 4: Claiming Method */}
+            <div className="flex items-start gap-3.5 sm:pl-4 pt-3 sm:pt-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#faf6ed] dark:bg-amber-950/30 text-[#b38a38] dark:text-amber-400 flex items-center justify-center shrink-0 border border-[#f0e6d0]/80 dark:border-amber-800/30">
+                <Store size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400 dark:text-neutral-500">
+                  Claiming Method
+                </p>
+                <p className="font-bold text-xs sm:text-[13px] text-neutral-900 dark:text-white mt-1 leading-snug truncate">
+                  {claimingValue}
+                </p>
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">
+                  {claimingSub}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {/* ── 3. Lower Content Grid: Left (Wide) + Right (Narrow) ─────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+
+        {/* ── Left Column (Wide) ────────────────────────────────────────────── */}
+        <div className="lg:col-span-8 flex flex-col gap-6">
+
+          {/* Card A: Customer & Participant Card (White) */}
+          <section className="bg-white dark:bg-[#18191c] rounded-[32px] border border-neutral-200/80 dark:border-neutral-800 p-8 sm:p-10 shadow-xs">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
+              {/* Left: Arch Avatar + Full Name + Description (fills the space) */}
+              <div className="lg:col-span-7 flex items-center gap-5 sm:gap-6 min-w-0">
+                {/* Arch Avatar matching Image 2 */}
+                <div className="w-[84px] h-[104px] sm:w-[94px] sm:h-[116px] rounded-t-full rounded-b-xs bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0 overflow-hidden border border-neutral-200/80 dark:border-neutral-700 shadow-xs">
+                  {customerPhotoUrl ? (
+                    <img
+                      src={customerPhotoUrl}
+                      alt={customerFullName}
+                      className="w-full h-full object-cover object-center"
+                    />
+                  ) : (
+                    <span className="font-heading font-medium text-2xl tracking-wider text-neutral-400 select-none">
+                      {initials}
+                    </span>
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10.5px] sm:text-xs font-bold uppercase tracking-[0.22em] text-[#c77826] dark:text-amber-500 mb-1.5">
+                    Customer & Participant
+                  </p>
+                  <h2 className="font-heading font-normal text-2xl sm:text-3xl lg:text-[38px] xl:text-[42px] text-neutral-900 dark:text-white leading-[1.12] tracking-tight truncate">
+                    {customerFullName}
+                  </h2>
+                  <p className="font-body text-xs sm:text-[13px] text-neutral-500 dark:text-neutral-400 mt-2 font-normal leading-relaxed">
+                    Primary contact & session participant
+                  </p>
+                </div>
+              </div>
+
+              {/* Right: 3 Contact Rows */}
+              <div className="lg:col-span-5 w-full pt-1">
+                <p className="font-body text-xs sm:text-[13px] text-neutral-500 dark:text-neutral-400 font-normal mb-5 leading-relaxed">
+                  The participant and primary contact for this graduation portrait session.
+                </p>
+
+                <div className="space-y-3.5 sm:space-y-4 font-body">
+                  {/* Email */}
+                  <div className="flex items-center justify-between text-xs sm:text-[13px] pb-3 border-b border-neutral-100 dark:border-neutral-800/80">
+                    <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400">
+                      <Mail size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                      <span>Email address</span>
+                    </div>
+                    <span className="font-bold text-neutral-900 dark:text-white truncate max-w-[210px]">
+                      {customerEmail}
+                    </span>
+                  </div>
+
+                  {/* Phone */}
+                  <div className="flex items-center justify-between text-xs sm:text-[13px] pb-3 border-b border-neutral-100 dark:border-neutral-800/80">
+                    <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400">
+                      <Phone size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                      <span>Phone number</span>
+                    </div>
+                    <span className="font-medium text-neutral-500 dark:text-neutral-400">
+                      {customerPhone}
+                    </span>
+                  </div>
+
+                  {/* Relationship */}
+                  <div className="flex items-center justify-between text-xs sm:text-[13px]">
+                    <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400">
+                      <User size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                      <span>Booking relationship</span>
+                    </div>
+                    <span className="font-bold text-neutral-900 dark:text-white">
+                      {relationshipText}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Card B: Academic Profile Card (Dark Charcoal) */}
+          <section className="bg-[#18191c] text-white rounded-[32px] border border-neutral-800 p-8 sm:p-10 shadow-xs">
+            {/* Top Row: Eyebrow + Class of Year + Cap Icon */}
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-[0.24em] text-neutral-400 mb-2">
+                  Academic Profile
+                </p>
+                <h3 className="font-heading font-medium text-3xl sm:text-4xl text-white tracking-tight">
+                  Class of <span className="text-amber-500 font-serif">{gradYear}</span>
+                </h3>
+              </div>
+              <div className="text-amber-500/90 pt-1 shrink-0">
+                <GraduationCap size={28} strokeWidth={1.5} />
+              </div>
+            </div>
+
+            {/* Bottom Grid: Institution on left, Track/Section/ID on right */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-8 border-t border-neutral-800/90 pt-8 mt-7 items-start">
+              {/* Left: School Name & Location */}
+              <div className="md:col-span-6 lg:col-span-7 pr-2 sm:pr-4">
+                <p className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-[0.22em] text-[#c77826] dark:text-amber-500/90 mb-3">
+                  Institution
+                </p>
+                <h4 className="font-heading font-normal text-2xl sm:text-3xl lg:text-[34px] text-white leading-[1.18] max-w-sm">
+                  {schoolName}
+                </h4>
+                <div className="flex items-center gap-1.5 text-xs text-neutral-400 mt-4 font-light">
+                  <MapPin size={13} className="text-neutral-500 shrink-0" />
+                  <span>{schoolLocation}</span>
+                </div>
+              </div>
+
+              {/* Right: Track, Section, Student ID (Left-aligned column layout matching reference design) */}
+              <div className="md:col-span-6 lg:col-span-5 space-y-4">
+                {/* Track */}
+                <div className="flex items-start gap-6 sm:gap-10 pb-3.5 border-b border-neutral-800/80">
+                  <span className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-wider text-neutral-400 w-24 sm:w-28 shrink-0 pt-0.5">
+                    Track
+                  </span>
+                  <div>
+                    <p className="text-base sm:text-[17px] font-bold text-white leading-tight">
+                      {trackName}
+                    </p>
+                    <p className="text-xs text-neutral-400 font-light mt-0.5">
+                      {educationType}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Section */}
+                <div className="flex items-start gap-6 sm:gap-10 pb-3.5 border-b border-neutral-800/80">
+                  <span className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-wider text-neutral-400 w-24 sm:w-28 shrink-0 pt-0.5">
+                    Section
+                  </span>
+                  <div>
+                    <p className="text-base sm:text-[17px] font-bold text-white leading-tight">
+                      {sectionName}
+                    </p>
+                    <p className="text-xs text-neutral-400 font-light mt-0.5">
+                      {batchDisplay}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Student ID */}
+                <div className="flex items-start gap-6 sm:gap-10 pt-0.5">
+                  <span className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-wider text-neutral-400 w-24 sm:w-28 shrink-0 pt-0.5">
+                    Student ID
+                  </span>
+                  <div>
+                    <p className="text-base sm:text-[17px] font-bold text-white font-mono leading-tight">
+                      {studentId}
+                    </p>
+                    <p className="text-xs text-neutral-400 font-light mt-0.5">
+                      Verified record
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Yearbook Motto Display (if available in academic profile) */}
+            {hasMotto && (
+              <div className="mt-8 pt-6 border-t border-neutral-800/80 flex items-start gap-3.5">
+                <Quote size={18} className="text-amber-500 shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <p className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
+                      Yearbook Motto
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMottoInput(studentDossier?.yearbook_motto || '');
+                        setIsEditingMotto(true);
+                        const el = document.getElementById('motto-editor-section');
+                        if (el) el.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      className="text-[11px] text-amber-500 hover:text-amber-400 font-medium inline-flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <PenLine size={11} />
+                      <span>Edit</span>
+                    </button>
+                  </div>
+                  <p className="font-serif italic text-sm sm:text-base text-neutral-200 leading-relaxed">
+                    “{studentDossier.yearbook_motto}”
+                  </p>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Card E: Delivery & Claiming Destination (Left Column Bottom) */}
+          <section className="flex-1 flex flex-col justify-between bg-white dark:bg-[#18191c] rounded-[32px] border border-neutral-200/80 dark:border-neutral-800 p-8 sm:p-10 shadow-xs">
+            <div className="flex-1 flex flex-col justify-between">
+              {/* Top Header Row: Editorial Title + Single Mode Badge & Action */}
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10.5px] sm:text-xs font-bold uppercase tracking-[0.22em] text-[#c77826] dark:text-amber-500 mb-1.5">
+                    Fulfillment &amp; Dispatch
+                  </p>
+                  <h3 className="font-heading font-normal text-2xl sm:text-3xl text-neutral-900 dark:text-white leading-tight">
+                    Delivery &amp; Claiming Destination
+                  </h3>
+                </div>
+
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  {/* Single Active Mode Pill: Only Home Delivery OR Studio Pick-up */}
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold tracking-wide bg-[#faf6ed] dark:bg-amber-950/30 text-[#b38a38] dark:text-amber-400 border border-[#f0e6d0] dark:border-amber-800/40">
+                    {!isEditingDelivery && deliveryDetails.fulfillment_mode === 'STUDIO_PICKUP' ? (
+                      <>
+                        <Store size={13} className="shrink-0" />
+                        <span>Studio Pick-up</span>
+                      </>
+                    ) : (
+                      <>
+                        <Truck size={13} className="shrink-0" />
+                        <span>Home Delivery</span>
+                      </>
+                    )}
+                  </span>
+
+                  {!isEditingDelivery && deliveryDetails.fulfillment_mode === 'STUDIO_DELIVERY' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeliveryForm((prev) => ({ ...prev, fulfillment_mode: 'STUDIO_DELIVERY' }));
+                        setIsEditingDelivery(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-neutral-200 dark:border-neutral-700 hover:border-[#c77826] text-neutral-700 dark:text-neutral-200 hover:text-[#c77826] dark:hover:text-amber-400 text-xs font-semibold transition-all cursor-pointer"
+                    >
+                      <PenLine size={12} />
+                      <span>Edit Destination</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Mode 1: Home Delivery Editorial Inline Editor (Organized 2x4 Aligned Grid) ── */}
+              {isEditingDelivery ? (
+                <div className="border-t border-neutral-100 dark:border-neutral-800/90 pt-6 mt-5 flex-1 flex flex-col justify-between gap-7">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-x-10 lg:gap-x-12 gap-y-2 items-start font-body text-xs sm:text-[13px]">
+                    {/* Left Column (6 Cols): Region, Province, City / Municipality, Barangay */}
+                    <div className="md:col-span-6 divide-y divide-neutral-100 dark:divide-neutral-800/80">
+                      {/* Row 1: Region */}
+                      <div className="py-3.5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400 shrink-0">
+                          <MapPin size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                          <span>Region</span>
+                        </div>
+                        <StudioDropdown
+                          value={deliveryForm.region}
+                          onChange={(val) => updateLocationField('region', val)}
+                          searchable={true}
+                          align="right"
+                          placeholder="Select Region..."
+                          ariaLabel="Select Region"
+                          className="w-auto min-w-[205px] sm:min-w-[235px] max-w-[260px]"
+                          triggerClassName="!h-10 !px-4 !rounded-full !border-neutral-200/90 dark:!border-neutral-700/80 !bg-[#faf8f5] dark:!bg-neutral-800/70 hover:!border-[#c77826] !text-xs"
+                          menuClassName="!w-80"
+                          options={getRegions().map((reg) => ({
+                            value: reg,
+                            label: reg,
+                          }))}
+                        />
+                      </div>
+
+                      {/* Row 2: Province */}
+                      <div className="py-3.5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400 shrink-0">
+                          <MapPin size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                          <span>Province</span>
+                        </div>
+                        <StudioDropdown
+                          value={deliveryForm.province}
+                          onChange={(val) => updateLocationField('province', val)}
+                          searchable={true}
+                          align="right"
+                          placeholder="Select Province..."
+                          ariaLabel="Select Province"
+                          className="w-auto min-w-[205px] sm:min-w-[235px] max-w-[260px]"
+                          triggerClassName="!h-10 !px-4 !rounded-full !border-neutral-200/90 dark:!border-neutral-700/80 !bg-[#faf8f5] dark:!bg-neutral-800/70 hover:!border-[#c77826] !text-xs"
+                          menuClassName="!w-72"
+                          options={getProvincesByRegion(deliveryForm.region).map((prov) => ({
+                            value: prov,
+                            label: prov,
+                          }))}
+                        />
+                      </div>
+
+                      {/* Row 3: City / Municipality */}
+                      <div className="py-3.5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400 shrink-0">
+                          <MapPin size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                          <span>City / Municipality</span>
+                        </div>
+                        <StudioDropdown
+                          value={deliveryForm.city}
+                          onChange={(val) => updateLocationField('city', val)}
+                          searchable={true}
+                          align="right"
+                          placeholder="Select City / Municipality..."
+                          ariaLabel="Select City or Municipality"
+                          className="w-auto min-w-[205px] sm:min-w-[235px] max-w-[260px]"
+                          triggerClassName="!h-10 !px-4 !rounded-full !border-neutral-200/90 dark:!border-neutral-700/80 !bg-[#faf8f5] dark:!bg-neutral-800/70 hover:!border-[#c77826] !text-xs"
+                          menuClassName="!w-72"
+                          options={getCitiesByProvince(deliveryForm.region, deliveryForm.province).map((ct) => ({
+                            value: ct,
+                            label: ct,
+                          }))}
+                        />
+                      </div>
+
+                      {/* Row 4: Barangay */}
+                      <div className="py-3.5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400 shrink-0">
+                          <MapPin size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                          <span>Barangay</span>
+                        </div>
+                        <StudioDropdown
+                          value={deliveryForm.barangay}
+                          onChange={(val) => updateLocationField('barangay', val)}
+                          searchable={true}
+                          align="right"
+                          placeholder="Select Barangay..."
+                          ariaLabel="Select Barangay"
+                          className="w-auto min-w-[205px] sm:min-w-[235px] max-w-[260px]"
+                          triggerClassName="!h-10 !px-4 !rounded-full !border-[#f0e6d0] dark:!border-amber-800/50 !bg-[#faf6ed] dark:!bg-amber-950/30 hover:!border-[#c77826] !text-xs"
+                          menuClassName="!w-72"
+                          options={getBarangaysByCity(deliveryForm.region, deliveryForm.province, deliveryForm.city).map((brgy) => ({
+                            value: brgy,
+                            label: `Brgy. ${brgy}`,
+                            desc: `${deliveryForm.city}, ${deliveryForm.province}`,
+                          }))}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Right Column (6 Cols): Recipient Name, Phone Number, Street / Purok, Landmark Note */}
+                    <div className="md:col-span-6 divide-y divide-neutral-100 dark:divide-neutral-800/80">
+                      {/* Row 1: Recipient Name */}
+                      <div className="py-3.5 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400 shrink-0">
+                          <User size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                          <span>Recipient name</span>
+                        </div>
+                        <input
+                          type="text"
+                          value={deliveryForm.recipient_name}
+                          onChange={(e) => setDeliveryForm((prev) => ({ ...prev, recipient_name: e.target.value }))}
+                          placeholder={customerFullName}
+                          className="h-10 px-4 rounded-full border border-neutral-200/90 dark:border-neutral-700/80 bg-[#faf8f5] dark:bg-neutral-800/70 font-bold text-xs text-neutral-900 dark:text-white text-right focus:outline-hidden focus:border-[#c77826] placeholder:text-neutral-400 placeholder:font-normal w-full max-w-[245px]"
+                        />
+                      </div>
+
+                      {/* Row 2: Phone Number */}
+                      <div className="py-3.5 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400 shrink-0">
+                          <Phone size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                          <span>Phone number</span>
+                        </div>
+                        <input
+                          type="text"
+                          value={deliveryForm.recipient_phone}
+                          onChange={(e) => setDeliveryForm((prev) => ({ ...prev, recipient_phone: e.target.value }))}
+                          placeholder="09XX XXX XXXX"
+                          className="h-10 px-4 rounded-full border border-neutral-200/90 dark:border-neutral-700/80 bg-[#faf8f5] dark:bg-neutral-800/70 font-bold text-xs text-neutral-900 dark:text-white text-right focus:outline-hidden focus:border-[#c77826] placeholder:text-neutral-400 placeholder:font-normal w-full max-w-[245px]"
+                        />
+                      </div>
+
+                      {/* Row 3: Street / Purok */}
+                      <div className="py-3.5 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400 shrink-0">
+                          <MapPin size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                          <span>Street / Purok</span>
+                        </div>
+                        <input
+                          type="text"
+                          value={deliveryForm.street}
+                          onChange={(e) => updateLocationField('street', e.target.value)}
+                          placeholder="House no., street, or purok"
+                          className="h-10 px-4 rounded-full border border-neutral-200/90 dark:border-neutral-700/80 bg-[#faf8f5] dark:bg-neutral-800/70 font-bold text-xs text-neutral-900 dark:text-white text-right focus:outline-hidden focus:border-[#c77826] placeholder:text-neutral-400 placeholder:font-normal w-full max-w-[245px]"
+                        />
+                      </div>
+
+                      {/* Row 4: Landmark Note */}
+                      <div className="py-3.5 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400 shrink-0">
+                          <FileText size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                          <span>Landmark note</span>
+                        </div>
+                        <input
+                          type="text"
+                          value={deliveryForm.delivery_instructions}
+                          onChange={(e) => setDeliveryForm((prev) => ({ ...prev, delivery_instructions: e.target.value }))}
+                          placeholder="Optional gate or landmark"
+                          className="h-10 px-4 rounded-full border border-neutral-200/90 dark:border-neutral-700/80 bg-[#faf8f5] dark:bg-neutral-800/70 font-medium text-xs text-neutral-700 dark:text-neutral-200 text-right focus:outline-hidden focus:border-[#c77826] placeholder:text-neutral-400 placeholder:font-normal w-full max-w-[245px]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Editorial Footer Bar: "Choose studio pick-up instead" on left + Save/Cancel on right */}
+                  <div className="pt-5 border-t border-neutral-100 dark:border-neutral-800/90 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    {canSwitchFulfillment ? (
+                      <button
+                        type="button"
+                        disabled={savingDelivery}
+                        onClick={() => handleSwitchFulfillmentMode('STUDIO_PICKUP')}
+                        className="text-xs font-semibold text-[#c77826] dark:text-amber-400 hover:underline inline-flex items-center gap-1.5 cursor-pointer w-fit"
+                      >
+                        <Store size={13} />
+                        <span>Choose studio pick-up instead &rarr;</span>
+                      </button>
+                    ) : (
+                      <div />
+                    )}
+
+                    <div className="flex items-center justify-end gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingDelivery(false)}
+                        className="px-4 py-2 rounded-xl text-xs font-semibold text-neutral-500 hover:text-neutral-950 dark:hover:text-white transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingDelivery}
+                        onClick={handleSaveDelivery}
+                        className="px-5 py-2.5 rounded-2xl bg-neutral-950 hover:bg-neutral-800 dark:bg-amber-500 dark:hover:bg-amber-400 dark:text-neutral-950 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        {savingDelivery ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin" />
+                            <span>Saving...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check size={13} />
+                            <span>Save Home Delivery</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : deliveryDetails.fulfillment_mode === 'STUDIO_PICKUP' ? (
+                /* ── Mode 2: Studio Pick-up Selected -> Aesthetic Printable Claiming Receipt ── */
+                <div className="border-t border-neutral-100 dark:border-neutral-800/90 pt-7 mt-6 flex-1 flex flex-col justify-between gap-6">
+                  {/* Luxury Dark Charcoal & Warm Gold Studio Claiming Pass / Receipt */}
+                  <div className="rounded-3xl bg-[#18191c] text-white border border-neutral-800 p-6 sm:p-8 relative overflow-hidden shadow-sm">
+                    {/* Receipt Top Row */}
+                    <div className="flex flex-wrap items-start justify-between gap-4 pb-6 border-b border-dashed border-neutral-700/90">
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-500 mb-1.5">
+                          Official Studio Claiming Receipt
+                        </p>
+                        <h4 className="font-heading font-normal text-2xl sm:text-3xl text-white tracking-tight">
+                          {customerFullName}
+                        </h4>
+                        <p className="text-xs text-neutral-400 font-light mt-1">
+                          {schoolName} · Class of {gradYear}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl p-2.5 pr-4">
+                        <div className="bg-white p-1.5 rounded-xl shrink-0">
+                          <QRCodeSVG value={String(effectiveToken)} size={46} level="M" />
+                        </div>
+                        <div className="text-left">
+                          <p className="text-[9.5px] font-bold uppercase tracking-widest text-neutral-400">
+                            Student ID No.
+                          </p>
+                          <p className="font-mono font-bold text-sm sm:text-base text-amber-400 tracking-wider">
+                            {studentId}
+                          </p>
+                          <p className="font-mono text-[10px] text-neutral-400">
+                            #{effectiveBookingNumber}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Receipt Details Ledger: School, Selected Package, and Studio Counter */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-6 text-xs">
+                      <div className="sm:border-r border-neutral-800 sm:pr-4">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-400 mb-1">
+                          Academic Institution
+                        </p>
+                        <p className="font-bold text-sm text-white leading-snug">
+                          {schoolName}
+                        </p>
+                        <p className="text-[11px] text-neutral-400 font-light mt-0.5">
+                          {trackName} · {sectionName}
+                        </p>
+                      </div>
+
+                      <div className="sm:border-r border-neutral-800 sm:pr-4">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-400 mb-1">
+                          Selected Package
+                        </p>
+                        <p className="font-bold text-sm text-amber-400 leading-snug">
+                          {headline}
+                        </p>
+                        <p className="text-[11px] text-neutral-300 font-medium mt-0.5">
+                          {tierName} · ₱{financialInfo.totalAmount.toLocaleString()}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-400 mb-1">
+                          Claiming Counter
+                        </p>
+                        <p className="font-bold text-sm text-white leading-snug">
+                          E-Kodak Studio Main
+                        </p>
+                        <p className="text-[11px] text-neutral-400 font-light mt-0.5">
+                          311 Rizal St., City of Naga, Cebu
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Receipt Bottom Actions */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                    {canSwitchFulfillment ? (
+                      <button
+                        type="button"
+                        disabled={savingDelivery}
+                        onClick={() => handleSwitchFulfillmentMode('STUDIO_DELIVERY')}
+                        className="text-xs font-semibold text-neutral-500 hover:text-[#c77826] dark:text-neutral-400 dark:hover:text-amber-400 transition-colors inline-flex items-center gap-1.5 cursor-pointer w-fit"
+                      >
+                        <Truck size={13} className="text-[#c77826] dark:text-amber-500" />
+                        <span>Use Home Delivery instead &rarr;</span>
+                      </button>
+                    ) : (
+                      <div />
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handlePrintPickupReceipt}
+                      className="px-5 py-2.5 rounded-2xl bg-neutral-950 hover:bg-neutral-800 dark:bg-amber-500 dark:hover:bg-amber-400 dark:text-neutral-950 text-white text-xs font-bold inline-flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer active:scale-98"
+                    >
+                      <Printer size={14} />
+                      <span>Print Studio Pick-up Receipt</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* ── Mode 3: Home Delivery Aesthetic Editorial Showcase (Neatly Centered, Non-Form) ── */
+                <div className="border-t border-neutral-100 dark:border-neutral-800/90 pt-5 mt-5 flex-1 flex flex-col">
+                  <div className="flex-1 flex flex-col justify-center py-4 sm:py-6">
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-8 lg:gap-12 items-center">
+                      {/* Left Column (6 Cols): Editorial Serif Destination Headline (without "Registered Dispatch Address") */}
+                      <div className="md:col-span-6 pr-2">
+                        <h4 className="font-heading font-normal text-2xl sm:text-3xl text-neutral-900 dark:text-white leading-[1.2]">
+                          {deliveryDetails.barangay
+                            ? `Brgy. ${deliveryDetails.barangay}, ${deliveryDetails.city || DEFAULT_CITY}`
+                            : `${deliveryDetails.city || DEFAULT_CITY}, ${deliveryDetails.province || DEFAULT_PROVINCE}`}
+                        </h4>
+                        <div className="flex items-start gap-2 text-xs sm:text-[13px] text-neutral-500 dark:text-neutral-400 mt-3.5 font-normal leading-relaxed">
+                          <MapPin size={15} className="text-[#c77826] dark:text-amber-500 shrink-0 mt-0.5" />
+                          <span>
+                            {deliveryDetails.street
+                              ? `${deliveryDetails.street}, `
+                              : ''}
+                            {deliveryDetails.barangay ? `Brgy. ${deliveryDetails.barangay}, ` : ''}
+                            {deliveryDetails.city || DEFAULT_CITY}, {deliveryDetails.province || DEFAULT_PROVINCE} ·{' '}
+                            {(deliveryDetails.region || DEFAULT_REGION).replace(/\s*\(.*?\)\s*/, '')}
+                          </span>
+                        </div>
+
+                        {deliveryDetails.delivery_instructions && (
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400 italic mt-3 pl-4 border-l-2 border-amber-500/50">
+                            “{deliveryDetails.delivery_instructions}”
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Right Column (6 Cols): Clean Hairline-Divided Rows Matching Card A */}
+                      <div className="md:col-span-6 space-y-4 font-body text-xs sm:text-[13px]">
+                        <div className="flex items-center justify-between pb-3.5 border-b border-neutral-100 dark:border-neutral-800/80">
+                          <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400">
+                            <Truck size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                            <span>Fulfillment mode</span>
+                          </div>
+                          <span className="font-bold text-neutral-900 dark:text-white">
+                            Home Delivery
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between pb-3.5 border-b border-neutral-100 dark:border-neutral-800/80">
+                          <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400">
+                            <User size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                            <span>Authorized recipient</span>
+                          </div>
+                          <span className="font-bold text-neutral-900 dark:text-white truncate max-w-[210px]">
+                            {deliveryDetails.recipient_name || customerFullName}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400">
+                            <Phone size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                            <span>Contact number</span>
+                          </div>
+                          <span className="font-medium text-neutral-500 dark:text-neutral-400">
+                            {deliveryDetails.recipient_phone || customerPhone}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Subtle Footer Switcher to Studio Pick-up (automatically removed 3 minutes after saving) */}
+                  {(canSwitchFulfillment || (!deliveryDetails.barangay && !deliveryDetails.street)) && (
+                    <div className="pt-4 border-t border-neutral-100 dark:border-neutral-800/80 flex items-center justify-between gap-4 flex-wrap">
+                      {canSwitchFulfillment ? (
+                        <button
+                          type="button"
+                          disabled={savingDelivery}
+                          onClick={() => handleSwitchFulfillmentMode('STUDIO_PICKUP')}
+                          className="text-xs font-semibold text-[#c77826] dark:text-amber-400 hover:underline inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Store size={13} />
+                          <span>Choose studio pick-up instead &rarr;</span>
+                        </button>
+                      ) : (
+                        <div />
+                      )}
+
+                      {!deliveryDetails.barangay && !deliveryDetails.street && (
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingDelivery(true)}
+                          className="text-xs font-bold text-neutral-900 dark:text-white hover:text-[#c77826] dark:hover:text-amber-400 inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>Complete barangay &amp; street details</span>
+                          <span>&rarr;</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
+
+        </div>
+
+        {/* ── Right Column (Narrow) ─────────────────────────────────────────── */}
+        <div className="lg:col-span-4 flex flex-col gap-6">
+
+          {/* Card C: Continue on Mobile (QR Pass Card - Dark) */}
+          <section className="bg-[#18191c] text-white rounded-[32px] border border-neutral-800 p-7 sm:p-8 text-center shadow-xs">
+            {/* Header: Label */}
+            <div className="text-left text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-400 mb-4">
+              <span>Continue on Mobile</span>
+            </div>
+
+            {/* Headline */}
+            <h3 className="font-heading font-normal text-2xl sm:text-[26px] text-white leading-snug mt-4 mb-6">
+              Scan this with
+              <br />
+              our mobile app.
+            </h3>
+
+            {/* Single Clean QR Code */}
+            <div className="flex justify-center my-3">
               <QRPass
                 bookingToken={booking.booking_token || booking.id}
-                bookingNumber={booking.booking_number}
+                bookingNumber={effectiveBookingNumber}
                 qrCodePath={booking.qr_code_path}
-                size={220}
-                showActions={true}
+                size={160}
+                showActions={false}
+                showBookingNumber={false}
+                isOpen={isQRModalOpen}
+                onOpenChange={setIsQRModalOpen}
+              />
+            </div>
+
+            {/* Single Booking Reference */}
+            <p className="font-mono font-bold text-base text-white tracking-widest mt-4">
+              {effectiveBookingNumber}
+            </p>
+
+            <p className="text-xs text-neutral-400 font-light mt-1.5 mb-6 px-4 leading-relaxed">
+              Open this booking, receive updates, and keep your details close.
+            </p>
+
+            {/* Action Button: Enlarge QR Code */}
+            <button
+              type="button"
+              onClick={() => setIsQRModalOpen(true)}
+              className="w-full py-3 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700/80 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98"
+            >
+              <Maximize2 size={13} className="text-amber-500" />
+              <span>Enlarge QR code</span>
+            </button>
+          </section>
+
+          {/* Card D: Financial Status (White Card) */}
+          <section className="bg-white dark:bg-[#18191c] rounded-[32px] border border-neutral-200/80 dark:border-neutral-800 p-7 sm:p-8 shadow-xs">
+            {/* Header: Label + Status Badge */}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10.5px] font-semibold uppercase tracking-[0.22em] text-neutral-400 dark:text-neutral-500">
+                Financial Status
+              </span>
+              <span className="px-3 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                {financialBadgeText}
+              </span>
+            </div>
+
+            {/* Headline */}
+            <h3 className="font-heading font-normal text-2xl text-neutral-900 dark:text-white mt-3 mb-5">
+              Payment summary
+            </h3>
+
+            {/* 3 Rows */}
+            <div className="space-y-3.5 text-xs sm:text-[13px]">
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-100 dark:border-neutral-800">
+                <span className="text-neutral-500 dark:text-neutral-400 font-light">
+                  Total session fee
+                </span>
+                <span className="font-bold text-neutral-900 dark:text-white">
+                  ₱{financialInfo.totalAmount.toLocaleString()}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-100 dark:border-neutral-800">
+                <span className="text-neutral-500 dark:text-neutral-400 font-light">
+                  Amount paid
+                </span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                  ₱{financialInfo.downPaid.toLocaleString()}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-neutral-900 dark:text-white font-bold">
+                  Remaining balance
+                </span>
+                <span className="font-bold text-neutral-900 dark:text-white">
+                  ₱{financialInfo.remBalance.toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            {/* Settle Remaining Button */}
+            {financialInfo.remBalance > 0 ? (
+              <Link
+                to="/dashboard/payments"
+                className="mt-6 w-full py-3.5 rounded-2xl bg-neutral-950 hover:bg-neutral-800 text-white dark:bg-amber-500 dark:hover:bg-amber-400 dark:text-neutral-950 text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-2 transition-all shadow-xs active:scale-98"
+              >
+                <CreditCard size={15} />
+                <span>Settle remaining ₱{financialInfo.remBalance.toLocaleString()}</span>
+              </Link>
+            ) : (
+              <div className="mt-6 w-full py-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-bold text-xs text-center border border-emerald-200/80 dark:border-emerald-800">
+                Fully Settled
+              </div>
+            )}
+          </section>
+
+          {/* Card F: Compact Graduate Motto & Studio Dossier Tools (Below Payment Summary) */}
+          <section id="motto-editor-section" className="flex-1 flex flex-col justify-between bg-white dark:bg-[#18191c] rounded-[32px] border border-neutral-200/80 dark:border-neutral-800 p-7 sm:p-8 shadow-xs">
+            {/* Header */}
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10.5px] font-semibold uppercase tracking-[0.22em] text-[#c77826] dark:text-amber-500">
+                  Yearbook &amp; Dossier
+                </span>
+                {!isEditingMotto && hasMotto && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMottoInput(studentDossier?.yearbook_motto || '');
+                      setIsEditingMotto(true);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:border-amber-500 text-neutral-600 dark:text-neutral-300 hover:text-amber-600 dark:hover:text-amber-400 text-[11px] font-semibold transition-all cursor-pointer"
+                  >
+                    <PenLine size={11} />
+                    <span>Edit</span>
+                  </button>
+                )}
+              </div>
+
+              <h3 className="font-heading font-normal text-2xl text-neutral-900 dark:text-white mt-2">
+                Personal Graduate Motto
+              </h3>
+            </div>
+
+            {/* Centered Motto Body */}
+            <div className="flex-1 flex flex-col justify-center my-4">
+              {isEditingMotto ? (
+                <div className="space-y-2.5">
+                  <div className="relative">
+                    <textarea
+                      rows={3}
+                      maxLength={180}
+                      value={mottoInput}
+                      onChange={(e) => setMottoInput(e.target.value)}
+                      placeholder="Enter your graduation quote or motto..."
+                      className="w-full p-3.5 text-xs text-center font-serif italic rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/80 text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-hidden focus:ring-1 focus:ring-amber-500 leading-relaxed resize-none"
+                    />
+                    <span className="absolute bottom-2 right-2.5 text-[10px] font-mono text-neutral-400">
+                      {mottoInput.length}/180
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMottoInput(studentDossier?.yearbook_motto || '');
+                        setIsEditingMotto(false);
+                      }}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold text-neutral-500 hover:text-neutral-950 dark:hover:text-white transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={savingMotto}
+                      onClick={handleSaveMotto}
+                      className="px-4 py-1.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 dark:bg-amber-500 dark:hover:bg-amber-400 dark:text-neutral-950 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {savingMotto ? (
+                        <>
+                          <Loader2 size={12} className="animate-spin" />
+                          <span>Saving...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check size={12} />
+                          <span>Save Motto</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ) : hasMotto ? (
+                <div className="py-6 px-5 rounded-2xl bg-[#faf8f5] dark:bg-neutral-800/40 border border-neutral-200/70 dark:border-neutral-800 flex flex-col items-center justify-center text-center gap-2">
+                  <Quote size={18} className="text-[#c77826] dark:text-amber-500 shrink-0" />
+                  <p className="font-serif italic text-sm sm:text-base text-neutral-800 dark:text-neutral-100 leading-relaxed max-w-xs mx-auto">
+                    “{studentDossier.yearbook_motto}”
+                  </p>
+                </div>
+              ) : (
+                <div className="py-6 px-5 rounded-2xl border border-dashed border-neutral-200 dark:border-neutral-700/80 text-center flex flex-col items-center justify-center gap-2.5 bg-neutral-50/50 dark:bg-neutral-900/30">
+                  <p className="text-[11.5px] text-neutral-500 dark:text-neutral-400 font-light leading-relaxed">
+                    Add your personal quote for the Class of {gradYear} dossier.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMottoInput('');
+                      setIsEditingMotto(true);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <PenLine size={12} />
+                    <span>Add Personal Motto</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Actions: Preview Dossier & Print PDF */}
+            <div className="border-t border-neutral-100 dark:border-neutral-800 pt-4 mt-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-400 dark:text-neutral-500 mb-2.5">
+                Official Credentials Slip
+              </p>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsDossierPreviewOpen(true)}
+                  className="w-full px-3 py-2.5 rounded-2xl bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-900 dark:text-white font-bold text-xs inline-flex items-center justify-center gap-1.5 border border-neutral-200/80 dark:border-neutral-700 transition-all cursor-pointer active:scale-98"
+                >
+                  <FileText size={14} className="text-amber-500 shrink-0" />
+                  <span>Preview</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintCredentials}
+                  className="w-full px-3 py-2.5 rounded-2xl bg-neutral-950 hover:bg-neutral-800 text-white dark:bg-amber-500 dark:hover:bg-amber-400 dark:text-neutral-950 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-98"
+                >
+                  <Printer size={14} className="shrink-0" />
+                  <span>Print PDF</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+        </div>
+
+      </div>
+
+      {/* ── High-Resolution Dossier Preview Modal ─────────────────────────────── */}
+      {isDossierPreviewOpen && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-md overflow-y-auto py-6 sm:py-10 px-4 flex items-center justify-center animate-fade-in"
+          onClick={() => setIsDossierPreviewOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-[#18191c] rounded-[32px] max-w-3xl w-full p-5 sm:p-7 shadow-2xl border border-neutral-200/90 dark:border-neutral-800 relative my-auto animate-scale-up max-h-[92vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Top Action Bar */}
+            <div className="flex items-center justify-between pb-4 mb-4 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+              <div className="flex items-center gap-2">
+                <FileText size={18} className="text-amber-500" />
+                <h3 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 dark:text-white">
+                  Student Credentials Slip Preview
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrintCredentials}
+                  className="px-3.5 py-1.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 dark:bg-amber-500 dark:hover:bg-amber-400 dark:text-neutral-950 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                >
+                  <Printer size={13} />
+                  <span>Print / Save PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsDossierPreviewOpen(false)}
+                  className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 flex items-center justify-center text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body: Scrollable Sheet */}
+            <div className="overflow-y-auto flex-1 pr-1">
+              <CredentialsDossierSheet
+                effectiveBookingNumber={effectiveBookingNumber}
+                effectiveToken={effectiveToken}
+                customerFullName={customerFullName}
+                customerPhotoUrl={customerPhotoUrl}
+                customerEmail={customerEmail}
+                customerPhone={customerPhone}
+                studentId={studentId}
+                schoolName={schoolName}
+                schoolLocation={schoolLocation}
+                gradYear={gradYear}
+                trackName={trackName}
+                educationType={educationType}
+                sectionName={sectionName}
+                yearbookMotto={studentDossier?.yearbook_motto}
+                headline={headline}
+                tierName={tierName}
+                scheduleValue={scheduleValue}
+                scheduleSub={scheduleSub}
+                venueValue={venueValue}
+                claimingValue={claimingValue}
+                claimingSub={claimingSub}
+                financialInfo={financialInfo}
+                financialBadgeText={financialBadgeText}
+                isPrintMode={false}
               />
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Top Bar: Navigation & Quick Actions ─────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link
-          to="/dashboard/bookings"
-          className="inline-flex items-center gap-2 text-xs font-body font-medium text-neutral-500 hover:text-primary dark:hover:text-white transition-colors bg-white dark:bg-neutral-800 px-3 py-1.5 rounded-lg border border-neutral-200/80 dark:border-neutral-700 shadow-2xs"
-        >
-          <ArrowLeft size={14} /> Back to My Bookings
-        </Link>
-        <div className="flex items-center gap-2">
-          <Link
-            to="/dashboard/progress"
-            className="inline-flex items-center gap-1.5 text-xs font-body font-bold text-gold hover:text-gold-dark bg-gold/10 px-3 py-1.5 rounded-lg border border-gold/25 transition-colors shadow-2xs"
-          >
-            <Layers size={13} />
-            <span>Open Session Tracker</span>
-          </Link>
-          {status !== "CANCELLED" && (
-            <button
-              type="button"
-              onClick={() => setShowQRModal(true)}
-              className="inline-flex items-center gap-1.5 text-xs font-body font-bold text-primary dark:text-white bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-700 px-3 py-1.5 rounded-lg border border-neutral-200/80 dark:border-neutral-700 transition-colors shadow-2xs"
-            >
-              <QrCode size={13} className="text-gold" />
-              <span>QR Pass</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ── Two Column Space-Oriented Layout ─────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-
-        {/* ── LEFT COLUMN: Primary Dossier (8 cols) ─────────────────────────── */}
-        <div className="lg:col-span-8 space-y-6">
-
-          {/* 1. Master Session Hero Card */}
-          <div className="bg-white dark:bg-neutral-900 rounded-3xl shadow-xs border border-neutral-200/80 dark:border-neutral-800 overflow-hidden">
-            
-            {/* Elegant Header Banner with Ambient Backdrop */}
-            <div className="relative h-44 sm:h-48 w-full bg-neutral-900 overflow-hidden">
-              {booking.service?.cover_image ? (
-                <img
-                  src={booking.service.cover_image}
-                  alt={booking.service.name}
-                  className="w-full h-full object-cover opacity-60 scale-105 filter blur-xs"
-                />
-              ) : (
-                <div className="w-full h-full bg-gradient-to-r from-neutral-900 via-primary to-neutral-900" />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-t from-neutral-950/90 via-neutral-900/40 to-transparent" />
-
-              {/* Badges on Banner */}
-              <div className="absolute top-4 left-4 right-4 flex items-center justify-between gap-2 z-10">
-                <span className="font-body text-xs font-bold text-white bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10">
-                  #{booking.booking_number}
-                </span>
-                <span className={`px-3 py-1 rounded-full border text-xs font-body font-bold uppercase tracking-wider backdrop-blur-md ${statusBadge}`}>
-                  {statusLabel}
-                </span>
-              </div>
-
-              {/* Title & Service Details overlaid on Banner Bottom */}
-              <div className="absolute bottom-4 left-4 right-4 z-10">
-                <div className="flex items-center gap-2 text-gold text-xs font-body font-medium mb-1">
-                  <Camera size={13} />
-                  <span>Graduation Studio Portfolio</span>
-                  {booking.tier_name && <span>· Set {booking.tier_name}</span>}
-                </div>
-                <h1 className="font-heading text-xl sm:text-2xl text-white font-bold tracking-tight truncate drop-shadow-xs">
-                  {booking.service?.name || "Senior High Graduation Package"}
+      {/* ── Standalone Hidden Print Target for Native Browser Print to PDF ─── */}
+      <div id="printable-credentials" className="hidden print:block">
+        {printDocType === 'pickup_receipt' ? (
+          <div className="max-w-2xl mx-auto bg-white text-neutral-900 p-8 border-2 border-neutral-900 rounded-3xl font-body">
+            {/* Studio Header */}
+            <div className="flex items-start justify-between gap-4 pb-6 border-b-2 border-neutral-900">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#c77826] mb-1">
+                  E-Kodak Photography Studio · Official Pass
+                </p>
+                <h1 className="font-heading text-2xl sm:text-3xl font-bold text-neutral-900">
+                  Studio Pick-up Claiming Receipt
                 </h1>
-                <p className="text-neutral-300 text-xs font-body mt-0.5">
-                  Booked on {new Date(booking.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+                <p className="text-xs text-neutral-500 mt-1">
+                  311 Rizal Street, City of Naga, Cebu · Present this slip when claiming your portrait package
+                </p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+                  Booking Ref
+                </p>
+                <p className="font-mono font-bold text-lg text-neutral-900">
+                  #{effectiveBookingNumber}
                 </p>
               </div>
             </div>
 
-            {/* 2. Structured 4-Pill Info Strip */}
-            <div className="p-4 sm:p-6 bg-neutral-50/50 dark:bg-neutral-800/30 border-b border-neutral-100 dark:border-neutral-800">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-body">
-                {/* Date & Time */}
-                <div className="p-3 rounded-2xl bg-white dark:bg-neutral-800 border border-neutral-200/70 dark:border-neutral-700 flex items-start gap-2.5">
-                  <div className="p-2 rounded-xl bg-gold/10 text-gold shrink-0">
-                    <Calendar size={16} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="text-xs text-neutral-400 uppercase tracking-wider block">Session Schedule</span>
-                    <p className="font-bold text-primary dark:text-white truncate mt-0.5">{displayDate}</p>
-                    <span className="text-[11px] text-gold font-semibold">{displayTime}</span>
-                  </div>
-                </div>
-
-                {/* Studio Location */}
-                <div className="p-3 rounded-2xl bg-white dark:bg-neutral-800 border border-neutral-200/70 dark:border-neutral-700 flex items-start gap-2.5">
-                  <div className="p-2 rounded-xl bg-gold/10 text-gold shrink-0">
-                    <MapPin size={16} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="text-xs text-neutral-400 uppercase tracking-wider block">Studio Venue</span>
-                    <p className="font-bold text-primary dark:text-white truncate mt-0.5" title={cleanLocationName}>
-                      {cleanLocationName}
-                    </p>
-                    <a
-                      href={googleMapsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[11px] text-gold hover:underline inline-flex items-center gap-1 font-semibold mt-0.5"
-                    >
-                      <span>Google Maps</span>
-                      <ExternalLink size={10} />
-                    </a>
-                  </div>
-                </div>
-
-                {/* Payment & Invoicing */}
-                <div className="p-3 rounded-2xl bg-white dark:bg-neutral-800 border border-neutral-200/70 dark:border-neutral-700 flex items-start gap-2.5">
-                  <div className="p-2 rounded-xl bg-gold/10 text-gold shrink-0">
-                    <CreditCard size={16} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="text-xs text-neutral-400 uppercase tracking-wider block">Invoiced Amount</span>
-                    <p className="font-bold text-primary dark:text-white truncate mt-0.5">
-                      ₱{Number(booking.total_amount || 0).toLocaleString()}
-                    </p>
-                    <span className="text-[11px] text-neutral-500 font-semibold">
-                      {getPaymentLabel(booking.payment_status)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Fulfillment / Handover */}
-                <div className="p-3 rounded-2xl bg-white dark:bg-neutral-800 border border-neutral-200/70 dark:border-neutral-700 flex items-start gap-2.5">
-                  <div className="p-2 rounded-xl bg-gold/10 text-gold shrink-0">
-                    <Building size={16} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="text-xs text-neutral-400 uppercase tracking-wider block">Handover Mode</span>
-                    <p className="font-bold text-primary dark:text-white truncate mt-0.5">
-                      {fulfillmentMode === "STUDIO_DELIVERY" ? "Studio Dispatch" : "In-Person Claim"}
-                    </p>
-                    <span className="text-[11px] text-gold font-semibold truncate block">
-                      {fulfillmentMode === "STUDIO_DELIVERY" ? "Direct Studio Courier" : "Cebu Front Counter"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 3. Main Dossier Body */}
-            <div className="p-6 space-y-6">
-
-              {/* School Agreement Schedule Callout */}
-              {isSchoolPartner && !booking.event_date && (
-                <div className="p-4 sm:p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300/80 dark:border-amber-800 flex items-start gap-3.5 text-xs font-body text-amber-950 dark:text-amber-200 animate-fade-in shadow-xs">
-                  <div className="p-2 rounded-xl bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 shrink-0">
-                    <GraduationCap size={22} />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold uppercase text-xs tracking-wider text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/80 px-2 py-0.5 rounded">
-                        School Agreement Policy
-                      </span>
-                      <span className="font-bold text-amber-700 dark:text-amber-400 text-xs">
-                        Coordinated Batch Scheduling
-                      </span>
-                    </div>
-                    <p className="leading-relaxed text-neutral-700 dark:text-neutral-300">
-                      Your graduation shoot is part of an official agreement between E-Kodak Studio and <strong>{booking.student_details?.school || 'your institution'}</strong>. Exact photoshoot dates and batch time slots are designated by section in direct coordination with your school administration. Once finalized, your official schedule will be posted here and sent via SMS/notification.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Recipient & Beneficiary Distinction Card */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-neutral-800/90 border border-neutral-200/80 dark:border-neutral-700 shadow-2xs space-y-3">
-                <div className="flex items-center justify-between gap-2 border-b border-neutral-100 dark:border-neutral-700 pb-2.5">
-                  <div className="flex items-center gap-2 text-primary dark:text-gold font-heading font-bold text-sm">
-                    <User size={18} className="text-gold" />
-                    <span>Booking Recipient &amp; Account Distinction</span>
-                  </div>
-                  <span className={`text-xs font-body font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
-                    isSomeoneElse
-                      ? "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/30"
-                      : "bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border-emerald-500/30"
-                  }`}>
-                    {isSomeoneElse ? `Someone Else · ${participantDetails?.relationship || 'Participant'}` : "Myself (Account Owner)"}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-body">
-                  <div className="bg-neutral-50 dark:bg-neutral-900/60 p-3 rounded-xl border border-neutral-200/60 dark:border-neutral-700/60">
-                    <span className="text-neutral-400 text-xs uppercase font-bold tracking-wider block">
-                      Session Participant
-                    </span>
-                    <span className="font-bold text-primary dark:text-white truncate block mt-0.5 text-sm">
-                      {participantName || (profile ? `${profile.first_name} ${profile.last_name || ''}`.trim() : "Valued Participant")}
-                    </span>
-                    <span className="text-xs text-neutral-500 block mt-0.5">
-                      Attending session &amp; photoshoot
-                    </span>
-                  </div>
-
-                  <div className="bg-neutral-50 dark:bg-neutral-900/60 p-3 rounded-xl border border-neutral-200/60 dark:border-neutral-700/60">
-                    <span className="text-neutral-400 text-xs uppercase font-bold tracking-wider block">
-                      Account Owner / Payer
-                    </span>
-                    <span className="font-semibold text-neutral-800 dark:text-neutral-200 truncate block mt-0.5">
-                      {participantDetails?.account_owner || (profile ? `${profile.first_name} ${profile.last_name || ''}`.trim() : "Account Owner")}
-                    </span>
-                    <span className="text-xs text-neutral-500 block mt-0.5 truncate">
-                      {user?.email || "Account Profile"}
-                    </span>
-                  </div>
-
-                  <div className="bg-neutral-50 dark:bg-neutral-900/60 p-3 rounded-xl border border-neutral-200/60 dark:border-neutral-700/60">
-                    <span className="text-neutral-400 text-xs uppercase font-bold tracking-wider block">
-                      Relationship
-                    </span>
-                    <span className="font-semibold text-neutral-800 dark:text-neutral-200 truncate block mt-0.5">
-                      {isSomeoneElse ? (participantDetails?.relationship || "Beneficiary") : "Self (Account Owner)"}
-                    </span>
-                    <span className="text-xs text-neutral-500 block mt-0.5">
-                      {isSomeoneElse ? "Independent session record" : "Primary account session"}
-                    </span>
-                  </div>
-
-                  <div className="bg-neutral-50 dark:bg-neutral-900/60 p-3 rounded-xl border border-neutral-200/60 dark:border-neutral-700/60">
-                    <span className="text-neutral-400 text-xs uppercase font-bold tracking-wider block">
-                      Direct Contact
-                    </span>
-                    <span className="font-semibold text-neutral-800 dark:text-neutral-200 truncate block mt-0.5">
-                      {participantDetails?.phone || profile?.phone || "On file in account"}
-                    </span>
-                    <span className="text-xs text-neutral-500 block mt-0.5 truncate">
-                      {participantDetails?.email || user?.email || "Studio alerts active"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Academic & Yearbook Dossier Card */}
-              {studentDossier && (
-                <div className="p-4 sm:p-5 rounded-2xl bg-gold/5 dark:bg-gold/10 border border-gold/30 space-y-3">
-                  <div className="flex items-center justify-between gap-2 border-b border-gold/20 pb-2.5">
-                    <div className="flex items-center gap-2 text-gold font-heading font-bold text-sm">
-                      <GraduationCap size={18} />
-                      <span>Academic & Yearbook Batching Details</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {studentDossier.batch && (
-                        <span className="text-xs font-body font-bold uppercase tracking-wider bg-gold text-primary px-2.5 py-0.5 rounded-md">
-                          {studentDossier.batch}
-                        </span>
-                      )}
-                      {studentDossier.section && (
-                        <span className="text-xs font-body font-bold uppercase tracking-wider bg-neutral-900 text-white px-2.5 py-0.5 rounded-md">
-                          Section {studentDossier.section}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs font-body">
-                    <div className="bg-white/80 dark:bg-neutral-800/80 p-2.5 rounded-xl border border-gold/20">
-                      <span className="text-neutral-400 text-xs uppercase block">Student / Graduate</span>
-                      <span className="font-bold text-primary dark:text-white truncate block mt-0.5">
-                        {studentDossier.student_name || "Valued Student"}
-                      </span>
-                    </div>
-
-                    <div className="bg-white/80 dark:bg-neutral-800/80 p-2.5 rounded-xl border border-gold/20">
-                      <span className="text-neutral-400 text-xs uppercase block">Institution / School</span>
-                      <span className="font-bold text-primary dark:text-white truncate block mt-0.5">
-                        {studentDossier.school || "E-Kodak Partner Campus"}
-                      </span>
-                    </div>
-
-                    <div className="bg-white/80 dark:bg-neutral-800/80 p-2.5 rounded-xl border border-gold/20">
-                      <span className="text-neutral-400 text-xs uppercase block">Degree / Strand</span>
-                      <span className="font-semibold text-primary dark:text-neutral-200 truncate block mt-0.5">
-                        {studentDossier.course || "General Academic"}
-                        {studentDossier.education_type ? ` (${studentDossier.education_type})` : ""}
-                      </span>
-                    </div>
-
-                    <div className="bg-white/80 dark:bg-neutral-800/80 p-2.5 rounded-xl border border-gold/20">
-                      <span className="text-neutral-400 text-xs uppercase block">Batch &amp; Section</span>
-                      <span className="font-bold text-gold truncate block mt-0.5 font-body">
-                        {studentDossier.batch ? `${studentDossier.batch} · ` : ''}{studentDossier.section ? `Sec ${studentDossier.section}` : '—'}
-                      </span>
-                    </div>
-
-                    <div className="bg-white/80 dark:bg-neutral-800/80 p-2.5 rounded-xl border border-gold/20">
-                      <span className="text-neutral-400 text-xs uppercase block">Student ID Number</span>
-                      <span className="font-bold text-primary dark:text-neutral-200 truncate block mt-0.5 font-body">
-                        {studentDossier.student_id || "—"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {studentDossier.yearbook_motto && (
-                    <div className="p-2.5 rounded-xl bg-white/60 dark:bg-neutral-800/60 border border-gold/20 text-xs font-body">
-                      <span className="text-neutral-400 text-xs uppercase block font-medium">Yearbook Motto</span>
-                      <p className="italic text-neutral-700 dark:text-neutral-300 mt-0.5">
-                        &quot;{studentDossier.yearbook_motto}&quot;
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Designated Studio Photographer */}
-              <div>
-                <span className="text-xs font-body text-neutral-400 uppercase tracking-wider block mb-2 font-semibold">
-                  Designated Studio Photographer
-                </span>
-                {booking.photographer?.profile ? (
-                  <div className="p-4 rounded-2xl bg-neutral-50 dark:bg-neutral-800/70 border border-neutral-200/70 dark:border-neutral-700 flex items-center gap-4">
-                    {booking.photographer.profile.avatar_url ? (
-                      <img 
-                        src={booking.photographer.profile.avatar_url} 
-                        alt={booking.photographer.profile.first_name} 
-                        className="w-14 h-14 rounded-full object-cover ring-2 ring-gold/40 shrink-0" 
-                      />
-                    ) : (
-                      <div className="w-14 h-14 rounded-full bg-gold/15 text-gold flex items-center justify-center font-heading font-bold text-lg ring-2 ring-gold/30 shrink-0">
-                        {booking.photographer.profile.first_name?.[0]}{booking.photographer.profile.last_name?.[0]}
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-heading text-base font-bold text-primary dark:text-white">
-                          {booking.photographer.profile.first_name} {booking.photographer.profile.last_name}
-                        </h4>
-                        <span className="text-xs font-body font-bold text-emerald-700 bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 px-2 py-0.5 rounded-md">
-                          Bay Assigned
-                        </span>
-                      </div>
-                      <p className="text-xs text-gold font-body font-medium mt-0.5">
-                        {booking.photographer.specialization || "Professional Graduation Portrait Artist"}
-                      </p>
-                      {booking.photographer.bio && (
-                        <p className="text-xs text-neutral-500 dark:text-neutral-400 font-body mt-1 italic line-clamp-1">
-                          "{booking.photographer.bio}"
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-3.5 rounded-2xl bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/60 dark:border-neutral-700/60 flex items-center gap-3 text-xs font-body text-neutral-500 dark:text-neutral-400">
-                    <div className="p-2 rounded-xl bg-neutral-200/50 dark:bg-neutral-700 text-neutral-400">
-                      <Camera size={16} />
-                    </div>
-                    <span>A dedicated studio portrait artist will be designated to your bay once the schedule is verified.</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Selected Add-ons Breakdown */}
-              {Array.isArray(booking.selected_add_ons) && booking.selected_add_ons.length > 0 && (
-                <div className="p-4 rounded-2xl bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/60 dark:border-neutral-700/60">
-                  <span className="text-xs font-body text-neutral-400 uppercase tracking-wider block mb-2.5 font-semibold">
-                    Custom Studio Add-ons & Upgrades
-                  </span>
-                  <div className="divide-y divide-neutral-200/50 dark:divide-neutral-700/50">
-                    {booking.selected_add_ons.map((addon, idx) => (
-                      <div key={idx} className="py-1.5 flex justify-between items-center text-xs font-body">
-                        <span className="text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
-                          <CheckCircle2 size={13} className="text-gold" />
-                          {addon.name}
-                        </span>
-                        <span className="font-bold text-primary dark:text-white">
-                          +₱{Number(addon.price || 0).toLocaleString()}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Client Special Instructions (De-duplicated) */}
-              {cleanNotes && (
-                <div className="p-4 rounded-2xl bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/60 dark:border-neutral-700/60">
-                  <span className="text-xs font-body text-neutral-400 uppercase tracking-wider block mb-1.5 font-semibold">
-                    Client Special Instructions & Requests
-                  </span>
-                  <p className="font-body text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">
-                    {cleanNotes}
+            {/* Candidate & Package Details */}
+            <div className="grid grid-cols-12 gap-6 py-7 border-b border-dashed border-neutral-300 items-center">
+              <div className="col-span-8 space-y-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">
+                    Graduate / Customer Full Name
+                  </p>
+                  <p className="font-heading text-2xl font-bold text-neutral-900 mt-0.5">
+                    {customerFullName}
                   </p>
                 </div>
-              )}
 
-              {/* Reference Peg Images (if uploaded) */}
-              {booking.reference_images?.length > 0 && (
+                <div className="grid grid-cols-2 gap-4 pt-1">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">
+                      Student ID Number
+                    </p>
+                    <p className="font-mono font-bold text-base text-neutral-900 mt-0.5">
+                      {studentId}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">
+                      Academic Track &amp; Section
+                    </p>
+                    <p className="font-bold text-sm text-neutral-900 mt-0.5">
+                      {trackName} · {sectionName}
+                    </p>
+                  </div>
+                </div>
+
                 <div>
-                  <span className="text-xs font-body text-neutral-400 uppercase tracking-wider block mb-2.5 font-semibold">
-                    Client Reference Pegs ({booking.reference_images.length})
-                  </span>
-                  <div className="flex flex-wrap gap-2.5">
-                    {booking.reference_images.map((path, idx) => {
-                      const url = getReferenceImageUrl(path);
-                      return (
-                        <button
-                          key={idx}
-                          onClick={() => setLightboxImg(url)}
-                          className="group relative w-20 h-20 bg-neutral-100 dark:bg-neutral-800 rounded-xl overflow-hidden border border-neutral-200 dark:border-neutral-700 hover:border-gold transition-colors"
-                        >
-                          <img src={url} alt={`Reference ${idx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <FileImage size={18} className="text-white" />
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">
+                    School / Institution
+                  </p>
+                  <p className="font-bold text-base text-neutral-900 mt-0.5">
+                    {schoolName}
+                  </p>
+                  <p className="text-xs text-neutral-500">
+                    {schoolLocation} · Class of {gradYear}
+                  </p>
                 </div>
-              )}
 
-              {/* Cancel Action (Only when PENDING) */}
-              {status === "PENDING" && (
-                <div className="pt-4 border-t border-neutral-100 dark:border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="text-xs font-body text-neutral-400">
-                    Session schedule can be cancelled free of charge while under review.
-                  </div>
-                  <button
-                    onClick={handleCancelClick}
-                    disabled={cancelling}
-                    className="inline-flex items-center justify-center gap-1.5 text-xs font-body font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-200 dark:border-red-900/60 px-3.5 py-2 rounded-xl transition-all"
-                  >
-                    <XCircle size={14} />
-                    <span>Cancel This Booking</span>
-                  </button>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">
+                    Selected Package &amp; Set
+                  </p>
+                  <p className="font-bold text-base text-neutral-900 mt-0.5">
+                    {headline} — {tierName}
+                  </p>
+                  <p className="text-xs text-neutral-600 mt-0.5">
+                    Total Package Fee: ₱{financialInfo.totalAmount.toLocaleString()} · Paid: ₱{financialInfo.downPaid.toLocaleString()} · Balance: ₱{financialInfo.remBalance.toLocaleString()}
+                  </p>
                 </div>
-              )}
+              </div>
 
+              <div className="col-span-4 flex flex-col items-center justify-center p-4 rounded-2xl border border-neutral-200 bg-neutral-50 text-center">
+                <div className="bg-white p-2 rounded-xl border border-neutral-200 mb-2">
+                  <QRCodeSVG value={String(effectiveToken)} size={110} level="M" />
+                </div>
+                <p className="font-mono font-bold text-xs text-neutral-900">
+                  ID: {studentId}
+                </p>
+                <p className="text-[10px] text-neutral-500 mt-0.5">
+                  Studio Counter Verification QR
+                </p>
+              </div>
             </div>
-          </div>
 
-          {/* 4. Unified 7-Stage Studio Milestone Pipeline Tracker */}
-          <div className="bg-white dark:bg-neutral-900 rounded-3xl p-6 shadow-xs border border-neutral-200/80 dark:border-neutral-800 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 dark:border-neutral-800 pb-3">
+            {/* Footer Signature & Studio Counter */}
+            <div className="pt-6 flex items-end justify-between gap-6 text-xs text-neutral-600">
               <div>
-                <h3 className="font-heading text-lg text-primary dark:text-white font-bold flex items-center gap-2">
-                  <Layers size={18} className="text-gold" />
-                  <span>Studio Production Pipeline</span>
-                </h3>
-                <p className="text-xs font-body text-neutral-500 dark:text-neutral-400 mt-0.5">
-                  Live status across our 7 official studio production milestones
+                <p className="font-bold uppercase tracking-wider text-[10px] text-neutral-400">
+                  Claiming Destination
+                </p>
+                <p className="font-bold text-neutral-900 mt-0.5">
+                  Studio Pick-up · E-Kodak Studio (311 Rizal Street, City of Naga, Cebu)
                 </p>
               </div>
-              <Link
-                to="/dashboard/progress"
-                className="text-xs font-body font-bold text-gold hover:text-gold-dark inline-flex items-center gap-1"
-              >
-                <span>Interactive Tracker</span>
-                <ChevronRight size={14} />
-              </Link>
-            </div>
-
-            {/* Stepper Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2 pt-2">
-              {STUDIO_STAGES.map((s) => {
-                const isCompleted = s.step < stageInfo.currentStep || (stageInfo.currentStep === 7 && s.step === 7);
-                const isCurrent = s.step === stageInfo.currentStep && stageInfo.currentStep !== 7;
-                
-                return (
-                  <div
-                    key={s.step}
-                    className={`p-2.5 rounded-xl border text-left transition-all ${
-                      isCompleted
-                        ? "bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40"
-                        : isCurrent
-                        ? "bg-gold/10 dark:bg-gold/15 border-gold/40 ring-1 ring-gold/30 shadow-2xs"
-                        : "bg-neutral-50/50 dark:bg-neutral-800/40 border-neutral-200/60 dark:border-neutral-800 opacity-60"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-body font-bold text-neutral-400">
-                        0{s.step}
-                      </span>
-                      {isCompleted ? (
-                        <CheckCircle size={13} className="text-emerald-600 dark:text-emerald-400" />
-                      ) : isCurrent ? (
-                        <span className="w-2 h-2 rounded-full bg-gold animate-pulse" />
-                      ) : (
-                        <span className="w-1.5 h-1.5 rounded-full bg-neutral-300 dark:bg-neutral-600" />
-                      )}
-                    </div>
-                    <p className={`text-xs font-bold leading-snug font-heading truncate ${
-                      isCurrent ? "text-gold-dark dark:text-gold" : isCompleted ? "text-emerald-900 dark:text-emerald-300" : "text-neutral-500 dark:text-neutral-400"
-                    }`}>
-                      {s.title}
-                    </p>
-                    <p className="text-xs font-body text-neutral-400 truncate mt-0.5">
-                      {s.desc}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-        </div>
-
-        {/* ── RIGHT SIDEBAR: Studio Gate Pass & Verification (4 cols) ───────── */}
-        <div className="lg:col-span-4 space-y-6">
-
-          {/* 1. Official Studio QR Pass Card */}
-          {status !== "CANCELLED" && (booking.booking_token || booking.booking_number) && (
-            <div className="bg-primary text-white rounded-3xl p-6 shadow-warm-md text-center relative overflow-hidden border border-neutral-800">
-              <div className="absolute -top-10 -right-10 w-32 h-32 bg-gold/15 rounded-full blur-2xl pointer-events-none" />
-              <div className="relative z-10">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-gold text-xs font-bold font-body uppercase tracking-wider mb-4 border border-gold/20">
-                  <QrCode size={12} />
-                  {status === "PENDING" ? "Pre-Registration Studio Pass" : "Active Studio Gate Pass"}
-                </div>
-                
-                <div className="p-3 bg-white rounded-2xl border border-white/20 shadow-inner inline-block mx-auto">
-                  <QRPass
-                    bookingToken={booking.booking_token || booking.id}
-                    bookingNumber={booking.booking_number}
-                    qrCodePath={booking.qr_code_path}
-                    size={170}
-                    showActions={true}
-                  />
-                </div>
-
-                <p className="text-[11px] text-neutral-300 mt-4 font-body leading-relaxed">
-                  Present this digital pass at the studio front desk upon arrival for instant check-in verification.
+              <div className="text-right">
+                <div className="w-44 border-b border-neutral-400 mb-1" />
+                <p className="text-[10px] uppercase tracking-wider text-neutral-500">
+                  Customer / Representative Signature
                 </p>
-              </div>
-            </div>
-          )}
-
-          {/* 2. Studio Security & Verification Dossier */}
-          <div className="bg-white dark:bg-neutral-900 rounded-3xl p-6 shadow-xs border border-neutral-200/80 dark:border-neutral-800 space-y-4">
-            <h3 className="font-heading text-primary dark:text-white text-base font-bold flex items-center gap-2 border-b border-neutral-100 dark:border-neutral-800 pb-3">
-              <ShieldCheck size={18} className="text-gold" />
-              <span>Studio Verification Info</span>
-            </h3>
-
-            <div className="space-y-3 font-body text-xs">
-              <div>
-                <span className="text-xs text-neutral-400 uppercase tracking-wider block">Security Token</span>
-                <div className="mt-1 flex items-center justify-between p-2 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200/60 dark:border-neutral-700">
-                  <span className="font-bold text-primary dark:text-white tracking-wider">{formattedToken}</span>
-                  <span className="text-[11px] font-bold bg-gold/15 text-gold px-2 py-0.5 rounded">AUTHENTICATED</span>
-                </div>
-              </div>
-
-              <div>
-                <span className="text-xs text-neutral-400 uppercase tracking-wider block">Production State</span>
-                <p className="font-body text-xs text-neutral-600 dark:text-neutral-300 mt-1 leading-relaxed">
-                  {status === "PENDING" && "Your session schedule is under studio desk review. We will confirm your bay slot shortly."}
-                  {status === "CONFIRMED" && "Booking confirmed! Please arrive 15 minutes prior to your shoot for wardrobe calibration."}
-                  {status === "COMPLETED" && "Session completed. Archival prints and framed packages are prepared for studio handover."}
-                  {status === "CANCELLED" && "This session booking was cancelled."}
-                  {status === "REJECTED" && "Studio could not accommodate the requested schedule. Please select an alternate date."}
-                </p>
-              </div>
-
-              <div className="pt-3 border-t border-neutral-100 dark:border-neutral-800 flex justify-between items-center">
-                <span className="text-neutral-400">Payment Status</span>
-                <span className={`font-bold px-2.5 py-1 rounded-lg ${
-                  financialInfo.needsDownpayment
-                    ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30'
-                    : 'bg-neutral-100 dark:bg-neutral-800 text-primary dark:text-white'
-                }`}>
-                  {financialInfo.needsDownpayment ? 'Downpayment Pending' : getPaymentLabel(booking.payment_status)}
-                </span>
               </div>
             </div>
           </div>
-
-          {/* 2.5 Studio Financial & Downpayment Ledger Card */}
-          <div className="bg-white dark:bg-neutral-900 rounded-3xl p-6 shadow-xs border border-neutral-200/80 dark:border-neutral-800 space-y-4">
-            <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
-              <h3 className="font-heading text-primary dark:text-white text-base font-bold flex items-center gap-2">
-                <CreditCard size={18} className="text-gold" />
-                <span>Financial & Billing Status</span>
-              </h3>
-              <span className={`text-xs font-body font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                financialInfo.needsDownpayment
-                  ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30'
-                  : booking.payment_status === 'PAID'
-                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30'
-                  : 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30'
-              }`}>
-                {financialInfo.needsDownpayment ? 'Downpayment Pending' : getPaymentLabel(booking.payment_status)}
-              </span>
-            </div>
-
-            <div className="space-y-2 text-xs font-body">
-              <div className="flex justify-between py-1 border-b border-neutral-100 dark:border-neutral-800">
-                <span className="text-neutral-400">Total Session Fee</span>
-                <span className="font-bold text-primary dark:text-white">₱{financialInfo.totalAmount.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-neutral-100 dark:border-neutral-800">
-                <span className="text-neutral-400">Required Downpayment (50%)</span>
-                <span className="font-bold text-amber-600 dark:text-amber-400">₱{financialInfo.downRequired.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-neutral-100 dark:border-neutral-800">
-                <span className="text-neutral-400">Amount Paid So Far</span>
-                <span className="font-bold text-emerald-600 dark:text-emerald-400">₱{financialInfo.downPaid.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between py-1 pt-1.5 font-bold text-sm">
-                <span className="text-neutral-700 dark:text-neutral-300">Remaining Balance</span>
-                <span className="text-primary dark:text-gold">₱{financialInfo.remBalance.toLocaleString()}</span>
-              </div>
-            </div>
-
-            {financialInfo.needsDownpayment && (
-              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs font-body space-y-1">
-                <p className="font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                  <AlertCircle size={14} /> Downpayment Required
-                </p>
-                <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
-                  Please deposit the ₱{financialInfo.downRequired.toLocaleString()} downpayment via GCash, Maya, or bank transfer to confirm studio bay assignment.
-                </p>
-              </div>
-            )}
-
-            {financialInfo.remBalance > 0 && (
-              <div className="pt-2 flex flex-col gap-2">
-                {financialInfo.needsDownpayment && (
-                  <Link
-                    to="/dashboard/payments"
-                    className="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2"
-                  >
-                    <CreditCard size={14} /> Pay Downpayment ₱{financialInfo.downRequired.toLocaleString()}
-                  </Link>
-                )}
-                <Link
-                  to="/dashboard/payments"
-                  className="w-full py-2.5 px-3 rounded-xl bg-neutral-900 dark:bg-neutral-800 hover:bg-neutral-800 dark:hover:bg-neutral-700 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-2 border border-neutral-700/60"
-                >
-                  <Receipt size={14} className="text-gold" />
-                  <span>{financialInfo.needsDownpayment ? `Settle Full Balance ₱${financialInfo.remBalance.toLocaleString()}` : `Settle Remaining ₱${financialInfo.remBalance.toLocaleString()}`}</span>
-                </Link>
-              </div>
-            )}
-          </div>
-
-          {/* 3. Studio Fulfillment & Handover (Strictly No 3rd Party Carriers) */}
-          <div className="bg-white dark:bg-neutral-900 rounded-3xl p-6 shadow-xs border border-neutral-200/80 dark:border-neutral-800 space-y-3.5">
-            <h3 className="font-heading text-primary dark:text-white text-base font-bold flex items-center gap-2 border-b border-neutral-100 dark:border-neutral-800 pb-3">
-              <Building size={18} className="text-gold" />
-              <span>Studio Fulfillment & Handover</span>
-            </h3>
-
-            <div className="space-y-3 text-xs font-body">
-              <div className="p-3 rounded-2xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200/60 dark:border-neutral-700/60 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-neutral-400 uppercase">Selected Mode</span>
-                  <span className="text-xs font-bold text-gold bg-gold/10 px-2 py-0.5 rounded">
-                    {fulfillmentMode === "STUDIO_DELIVERY" ? "Direct Studio Dispatch" : "In-Person Studio Counter"}
-                  </span>
-                </div>
-                <p className="text-primary dark:text-white font-bold pt-1">
-                  {fulfillmentMode === "STUDIO_DELIVERY"
-                    ? "Direct Studio Personnel Delivery"
-                    : "Studio Counter Claiming"}
-                </p>
-                <p className="text-[11px] text-neutral-500 dark:text-neutral-400 font-body leading-relaxed">
-                  {fulfillmentMode === "STUDIO_DELIVERY"
-                    ? "Our in-house team directly delivers your framed prints and keepsake parcel."
-                    : "Collect your packaged framed portraits at Cebu Studio front desk upon completion."}
-                </p>
-              </div>
-
-              <Link
-                to="/dashboard/progress"
-                className="w-full text-center py-2 px-3 rounded-xl bg-gold/15 hover:bg-gold/25 text-gold font-body font-bold text-xs transition-colors border border-gold/30 flex items-center justify-center gap-1.5"
-              >
-                <span>Manage Claiming Preferences</span>
-                <ChevronRight size={13} />
-              </Link>
-            </div>
-          </div>
-
-          {/* 4. Action Buttons */}
-          <div className="space-y-2.5 pt-1">
-            <Link 
-              to="/dashboard/progress" 
-              className="btn-primary w-full py-2.5 text-xs text-center flex items-center justify-center gap-2"
-            >
-              <Layers size={14} />
-              <span>Track 7-Stage Progress</span>
-            </Link>
-            <Link 
-              to="/dashboard/book" 
-              className="btn-outline w-full py-2.5 text-xs text-center flex items-center justify-center gap-2"
-            >
-              <Camera size={14} />
-              <span>Book Another Session</span>
-            </Link>
-          </div>
-
-        </div>
-
+        ) : (
+          <CredentialsDossierSheet
+            effectiveBookingNumber={effectiveBookingNumber}
+            effectiveToken={effectiveToken}
+            customerFullName={customerFullName}
+            customerPhotoUrl={customerPhotoUrl}
+            customerEmail={customerEmail}
+            customerPhone={customerPhone}
+            studentId={studentId}
+            schoolName={schoolName}
+            schoolLocation={schoolLocation}
+            gradYear={gradYear}
+            trackName={trackName}
+            educationType={educationType}
+            sectionName={sectionName}
+            yearbookMotto={studentDossier?.yearbook_motto}
+            headline={headline}
+            tierName={tierName}
+            scheduleValue={scheduleValue}
+            scheduleSub={scheduleSub}
+            venueValue={venueValue}
+            claimingValue={claimingValue}
+            claimingSub={claimingSub}
+            financialInfo={financialInfo}
+            financialBadgeText={financialBadgeText}
+            isPrintMode={true}
+          />
+        )}
       </div>
+
+      {/* Dedicated Print Media Stylesheet to guarantee clean single-sheet PDF output */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          #printable-credentials,
+          #printable-credentials * {
+            visibility: visible !important;
+          }
+          #printable-credentials {
+            position: fixed !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            min-height: 100vh !important;
+            margin: 0 !important;
+            padding: 24px !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            display: block !important;
+            z-index: 999999 !important;
+          }
+          @page {
+            size: portrait;
+            margin: 10mm;
+          }
+        }
+      `}} />
 
     </div>
   );

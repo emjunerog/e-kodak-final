@@ -246,12 +246,9 @@ export default function AdminServices() {
       {/* ── 1. Luxury Administrative Hero Banner ────────────────────────────── */}
       <AdminHeroBanner
         station="admin"
-        badgeLabel="Catalog & Studio Offerings"
-        badgeIcon={ShoppingBag}
         userName={profile?.full_name || user?.email?.split('@')[0] || 'Administrator'}
         title="Services, Packages & Studio Add-Ons"
-        subtitle="Manage photography packages, multi-tier pricing, studio inclusions, categories, and framing add-ons."
-        statusSummary={`${stats.totalServices} Total Packages · ${stats.activeServices} Active in Portal · ${stats.totalCategories} Categories · ${stats.totalAddOns} Add-Ons`}
+        subtitle="Manage photography packages, multi-tier pricing, studio inclusions, and framing add-ons."
         primaryAction={{
           label: 'New Package',
           icon: Plus,
@@ -268,8 +265,8 @@ export default function AdminServices() {
         isRefreshing={loading}
       />
 
-      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Wrapper (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
       {/* Action Success Toast */}
       {actionSuccessMsg && (
@@ -2213,30 +2210,6 @@ function AddOnsView({ addOns = [], onRefresh }) {
 
   return (
     <div className="space-y-4">
-      {/* Header & Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <span className="text-xs text-neutral-500 font-semibold">
-          Showing <strong>{addOns.length}</strong> studio add-on items
-        </span>
-        <div className="flex items-center gap-2">
-          {addOns.length > 0 && (
-            <button
-              type="button"
-              onClick={handleDeleteAll}
-              disabled={deletingBatch}
-              className="px-3 py-2 border border-red-200 text-red-600 hover:bg-red-50 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
-              title="Delete all add-ons from database"
-            >
-              <Trash2 size={13} />
-              <span>Delete Entire Table</span>
-            </button>
-          )}
-          <button onClick={openAdd} className="btn-primary py-2 px-4 text-xs font-bold flex items-center gap-1.5 shadow-xs">
-            <Plus size={14} /> New Add-On
-          </button>
-        </div>
-      </div>
-
       {/* Floating / Sticky Bulk Action Bar */}
       {selectedIds.length > 0 && (
         <div className="p-3.5 bg-red-50/90 border border-red-200 rounded-2xl flex flex-wrap items-center justify-between gap-3 animate-fade-in shadow-warm-sm">
@@ -2270,33 +2243,76 @@ function AddOnsView({ addOns = [], onRefresh }) {
         </div>
       )}
 
-      {/* Table */}
-      <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden">
+      {/* Unified Luxury Add-Ons Card Hub */}
+      <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+        {/* Top hairline amber accent */}
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
+
+        {/* Header Bar */}
+        <div className="p-4 sm:p-6 border-b border-[#c9a96e]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-b from-[#faf7f2]/60 to-transparent">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-900/20 shrink-0">
+              <Tag size={22} />
+            </div>
+            <div>
+              <h2 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 tracking-tight">
+                Studio Add-On Items
+              </h2>
+              <p className="text-xs text-neutral-500">
+                Showing <span className="font-bold text-neutral-800">{addOns.length}</span> studio add-on items configured for client bookings.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {addOns.length > 0 && (
+              <button
+                type="button"
+                onClick={handleDeleteAll}
+                disabled={deletingBatch}
+                className="h-9 px-3.5 border border-red-200 text-red-600 hover:bg-red-50 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Delete all add-ons from database"
+              >
+                <Trash2 size={13} />
+                <span className="hidden sm:inline">Delete Entire Table</span>
+              </button>
+            )}
+            <button 
+              type="button" 
+              onClick={openAdd} 
+              className="h-9 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-[#c9a96e] to-amber-600 hover:brightness-105 text-neutral-900 text-xs font-bold inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <Plus size={14} /> New Add-On
+            </button>
+          </div>
+        </div>
+
+        {/* Table Area */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs font-body border-collapse">
-            <thead>
-              <tr className="bg-neutral-50/80 border-b border-neutral-200/80 text-xs font-bold text-neutral-500 uppercase tracking-wider">
-                <th className="w-10 px-4 py-3 text-center">
+          <table className="w-full text-left text-xs sm:text-sm font-body border-collapse">
+            <thead className="sticky top-0 z-10 bg-[#faf7f2]/95 border-b border-[#c9a96e]/25 shadow-2xs backdrop-blur-md">
+              <tr className="border-b border-neutral-200/80 text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
+                <th className="w-10 px-4 py-3.5 text-center">
                   <input
                     type="checkbox"
                     checked={allSelected}
                     onChange={handleToggleSelectAll}
-                    className="rounded text-gold focus:ring-gold cursor-pointer"
+                    className="rounded accent-amber-600 cursor-pointer"
                     title="Select all items"
                   />
                 </th>
-                <th className="px-4 py-3">Add-On Item</th>
-                <th className="px-4 py-3">Category</th>
-                <th className="px-4 py-3">Price</th>
-                <th className="px-4 py-3 text-center">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="px-4 py-3.5">Add-On Item</th>
+                <th className="px-4 py-3.5">Category</th>
+                <th className="px-4 py-3.5">Price</th>
+                <th className="px-4 py-3.5 text-center">Status</th>
+                <th className="px-4 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
               {addOns.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-10 text-neutral-400 text-xs">
-                    No add-ons currently configured.
+                  <td colSpan={6} className="text-center py-12 text-neutral-400 text-xs italic">
+                    No add-ons currently configured in the studio catalog.
                   </td>
                 </tr>
               ) : (
@@ -2314,7 +2330,7 @@ function AddOnsView({ addOns = [], onRefresh }) {
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => handleToggleSelectRow(item.id)}
-                          className="rounded text-gold focus:ring-gold cursor-pointer"
+                          className="rounded accent-amber-600 cursor-pointer"
                         />
                       </td>
                       <td className="px-4 py-3.5">
@@ -2322,7 +2338,7 @@ function AddOnsView({ addOns = [], onRefresh }) {
                         {item.description && <div className="text-[11px] text-neutral-400 mt-0.5">{item.description}</div>}
                       </td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-700 border border-neutral-200 capitalize">
+                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-md bg-neutral-100 text-neutral-700 border border-neutral-200 capitalize">
                           {item.category || 'General'}
                         </span>
                       </td>
@@ -2330,20 +2346,20 @@ function AddOnsView({ addOns = [], onRefresh }) {
                         {peso(item.price)}
                       </td>
                       <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
+                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
                           item.is_active !== false
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            ? 'bg-amber-50 text-amber-900 border-amber-200/80'
                             : 'bg-neutral-100 text-neutral-500 border-neutral-200'
                         }`}>
                           {item.is_active !== false ? 'Active' : 'Disabled'}
                         </span>
                       </td>
                       <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-1.5">
                           <button
                             type="button"
                             onClick={() => openEdit(item)}
-                            className="p-1.5 text-neutral-500 hover:text-primary hover:bg-neutral-100 rounded-lg transition-colors border border-neutral-200"
+                            className="p-1.5 text-neutral-500 hover:text-amber-900 hover:bg-amber-50 rounded-lg transition-colors border border-neutral-200 cursor-pointer"
                             title="Edit Add-On"
                           >
                             <Edit2 size={13} />
@@ -2351,7 +2367,7 @@ function AddOnsView({ addOns = [], onRefresh }) {
                           <button
                             type="button"
                             onClick={() => handleDelete(item.id, item.name)}
-                            className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-neutral-200 hover:border-red-200"
+                            className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-neutral-200 hover:border-red-200 cursor-pointer"
                             title="Delete Add-On"
                           >
                             <Trash2 size={13} />

@@ -14,7 +14,7 @@ const DEFAULT_ROLE_CONFIG = {
     badgeIcon: ShieldCheck,
   },
   photographer: {
-    badgeLabel: 'Photographer Production Bay',
+    badgeLabel: 'Photographer Production Station',
     badgeIcon: Camera,
   },
   staff: {
@@ -55,11 +55,14 @@ export default function DashboardHero({
   className = '',
   children,
 }) {
+  const isStationBanner = role !== 'client';
   const roleConfig = DEFAULT_ROLE_CONFIG[role] || DEFAULT_ROLE_CONFIG.client;
   const BadgeIcon = CustomBadgeIcon || roleConfig.badgeIcon;
-  const resolvedBadgeLabel = (badgeLabel === null || badgeLabel === false || badgeLabel === '')
+  const resolvedBadgeLabel = isStationBanner
     ? null
-    : (badgeLabel !== undefined ? badgeLabel : (role === 'admin' ? null : roleConfig.badgeLabel));
+    : ((badgeLabel === null || badgeLabel === false || badgeLabel === '')
+      ? null
+      : (badgeLabel !== undefined ? badgeLabel : roleConfig.badgeLabel));
 
   // Format title or greeting with signature E-KODAK gold italic accent
   const renderHeading = () => {
@@ -69,12 +72,19 @@ export default function DashboardHero({
         const firstPart = title.substring(0, lastSpaceIndex);
         const lastWord = title.substring(lastSpaceIndex + 1);
         return (
-          <>
-            {firstPart} <span className="text-gold italic font-normal">{lastWord}</span>
-          </>
+          <span className="inline-flex items-baseline flex-wrap gap-x-2.5">
+            <span className="text-white font-light drop-shadow-xs">{firstPart}</span>{' '}
+            <span className="font-heading italic font-light bg-gradient-to-r from-amber-200 via-gold to-amber-300 bg-clip-text text-transparent drop-shadow-sm">
+              {lastWord}
+            </span>
+          </span>
         );
       }
-      return title;
+      return (
+        <span className="inline-flex items-baseline flex-wrap gap-x-2.5">
+          <span className="text-white font-light drop-shadow-xs">{title}</span>
+        </span>
+      );
     }
 
     // Dynamic artistic time-based greeting if greeting is default
@@ -88,11 +98,10 @@ export default function DashboardHero({
 
     return (
       <div className="flex items-baseline flex-wrap gap-x-2.5 gap-y-1">
-        <span className="text-white drop-shadow-xs">{dynamicGreeting},</span>
-        <span className="font-heading italic font-normal bg-gradient-to-r from-amber-200 via-gold to-amber-300 bg-clip-text text-transparent drop-shadow-sm">
+        <span className="text-white font-light drop-shadow-xs">{dynamicGreeting},</span>
+        <span className="font-heading italic font-light bg-gradient-to-r from-amber-200 via-gold to-amber-300 bg-clip-text text-transparent drop-shadow-sm">
           {userName || 'Member'}
         </span>
-        <Sparkles size={18} className="text-amber-400/90 inline-block animate-pulse ml-0.5 self-center" />
       </div>
     );
   };
@@ -116,8 +125,8 @@ export default function DashboardHero({
     } = action;
 
     const baseClasses = isPrimary
-      ? 'btn-primary py-2 px-3.5 sm:px-4 text-xs font-semibold flex items-center justify-center gap-2 shadow-md shadow-gold/15 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer whitespace-nowrap'
-      : 'btn-ghost-white py-2 px-3 sm:px-3.5 text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap border border-neutral-700/80 bg-neutral-900/60 hover:bg-neutral-850 hover:border-neutral-600 text-neutral-200';
+      ? 'h-[44px] px-3.5 sm:px-4 rounded-2xl text-xs font-normal flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 via-amber-300 to-amber-500 text-neutral-950 shadow-md shadow-amber-500/20 hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer whitespace-nowrap'
+      : 'h-[44px] px-3 sm:px-3.5 rounded-2xl text-xs font-normal flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap border border-white/10 bg-white/[0.05] hover:bg-white/[0.1] text-neutral-200 hover:text-white backdrop-blur-md shadow-sm shadow-black/20 active:scale-[0.98]';
 
     const content = (
       <>
@@ -153,11 +162,7 @@ export default function DashboardHero({
     );
   };
 
-  const isStationBanner = role !== 'client';
-
-  const containerClasses = isStationBanner
-    ? `w-full mt-0 rounded-none border-t-0 border-x-0 rounded-b-2xl sm:rounded-b-3xl border-b border-amber-500/20 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.8),0_0_25px_rgba(201,169,110,0.12)] px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4 mb-2.5 sm:mb-3 font-body transition-all`
-    : `rounded-2xl sm:rounded-3xl border border-amber-500/25 ring-1 ring-gold/20 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.8),0_0_25px_rgba(201,169,110,0.12)] px-4.5 py-4 sm:px-6 sm:py-5 mb-5 sm:mb-6 font-body transition-all before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-gold/60 before:to-transparent`;
+  const containerClasses = `w-full mt-0 rounded-none border-t-0 border-x-0 rounded-b-2xl sm:rounded-b-3xl border-b border-amber-500/20 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.8),0_0_25px_rgba(201,169,110,0.12)] px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4 mb-2.5 sm:mb-3 font-body font-light transition-all`;
 
   return (
     <div
@@ -184,7 +189,7 @@ export default function DashboardHero({
         {/* ── Top Row: Optional Station Badge (Only rendered if explicit badgeLabel is provided) ─ */}
         {resolvedBadgeLabel && (
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs sm:text-[11px] font-bold uppercase tracking-wider text-gold bg-gold/15 border border-gold/30 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1.5 shadow-2xs">
+            <span className="text-xs sm:text-[11px] font-light uppercase tracking-wider text-gold bg-gold/15 border border-gold/30 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1.5 shadow-2xs">
               <BadgeIcon size={12} className="text-gold shrink-0" />
               <span className="truncate max-w-[240px] sm:max-w-none">{resolvedBadgeLabel}</span>
             </span>
@@ -192,33 +197,34 @@ export default function DashboardHero({
         )}
 
         {/* ── Main Row: Left (Creative Welcome Remarks) + Right (Arranged Time & Icons Control Dock) ── */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 pt-0.5">
-          {/* Left Column: Heading and Contextual Subtitle */}
-          <div className="space-y-1 min-w-0 flex-1">
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-heading text-white font-bold tracking-tight">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 min-h-[46px] pt-0.5">
+          {/* Left Column: Heading and Contextual Subtitle occupying the space */}
+          <div className="space-y-1 min-w-0 flex-1 pr-2 sm:pr-4">
+            <h1 className="text-3xl sm:text-4xl lg:text-[40px] font-heading text-white font-light tracking-tight leading-tight">
               {renderHeading()}
             </h1>
 
             {subtitle && (
-              <p className="text-xs sm:text-sm text-neutral-300 font-body leading-relaxed max-w-2xl font-light">
+              <p className="text-xs sm:text-[13px] text-neutral-300 font-body leading-relaxed max-w-2xl font-light mt-1">
                 {subtitle}
               </p>
             )}
           </div>
 
-          {/* Right Column: Arranged Time & Icons Control Dock */}
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 shrink-0 self-start lg:self-center">
+          {/* Right Column: Time & Icons Control Dock (Anchored in decent place on the right) */}
+          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0 self-start sm:self-center">
+            {(primaryAction || secondaryAction) && (
+              <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+                {renderAction(primaryAction, true)}
+                {renderAction(secondaryAction, false)}
+              </div>
+            )}
+
             {showStudioStatus && (
               <LiveClock variant="pill" />
             )}
 
-            {(primaryAction || secondaryAction || extraActions) && (
-              <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-                {renderAction(primaryAction, true)}
-                {renderAction(secondaryAction, false)}
-                {extraActions}
-              </div>
-            )}
+            {extraActions}
           </div>
         </div>
 

@@ -23,9 +23,17 @@ export default function QRPass({
   qrCodePath,
   size = 200,
   showActions = true,
+  showBookingNumber = true,
+  isOpen,
+  onOpenChange,
   className = '',
 }) {
-  const [modalOpen, setModalOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const modalOpen = isOpen !== undefined ? isOpen : internalOpen;
+  const setModalOpen = (val) => {
+    if (onOpenChange) onOpenChange(val);
+    setInternalOpen(val);
+  };
   const [copied, setCopied] = useState(false);
   const qrRef = useRef(null);
 
@@ -158,9 +166,11 @@ export default function QRPass({
         </div>
       </div>
 
-      <p className="text-xs text-neutral-400 mt-2 font-body font-medium tracking-wide">
-        {effectiveBookingNumber || effectiveToken.substring(0, 8)}
-      </p>
+      {showBookingNumber && (
+        <p className="text-xs text-neutral-400 mt-2 font-body font-medium tracking-wide">
+          {effectiveBookingNumber || effectiveToken.substring(0, 8)}
+        </p>
+      )}
 
       {showActions && (
         <div className="flex items-center justify-center gap-2 mt-3">
@@ -186,88 +196,91 @@ export default function QRPass({
       {/* High-Resolution Fullscreen QR Pass Modal */}
       {modalOpen && (
         <div
-          className="fixed inset-0 z-[9999] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in text-left"
+          className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-md overflow-y-auto py-8 sm:py-12 px-4 flex items-center justify-center animate-fade-in"
           onClick={() => setModalOpen(false)}
         >
           <div
-            className="bg-white rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl border border-neutral-100 relative"
+            className="bg-white dark:bg-[#18191c] rounded-[32px] max-w-[420px] w-full p-6 sm:p-7 text-center shadow-2xl border border-neutral-200/90 dark:border-neutral-800 relative animate-scale-up my-auto"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Close Button */}
             <button
               onClick={() => setModalOpen(false)}
-              className="absolute top-4 right-4 p-2 text-neutral-400 hover:text-primary rounded-full hover:bg-neutral-100 transition-colors"
+              className="absolute top-5 right-5 w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 flex items-center justify-center text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition-colors cursor-pointer"
               title="Close"
             >
-              <X size={18} />
+              <X size={16} />
             </button>
 
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gold/10 text-gold text-xs font-bold uppercase tracking-wider mb-3">
-              <QrCode size={13} /> Studio Session Pass
+            {/* Tracking Badge */}
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10.5px] font-bold uppercase tracking-[0.2em] border border-amber-500/20 mb-3.5">
+              <QrCode size={13} className="text-amber-600 dark:text-amber-400" />
+              <span>Order Tracking QR Code</span>
             </div>
 
-            <h3 className="font-heading text-2xl text-primary font-semibold">
-              {effectiveBookingNumber || 'Studio Pass'}
+            {/* Booking Reference */}
+            <h3 className="font-heading text-3xl sm:text-[32px] text-neutral-900 dark:text-white font-normal tracking-tight">
+              #{effectiveBookingNumber || 'Order Tracking'}
             </h3>
+
             {booking?.service?.name && (
-              <p className="text-xs font-semibold text-gold mt-1">
+              <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 mt-1">
                 {booking.service.name}
               </p>
             )}
-            <p className="text-xs text-neutral-500 mb-5 font-body">
-              Scan at reception or present to your photographer
+
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5 mb-5 font-body font-light leading-relaxed">
+              Scan with your phone camera or the E-Kodak app to track your order in real time.
             </p>
 
-            <div className="bg-neutral-50 p-4 rounded-2xl border border-neutral-200/80 inline-block mb-4 shadow-inner">
+            {/* Pure White QR Code Container with subtle photographic finder brackets */}
+            <div className="p-4 sm:p-5 bg-white rounded-3xl border border-neutral-200/90 shadow-md shadow-neutral-900/5 inline-block mb-6 relative group">
+              {/* Camera Frame Brackets */}
+              <div className="absolute top-2.5 left-2.5 w-3 h-3 border-t-2 border-l-2 border-amber-500/60 rounded-tl-sm pointer-events-none" />
+              <div className="absolute top-2.5 right-2.5 w-3 h-3 border-t-2 border-r-2 border-amber-500/60 rounded-tr-sm pointer-events-none" />
+              <div className="absolute bottom-2.5 left-2.5 w-3 h-3 border-b-2 border-l-2 border-amber-500/60 rounded-bl-sm pointer-events-none" />
+              <div className="absolute bottom-2.5 right-2.5 w-3 h-3 border-b-2 border-r-2 border-amber-500/60 rounded-br-sm pointer-events-none" />
+
               <QRCodeSVG
                 bookingToken={effectiveToken}
-                size={230}
-                foregroundColor="#1a1a2e"
+                size={200}
+                foregroundColor="#121316"
                 backgroundColor="#ffffff"
               />
             </div>
 
-            <div className="bg-neutral-100/80 p-2.5 rounded-xl font-body text-[11px] text-neutral-600 mb-5 flex items-center justify-between border border-neutral-200/60">
-              <span className="truncate max-w-[210px]">{effectiveToken}</span>
-              <button
-                type="button"
-                onClick={handleCopyToken}
-                className="text-[11px] font-bold text-gold hover:text-primary px-2.5 py-1 rounded-lg bg-white border border-neutral-200 shadow-sm ml-2 transition-colors"
-              >
-                {copied ? <span className="text-emerald-600 flex items-center gap-1"><Check size={12} /> Copied</span> : 'Copy'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5 font-body text-xs">
+            {/* Action Buttons */}
+            <div className="grid grid-cols-2 gap-3 font-body text-xs">
               <button
                 type="button"
                 onClick={handleDownload}
-                className="btn-primary py-2.5 flex items-center justify-center gap-1.5 font-semibold text-xs"
+                className="py-3 rounded-2xl bg-neutral-950 hover:bg-neutral-800 dark:bg-amber-500 dark:hover:bg-amber-400 dark:text-neutral-950 text-white font-bold text-xs inline-flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer active:scale-98"
               >
-                <Download size={14} /> Download SVG
+                <Download size={15} />
+                <span>Save QR Code</span>
               </button>
               <button
                 type="button"
                 onClick={handlePrint}
-                className="btn-outline py-2.5 flex items-center justify-center gap-1.5 font-semibold text-xs"
+                className="py-3 rounded-2xl bg-white hover:bg-neutral-50 dark:bg-neutral-800 dark:hover:bg-neutral-700 border border-neutral-200/90 dark:border-neutral-700 text-neutral-900 dark:text-white font-bold text-xs inline-flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer active:scale-98"
               >
-                <Printer size={14} /> Print Pass
+                <Printer size={15} />
+                <span>Print QR</span>
               </button>
             </div>
 
-            {/* ── Companion App Banner ── */}
-            <div className="mt-5 rounded-2xl border border-gold/30 bg-gradient-to-br from-[#1a1508] to-[#0f0f0a] p-4 text-left">
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-gold/10 border border-gold/30 flex items-center justify-center">
-                  <QrCode size={18} className="text-gold" />
+            {/* ── Companion App Callout ── */}
+            <div className="mt-5 rounded-2xl bg-[#141517] border border-neutral-800 p-4 text-left relative overflow-hidden shadow-xs">
+              <div className="flex items-start gap-3.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+                  <QrCode size={18} />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-gold mb-0.5 font-body">
-                    📱 Track live in the E-Kodak App
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-white tracking-wide">
+                    Track Live in the E-Kodak App
                   </p>
-                  <p className="text-[11px] text-neutral-400 leading-relaxed font-body">
-                    Scan this QR code in the <strong className="text-neutral-300">E-Kodak Companion App</strong> to
-                    get real-time status updates, milestone tracking, and delivery
-                    notifications directly on your phone.
+                  <p className="text-[11px] text-neutral-400 font-light leading-relaxed mt-0.5">
+                    Scan with the <span className="text-neutral-200 font-medium">E-Kodak Companion App</span> to receive real-time retouching status, proof updates, and delivery alerts.
                   </p>
                 </div>
               </div>

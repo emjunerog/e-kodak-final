@@ -1,621 +1,220 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getCustomerBookings } from '../../services/bookingService';
-import { getCustomerUnifiedNotifications } from '../../services/customerNotificationService';
-import { getStatusBadge, getStatusLabel, getPaymentLabel, getProgressSteps } from '../../lib/bookingUtils';
+import { getCustomerBookings, getCachedCustomerBookings } from '../../services/bookingService';
 import {
-  Camera, Calendar, Clock, MapPin, ArrowRight,
-  CalendarDays, CheckCircle, Loader2, CalendarPlus,
-  QrCode, CheckSquare, Calculator, ExternalLink,
-  History, Bell, ChevronRight, Filter, RefreshCw,
-  CreditCard, AlertCircle, Palette, PackageCheck,
-  Sparkles, User, Layers, Tag
+  CreditCard, Camera, Images, ClipboardList, ArrowUpRight,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import LiveClock from '../../components/dashboard/LiveClock';
-import ClientToolsHub from '../../components/dashboard/ClientToolsHub';
+import { Link, useOutletContext } from 'react-router-dom';
 import ClientHeroBanner from '../../components/dashboard/ClientHeroBanner';
-import StatCard from '../../components/admin/StatCard';
-import SidebarOrderCalendar from '../../components/dashboard/SidebarOrderCalendar';
-import StudioDropdown from '../../components/ui/StudioDropdown';
+import LookbookAppReminder from '../../components/dashboard/LookbookAppReminder';
+import UpcomingDatesCard from '../../components/dashboard/UpcomingDatesCard';
+import AppInstallReminder from '../../components/dashboard/AppInstallReminder';
+import OrderTrackerCard from '../../components/dashboard/OrderTrackerCard';
+import SessionCredentialsCard from '../../components/dashboard/SessionCredentialsCard';
+import StudioExperienceBanner from '../../components/dashboard/StudioExperienceBanner';
+import { DashboardHomeSkeleton, SmartLoadingContainer } from '../../components/dashboard/skeletons';
 
-function daysUntil(dateStr) {
-  if (!dateStr) return null;
-  const diff = Math.ceil((new Date(dateStr) - new Date()) / (1000 * 60 * 60 * 24));
-  return diff;
-}
-
-const QUICK_TOOLS = [
-  { id: 'qr',        label: 'Studio QR Pass',          icon: QrCode },
-  { id: 'checklist', label: 'Prep Checklist',          icon: CheckSquare },
-  { id: 'estimator', label: 'Cost Estimator',          icon: Calculator },
-  { id: 'activity',  label: 'Activity Audit',          icon: History },
-];
+const SURFACE =
+  'bg-white dark:bg-neutral-900 rounded-3xl border border-neutral-200/80 dark:border-neutral-800 shadow-xs';
 
 export default function DashboardHome() {
-  const { profile, user } = useAuth();
-  const [bookings, setBookings] = useState([]);
-  const [notifications, setNotifications] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const outletContext = useOutletContext();
 
-  const [toolsModalOpen, setToolsModalOpen] = useState(false);
-  const [activeTool, setActiveTool] = useState('qr');
-  const [qrModalBooking, setQrModalBooking] = useState(null);
-  const [selectedTrackingId, setSelectedTrackingId] = useState(null);
+  // Instant state resolution from outlet context or in-memory cache to prevent skeleton flash
+  const initialBookings = useMemo(() => {
+    if (outletContext?.bookings && Array.isArray(outletContext.bookings)) {
+      return outletContext.bookings.filter((b) => !b.is_deleted);
+    }
+    const cached = getCachedCustomerBookings(user?.id);
+    if (cached && Array.isArray(cached)) {
+      return cached.filter((b) => !b.is_deleted);
+    }
+    return [];
+  }, [outletContext?.bookings, user?.id]);
 
-  const [dateFilter, setDateFilter] = useState('ALL');
-  const [customMonth, setCustomMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [rightTab, setRightTab] = useState('calendar'); // 'calendar' | 'bulletins'
+  const [bookings, setBookings] = useState(initialBookings);
+  const [loading, setLoading] = useState(initialBookings.length === 0);
+  const [error, setError] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+
+  // Sync if outlet context updates
+  useEffect(() => {
+    if (outletContext?.bookings && Array.isArray(outletContext.bookings)) {
+      const filtered = outletContext.bookings.filter((b) => !b.is_deleted);
+      setBookings(filtered);
+      setLoading(false);
+      setError(null);
+    }
+  }, [outletContext?.bookings]);
+
+  const loadData = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      setError(null);
+      const bRes = await getCustomerBookings(user.id);
+      if (bRes?.error) {
+        setError(bRes.error);
+      } else if (bRes?.data) {
+        setBookings((bRes.data || []).filter((b) => !b.is_deleted));
+      }
+    } catch (err) {
+      console.warn('Dashboard data load error:', err);
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
-    if (!user) return;
-    let isMounted = true;
-    async function loadData() {
-      try {
-        const [bRes, nRes] = await Promise.all([
-          getCustomerBookings(user.id),
-          getCustomerUnifiedNotifications(user.id)
-        ]);
-        if (isMounted) {
-          setBookings((bRes?.data || []).filter(b => !b.is_deleted));
-          setNotifications(nRes?.data || []);
-        }
-      } catch (err) {
-        console.warn('Dashboard data load error:', err);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
+    if (!user?.id) return;
+    // If we already have initial bookings from context/cache, load in background
+    if (initialBookings.length > 0) {
+      setBookings(initialBookings);
+      setLoading(false);
     }
     loadData();
-    return () => { isMounted = false; };
-  }, [user]);
+  }, [user?.id, loadData]);
 
-  const total     = bookings.length;
-  const pending   = bookings.filter(b => b.status === 'PENDING').length;
-  const upcoming  = bookings.filter(b => b.status === 'CONFIRMED').length;
-  const completed = bookings.filter(b => b.status === 'COMPLETED').length;
+  const activeBookings = useMemo(
+    () => bookings.filter((b) => !['COMPLETED', 'CANCELLED', 'REJECTED'].includes(b.status)),
+    [bookings]
+  );
+  const completedCount = bookings.filter((b) => b.status === 'COMPLETED').length;
 
-  const activeBookings = bookings.filter(
-    b => b.status !== 'COMPLETED' && b.status !== 'CANCELLED' && b.status !== 'REJECTED'
+  // Orders shown in the tracker: active ones first, else most recent
+  const trackerSessions = activeBookings.length > 0 ? activeBookings : bookings.slice(0, 1);
+
+  // Outstanding balance across live orders
+  const outstanding = useMemo(
+    () => activeBookings.reduce((sum, b) => sum + Math.max(0, Number(b.remaining_balance ?? 0)), 0),
+    [activeBookings]
   );
 
-  const filteredBookings = useMemo(() => {
-    if (dateFilter === 'ALL') return activeBookings;
-    const now = new Date();
-    return activeBookings.filter((b) => {
-      const td = b.event_date ? new Date(b.event_date) : (b.created_at ? new Date(b.created_at) : null);
-      if (!td) return true;
-      if (dateFilter === 'THIS_MONTH') return td.getFullYear() === now.getFullYear() && td.getMonth() === now.getMonth();
-      if (dateFilter === 'NEXT_30') { const d = Math.ceil((td - now) / 864e5); return d >= 0 && d <= 30; }
-      if (dateFilter === 'PAST') return td < now;
-      if (dateFilter === 'CUSTOM' && customMonth) {
-        const [y, m] = customMonth.split('-').map(Number);
-        return td.getFullYear() === y && td.getMonth() === m - 1;
-      }
-      return true;
-    });
-  }, [activeBookings, dateFilter, customMonth]);
-
-  const filteredTotalValue = filteredBookings.reduce((s, b) => s + (Number(b.total_amount) || 0), 0);
-
-  const nextBooking = activeBookings
-    .filter(b => b.event_date)
-    .sort((a, b) => new Date(a.event_date) - new Date(b.event_date))[0] || activeBookings[0] || bookings[0] || null;
-
-  const trackedSession = bookings.find(b => b.id === selectedTrackingId) || nextBooking;
-
-  // Detect active session requiring downpayment settlement (> 0)
+  // Downpayment still required
   const pendingDownpaymentBooking = useMemo(() => {
-    return bookings.find(b => {
+    return bookings.find((b) => {
       if (b.status === 'CANCELLED' || b.status === 'REJECTED') return false;
-      const status = (b.payment_status || '').toUpperCase();
       const rem = Number(b.remaining_balance ?? b.total_amount ?? 0);
-      const isUnpaid = status === 'UNPAID' || status === '';
       const downPaid = Number(b.down_payment_amount || 0);
-      return rem > 0 && (isUnpaid || rem > 0) && (!b.down_payment_confirmed && downPaid === 0);
+      return rem > 0 && !b.down_payment_confirmed && downPaid === 0;
     }) || null;
   }, [bookings]);
 
   const pendingDownpaymentAmount = useMemo(() => {
     if (!pendingDownpaymentBooking) return 0;
-    const total = Number(pendingDownpaymentBooking.total_amount || 0);
-    const rem = Number(pendingDownpaymentBooking.remaining_balance ?? total);
-    return rem > 0 ? Math.min(rem, Math.max(500, Math.round(total * 0.5))) : 0;
+    const tot = Number(pendingDownpaymentBooking.total_amount || 0);
+    const rem = Number(pendingDownpaymentBooking.remaining_balance ?? tot);
+    return rem > 0 ? Math.min(rem, Math.max(500, Math.round(tot * 0.5))) : 0;
   }, [pendingDownpaymentBooking]);
 
-  const stats = [
-    { label: 'Total Sessions', value: total,     icon: CalendarDays, tier: 'blue' },
-    { label: 'Pending Review', value: pending,   icon: Clock,        tier: 'amber' },
-    { label: 'Confirmed Shoots',value: upcoming,  icon: Camera,       tier: 'gold' },
-    { label: 'Completed',      value: completed, icon: CheckCircle,  tier: 'green' },
+  const quickActions = [
+    { to: '/dashboard/book', icon: Camera, label: 'Book a session', hint: 'Pick a package & date' },
+    {
+      to: '/dashboard/payments',
+      icon: CreditCard,
+      label: 'Payments',
+      hint: outstanding > 0 ? `₱${outstanding.toLocaleString()} balance` : 'All settled',
+    },
+    {
+      to: '/dashboard/soft-copies',
+      icon: Images,
+      label: 'Soft-copies',
+      hint: completedCount > 0 ? `${completedCount} session archive${completedCount !== 1 ? 's' : ''}` : 'Photos & Drive links appear here',
+    },
+    {
+      to: '/dashboard/bookings',
+      icon: ClipboardList,
+      label: 'Booking records',
+      hint: `${bookings.length} order${bookings.length !== 1 ? 's' : ''} on file`,
+    },
   ];
 
-  const handleOpenTool = (toolName, specificBooking = null) => {
-    setActiveTool(toolName);
-    setQrModalBooking(specificBooking || trackedSession || bookings[0] || null);
-    setToolsModalOpen(true);
-  };
-
-  const clientFullName = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Valued Client';
-
-  if (loading) {
-    return (
-      <div className="h-96 flex flex-col items-center justify-center gap-3">
-        <Loader2 className="animate-spin text-gold" size={36} />
-        <p className="text-xs text-neutral-400 font-body tracking-wider uppercase">Loading studio dashboard...</p>
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-screen-2xl mx-auto pb-12 font-body">
+    <SmartLoadingContainer
+      loading={loading}
+      hasData={bookings.length > 0}
+      error={error}
+      onRetry={loadData}
+      skeleton={<DashboardHomeSkeleton />}
+      delayMs={220}
+      title="Studio Dashboard"
+    >
+      <div className="w-full pb-16 font-body">
 
-      {/* ── 1. Top Editorial Hero Banner with Integrated Quick Tools ──────── */}
-      <ClientHeroBanner bookings={bookings} />
+        <ClientHeroBanner bookings={bookings} />
 
-      {/* ── 2. Pending Downpayment Notice Banner (Strictly > ₱0) ─────────── */}
-      {pendingDownpaymentBooking && pendingDownpaymentAmount > 0 && (
-        <div className="rounded-2xl p-4 bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border border-amber-300 dark:border-amber-700/60 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-start sm:items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs animate-pulse">
-              <CreditCard size={20} />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/70 px-2 py-0.5 rounded-md border border-amber-300 dark:border-amber-800">
-                  Downpayment Required
-                </span>
-                <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
-                  #{pendingDownpaymentBooking.booking_number}
-                </span>
-              </div>
-              <p className="text-xs text-neutral-600 dark:text-neutral-300 mt-1">
-                A 50% reservation downpayment of <strong className="text-amber-700 dark:text-amber-400 font-bold">₱{pendingDownpaymentAmount.toLocaleString()}</strong> is required to lock in your camera bay slot.
+        <div className="w-full px-4 sm:px-6 lg:px-8 space-y-6 pt-3 animate-fade-in">
+
+          {/* Payment reminder */}
+          {pendingDownpaymentBooking && pendingDownpaymentAmount > 0 && (
+            <div
+              role="status"
+              className="rounded-2xl px-4 py-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-300/70 dark:border-amber-700/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+            >
+              <p className="text-xs text-neutral-700 dark:text-neutral-200">
+                <strong className="text-amber-700 dark:text-amber-400">Downpayment needed</strong> for #{pendingDownpaymentBooking.booking_number} &mdash;
+                pay <strong>₱{pendingDownpaymentAmount.toLocaleString()}</strong> to reserve your slot.
               </p>
-            </div>
-          </div>
-
-          <Link
-            to="/dashboard/payments"
-            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-xs font-bold shadow-xs hover:shadow-md transition-all hover:scale-105 active:scale-95 shrink-0 flex items-center justify-center gap-1.5"
-          >
-            <CreditCard size={14} />
-            <span>Pay ₱{pendingDownpaymentAmount.toLocaleString()}</span>
-          </Link>
-        </div>
-      )}
-
-      {/* ── 3. Overview Metrics Strip ────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {stats.map((s, i) => (
-          <StatCard
-            key={i}
-            label={s.label}
-            value={s.value}
-            icon={s.icon}
-            color={s.tier}
-          />
-        ))}
-      </div>
-
-      {/* ── 4. Main Balanced Operations Grid ────────────────────────────── */}
-      <div className="grid lg:grid-cols-12 gap-6 items-start">
-
-        {/* Left Column: Active Sessions (7 cols for balanced proportions) */}
-        <div className="lg:col-span-7 space-y-4">
-          <div className="bg-white dark:bg-neutral-900 rounded-3xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs overflow-hidden">
-
-            {/* Section Header */}
-            <div className="border-b border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50 px-5 py-4 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <Calendar size={17} className="text-gold" />
-                <h3 className="font-heading text-base font-bold text-primary dark:text-neutral-100">
-                  Active Sessions
-                </h3>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-gold/15 text-gold border border-gold/30">
-                  {filteredBookings.length}
-                </span>
-              </div>
               <Link
-                to="/dashboard/bookings"
-                className="text-xs font-semibold text-neutral-500 hover:text-gold flex items-center gap-1 transition-colors group/link"
+                to="/dashboard/payments"
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-xs font-bold transition-colors shrink-0 text-center"
               >
-                <span>All Records</span>
-                <ChevronRight size={13} className="transition-transform group-hover/link:translate-x-0.5" />
+                Pay now
               </Link>
-            </div>
-
-            {/* Filter Strip & Dropdowns */}
-            <div className="px-5 py-3 bg-neutral-50/30 dark:bg-neutral-900/30 border-b border-neutral-100 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <Filter size={13} className="text-gold shrink-0" />
-                {[
-                  { id: 'ALL',        label: 'All' },
-                  { id: 'THIS_MONTH', label: 'This Month' },
-                  { id: 'NEXT_30',    label: 'Next 30d' },
-                  { id: 'PAST',       label: 'Past' },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setDateFilter(tab.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
-                      dateFilter === tab.id
-                        ? 'bg-neutral-900 dark:bg-neutral-800 text-white shadow-2xs font-semibold'
-                        : 'bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 border border-neutral-200/80 dark:border-neutral-800 hover:border-gold/50'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-
-                {/* Month Dropdown Selector */}
-                <div className="inline-flex items-center gap-1.5 z-50">
-                  <span className="text-xs text-neutral-400 font-bold uppercase whitespace-nowrap">Month:</span>
-                  <StudioDropdown
-                    value={customMonth}
-                    onChange={(val) => { setCustomMonth(val); setDateFilter('CUSTOM'); }}
-                    options={Array.from({ length: 13 }).map((_, i) => {
-                      const d = new Date();
-                      d.setMonth(d.getMonth() - 6 + i);
-                      return {
-                        value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
-                        label: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-                      };
-                    })}
-                    placeholder="Select Month"
-                    className="w-36"
-                    triggerClassName="py-1 px-3 text-xs bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800 rounded-xl font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-neutral-400">
-                  Total: <strong className="text-primary dark:text-neutral-200 font-bold">₱{filteredTotalValue.toLocaleString()}</strong>
-                </span>
-                {dateFilter !== 'ALL' && (
-                  <button
-                    type="button"
-                    onClick={() => setDateFilter('ALL')}
-                    className="text-gold hover:text-gold-dark text-xs font-semibold flex items-center gap-1 hover:underline"
-                  >
-                    <RefreshCw size={11} /> Reset
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Session Cards */}
-            <div className="p-4 sm:p-5 space-y-4">
-              {filteredBookings.length > 0 ? (
-                filteredBookings.map((b) => {
-                  const days = daysUntil(b.event_date);
-                  const steps = getProgressSteps(b.status);
-                  const currentStep = steps.find(s => s.current || s.active) || steps.find(s => !s.completed) || steps[steps.length - 1];
-                  const doneCount = steps.filter(s => s.completed || s.done).length;
-                  const isTracked = trackedSession?.id === b.id;
-                  const isUnpaid = !b.payment_status || b.payment_status.toUpperCase() === 'UNPAID';
-                  const remBal = Number(b.remaining_balance ?? b.total_amount ?? 0);
-                  
-                  // Downpayment is only due if balance is strictly > 0 AND downpayment amount > 0
-                  const needsDownpayment = remBal > 0 && (isUnpaid || remBal > 0) && (!b.down_payment_confirmed && Number(b.down_payment_amount || 0) === 0);
-                  const cardDownAmount = remBal > 0 ? Math.min(remBal, Math.max(500, Math.round(Number(b.total_amount || 0) * 0.5))) : 0;
-
-                  // Customer Name (Primary Identifier)
-                  const bookingCustomer = b.student_details?.full_name || b.student_details?.name || b.customer_name || clientFullName;
-
-                  // Acquired Set Tier
-                  const acquiredSet = b.tier_name || 'Standard Set';
-
-                  return (
-                    <div
-                      key={b.id}
-                      onClick={() => setSelectedTrackingId(b.id)}
-                      className={`rounded-3xl border transition-all cursor-pointer p-5 space-y-4 ${
-                        isTracked
-                          ? 'bg-amber-500/[0.03] dark:bg-amber-500/[0.06] border-gold shadow-md ring-2 ring-gold/30'
-                          : 'bg-white dark:bg-neutral-900 border-neutral-200/90 dark:border-neutral-800 hover:border-gold/50 hover:shadow-sm'
-                      }`}
-                    >
-                      {/* Top Header */}
-                      <div className="flex flex-wrap items-center justify-between gap-4">
-                        {/* Left Side: Avatar & Name */}
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-neutral-900 dark:bg-neutral-800 text-gold font-body font-bold text-sm flex items-center justify-center shadow-xs shrink-0">
-                            {bookingCustomer.charAt(0) || 'C'}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <span className="text-xs uppercase tracking-wider text-neutral-400 font-bold font-body">Client</span>
-                              {isTracked && (
-                                <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded-full font-body" title="Currently Tracking">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                </span>
-                              )}
-                            </div>
-                            <h4 className="font-body text-base font-bold text-primary dark:text-neutral-100 leading-none">
-                              {bookingCustomer}
-                            </h4>
-                          </div>
-                        </div>
-
-                        {/* Middle: Status & ID */}
-                        <div className="flex items-center gap-3 ml-auto mr-auto pl-4 border-l border-transparent sm:border-neutral-200 dark:sm:border-neutral-800">
-                          {b.status === 'PHOTOGRAPHER_ASSIGNED' ? (
-                            <span className="px-3 py-1 text-xs font-bold rounded-full uppercase tracking-wider border bg-primary/10 text-primary border-primary/30 flex items-center gap-1.5 font-body">
-                              <Camera size={12} /> Assigned
-                            </span>
-                          ) : (
-                            <span className={`px-3 py-1 text-xs font-bold rounded-full uppercase tracking-wider border ${getStatusBadge(b.status)} font-body flex items-center gap-1.5`}>
-                              {getStatusLabel(b.status)}
-                            </span>
-                          )}
-                          <span className="text-[11px] text-neutral-400 font-medium font-body">#{b.booking_number}</span>
-                        </div>
-
-                        {/* Right: Actions */}
-                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                          {days !== null && days >= 0 && (
-                            <span className="px-3 py-1.5 rounded-full text-xs font-bold text-gold-dark dark:text-gold bg-gold/10 border border-gold/20 flex items-center gap-1">
-                              <Clock size={13} /> {days === 0 ? 'Today' : `${days}d`}
-                            </span>
-                          )}
-                          <button onClick={() => handleOpenTool('qr', b)} className="w-9 h-9 rounded-full border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:border-gold hover:text-gold flex items-center justify-center transition-all hover:scale-105 active:scale-95 text-neutral-600 dark:text-neutral-300 shadow-xs">
-                            <QrCode size={14} />
-                          </button>
-                          <Link to={`/dashboard/bookings/${b.id}`} className="w-9 h-9 rounded-full border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:border-primary dark:hover:border-neutral-400 hover:text-primary dark:hover:text-white flex items-center justify-center transition-all hover:scale-105 active:scale-95 text-neutral-600 dark:text-neutral-300 shadow-xs">
-                            <ArrowRight size={14} />
-                          </Link>
-                        </div>
-                      </div>
-
-                      <div className="w-full h-px bg-neutral-100 dark:bg-neutral-800/80" />
-
-                      {/* Bottom Section */}
-                      <div className="flex flex-wrap items-start justify-between gap-5 w-full">
-                        {/* Left: Package & Set Info */}
-                        <div className="space-y-3 font-body">
-                           <div className="flex items-center gap-2 text-primary dark:text-neutral-100 font-bold text-sm">
-                             <Layers size={14} className="text-gold shrink-0" />
-                             <span>{b.service?.name || 'Studio Portrait Session'}</span>
-                           </div>
-                           <span className="inline-flex items-center gap-1.5 text-gold-dark dark:text-gold bg-gold/10 border border-gold/20 px-2.5 py-1 rounded-lg text-xs font-bold shadow-2xs">
-                             <Tag size={12} /> Set: {acquiredSet}
-                           </span>
-                        </div>
-
-                        {/* Right: Date & Payment Info */}
-                        <div className="space-y-3 text-right font-body flex flex-col items-end">
-                           <div className="flex items-center justify-end gap-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400 p-1.5 rounded-lg bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-100 dark:border-neutral-800">
-                             <Calendar size={13} className="text-gold" /> 
-                             {b.event_date ? new Date(b.event_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : 'Date TBD'}
-                           </div>
-                           <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-100 dark:border-neutral-800">
-                             <CreditCard size={13} className="text-gold" />
-                             <span className="text-xs font-bold text-neutral-600 dark:text-neutral-400">
-                               {getPaymentLabel(b.payment_status)}
-                             </span>
-                           </div>
-                        </div>
-                      </div>
-
-                      {/* Integrated Compact Progress Tracker (Takes Zero Extra Layout Space) */}
-                      <div className="pt-3 border-t border-neutral-100 dark:border-neutral-800/80">
-                        <div className="flex items-center justify-between text-xs font-body mb-2">
-                          <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
-                            <Layers size={12} className="text-gold" />
-                            <span>Production Progress</span>
-                          </span>
-                          <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
-                            Stage {doneCount} of {steps.length} · <strong className="text-primary dark:text-gold font-bold">{currentStep?.label || 'In Progress'}</strong>
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between relative px-1 py-1">
-                          <div className="absolute left-3 right-3 top-1/2 -translate-y-1/2 h-1 bg-neutral-100 dark:bg-neutral-800 rounded-full z-0" />
-                          <div 
-                            className="absolute left-3 top-1/2 -translate-y-1/2 h-1 bg-gradient-to-r from-gold-dark via-gold to-amber-300 rounded-full z-0 transition-all duration-500" 
-                            style={{ width: `${Math.max(0, Math.min(100, ((doneCount - 0.5) / Math.max(1, steps.length - 1)) * 100))}%` }}
-                          />
-                          {steps.map((st, sIdx) => {
-                            const isComp = st.completed || st.done;
-                            const isAct = st.current || st.active;
-                            return (
-                              <div key={sIdx} className="relative z-10 group/mini flex flex-col items-center">
-                                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                                  isComp 
-                                    ? 'bg-emerald-500 text-white shadow-2xs' 
-                                    : isAct 
-                                    ? 'bg-gold text-neutral-950 ring-2 ring-gold/30 shadow-xs' 
-                                    : 'bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-400'
-                                }`}>
-                                  {isComp ? '✓' : sIdx + 1}
-                                </div>
-                                <span className="pointer-events-none absolute bottom-full mb-1 opacity-0 group-hover/mini:opacity-100 transition-opacity bg-neutral-900 text-white text-[11px] font-bold px-2 py-0.5 rounded shadow whitespace-nowrap z-30">
-                                  {st.label}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="text-center py-10 px-4">
-                  <div className="w-12 h-12 rounded-2xl bg-gold/10 text-gold flex items-center justify-center mx-auto mb-3">
-                    <Calendar size={22} />
-                  </div>
-                  <h4 className="font-heading text-base font-bold text-primary dark:text-neutral-100 mb-1">
-                    {dateFilter !== 'ALL' ? 'No Sessions in Range' : 'No Active Sessions'}
-                  </h4>
-                  <p className="text-xs text-neutral-400 max-w-xs mx-auto mb-4">
-                    {dateFilter !== 'ALL' ? 'Try adjusting your date filter.' : 'Your active photo sessions will appear here.'}
-                  </p>
-                  {dateFilter !== 'ALL' ? (
-                    <button type="button" onClick={() => setDateFilter('ALL')} className="btn-outline inline-flex text-xs items-center gap-1.5 py-1.5 px-3.5">
-                      <RefreshCw size={12} /> Reset Filter
-                    </button>
-                  ) : (
-                    <Link to="/dashboard/book" className="btn-primary inline-flex text-xs py-2 px-4">
-                      Book a Session
-                    </Link>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: Tabbed Studio Schedule & Bulletins Hub (Cleanly aligned without wasted space) */}
-        <div className="lg:col-span-5 space-y-4">
-          {/* Tabbed Studio Schedule & Bulletins Hub */}
-          <div className="bg-white dark:bg-neutral-900 rounded-3xl p-5 border border-neutral-200/90 dark:border-neutral-800 shadow-xs">
-            {/* Tab Controller */}
-            <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b border-neutral-100 dark:border-neutral-800">
-              <div className="flex items-center gap-1 bg-neutral-100 dark:bg-neutral-800/80 p-1 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setRightTab('calendar')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                    rightTab === 'calendar'
-                      ? 'bg-white dark:bg-neutral-900 text-primary dark:text-white shadow-2xs'
-                      : 'text-neutral-500 hover:text-primary dark:hover:text-white'
-                  }`}
-                >
-                  <CalendarDays size={13} className={rightTab === 'calendar' ? 'text-gold' : ''} />
-                  <span>Calendar</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRightTab('bulletins')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                    rightTab === 'bulletins'
-                      ? 'bg-white dark:bg-neutral-900 text-primary dark:text-white shadow-2xs'
-                      : 'text-neutral-500 hover:text-primary dark:hover:text-white'
-                  }`}
-                >
-                  <Bell size={13} className={rightTab === 'bulletins' ? 'text-gold' : ''} />
-                  <span>Bulletins</span>
-                  {notifications.length > 0 && (
-                    <span className="w-4 h-4 rounded-full bg-gold/20 text-gold text-[11px] font-bold flex items-center justify-center">
-                      {notifications.length}
-                    </span>
-                  )}
-                </button>
-              </div>
-
-              {rightTab === 'bulletins' && (
-                <Link to="/dashboard/notifications" className="text-xs font-semibold text-gold hover:underline">
-                  View All
-                </Link>
-              )}
-            </div>
-
-            {/* Content: Calendar View */}
-            {rightTab === 'calendar' && (
-              <div className="animate-fade-in">
-                <SidebarOrderCalendar bookings={bookings} />
-              </div>
-            )}
-
-            {/* Content: Bulletins View */}
-            {rightTab === 'bulletins' && (
-              <div className="space-y-2.5 animate-fade-in py-1">
-                {notifications.length > 0 ? (
-                  notifications.slice(0, 4).map((n) => (
-                    <div
-                      key={n.id}
-                      className="relative group/bulletin p-3 rounded-2xl bg-neutral-50/70 dark:bg-neutral-800/40 hover:bg-gold/10 dark:hover:bg-gold/10 border border-neutral-100 dark:border-neutral-800/80 hover:border-gold/30 transition-all cursor-pointer"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-semibold text-primary dark:text-neutral-200 truncate group-hover/bulletin:text-gold transition-colors">
-                          {n.title}
-                        </p>
-                        <span className="text-xs text-neutral-400 shrink-0 font-mono">
-                          {new Date(n.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1 line-clamp-2 leading-relaxed">
-                        {n.message}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-neutral-400 text-center py-6">No bulletins at this time</p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* C. Assigned Photographer (Hover Bulletin) */}
-          {trackedSession?.photographer && (
-            <div className="relative group/photographer-bulletin">
-              <div className="p-4 rounded-3xl bg-white dark:bg-neutral-900 border border-neutral-200/90 dark:border-neutral-800 flex items-center justify-between cursor-pointer hover:border-gold/50 hover:shadow-sm transition-all shadow-xs">
-                 <div className="flex items-center gap-3.5 min-w-0">
-                    <div className="w-11 h-11 rounded-full bg-gold/10 text-gold flex items-center justify-center border border-gold/20 shrink-0 overflow-hidden">
-                      {trackedSession.photographer.profile?.avatar_url ? (
-                        <img src={trackedSession.photographer.profile.avatar_url} className="w-full h-full object-cover" alt="Profile" />
-                      ) : (
-                        <Camera size={18} />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs uppercase tracking-widest text-neutral-400 font-bold mb-0.5">Assigned Photographer</p>
-                      <p className="text-sm font-bold text-primary dark:text-neutral-100 truncate">
-                        {trackedSession.photographer.profile?.first_name} {trackedSession.photographer.profile?.last_name}
-                      </p>
-                    </div>
-                 </div>
-                 <div className="w-8 h-8 rounded-full bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 flex items-center justify-center text-neutral-400 group-hover/photographer-bulletin:text-gold transition-colors">
-                   <User size={14} />
-                 </div>
-              </div>
-
-              {/* Hover Dropdown / Bulletin Description */}
-              <div className="absolute bottom-full left-0 right-0 mb-3 opacity-0 invisible group-hover/photographer-bulletin:opacity-100 group-hover/photographer-bulletin:visible transition-all duration-300 z-50">
-                 <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-3xl shadow-xl p-5 relative overflow-hidden">
-                   <div className="absolute top-0 right-0 w-24 h-24 bg-gold/5 rounded-full blur-xl pointer-events-none" />
-                   <div className="flex flex-col gap-4 relative z-10">
-                      <div className="flex items-center gap-4">
-                         <div className="w-14 h-14 rounded-2xl overflow-hidden shadow-sm shrink-0 border border-neutral-100 dark:border-neutral-800">
-                            {trackedSession.photographer.profile?.avatar_url ? (
-                               <img 
-                                 src={trackedSession.photographer.profile.avatar_url} 
-                                 className="w-full h-full object-cover" 
-                               />
-                            ) : (
-                               <div className="w-full h-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-400">
-                                 <Camera size={20} />
-                               </div>
-                            )}
-                         </div>
-                         <div>
-                           <h5 className="font-heading font-bold text-base text-primary dark:text-neutral-100">
-                             {trackedSession.photographer.profile?.first_name} {trackedSession.photographer.profile?.last_name}
-                           </h5>
-                           <p className="text-[11px] uppercase tracking-wider text-gold font-bold mt-0.5">
-                             {trackedSession.photographer.specialization || 'Lead Photographer'}
-                           </p>
-                         </div>
-                      </div>
-                      {trackedSession.photographer.bio && (
-                         <div className="p-3.5 rounded-2xl bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-100 dark:border-neutral-800">
-                           <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed italic">
-                             "{trackedSession.photographer.bio}"
-                           </p>
-                         </div>
-                      )}
-                   </div>
-                 </div>
-              </div>
             </div>
           )}
 
+          <div className="grid lg:grid-cols-12 gap-6 items-stretch">
+
+            {/* ── Main column ─────────────────────────────────────────── */}
+            <div className="lg:col-span-8 flex flex-col gap-6 h-full min-w-0">
+              <OrderTrackerCard
+                sessions={trackerSessions}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+              />
+
+              {/* Quick actions */}
+              <nav aria-label="Quick actions" className="grid grid-cols-2 xl:grid-cols-4 gap-3 shrink-0">
+                {quickActions.map(({ to, icon: Icon, label, hint }) => (
+                  <Link
+                    key={to}
+                    to={to}
+                    className={`${SURFACE} group p-4 hover:border-gold/60 hover:-translate-y-0.5 transition-all`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <Icon size={18} className="text-gold" />
+                      <ArrowUpRight size={14} className="text-neutral-300 group-hover:text-gold transition-colors" />
+                    </div>
+                    <p className="mt-3 text-sm font-light text-primary dark:text-neutral-100">{label}</p>
+                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 truncate font-light">{hint}</p>
+                  </Link>
+                ))}
+              </nav>
+
+              <StudioExperienceBanner bookings={bookings} className="shrink-0" />
+
+              <SessionCredentialsCard
+                bookings={bookings}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                className="lg:h-[660px] mt-auto shrink-0"
+              />
+            </div>
+
+            {/* ── Side column ─────────────────────────────────────────── */}
+            <aside className="lg:col-span-4 flex flex-col gap-6 h-full min-w-0">
+              <UpcomingDatesCard bookings={bookings} className="shrink-0" />
+
+              <LookbookAppReminder className="flex-1 min-h-[260px]" />
+
+              <AppInstallReminder featured className="lg:h-[660px] mt-auto shrink-0" />
+            </aside>
+          </div>
         </div>
       </div>
-
-    </div>
+    </SmartLoadingContainer>
   );
 }

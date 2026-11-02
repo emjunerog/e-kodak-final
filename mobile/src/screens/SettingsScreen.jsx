@@ -29,7 +29,7 @@ import PremiumIcon from '../components/PremiumIcon';
 import GoldButton from '../components/GoldButton';
 import { useTheme } from '../context/ThemeContext';
 import {
-  getAppSettings, saveAppSettings, clearAllSavedBookings, resetOnboarding,
+  getAppSettings, saveAppSettings, clearAllSavedBookings, resetOnboarding, fetchStudioSettings,
 } from '../services/storageService';
 import { Typography, Spacing, Radius, Shadow } from '../theme';
 
@@ -38,12 +38,26 @@ export default function SettingsScreen({ navigation }) {
   const [notifications, setNotifications] = useState(true);
   const [hapticsEnabled, setHapticsEnabled] = useState(true);
   const [highContrast, setHighContrast]   = useState(false);
+  const [studioInfo, setStudioInfo]       = useState({
+    address: '311 Rizal Street, City of Naga, Cebu',
+    contact_phone: '+63 917 123 4567',
+    business_hours: 'Mon – Sat: 8:00 AM – 6:00 PM',
+  });
 
   useEffect(() => {
     getAppSettings().then((s) => {
       setNotifications(s.notifications ?? true);
       setHapticsEnabled(s.haptics ?? true);
       setHighContrast(s.highContrast ?? false);
+    });
+    fetchStudioSettings().then((data) => {
+      if (data) {
+        setStudioInfo((prev) => ({
+          address: data.address || prev.address,
+          contact_phone: data.contact_phone || prev.contact_phone,
+          business_hours: data.business_hours || prev.business_hours,
+        }));
+      }
     });
   }, []);
 
@@ -277,7 +291,7 @@ export default function SettingsScreen({ navigation }) {
               <MapPin size={16} color={colors.gold.light} style={{ marginTop: 2 }} />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>STUDIO LOCATION</Text>
-                <Text style={[styles.infoVal, { color: colors.text.primary }]}>311 Rizal Street, City of Naga, Cebu</Text>
+                <Text style={[styles.infoVal, { color: colors.text.primary }]}>{studioInfo.address}</Text>
               </View>
             </View>
 
@@ -287,7 +301,7 @@ export default function SettingsScreen({ navigation }) {
               <Phone size={16} color={colors.gold.light} style={{ marginTop: 2 }} />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>CONCIERGE HOTLINE</Text>
-                <Text style={[styles.infoVal, { color: colors.text.primary }]}>+63 917 123 4567</Text>
+                <Text style={[styles.infoVal, { color: colors.text.primary }]}>{studioInfo.contact_phone}</Text>
               </View>
             </View>
 
@@ -297,7 +311,7 @@ export default function SettingsScreen({ navigation }) {
               <Info size={16} color={colors.gold.light} style={{ marginTop: 2 }} />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.infoLabel, { color: colors.text.secondary }]}>HOURS OF OPERATION</Text>
-                <Text style={[styles.infoVal, { color: colors.text.primary }]}>Mon – Sat: 8:00 AM – 6:00 PM</Text>
+                <Text style={[styles.infoVal, { color: colors.text.primary }]}>{studioInfo.business_hours}</Text>
               </View>
             </View>
           </GlassCard>

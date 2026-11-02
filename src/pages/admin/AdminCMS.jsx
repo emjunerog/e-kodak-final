@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { 
+import {
   Megaphone, MessageCircle, Shield, Users, Image as ImageIcon,
   RefreshCw, AlertCircle, Plus, Edit2, Trash2, Save, Star,
   Search, X, CheckCircle2, Eye, EyeOff, Sparkles, Download,
@@ -11,7 +11,7 @@ import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import StudioDropdown from '../../components/ui/StudioDropdown';
 import ImageDirectUploader from '../../components/ui/ImageDirectUploader';
 import Modal from '../../components/ui/Modal';
-import { 
+import {
   getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement,
   getFaqs, createFaq, updateFaq, deleteFaq,
   getLegalDocs, createLegalDoc, updateLegalDoc, deleteLegalDoc,
@@ -22,7 +22,7 @@ import {
 
 export default function AdminCMS() {
   const { user, profile } = useAuth();
-  
+
   // Tab state: 'announcements' | 'faqs' | 'gallery' | 'settings' | 'team' | 'legal'
   const [activeTab, setActiveTab] = useState('announcements');
   const [loading, setLoading] = useState(true);
@@ -162,12 +162,9 @@ export default function AdminCMS() {
       {/* ── 1. Luxury Administrative Hero Banner ────────────────────────────── */}
       <AdminHeroBanner
         station="admin"
-        badgeLabel="Content Management System"
-        badgeIcon={Sparkles}
         userName={profile?.full_name || user?.email?.split('@')[0] || 'Administrator'}
         title="CMS, Brand & Studio Settings"
-        subtitle="Manage client announcements, FAQs, visual portfolio showcase, studio identity, and legal policies."
-        statusSummary={`${announcements.length} Notices · ${faqs.length} FAQs · ${gallery.length} Portfolio Photos · ${studioSettings ? 'Live Studio Info' : 'Setting Up'}`}
+        subtitle="Manage client announcements, FAQs, visual portfolio showcase, and brand identity."
         primaryAction={getPrimaryAction()}
         secondaryAction={{
           label: 'Export CMS Backup',
@@ -178,272 +175,259 @@ export default function AdminCMS() {
         isRefreshing={loading}
       />
 
-      {/* ── Page Content Wrapper with Balanced Side Margins ───────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Wrapper (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
-      {/* Action Success Toast */}
-      {actionSuccessMsg && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs text-emerald-900 animate-fade-in shadow-warm-sm">
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
-            <span className="font-semibold">{actionSuccessMsg}</span>
+        {/* Action Success Toast */}
+        {actionSuccessMsg && (
+          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs text-emerald-900 animate-fade-in shadow-warm-sm">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+              <span className="font-semibold">{actionSuccessMsg}</span>
+            </div>
+            <button onClick={() => setActionSuccessMsg(null)} className="text-emerald-700 hover:text-emerald-900">
+              <X size={14} />
+            </button>
           </div>
-          <button onClick={() => setActionSuccessMsg(null)} className="text-emerald-700 hover:text-emerald-900">
-            <X size={14} />
+        )}
+
+        {/* Error Alert */}
+        {error && (
+          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-2xl px-4 py-3 text-xs shadow-xs">
+            <AlertCircle size={15} />
+            <span>{error}</span>
+            <button onClick={loadData} className="underline font-semibold ml-auto">Retry</button>
+          </div>
+        )}
+
+        {/* ── 2. Metric Overview Strip (4 Luxury Cards with Gradients) ───────── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          {/* Announcements Card */}
+          <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between">
+            <div className="flex items-start justify-between">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200">
+                <Megaphone size={20} />
+              </div>
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                BROADCAST
+              </span>
+            </div>
+            <div className="mt-3.5">
+              <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Client Notices</p>
+              <h3 className="font-heading text-2xl font-bold text-primary mt-0.5">{announcements.length}</h3>
+              <p className="text-xs text-neutral-500 mt-1">
+                {announcements.filter(a => a.is_active).length} live broadcast banners
+              </p>
+            </div>
+          </div>
+
+          {/* FAQs Card */}
+          <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-blue-300 transition-all flex flex-col justify-between">
+            <div className="flex items-start justify-between">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-200">
+                <MessageCircle size={20} />
+              </div>
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                KNOWLEDGE
+              </span>
+            </div>
+            <div className="mt-3.5">
+              <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Knowledge Base</p>
+              <h3 className="font-heading text-2xl font-bold text-primary mt-0.5">{faqs.length}</h3>
+              <p className="text-xs text-neutral-500 mt-1">
+                {faqs.filter(f => f.is_active).length} active studio FAQs
+              </p>
+            </div>
+          </div>
+
+          {/* Visual Portfolio Showcase */}
+          <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-emerald-300 transition-all flex flex-col justify-between">
+            <div className="flex items-start justify-between">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200">
+                <ImageIcon size={20} />
+              </div>
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                GALLERY
+              </span>
+            </div>
+            <div className="mt-3.5">
+              <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Portfolio Photos</p>
+              <h3 className="font-heading text-2xl font-bold text-primary mt-0.5">{gallery.length}</h3>
+              <p className="text-xs text-neutral-500 mt-1">
+                {gallery.filter(g => g.is_featured).length} featured on homepage
+              </p>
+            </div>
+          </div>
+
+          {/* Studio Identity & Profile */}
+          <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-gold/40 transition-all flex flex-col justify-between">
+            <div className="flex items-start justify-between">
+              <div className="w-10 h-10 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
+                <Globe size={20} />
+              </div>
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200/80">
+                Synchronized
+              </span>
+            </div>
+            <div className="mt-3.5">
+              <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Studio Identity</p>
+              <h3 className="font-heading text-lg font-bold text-primary mt-0.5 truncate">
+                {studioSettings?.contact_email || 'contact@e-kodak.com'}
+              </h3>
+              <p className="text-xs text-neutral-500 mt-1 truncate">
+                {studioSettings?.address ? 'Cebu City Studio Verified' : 'Settings Synchronized'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── 3. Navigation Bar (Tabs with Counts) ───────────────────────────── */}
+        <div className="bg-white/90 backdrop-blur-md p-1.5 rounded-2xl border border-neutral-200/80 shadow-xs flex items-center gap-1.5 overflow-x-auto hide-scrollbar">
+          <button
+            onClick={() => setActiveTab('announcements')}
+            className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all whitespace-nowrap ${activeTab === 'announcements'
+              ? 'bg-primary text-white shadow-sm'
+              : 'text-neutral-600 hover:text-primary hover:bg-neutral-100/70'
+              }`}
+          >
+            <Megaphone size={16} className={activeTab === 'announcements' ? 'text-gold' : 'text-neutral-400'} />
+            <span>Notices & Banners</span>
+            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${activeTab === 'announcements' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
+              }`}>
+              {announcements.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('faqs')}
+            className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all whitespace-nowrap ${activeTab === 'faqs'
+              ? 'bg-primary text-white shadow-sm'
+              : 'text-neutral-600 hover:text-primary hover:bg-neutral-100/70'
+              }`}
+          >
+            <MessageCircle size={16} className={activeTab === 'faqs' ? 'text-gold' : 'text-neutral-400'} />
+            <span>FAQs</span>
+            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${activeTab === 'faqs' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
+              }`}>
+              {faqs.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('gallery')}
+            className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all whitespace-nowrap ${activeTab === 'gallery'
+              ? 'bg-primary text-white shadow-sm'
+              : 'text-neutral-600 hover:text-primary hover:bg-neutral-100/70'
+              }`}
+          >
+            <ImageIcon size={16} className={activeTab === 'gallery' ? 'text-gold' : 'text-neutral-400'} />
+            <span>Portfolio Gallery</span>
+            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${activeTab === 'gallery' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
+              }`}>
+              {gallery.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all whitespace-nowrap ${activeTab === 'settings'
+              ? 'bg-primary text-white shadow-sm'
+              : 'text-neutral-600 hover:text-primary hover:bg-neutral-100/70'
+              }`}
+          >
+            <Globe size={16} className={activeTab === 'settings' ? 'text-gold' : 'text-neutral-400'} />
+            <span>Studio Profile & Settings</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('team')}
+            className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all whitespace-nowrap ${activeTab === 'team'
+              ? 'bg-primary text-white shadow-sm'
+              : 'text-neutral-600 hover:text-primary hover:bg-neutral-100/70'
+              }`}
+          >
+            <Users size={16} className={activeTab === 'team' ? 'text-gold' : 'text-neutral-400'} />
+            <span>Team Members</span>
+            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${activeTab === 'team' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
+              }`}>
+              {team.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('legal')}
+            className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all whitespace-nowrap ${activeTab === 'legal'
+              ? 'bg-primary text-white shadow-sm'
+              : 'text-neutral-600 hover:text-primary hover:bg-neutral-100/70'
+              }`}
+          >
+            <Shield size={16} className={activeTab === 'legal' ? 'text-gold' : 'text-neutral-400'} />
+            <span>Legal Policies</span>
+            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${activeTab === 'legal' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
+              }`}>
+              {legalDocs.length}
+            </span>
           </button>
         </div>
-      )}
 
-      {/* Error Alert */}
-      {error && (
-        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-2xl px-4 py-3 text-xs shadow-xs">
-          <AlertCircle size={15} />
-          <span>{error}</span>
-          <button onClick={loadData} className="underline font-semibold ml-auto">Retry</button>
-        </div>
-      )}
-
-      {/* ── 2. Metric Overview Strip (4 Luxury Cards with Gradients) ───────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        {/* Announcements Card */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200">
-              <Megaphone size={20} />
-            </div>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-              BROADCAST
-            </span>
+        {/* ── 4. Main Tab Content Views ───────────────────────────────────────── */}
+        {loading ? (
+          <div className="space-y-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-28 bg-white/70 rounded-2xl border border-neutral-200/80 animate-pulse" />
+            ))}
           </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Client Notices</p>
-            <h3 className="font-heading text-2xl font-bold text-primary mt-0.5">{announcements.length}</h3>
-            <p className="text-xs text-neutral-500 mt-1">
-              {announcements.filter(a => a.is_active).length} live broadcast banners
-            </p>
-          </div>
-        </div>
+        ) : (
+          <>
+            {activeTab === 'announcements' && (
+              <AnnouncementsView
+                items={announcements}
+                onRefresh={loadData}
+                showToast={showToast}
+              />
+            )}
 
-        {/* FAQs Card */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-blue-300 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-200">
-              <MessageCircle size={20} />
-            </div>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-              KNOWLEDGE
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Knowledge Base</p>
-            <h3 className="font-heading text-2xl font-bold text-primary mt-0.5">{faqs.length}</h3>
-            <p className="text-xs text-neutral-500 mt-1">
-              {faqs.filter(f => f.is_active).length} active studio FAQs
-            </p>
-          </div>
-        </div>
+            {activeTab === 'faqs' && (
+              <FaqsView
+                items={faqs}
+                onRefresh={loadData}
+                showToast={showToast}
+              />
+            )}
 
-        {/* Visual Portfolio Showcase */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-emerald-300 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200">
-              <ImageIcon size={20} />
-            </div>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-              GALLERY
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Portfolio Photos</p>
-            <h3 className="font-heading text-2xl font-bold text-primary mt-0.5">{gallery.length}</h3>
-            <p className="text-xs text-neutral-500 mt-1">
-              {gallery.filter(g => g.is_featured).length} featured on homepage
-            </p>
-          </div>
-        </div>
+            {activeTab === 'gallery' && (
+              <GalleryView
+                items={gallery}
+                onRefresh={loadData}
+                showToast={showToast}
+              />
+            )}
 
-        {/* Studio Identity & Profile */}
-        <div className="bg-gradient-to-br from-white via-neutral-50/60 to-neutral-100/30 p-4 sm:p-5 rounded-2xl border border-neutral-200/80 shadow-xs hover:border-gold/40 transition-all flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
-              <Globe size={20} />
-            </div>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              LIVE
-            </span>
-          </div>
-          <div className="mt-3.5">
-            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Studio Identity</p>
-            <h3 className="font-heading text-lg font-bold text-primary mt-0.5 truncate">
-              {studioSettings?.contact_email || 'contact@e-kodak.com'}
-            </h3>
-            <p className="text-xs text-neutral-500 mt-1 truncate">
-              {studioSettings?.address ? 'Cebu City Studio Verified' : 'Settings Synchronized'}
-            </p>
-          </div>
-        </div>
-      </div>
+            {activeTab === 'settings' && (
+              <StudioSettingsView
+                settings={studioSettings}
+                onRefresh={loadData}
+                showToast={showToast}
+              />
+            )}
 
-      {/* ── 3. Navigation Bar (Tabs with Counts) ───────────────────────────── */}
-      <div className="bg-white/90 backdrop-blur-md p-1.5 rounded-2xl border border-neutral-200/80 shadow-xs flex items-center gap-1.5 overflow-x-auto hide-scrollbar">
-        <button
-          onClick={() => setActiveTab('announcements')}
-          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all whitespace-nowrap ${
-            activeTab === 'announcements'
-              ? 'bg-primary text-white shadow-sm'
-              : 'text-neutral-600 hover:text-primary hover:bg-neutral-100/70'
-          }`}
-        >
-          <Megaphone size={16} className={activeTab === 'announcements' ? 'text-gold' : 'text-neutral-400'} />
-          <span>Notices & Banners</span>
-          <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
-            activeTab === 'announcements' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
-          }`}>
-            {announcements.length}
-          </span>
-        </button>
+            {activeTab === 'team' && (
+              <TeamView
+                items={team}
+                onRefresh={loadData}
+                showToast={showToast}
+              />
+            )}
 
-        <button
-          onClick={() => setActiveTab('faqs')}
-          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all whitespace-nowrap ${
-            activeTab === 'faqs'
-              ? 'bg-primary text-white shadow-sm'
-              : 'text-neutral-600 hover:text-primary hover:bg-neutral-100/70'
-          }`}
-        >
-          <MessageCircle size={16} className={activeTab === 'faqs' ? 'text-gold' : 'text-neutral-400'} />
-          <span>FAQs</span>
-          <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
-            activeTab === 'faqs' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
-          }`}>
-            {faqs.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('gallery')}
-          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all whitespace-nowrap ${
-            activeTab === 'gallery'
-              ? 'bg-primary text-white shadow-sm'
-              : 'text-neutral-600 hover:text-primary hover:bg-neutral-100/70'
-          }`}
-        >
-          <ImageIcon size={16} className={activeTab === 'gallery' ? 'text-gold' : 'text-neutral-400'} />
-          <span>Portfolio Gallery</span>
-          <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
-            activeTab === 'gallery' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
-          }`}>
-            {gallery.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('settings')}
-          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all whitespace-nowrap ${
-            activeTab === 'settings'
-              ? 'bg-primary text-white shadow-sm'
-              : 'text-neutral-600 hover:text-primary hover:bg-neutral-100/70'
-          }`}
-        >
-          <Globe size={16} className={activeTab === 'settings' ? 'text-gold' : 'text-neutral-400'} />
-          <span>Studio Profile & Settings</span>
-          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('team')}
-          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all whitespace-nowrap ${
-            activeTab === 'team'
-              ? 'bg-primary text-white shadow-sm'
-              : 'text-neutral-600 hover:text-primary hover:bg-neutral-100/70'
-          }`}
-        >
-          <Users size={16} className={activeTab === 'team' ? 'text-gold' : 'text-neutral-400'} />
-          <span>Team Members</span>
-          <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
-            activeTab === 'team' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
-          }`}>
-            {team.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('legal')}
-          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all whitespace-nowrap ${
-            activeTab === 'legal'
-              ? 'bg-primary text-white shadow-sm'
-              : 'text-neutral-600 hover:text-primary hover:bg-neutral-100/70'
-          }`}
-        >
-          <Shield size={16} className={activeTab === 'legal' ? 'text-gold' : 'text-neutral-400'} />
-          <span>Legal Policies</span>
-          <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
-            activeTab === 'legal' ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-500'
-          }`}>
-            {legalDocs.length}
-          </span>
-        </button>
-      </div>
-
-      {/* ── 4. Main Tab Content Views ───────────────────────────────────────── */}
-      {loading ? (
-        <div className="space-y-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-28 bg-white/70 rounded-2xl border border-neutral-200/80 animate-pulse" />
-          ))}
-        </div>
-      ) : (
-        <>
-          {activeTab === 'announcements' && (
-            <AnnouncementsView 
-              items={announcements} 
-              onRefresh={loadData} 
-              showToast={showToast} 
-            />
-          )}
-
-          {activeTab === 'faqs' && (
-            <FaqsView 
-              items={faqs} 
-              onRefresh={loadData} 
-              showToast={showToast} 
-            />
-          )}
-
-          {activeTab === 'gallery' && (
-            <GalleryView 
-              items={gallery} 
-              onRefresh={loadData} 
-              showToast={showToast} 
-            />
-          )}
-
-          {activeTab === 'settings' && (
-            <StudioSettingsView 
-              settings={studioSettings} 
-              onRefresh={loadData} 
-              showToast={showToast} 
-            />
-          )}
-
-          {activeTab === 'team' && (
-            <TeamView 
-              items={team} 
-              onRefresh={loadData} 
-              showToast={showToast} 
-            />
-          )}
-
-          {activeTab === 'legal' && (
-            <LegalView 
-              items={legalDocs} 
-              onRefresh={loadData} 
-              showToast={showToast} 
-            />
-          )}
-        </>
-      )}
+            {activeTab === 'legal' && (
+              <LegalView
+                items={legalDocs}
+                onRefresh={loadData}
+                showToast={showToast}
+              />
+            )}
+          </>
+        )}
       </div>
     </div>
   );
@@ -457,7 +441,6 @@ function AnnouncementsView({ items, onRefresh, showToast }) {
   const [editingItem, setEditingItem] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
-  const [statusFilter, setStatusFilter] = useState('ALL');
 
   const [formData, setFormData] = useState({
     text: '',
@@ -515,7 +498,7 @@ function AnnouncementsView({ items, onRefresh, showToast }) {
       onRefresh();
     } catch (err) {
       console.error('Failed to save announcement:', err);
-      alert('Failed to save announcement: ' + err.message);
+      showToast('Failed to save announcement: ' + (err.message || 'Error occurred'));
     }
   };
 
@@ -527,7 +510,7 @@ function AnnouncementsView({ items, onRefresh, showToast }) {
       onRefresh();
     } catch (err) {
       console.error('Toggle active error:', err);
-      alert('Failed to toggle status: ' + err.message);
+      showToast('Failed to toggle status: ' + (err.message || 'Error occurred'));
     }
   };
 
@@ -539,7 +522,7 @@ function AnnouncementsView({ items, onRefresh, showToast }) {
     }
   };
 
-  // Dropdown filter options
+  // Dropdown filter options (only essential type filter)
   const typeOptions = [
     { value: 'ALL', label: 'All Notice Types', desc: 'Display info, warning & promo banners' },
     { value: 'info', label: 'Info Banner', desc: 'General studio updates & reminders' },
@@ -547,17 +530,9 @@ function AnnouncementsView({ items, onRefresh, showToast }) {
     { value: 'promo', label: 'Promotion / Seasonal', desc: 'Discounts & priority reservation notices' },
   ];
 
-  const statusOptions = [
-    { value: 'ALL', label: 'All Statuses', desc: 'Active & hidden announcements' },
-    { value: 'ACTIVE', label: 'Live on Portal', desc: 'Only visible notices' },
-    { value: 'INACTIVE', label: 'Draft / Inactive', desc: 'Hidden notices' },
-  ];
-
   // Filtered announcements
   const filteredItems = useMemo(() => {
     return items.filter(a => {
-      if (statusFilter === 'ACTIVE' && !a.is_active) return false;
-      if (statusFilter === 'INACTIVE' && a.is_active) return false;
       if (typeFilter !== 'ALL' && a.type !== typeFilter) return false;
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
@@ -565,146 +540,172 @@ function AnnouncementsView({ items, onRefresh, showToast }) {
       const cta = (a.cta_text || '').toLowerCase();
       return text.includes(q) || cta.includes(q);
     });
-  }, [items, typeFilter, statusFilter, searchQuery]);
+  }, [items, typeFilter, searchQuery]);
 
   return (
     <div className="space-y-4">
-      {/* Search & Filter Bar */}
-      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-neutral-200/80 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        <div className="flex-1 relative">
-          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search announcement text or call to action..."
-            className="w-full pl-10 pr-9 py-2 bg-neutral-50/70 border border-neutral-200 rounded-xl text-xs text-neutral-700 placeholder-neutral-400 focus:outline-none focus:border-gold focus:bg-white transition-all"
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
-              <X size={14} />
+      {/* ── Announcements Luxury Card Hub ─────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+        {/* Top hairline amber accent */}
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
+
+        {/* Header Bar */}
+        <div className="p-4 sm:p-6 border-b border-[#c9a96e]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-b from-[#faf7f2]/60 to-transparent">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-900/20 shrink-0">
+              <Megaphone size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 tracking-tight">
+                  Notices &amp; Broadcast Banners
+                </h2>
+                <span className="text-xs font-bold text-amber-900 bg-amber-50 border border-amber-200/80 px-2.5 py-0.5 rounded-full">
+                  {filteredItems.length} active
+                </span>
+              </div>
+              <p className="text-xs text-neutral-500 mt-0.5">
+                Manage priority alert ribbons, seasonal promotions, and client notices.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={openAdd}
+              className="btn-primary py-2 px-4 text-xs font-semibold rounded-xl flex items-center gap-1.5 shrink-0 shadow-sm"
+            >
+              <Plus size={15} />
+              <span>New Notice</span>
             </button>
-          )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="w-48">
-            <StudioDropdown
-              value={typeFilter}
-              onChange={setTypeFilter}
-              options={typeOptions}
-              placeholder="Filter Type"
-            />
-          </div>
+        {/* Toolbar: Search input + clean single type filter dropdown */}
+        <div className="p-4 sm:p-5 border-b border-[#c9a96e]/15 bg-neutral-50/40">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 justify-between">
+            <div className="flex-1 relative">
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search notices by content or call-to-action..."
+                className="w-full text-xs pl-9 pr-8 py-2 bg-white border border-neutral-200/90 rounded-xl focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20 shadow-2xs placeholder:text-neutral-400 font-body transition-all"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 p-0.5 rounded-full hover:bg-neutral-100 cursor-pointer"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
 
-          <div className="w-40">
-            <StudioDropdown
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={statusOptions}
-              placeholder="Filter Status"
-            />
+            <div className="w-full sm:w-56 shrink-0">
+              <StudioDropdown
+                value={typeFilter}
+                onChange={setTypeFilter}
+                options={typeOptions}
+                placeholder="All Notice Types"
+              />
+            </div>
           </div>
-
-          <button
-            onClick={openAdd}
-            className="btn-primary py-2 px-4 text-xs font-semibold rounded-xl flex items-center gap-1.5 shrink-0 shadow-sm"
-          >
-            <Plus size={15} />
-            <span>New Notice</span>
-          </button>
         </div>
-      </div>
 
-      {/* Announcements List */}
-      <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden divide-y divide-neutral-100">
-        {filteredItems.length === 0 ? (
-          <div className="p-12 text-center text-neutral-400 text-xs">
-            <Megaphone size={32} className="mx-auto mb-2 text-neutral-300" />
-            No announcements match your search or filter.
-          </div>
-        ) : (
-          filteredItems.map(a => {
-            const announcementText = a.text || a.title || a.content || 'Untitled Announcement';
-            const isWarning = a.type === 'warning';
-            const isPromo = a.type === 'promo';
+        {/* Announcements List */}
+        <div className="divide-y divide-neutral-100 bg-white">
+          {filteredItems.length === 0 ? (
+            <div className="p-12 text-center text-neutral-400 text-xs">
+              <Megaphone size={32} className="mx-auto mb-2 text-neutral-300" />
+              No announcements match your search or filter.
+            </div>
+          ) : (
+            filteredItems.map(a => {
+              const announcementText = a.text || a.title || a.content || 'Untitled Announcement';
+              const isWarning = a.type === 'warning';
+              const isPromo = a.type === 'promo';
 
-            return (
-              <div key={a.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-neutral-50/50 transition-colors">
-                <div className="space-y-1.5 flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                      isWarning 
-                        ? 'bg-amber-50 text-amber-800 border-amber-200' 
-                        : isPromo 
-                        ? 'bg-purple-50 text-purple-800 border-purple-200'
-                        : 'bg-blue-50 text-blue-800 border-blue-200'
-                    }`}>
-                      {a.type || 'info'}
-                    </span>
+              return (
+                <div key={a.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-neutral-50/50 transition-colors">
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${isWarning
+                        ? 'bg-amber-100 text-amber-950 border-amber-300'
+                        : isPromo
+                          ? 'bg-amber-50 text-amber-900 border-amber-200/90'
+                          : 'bg-stone-100 text-stone-800 border-stone-200'
+                        }`}>
+                        {a.type || 'info'}
+                      </span>
 
-                    <button
-                      onClick={() => handleToggleActive(a)}
-                      className={`text-xs font-bold px-2 py-0.5 rounded-full border transition-all flex items-center gap-1 ${
-                        a.is_active 
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
-                          : 'bg-neutral-100 text-neutral-500 border-neutral-200 hover:bg-neutral-200'
-                      }`}
-                      title="Click to toggle portal visibility"
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full ${a.is_active ? 'bg-emerald-500' : 'bg-neutral-400'}`}></span>
-                      {a.is_active ? 'Active on Portal' : 'Inactive / Hidden'}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleActive(a)}
+                        className={`text-xs font-bold px-2.5 py-0.5 rounded-full border transition-all cursor-pointer ${a.is_active
+                          ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                          : 'bg-neutral-100 text-neutral-600 border-neutral-200 hover:bg-neutral-200'
+                          }`}
+                        title="Click to toggle portal visibility"
+                      >
+                        {a.is_active ? 'Active on Portal' : 'Inactive / Hidden'}
+                      </button>
 
-                    <span className="text-xs text-neutral-400">
-                      Sort Order: #{a.sort_order || 0}
-                    </span>
+                      <span className="text-xs text-neutral-400">
+                        Sort Order: #{a.sort_order || 0}
+                      </span>
+                    </div>
+
+                    <p className="text-xs sm:text-sm text-neutral-900 font-medium leading-relaxed">
+                      {announcementText}
+                    </p>
+
+                    {a.cta_text && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <span className="text-[11px] text-neutral-500 font-body">Call to Action:</span>
+                        <span className="text-[11px] font-semibold text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
+                          {a.cta_text} {a.cta_link && <ArrowRight size={11} />}
+                        </span>
+                        {a.cta_link && (
+                          <span className="text-xs text-neutral-400 font-mono">({a.cta_link})</span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  <p className="text-xs sm:text-sm text-primary font-medium leading-relaxed">
-                    {announcementText}
-                  </p>
-
-                  {a.cta_text && (
-                    <div className="flex items-center gap-2 pt-1">
-                      <span className="text-[11px] text-neutral-500 font-body">Call to Action:</span>
-                      <span className="text-[11px] font-semibold text-gold bg-gold/10 px-2 py-0.5 rounded-md border border-gold/20 flex items-center gap-1">
-                        {a.cta_text} {a.cta_link && <ArrowRight size={11} />}
-                      </span>
-                      {a.cta_link && (
-                        <span className="text-xs text-neutral-400 font-mono">({a.cta_link})</span>
-                      )}
-                    </div>
-                  )}
+                  {/* Actions */}
+                  <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center border-t sm:border-t-0 pt-2 sm:pt-0 border-neutral-100">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(a)}
+                      className="p-2 text-neutral-500 hover:text-amber-800 hover:bg-amber-50 rounded-xl transition-colors cursor-pointer"
+                      title="Edit Announcement"
+                    >
+                      <Edit2 size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(a.id)}
+                      className="p-2 text-neutral-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
+                      title="Delete Announcement"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center border-t sm:border-t-0 pt-2 sm:pt-0 border-neutral-100">
-                  <button
-                    onClick={() => openEdit(a)}
-                    className="p-2 text-neutral-500 hover:text-gold hover:bg-neutral-100 rounded-xl transition-colors"
-                    title="Edit Announcement"
-                  >
-                    <Edit2 size={15} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(a.id)}
-                    className="p-2 text-neutral-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
-                    title="Delete Announcement"
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              </div>
-            );
-          })
-        )}
+              );
+            })
+          )}
+        </div>
       </div>
 
       {/* Add / Edit Announcement Modal */}
-      <Modal 
-        isOpen={modalOpen} 
-        onClose={() => setModalOpen(false)} 
+      <Modal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
         title={editingItem ? "Edit Announcement" : "Create Announcement"}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -820,7 +821,6 @@ function FaqsView({ items, onRefresh, showToast }) {
   const [editingItem, setEditingItem] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
-  const [statusFilter, setStatusFilter] = useState('ALL');
 
   const [formData, setFormData] = useState({
     question: '',
@@ -875,7 +875,7 @@ function FaqsView({ items, onRefresh, showToast }) {
       onRefresh();
     } catch (err) {
       console.error('Failed to save FAQ:', err);
-      alert('Failed to save FAQ: ' + err.message);
+      showToast('Failed to save FAQ: ' + (err.message || 'Error occurred'));
     }
   };
 
@@ -887,7 +887,7 @@ function FaqsView({ items, onRefresh, showToast }) {
       onRefresh();
     } catch (err) {
       console.error('Toggle active error:', err);
-      alert('Failed to toggle status: ' + err.message);
+      showToast('Failed to toggle status: ' + (err.message || 'Error occurred'));
     }
   };
 
@@ -899,7 +899,7 @@ function FaqsView({ items, onRefresh, showToast }) {
     }
   };
 
-  // Distinct categories for dropdown
+  // Distinct categories for dropdown (only essential category dropdown)
   const categoryOptions = useMemo(() => {
     const opts = [{ value: 'ALL', label: 'All Categories', desc: 'Display all FAQ topics' }];
     const unique = Array.from(new Set(items.map(f => f.category || 'General')));
@@ -909,17 +909,9 @@ function FaqsView({ items, onRefresh, showToast }) {
     return opts;
   }, [items]);
 
-  const statusOptions = [
-    { value: 'ALL', label: 'All Statuses', desc: 'Active & hidden FAQs' },
-    { value: 'ACTIVE', label: 'Live on Portal', desc: 'Only visible FAQs' },
-    { value: 'INACTIVE', label: 'Hidden FAQs', desc: 'Draft or retired FAQs' },
-  ];
-
   // Filtered FAQs
   const filteredItems = useMemo(() => {
     return items.filter(f => {
-      if (statusFilter === 'ACTIVE' && !f.is_active) return false;
-      if (statusFilter === 'INACTIVE' && f.is_active) return false;
       if (categoryFilter !== 'ALL' && (f.category || 'General') !== categoryFilter) return false;
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
@@ -928,126 +920,153 @@ function FaqsView({ items, onRefresh, showToast }) {
       const cat = (f.category || '').toLowerCase();
       return question.includes(q) || answer.includes(q) || cat.includes(q);
     });
-  }, [items, categoryFilter, statusFilter, searchQuery]);
+  }, [items, categoryFilter, searchQuery]);
 
   return (
     <div className="space-y-4">
-      {/* Search & Filter Bar */}
-      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-neutral-200/80 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        <div className="flex-1 relative">
-          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search FAQs by question, keywords, or answers..."
-            className="w-full pl-10 pr-9 py-2 bg-neutral-50/70 border border-neutral-200 rounded-xl text-xs text-neutral-700 placeholder-neutral-400 focus:outline-none focus:border-gold focus:bg-white transition-all"
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
-              <X size={14} />
+      {/* ── FAQs Luxury Card Hub ─────────────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+        {/* Top hairline amber accent */}
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
+
+        {/* Header Bar */}
+        <div className="p-4 sm:p-6 border-b border-[#c9a96e]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-b from-[#faf7f2]/60 to-transparent">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-900/20 shrink-0">
+              <HelpCircle size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 tracking-tight">
+                  Studio Knowledge &amp; FAQs
+                </h2>
+                <span className="text-xs font-bold text-amber-900 bg-amber-50 border border-amber-200/80 px-2.5 py-0.5 rounded-full">
+                  {filteredItems.length} active
+                </span>
+              </div>
+              <p className="text-xs text-neutral-500 mt-0.5">
+                Manage client questions, booking procedures, and preparation guidelines.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={openAdd}
+              className="btn-primary py-2 px-4 text-xs font-semibold rounded-xl flex items-center gap-1.5 shrink-0 shadow-sm"
+            >
+              <Plus size={15} />
+              <span>New FAQ</span>
             </button>
-          )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="w-48">
-            <StudioDropdown
-              value={categoryFilter}
-              onChange={setCategoryFilter}
-              options={categoryOptions}
-              placeholder="Category"
-            />
-          </div>
+        {/* Toolbar: Search input + clean single category filter dropdown */}
+        <div className="p-4 sm:p-5 border-b border-[#c9a96e]/15 bg-neutral-50/40">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 justify-between">
+            <div className="flex-1 relative">
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search FAQs by question, keywords, or answers..."
+                className="w-full text-xs pl-9 pr-8 py-2 bg-white border border-neutral-200/90 rounded-xl focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20 shadow-2xs placeholder:text-neutral-400 font-body transition-all"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 p-0.5 rounded-full hover:bg-neutral-100 cursor-pointer"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
 
-          <div className="w-40">
-            <StudioDropdown
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={statusOptions}
-              placeholder="Status"
-            />
+            <div className="w-full sm:w-56 shrink-0">
+              <StudioDropdown
+                value={categoryFilter}
+                onChange={setCategoryFilter}
+                options={categoryOptions}
+                placeholder="All Categories"
+              />
+            </div>
           </div>
-
-          <button
-            onClick={openAdd}
-            className="btn-primary py-2 px-4 text-xs font-semibold rounded-xl flex items-center gap-1.5 shrink-0 shadow-sm"
-          >
-            <Plus size={15} />
-            <span>New FAQ</span>
-          </button>
         </div>
-      </div>
 
-      {/* FAQs List */}
-      <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden divide-y divide-neutral-100">
-        {filteredItems.length === 0 ? (
-          <div className="p-12 text-center text-neutral-400 text-xs">
-            <HelpCircle size={32} className="mx-auto mb-2 text-neutral-300" />
-            No FAQs match your search or filter criteria.
-          </div>
-        ) : (
-          filteredItems.map(f => (
-            <div key={f.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-start justify-between gap-4 hover:bg-neutral-50/50 transition-colors">
-              <div className="space-y-1.5 flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-700 border border-neutral-200">
-                    {f.category || 'General'}
-                  </span>
+        {/* FAQs List */}
+        <div className="divide-y divide-neutral-100 bg-white">
+          {filteredItems.length === 0 ? (
+            <div className="p-12 text-center text-neutral-400 text-xs">
+              <HelpCircle size={32} className="mx-auto mb-2 text-neutral-300" />
+              No FAQs match your search or filter criteria.
+            </div>
+          ) : (
+            filteredItems.map(f => (
+              <div key={f.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-start justify-between gap-4 hover:bg-neutral-50/50 transition-colors">
+                <div className="space-y-1.5 flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200/80">
+                      {f.category || 'General'}
+                    </span>
 
-                  <button
-                    onClick={() => handleToggleActive(f)}
-                    className={`text-xs font-bold px-2 py-0.5 rounded-full border transition-all flex items-center gap-1 ${
-                      f.is_active 
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
-                        : 'bg-neutral-100 text-neutral-500 border-neutral-200 hover:bg-neutral-200'
-                    }`}
-                    title="Click to toggle portal visibility"
-                  >
-                    <span className={`w-1.5 h-1.5 rounded-full ${f.is_active ? 'bg-emerald-500' : 'bg-neutral-400'}`}></span>
-                    {f.is_active ? 'Active' : 'Hidden'}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleActive(f)}
+                      className={`text-xs font-bold px-2.5 py-0.5 rounded-full border transition-all cursor-pointer ${f.is_active
+                        ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                        : 'bg-neutral-100 text-neutral-600 border-neutral-200 hover:bg-neutral-200'
+                        }`}
+                      title="Click to toggle portal visibility"
+                    >
+                      {f.is_active ? 'Active on Portal' : 'Inactive / Hidden'}
+                    </button>
 
-                  <span className="text-xs text-neutral-400">
-                    Order: #{f.sort_order || 0}
-                  </span>
+                    <span className="text-xs text-neutral-400">
+                      Order: #{f.sort_order || 0}
+                    </span>
+                  </div>
+
+                  <h4 className="text-xs sm:text-sm font-semibold text-neutral-900">
+                    {f.question}
+                  </h4>
+
+                  <p className="text-xs text-neutral-600 leading-relaxed font-body">
+                    {f.answer}
+                  </p>
                 </div>
 
-                <h4 className="text-xs sm:text-sm font-semibold text-primary">
-                  {f.question}
-                </h4>
-
-                <p className="text-xs text-neutral-600 leading-relaxed font-body">
-                  {f.answer}
-                </p>
+                {/* Actions */}
+                <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center border-t sm:border-t-0 pt-2 sm:pt-0 border-neutral-100">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(f)}
+                    className="p-2 text-neutral-500 hover:text-amber-800 hover:bg-amber-50 rounded-xl transition-colors cursor-pointer"
+                    title="Edit FAQ"
+                  >
+                    <Edit2 size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(f.id)}
+                    className="p-2 text-neutral-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
+                    title="Delete FAQ"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               </div>
-
-              {/* Actions */}
-              <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center border-t sm:border-t-0 pt-2 sm:pt-0 border-neutral-100">
-                <button
-                  onClick={() => openEdit(f)}
-                  className="p-2 text-neutral-500 hover:text-gold hover:bg-neutral-100 rounded-xl transition-colors"
-                  title="Edit FAQ"
-                >
-                  <Edit2 size={15} />
-                </button>
-                <button
-                  onClick={() => handleDelete(f.id)}
-                  className="p-2 text-neutral-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
-                  title="Delete FAQ"
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            </div>
-          ))
-        )}
+            ))
+          )}
+        </div>
       </div>
 
       {/* Add / Edit FAQ Modal */}
-      <Modal 
-        isOpen={modalOpen} 
-        onClose={() => setModalOpen(false)} 
+      <Modal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
         title={editingItem ? "Edit FAQ" : "Add New FAQ"}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -1147,7 +1166,6 @@ function GalleryView({ items, onRefresh, showToast }) {
   const [editingItem, setEditingItem] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
-  const [featuredFilter, setFeaturedFilter] = useState('ALL');
 
   const [formData, setFormData] = useState({
     title: '',
@@ -1200,7 +1218,7 @@ function GalleryView({ items, onRefresh, showToast }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.image_url.trim() || !formData.title.trim()) {
-      alert('Please fill out photo title and provide a photo image.');
+      showToast('Please fill out photo title and provide a photo image.');
       return;
     }
 
@@ -1222,7 +1240,7 @@ function GalleryView({ items, onRefresh, showToast }) {
       onRefresh();
     } catch (err) {
       console.error('Save gallery item error:', err);
-      alert('Failed to save gallery photo: ' + err.message);
+      showToast('Failed to save gallery photo: ' + (err.message || 'Error occurred'));
     }
   };
 
@@ -1234,7 +1252,7 @@ function GalleryView({ items, onRefresh, showToast }) {
       onRefresh();
     } catch (err) {
       console.error('Toggle featured error:', err);
-      alert('Failed to update photo: ' + err.message);
+      showToast('Failed to update photo: ' + (err.message || 'Error occurred'));
     }
   };
 
@@ -1246,7 +1264,7 @@ function GalleryView({ items, onRefresh, showToast }) {
       onRefresh();
     } catch (err) {
       console.error('Appreciation error:', err);
-      alert('Could not record appreciation: ' + err.message);
+      showToast('Could not record appreciation: ' + (err.message || 'Error occurred'));
     }
   };
 
@@ -1258,7 +1276,7 @@ function GalleryView({ items, onRefresh, showToast }) {
     }
   };
 
-  // Distinct category options for StudioDropdown
+  // Distinct category options for StudioDropdown (only essential category dropdown)
   const categoryOptions = useMemo(() => {
     const opts = [
       { value: 'ALL', label: 'All Categories', desc: 'Display all portfolio photos' },
@@ -1272,17 +1290,9 @@ function GalleryView({ items, onRefresh, showToast }) {
     return opts;
   }, []);
 
-  const featuredOptions = [
-    { value: 'ALL', label: 'All Photos', desc: 'Featured and standard gallery photos' },
-    { value: 'FEATURED', label: 'Featured Only', desc: 'Highlighted on landing hero/showcase' },
-    { value: 'STANDARD', label: 'Standard Only', desc: 'Regular gallery collection' },
-  ];
-
   // Filtered gallery items
   const filteredItems = useMemo(() => {
     return items.filter(g => {
-      if (featuredFilter === 'FEATURED' && !g.is_featured) return false;
-      if (featuredFilter === 'STANDARD' && g.is_featured) return false;
       if (categoryFilter !== 'ALL' && (g.category || '').toLowerCase() !== categoryFilter.toLowerCase()) return false;
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
@@ -1290,155 +1300,185 @@ function GalleryView({ items, onRefresh, showToast }) {
       const cat = (g.category || '').toLowerCase();
       return title.includes(q) || cat.includes(q);
     });
-  }, [items, categoryFilter, featuredFilter, searchQuery]);
+  }, [items, categoryFilter, searchQuery]);
 
   return (
     <div className="space-y-4">
-      {/* Search & Filter Bar */}
-      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-neutral-200/80 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        <div className="flex-1 relative">
-          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search gallery photos by title or tag..."
-            className="w-full pl-10 pr-9 py-2 bg-neutral-50/70 border border-neutral-200 rounded-xl text-xs text-neutral-700 placeholder-neutral-400 focus:outline-none focus:border-gold focus:bg-white transition-all"
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
-              <X size={14} />
-            </button>
-          )}
-        </div>
+      {/* ── Gallery Luxury Card Hub ─────────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+        {/* Top hairline amber accent */}
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="w-48">
-            <StudioDropdown
-              value={categoryFilter}
-              onChange={setCategoryFilter}
-              options={categoryOptions}
-              placeholder="Category"
-            />
-          </div>
-
-          <div className="w-40">
-            <StudioDropdown
-              value={featuredFilter}
-              onChange={setFeaturedFilter}
-              options={featuredOptions}
-              placeholder="Featured"
-            />
-          </div>
-
-          <button
-            onClick={openAdd}
-            className="btn-primary py-2 px-4 text-xs font-semibold rounded-xl flex items-center gap-1.5 shrink-0 shadow-sm"
-          >
-            <Plus size={15} />
-            <span>New Photo</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Gallery Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {filteredItems.length === 0 ? (
-          <div className="col-span-full p-12 text-center text-neutral-400 text-xs bg-white rounded-2xl border border-neutral-200">
-            <ImageIcon size={32} className="mx-auto mb-2 text-neutral-300" />
-            No portfolio photos found matching criteria.
-          </div>
-        ) : (
-          filteredItems.map(item => (
-            <div
-              key={item.id}
-              className="bg-white rounded-2xl border border-neutral-200/80 overflow-hidden shadow-xs hover:shadow-warm-sm transition-all flex flex-col group"
-            >
-              <div className="relative aspect-[4/3] bg-neutral-100 overflow-hidden">
-                <img
-                  src={item.image_url}
-                  alt={item.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?w=600&q=80';
-                  }}
-                />
-                
-                {/* Category Badge */}
-                <span className="absolute top-2 left-2 text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/60 text-white backdrop-blur-sm shadow-xs">
-                  {item.category || 'portrait'}
+        {/* Header Bar */}
+        <div className="p-4 sm:p-6 border-b border-[#c9a96e]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-b from-[#faf7f2]/60 to-transparent">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-900/20 shrink-0">
+              <ImageIcon size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 tracking-tight">
+                  Visual Portfolio Showcase
+                </h2>
+                <span className="text-xs font-bold text-amber-900 bg-amber-50 border border-amber-200/80 px-2.5 py-0.5 rounded-full">
+                  {filteredItems.length} photos
                 </span>
-
-                {/* Featured Badge */}
-                {item.is_featured && (
-                  <span className="absolute top-2 right-2 text-xs font-bold px-2 py-0.5 rounded-full bg-gold text-primary flex items-center gap-1 shadow-sm">
-                    <Star size={10} className="fill-primary" /> Featured
-                  </span>
-                )}
-
-                {/* Hover Overlay Actions */}
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                  <button
-                    onClick={() => handleToggleFeatured(item)}
-                    className={`p-2 rounded-xl transition-colors shadow-sm ${
-                      item.is_featured ? 'bg-gold text-primary' : 'bg-white/90 text-neutral-700 hover:text-gold'
-                    }`}
-                    title={item.is_featured ? 'Unfeature Photo' : 'Feature Photo on Homepage'}
-                  >
-                    <Star size={15} className={item.is_featured ? 'fill-primary' : ''} />
-                  </button>
-                  <button
-                    onClick={() => openEdit(item)}
-                    className="p-2 bg-white/90 rounded-xl text-primary hover:text-gold transition-colors shadow-sm"
-                    title="Edit Photo & Appreciations"
-                  >
-                    <Edit2 size={15} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    className="p-2 bg-white/90 rounded-xl text-neutral-700 hover:text-red-500 transition-colors shadow-sm"
-                    title="Delete Photo"
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
               </div>
+              <p className="text-xs text-neutral-500 mt-0.5">
+                Manage featured portfolio highlights, creative categories, and client appreciations.
+              </p>
+            </div>
+          </div>
 
-              {/* Photo Meta & Accurate Appreciations */}
-              <div className="p-3.5 flex-1 flex flex-col justify-between">
-                <div>
-                  <h4 className="font-semibold text-primary text-xs truncate" title={item.title}>
-                    {item.title}
-                  </h4>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={openAdd}
+              className="btn-primary py-2 px-4 text-xs font-semibold rounded-xl flex items-center gap-1.5 shrink-0 shadow-sm"
+            >
+              <Plus size={15} />
+              <span>New Photo</span>
+            </button>
+          </div>
+        </div>
 
-                  {/* Customer Appreciations Counter & Quick +1 Action */}
-                  <div className="mt-2.5 flex items-center justify-between gap-1.5">
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 border border-rose-200/80 text-rose-700 text-[11px] font-semibold">
-                      <Heart size={12} className="fill-rose-500 text-rose-500" />
-                      <span>{Number(item.likes || 0).toLocaleString()} appreciations</span>
+        {/* Toolbar: Search input + clean single category filter dropdown */}
+        <div className="p-4 sm:p-5 border-b border-[#c9a96e]/15 bg-neutral-50/40">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 justify-between">
+            <div className="flex-1 relative">
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search gallery photos by title or tag..."
+                className="w-full text-xs pl-9 pr-8 py-2 bg-white border border-neutral-200/90 rounded-xl focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20 shadow-2xs placeholder:text-neutral-400 font-body transition-all"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 p-0.5 rounded-full hover:bg-neutral-100 cursor-pointer"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
+            <div className="w-full sm:w-56 shrink-0">
+              <StudioDropdown
+                value={categoryFilter}
+                onChange={setCategoryFilter}
+                options={categoryOptions}
+                placeholder="All Categories"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Gallery Grid */}
+        <div className="p-4 sm:p-6 bg-white">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {filteredItems.length === 0 ? (
+              <div className="col-span-full p-12 text-center text-neutral-400 text-xs bg-neutral-50/50 rounded-2xl border border-neutral-200">
+                <ImageIcon size={32} className="mx-auto mb-2 text-neutral-300" />
+                No portfolio photos found matching criteria.
+              </div>
+            ) : (
+              filteredItems.map(item => (
+                <div
+                  key={item.id}
+                  className="bg-white rounded-2xl border border-neutral-200/90 overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col group hover:border-amber-300"
+                >
+                  <div className="relative aspect-[4/3] bg-neutral-100 overflow-hidden">
+                    <img
+                      src={item.image_url}
+                      alt={item.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?w=600&q=80';
+                      }}
+                    />
+
+                    {/* Category Badge */}
+                    <span className="absolute top-2 left-2 text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-neutral-900/80 text-amber-200 border border-amber-400/20 backdrop-blur-sm shadow-xs">
+                      {item.category || 'portrait'}
+                    </span>
+
+                    {/* Featured Badge */}
+                    {item.is_featured && (
+                      <span className="absolute top-2 right-2 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 shadow-sm">
+                        <Star size={10} className="fill-amber-600 text-amber-600" /> Featured
+                      </span>
+                    )}
+
+                    {/* Hover Overlay Actions */}
+                    <div className="absolute inset-0 bg-neutral-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleFeatured(item)}
+                        className={`p-2 rounded-xl transition-colors shadow-sm cursor-pointer ${item.is_featured ? 'bg-amber-500 text-white' : 'bg-white/95 text-neutral-700 hover:text-amber-800'
+                          }`}
+                        title={item.is_featured ? 'Unfeature Photo' : 'Feature Photo on Homepage'}
+                      >
+                        <Star size={15} className={item.is_featured ? 'fill-white' : ''} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(item)}
+                        className="p-2 bg-white/95 rounded-xl text-neutral-800 hover:text-amber-800 transition-colors shadow-sm cursor-pointer"
+                        title="Edit Photo & Appreciations"
+                      >
+                        <Edit2 size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(item.id)}
+                        className="p-2 bg-white/95 rounded-xl text-neutral-700 hover:text-red-500 transition-colors shadow-sm cursor-pointer"
+                        title="Delete Photo"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Photo Meta & Accurate Appreciations */}
+                  <div className="p-3.5 flex-1 flex flex-col justify-between">
+                    <div>
+                      <h4 className="font-semibold text-neutral-900 text-xs truncate" title={item.title}>
+                        {item.title}
+                      </h4>
+
+                      {/* Customer Appreciations Counter & Quick +1 Action */}
+                      <div className="mt-2.5 flex items-center justify-between gap-1.5">
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200/80 text-amber-900 text-[11px] font-semibold">
+                          <Heart size={12} className="fill-amber-600 text-amber-600" />
+                          <span>{Number(item.likes || 0).toLocaleString()} appreciations</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={(e) => handleQuickAppreciate(e, item)}
+                          className="text-xs font-bold text-neutral-500 hover:text-amber-900 hover:bg-amber-50 px-2 py-1 rounded-lg border border-neutral-200 hover:border-amber-300 transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
+                          title="Add +1 Customer Appreciation directly"
+                        >
+                          <span>+1</span>
+                          <Heart size={10} className="fill-amber-600 text-amber-600" />
+                        </button>
+                      </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={(e) => handleQuickAppreciate(e, item)}
-                      className="text-xs font-bold text-neutral-500 hover:text-rose-600 hover:bg-rose-50 px-2 py-1 rounded-lg border border-neutral-200 hover:border-rose-200 transition-colors flex items-center gap-1 shrink-0"
-                      title="Add +1 Customer Appreciation directly"
-                    >
-                      <span>+1</span>
-                      <Heart size={10} className="fill-rose-500 text-rose-500" />
-                    </button>
+                    <div className="mt-3 pt-2 border-t border-neutral-100 flex justify-between items-center text-xs text-neutral-400">
+                      <span>Order #{item.sort_order || 0}</span>
+                      <span className="capitalize font-medium text-neutral-500">{item.category}</span>
+                    </div>
                   </div>
                 </div>
-
-                <div className="mt-3 pt-2 border-t border-neutral-100 flex justify-between items-center text-xs text-neutral-400">
-                  <span>Order #{item.sort_order || 0}</span>
-                  <span className="capitalize font-medium text-neutral-500">{item.category}</span>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Add / Edit Gallery Photo Modal */}
@@ -1665,32 +1705,46 @@ function StudioSettingsView({ settings, onRefresh, showToast }) {
         }
       };
 
-      await updateStudioSettings(settings?.id, payload);
+      const res = await updateStudioSettings(settings?.id, payload);
+      if (res?.error) {
+        showToast('Error saving studio settings: ' + res.error.message);
+        return;
+      }
       showToast('Studio settings saved to database successfully.');
       onRefresh();
     } catch (err) {
       console.error('Failed to save studio settings:', err);
-      alert('Failed to save studio settings: ' + err.message);
+      showToast('Failed to save studio settings: ' + (err.message || 'Error occurred'));
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden">
-      <div className="p-5 sm:p-6 border-b border-neutral-100 flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h3 className="font-heading text-lg font-bold text-primary">
-            Studio Identity & Public Contact Configuration
-          </h3>
-          <p className="text-xs text-neutral-500 mt-0.5 font-body">
-            This information is rendered on the public footer, booking confirmations, email headers, and client receipts.
-          </p>
+    <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+      {/* Top hairline amber accent */}
+      <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
+
+      {/* Header Bar */}
+      <div className="p-4 sm:p-6 border-b border-[#c9a96e]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-b from-[#faf7f2]/60 to-transparent">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-900/20 shrink-0">
+            <Globe size={22} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 tracking-tight">
+                Studio Identity &amp; Public Contact Configuration
+              </h2>
+            </div>
+            <p className="text-xs text-neutral-500 mt-0.5 font-body">
+              This information is rendered on the public footer, booking confirmations, email headers, and client receipts.
+            </p>
+          </div>
         </div>
 
-        <span className="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          Supabase Database Synced
+        <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200/80">
+          Supabase Synchronized
         </span>
       </div>
 
@@ -1902,7 +1956,7 @@ function TeamView({ items, onRefresh, showToast }) {
       onRefresh();
     } catch (err) {
       console.error('Failed to save team member:', err);
-      alert('Failed to save team member: ' + err.message);
+      showToast('Failed to save team member: ' + (err.message || 'Error occurred'));
     }
   };
 
@@ -1916,70 +1970,107 @@ function TeamView({ items, onRefresh, showToast }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-xs">
-        <div>
-          <h4 className="font-heading text-sm font-bold text-primary">Studio Photographers & Leadership</h4>
-          <p className="text-xs text-neutral-500 font-body">Featured team members displayed in the About section.</p>
-        </div>
-        <button
-          onClick={openAdd}
-          className="btn-primary py-2 px-4 text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-sm"
-        >
-          <Plus size={15} />
-          <span>New Member</span>
-        </button>
-      </div>
+      {/* ── Team Luxury Card Hub ─────────────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+        {/* Top hairline amber accent */}
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {items.length === 0 ? (
-          <div className="col-span-full p-12 text-center text-neutral-400 text-xs bg-white rounded-2xl border border-neutral-200">
-            <Users size={32} className="mx-auto mb-2 text-neutral-300" />
-            No team members configured yet.
-          </div>
-        ) : (
-          items.map(m => (
-            <div key={m.id} className="bg-white rounded-2xl border border-neutral-200/80 p-5 shadow-xs hover:shadow-warm-sm transition-all flex flex-col justify-between group">
-              <div>
-                <div className="flex items-center gap-3.5 mb-3">
-                  <div className="w-14 h-14 rounded-full overflow-hidden bg-neutral-100 shrink-0 border-2 border-gold/30">
-                    {m.image ? (
-                      <img src={m.image} alt={m.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-neutral-400">
-                        <Users size={22} />
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <h4 className="font-semibold text-primary text-sm truncate">{m.name}</h4>
-                    <p className="text-xs text-gold font-medium truncate">{m.role}</p>
-                    <span className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full inline-block mt-1 ${
-                      m.is_active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-neutral-100 text-neutral-500'
-                    }`}>
-                      {m.is_active ? 'Active Member' : 'Inactive'}
-                    </span>
-                  </div>
-                </div>
-
-                <p className="text-xs text-neutral-600 font-body line-clamp-3 leading-relaxed">
-                  {m.bio}
-                </p>
-              </div>
-
-              <div className="pt-3 mt-4 border-t border-neutral-100 flex items-center justify-between text-[11px] text-neutral-400">
-                <span>Order: #{m.sort_order || 0}</span>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => openEdit(m)} className="p-1.5 text-neutral-500 hover:text-gold rounded-lg">
-                    <Edit2 size={14} />
-                  </button>
-                  <button onClick={() => handleDelete(m.id)} className="p-1.5 text-neutral-500 hover:text-red-500 rounded-lg">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
+        {/* Header Bar */}
+        <div className="p-4 sm:p-6 border-b border-[#c9a96e]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-b from-[#faf7f2]/60 to-transparent">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-900/20 shrink-0">
+              <Users size={22} />
             </div>
-          ))
-        )}
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 tracking-tight">
+                  Studio Photographers &amp; Leadership
+                </h2>
+                <span className="text-xs font-bold text-amber-900 bg-amber-50 border border-amber-200/80 px-2.5 py-0.5 rounded-full">
+                  {items.length} members
+                </span>
+              </div>
+              <p className="text-xs text-neutral-500 mt-0.5">
+                Featured team members displayed in the public About section and studio roster.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={openAdd}
+              className="btn-primary py-2 px-4 text-xs font-semibold rounded-xl flex items-center gap-1.5 shrink-0 shadow-sm"
+            >
+              <Plus size={15} />
+              <span>New Member</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Team Grid */}
+        <div className="p-4 sm:p-6 bg-white">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {items.length === 0 ? (
+              <div className="col-span-full p-12 text-center text-neutral-400 text-xs bg-neutral-50/50 rounded-2xl border border-neutral-200">
+                <Users size={32} className="mx-auto mb-2 text-neutral-300" />
+                No team members configured yet.
+              </div>
+            ) : (
+              items.map(m => (
+                <div key={m.id} className="bg-white rounded-2xl border border-neutral-200/90 p-5 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between group hover:border-amber-300">
+                  <div>
+                    <div className="flex items-center gap-3.5 mb-3">
+                      <div className="w-14 h-14 rounded-full overflow-hidden bg-neutral-100 shrink-0 border-2 border-amber-300/60 shadow-xs">
+                        {m.image ? (
+                          <img src={m.image} alt={m.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-neutral-400 bg-amber-50">
+                            <Users size={22} className="text-amber-700" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-semibold text-neutral-900 text-sm truncate">{m.name}</h4>
+                        <p className="text-xs text-amber-800 font-medium truncate">{m.role}</p>
+                        <span className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full inline-block mt-1 ${m.is_active ? 'bg-amber-50 text-amber-900 border border-amber-200/80' : 'bg-neutral-100 text-neutral-600 border border-neutral-200'
+                          }`}>
+                          {m.is_active ? 'Active Member' : 'Inactive'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-neutral-600 font-body line-clamp-3 leading-relaxed">
+                      {m.bio}
+                    </p>
+                  </div>
+
+                  <div className="pt-3 mt-4 border-t border-neutral-100 flex items-center justify-between text-[11px] text-neutral-400">
+                    <span>Order: #{m.sort_order || 0}</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(m)}
+                        className="p-1.5 text-neutral-500 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                        title="Edit Member"
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(m.id)}
+                        className="p-1.5 text-neutral-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                        title="Delete Member"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Add / Edit Member Modal */}
@@ -2137,7 +2228,7 @@ function LegalView({ items, onRefresh, showToast }) {
       onRefresh();
     } catch (err) {
       console.error('Save legal doc error:', err);
-      alert('Failed to save document: ' + err.message);
+      showToast('Failed to save document: ' + (err.message || 'Error occurred'));
     }
   };
 
@@ -2151,64 +2242,102 @@ function LegalView({ items, onRefresh, showToast }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-xs">
-        <div>
-          <h4 className="font-heading text-sm font-bold text-primary">Terms of Service & Privacy Policy</h4>
-          <p className="text-xs text-neutral-500 font-body">Public legal documents governing bookings, retakes, and copyrights.</p>
-        </div>
-        <button
-          onClick={openAdd}
-          className="btn-primary py-2 px-4 text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-sm"
-        >
-          <Plus size={15} />
-          <span>New Document</span>
-        </button>
-      </div>
+      {/* ── Legal Policies Luxury Card Hub ───────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+        {/* Top hairline amber accent */}
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {items.length === 0 ? (
-          <div className="col-span-full p-12 text-center text-neutral-400 text-xs bg-white rounded-2xl border border-neutral-200">
-            <FileText size={32} className="mx-auto mb-2 text-neutral-300" />
-            No legal policies configured.
-          </div>
-        ) : (
-          items.map(d => (
-            <div key={d.slug} className="bg-white rounded-2xl border border-neutral-200/80 p-5 shadow-xs hover:shadow-warm-sm transition-all flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between gap-3 mb-2">
-                  <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gold/10 text-gold border border-gold/20">
-                    /{d.slug}
-                  </span>
-                  <span className="text-[11px] text-neutral-400">
-                    Updated: {d.updated_at ? new Date(d.updated_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Standard'}
-                  </span>
-                </div>
-
-                <h4 className="font-heading font-bold text-primary text-base mb-2">
-                  {d.title}
-                </h4>
-
-                <p className="text-xs text-neutral-600 font-body line-clamp-4 leading-relaxed bg-neutral-50/70 p-3 rounded-xl border border-neutral-100 font-mono text-[11px]">
-                  {d.content}
-                </p>
-              </div>
-
-              <div className="pt-3 mt-4 border-t border-neutral-100 flex items-center justify-between">
-                <span className="text-[11px] text-neutral-400">
-                  {d.content?.length || 0} characters
-                </span>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => openEdit(d)} className="p-1.5 text-neutral-500 hover:text-gold rounded-lg">
-                    <Edit2 size={14} />
-                  </button>
-                  <button onClick={() => handleDelete(d.slug)} className="p-1.5 text-neutral-500 hover:text-red-500 rounded-lg">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
+        {/* Header Bar */}
+        <div className="p-4 sm:p-6 border-b border-[#c9a96e]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-b from-[#faf7f2]/60 to-transparent">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-900/20 shrink-0">
+              <Shield size={22} />
             </div>
-          ))
-        )}
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 tracking-tight">
+                  Legal Policies &amp; Terms of Service
+                </h2>
+                <span className="text-xs font-bold text-amber-900 bg-amber-50 border border-amber-200/80 px-2.5 py-0.5 rounded-full">
+                  {items.length} documents
+                </span>
+              </div>
+              <p className="text-xs text-neutral-500 mt-0.5">
+                Public governance documents covering studio retakes, privacy compliance, and client terms.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={openAdd}
+              className="btn-primary py-2 px-4 text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-sm"
+            >
+              <Plus size={15} />
+              <span>New Document</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Legal Docs Grid */}
+        <div className="p-4 sm:p-6 bg-white">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {items.length === 0 ? (
+              <div className="col-span-full p-12 text-center text-neutral-400 text-xs bg-neutral-50/50 rounded-2xl border border-neutral-200">
+                <FileText size={32} className="mx-auto mb-2 text-neutral-300" />
+                No legal policies configured.
+              </div>
+            ) : (
+              items.map(d => (
+                <div key={d.slug} className="bg-white rounded-2xl border border-neutral-200/90 p-5 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between hover:border-amber-300">
+                  <div>
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200/80">
+                        /{d.slug}
+                      </span>
+                      <span className="text-[11px] text-neutral-400">
+                        Updated: {d.updated_at ? new Date(d.updated_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Standard'}
+                      </span>
+                    </div>
+
+                    <h4 className="font-heading font-bold text-neutral-900 text-base mb-2">
+                      {d.title}
+                    </h4>
+
+                    <p className="text-xs text-neutral-600 font-body line-clamp-4 leading-relaxed bg-neutral-50/70 p-3 rounded-xl border border-neutral-100 font-mono text-[11px]">
+                      {d.content}
+                    </p>
+                  </div>
+
+                  <div className="pt-3 mt-4 border-t border-neutral-100 flex items-center justify-between">
+                    <span className="text-[11px] text-neutral-400">
+                      {d.content?.length || 0} characters
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(d)}
+                        className="p-1.5 text-neutral-500 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                        title="Edit Policy"
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(d.slug)}
+                        className="p-1.5 text-neutral-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                        title="Delete Policy"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Add / Edit Legal Document Modal */}

@@ -473,11 +473,8 @@ export default function AdminPhotographers() {
       {/* ── 1. Luxury Dark Hero Banner (Adapted for Photographers) ───────────── */}
       <AdminHeroBanner
         station={profile?.role || 'admin'}
-        badgeLabel="Photographer Roster & Readiness"
-        badgeIcon={Camera}
         title="Photographer Management"
-        subtitle="Manage photographer profiles, real-time availability schedules, assignments, and studio authorizations."
-        statusSummary={`${photographers.length} Registered Photographers · ${kpiStats.liveOnline} Live on Portal · ${kpiStats.available} Ready for Assignment`}
+        subtitle="Manage photographer profiles, real-time availability schedules, and studio bay readiness."
         primaryAction={{
           label: 'Manage Bookings',
           icon: CalendarDays,
@@ -498,8 +495,8 @@ export default function AdminPhotographers() {
         ]}
       />
 
-      {/* ── Page Content Container with Balanced Spacing ─────────────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Container (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
       {/* ── 2. Unified Luxury Studio KPI Overview Metric Strip ─────────────── */}
       <CategorizedMetricStrip
@@ -575,123 +572,120 @@ export default function AdminPhotographers() {
         </div>
       )}
 
-      {/* ── 3. Search & Filter Toolbar with CustomDropdown Components ───────── */}
-      <div className="bg-white rounded-2xl border border-neutral-200/90 p-4 sm:p-5 shadow-xs space-y-3.5">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-          {/* Search Input */}
-          <div className="relative flex-1 min-w-[240px]">
-            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, specialization, phone, bio..."
-              className="w-full pl-9 pr-8 py-2.5 sm:py-3 bg-neutral-50 hover:bg-neutral-100/60 focus:bg-white rounded-xl text-xs sm:text-sm font-body border border-neutral-200 focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all shadow-2xs"
-            />
-            {search && (
+      {/* ── 3. Unified Luxury Photographer Roster Hub ───────────────────────── */}
+      <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
+
+        {/* Header Controls Bar */}
+        <div className="p-4 sm:p-5 border-b border-neutral-100 flex-shrink-0 bg-white space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {/* Left: Station Icon & Title */}
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white shadow-sm ring-1 ring-amber-600/30 shrink-0">
+                <Camera size={22} />
+              </div>
+              <div>
+                <h3 className="font-heading text-xl sm:text-2xl font-bold text-neutral-900 tracking-tight">
+                  Photographer Roster
+                </h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {filtered.length} {filtered.length === 1 ? 'photographer' : 'photographers'} listed • Real-time operational readiness
+                </p>
+              </div>
+            </div>
+
+            {/* Right: Actions */}
+            <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
               <button
                 type="button"
-                onClick={() => setSearch('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 p-0.5 cursor-pointer"
-                title="Clear search"
+                onClick={handleExportCSV}
+                className="h-9 px-3.5 text-xs font-bold flex items-center gap-1.5 border border-neutral-200/80 hover:border-emerald-500/60 rounded-xl bg-white hover:bg-emerald-50/50 text-neutral-700 hover:text-emerald-900 shadow-2xs transition-all cursor-pointer"
+                title="Export Photographer Roster to CSV"
               >
-                <X size={14} />
+                <Download size={14} className="text-emerald-600" />
+                <span>Export CSV</span>
               </button>
-            )}
+              <button
+                type="button"
+                onClick={() => load(true)}
+                disabled={isRefreshing || loading}
+                className="w-9 h-9 flex items-center justify-center border border-neutral-200/80 hover:border-amber-400/60 rounded-xl bg-white hover:bg-amber-50/40 transition-colors disabled:opacity-50 text-neutral-600 hover:text-neutral-900 cursor-pointer shadow-2xs"
+                title="Refresh Photographer Roster"
+              >
+                <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-amber-600' : 'text-neutral-500'} />
+              </button>
+            </div>
           </div>
 
-          {/* Custom Dropdown Filters */}
-          <div className="flex items-center gap-2.5 flex-wrap justify-start lg:justify-end">
-            {/* Availability & Account Status Filter */}
-            <div className="w-48 sm:w-52">
+          {/* Search & Single Clean Status Filter Row */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name, specialization, phone, bio..."
+                className="w-full h-9 pl-9 pr-8 bg-neutral-50/80 hover:bg-neutral-100/60 focus:bg-white rounded-xl text-xs sm:text-sm font-body border border-neutral-200/80 focus:border-[#c9a96e] focus:ring-2 focus:ring-[#c9a96e]/20 outline-none transition-all shadow-2xs"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
+            {/* Single Clean Status Filter (NO colored dots, no unnecessary workload dropdown) */}
+            <div className="w-full sm:w-64 shrink-0">
               <CustomDropdown
                 value={statusFilter}
                 onChange={setStatusFilter}
                 options={[
-                  { value: 'ALL', label: 'All Statuses' },
-                  { value: 'AVAILABLE', label: 'Available', dotColor: 'bg-emerald-500' },
-                  { value: 'UNAVAILABLE', label: 'Off-duty', dotColor: 'bg-neutral-400' },
-                  { value: 'PENDING', label: 'Pending Approval', dotColor: 'bg-amber-500' },
-                  { value: 'INACTIVE', label: 'Inactive Accounts', dotColor: 'bg-rose-500' },
+                  { value: 'ALL', label: `All Photographers (${kpiStats.total})`, icon: Camera },
+                  { value: 'AVAILABLE', label: `Available for Shoots (${kpiStats.available})`, icon: CheckCircle2 },
+                  { value: 'UNAVAILABLE', label: `Off-duty / Blocked (${kpiStats.unavailable})`, icon: XCircle },
+                  { value: 'PENDING', label: `Pending Approval (${kpiStats.pending})`, icon: AlertCircle },
                 ]}
-                placeholder="Status"
+                placeholder="Filter Status"
                 icon={CheckCircle2}
-                className="w-full"
-                popoverWidth="w-52"
+                className="w-full text-xs sm:text-sm"
+                popoverWidth="w-full min-w-[240px]"
               />
             </div>
-
-            {/* Workload Filter */}
-            <div className="w-44 sm:w-48">
-              <CustomDropdown
-                value={workloadFilter}
-                onChange={setWorkloadFilter}
-                options={[
-                  { value: 'ALL', label: 'All Workloads' },
-                  { value: 'FREE', label: 'Free (0 Shoots)' },
-                  { value: 'LIGHT', label: 'Light (1–2)' },
-                  { value: 'BUSY', label: 'Busy (3+)' },
-                ]}
-                placeholder="Workload"
-                icon={Briefcase}
-                className="w-full"
-                popoverWidth="w-48"
-              />
-            </div>
-
-            {/* Quick 1-Click Refresh Icon Button */}
-            <button
-              type="button"
-              onClick={() => load(true)}
-              disabled={isRefreshing}
-              className="group w-10 h-10 border border-neutral-300/80 bg-neutral-50 hover:bg-white hover:border-gold/70 text-neutral-600 hover:text-gold rounded-xl transition-all duration-150 flex items-center justify-center shrink-0 shadow-2xs hover:shadow-md hover:scale-105 active:scale-95 cursor-pointer disabled:opacity-50"
-              title="Refresh Photographer Roster"
-              aria-label="Refresh Photographer Roster"
-            >
-              <RefreshCw size={17} className={isRefreshing ? 'animate-spin text-gold' : 'transition-transform duration-500 group-hover:rotate-180'} />
-            </button>
           </div>
+
+          {/* Active Filter Pill */}
+          {(statusFilter !== 'ALL' || search) && (
+            <div className="flex items-center gap-2 pt-2 border-t border-neutral-100 flex-wrap text-xs text-neutral-500">
+              <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[11px]">Active Filter:</span>
+              {search && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
+                  Keyword: "{search}"
+                  <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setSearch('')} />
+                </span>
+              )}
+              {statusFilter !== 'ALL' && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200/70 text-xs font-medium">
+                  Status: {statusFilter === 'AVAILABLE' ? 'Available' : statusFilter === 'UNAVAILABLE' ? 'Off-duty' : statusFilter}
+                  <X size={12} className="cursor-pointer text-amber-700 hover:text-amber-950" onClick={() => setStatusFilter('ALL')} />
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => { setSearch(''); setStatusFilter('ALL'); }}
+                className="text-amber-700 hover:underline font-semibold text-xs ml-1 cursor-pointer"
+              >
+                Reset
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Active Filter Badges */}
-        {(statusFilter !== 'ALL' || workloadFilter !== 'ALL' || search) && (
-          <div className="flex items-center gap-1.5 flex-wrap pt-2.5 border-t border-neutral-100 text-xs font-body">
-            <span className="font-semibold text-neutral-400 uppercase tracking-wider text-xs">Active Filters:</span>
-            {search && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
-                "{search}"
-                <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setSearch('')} />
-              </span>
-            )}
-            {statusFilter !== 'ALL' && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
-                {statusFilter}
-                <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setStatusFilter('ALL')} />
-              </span>
-            )}
-            {workloadFilter !== 'ALL' && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
-                {workloadFilter}
-                <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setWorkloadFilter('ALL')} />
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setSearch('');
-                setStatusFilter('ALL');
-                setWorkloadFilter('ALL');
-              }}
-              className="text-gold hover:underline font-semibold text-xs ml-1.5 cursor-pointer"
-            >
-              Reset all
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* ── 4. Main Photographer Roster Table (Space-Efficient View) ─────────── */}
-      <div className="bg-gradient-to-b from-white to-neutral-50/30 rounded-2xl border border-neutral-200/90 shadow-warm-sm overflow-hidden">
+        {/* Table Area */}
         {loading && photographers.length === 0 ? (
           <div className="p-6 sm:p-8 space-y-4">
             {[...Array(3)].map((_, i) => (
@@ -700,39 +694,36 @@ export default function AdminPhotographers() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center px-4">
-            <div className="w-14 h-14 rounded-full bg-neutral-100 flex items-center justify-center text-neutral-400 mb-3">
+            <div className="w-14 h-14 rounded-full bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center mb-3">
               <Camera size={26} />
             </div>
-            <p className="text-base font-semibold text-neutral-700 font-heading">No photographers match your search or filter</p>
+            <p className="text-base font-semibold text-neutral-800 font-heading">No photographers match your search or filter</p>
             <p className="text-xs sm:text-sm text-neutral-400 font-body mt-1 max-w-sm">
-              Try adjusting your presence, availability status, or keyword filters.
+              Try adjusting your availability status or keyword filters.
             </p>
             <button
               type="button"
               onClick={() => {
                 setSearch('');
-                setPresenceFilter('ALL');
                 setStatusFilter('ALL');
-                setSpecializationFilter('ALL');
-                setWorkloadFilter('ALL');
               }}
-              className="mt-4 px-4 py-2 text-xs sm:text-sm font-semibold text-gold bg-gold/10 hover:bg-gold/20 rounded-xl transition-all cursor-pointer"
+              className="mt-4 px-4 py-2 text-xs sm:text-sm font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 rounded-xl transition-all cursor-pointer border border-amber-200"
             >
               Clear All Filters
             </button>
           </div>
         ) : (
-          <div className={`overflow-x-auto ${isRefreshing ? 'opacity-70 transition-opacity' : 'opacity-100 transition-opacity'}`}>
-            <table className="w-full text-xs sm:text-sm font-body text-left">
-              <thead>
-                <tr className="border-b border-neutral-200/80 bg-gradient-to-r from-neutral-50 via-neutral-100/40 to-neutral-50 text-[11px] sm:text-xs font-bold uppercase tracking-wider text-neutral-500">
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4">Photographer Profile</th>
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4">Readiness & Status</th>
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4">Active Workload</th>
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4 text-right">Actions & Tools</th>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs sm:text-sm font-body text-left border-collapse">
+              <thead className="sticky top-0 z-10 bg-[#faf7f2]/95 border-b border-[#c9a96e]/25 shadow-2xs backdrop-blur-md">
+                <tr className="border-b border-neutral-200/80 text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
+                  <th className="px-5 sm:px-6 py-3.5">Photographer Profile</th>
+                  <th className="px-5 sm:px-6 py-3.5">Readiness &amp; Status</th>
+                  <th className="px-5 sm:px-6 py-3.5">Active Workload</th>
+                  <th className="px-5 sm:px-6 py-3.5 text-right">Actions &amp; Tools</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100">
+              <tbody className={`divide-y divide-neutral-100 ${isRefreshing ? 'opacity-70 transition-opacity' : 'opacity-100 transition-opacity'}`}>
                 {filtered.map(ph => {
                   const isLive = liveOnlineMap.has(ph.id);
                   const presenceInfo = liveOnlineMap.get(ph.id);

@@ -26,7 +26,8 @@ import {
   X, FileCheck, ShieldCheck, Download, CalendarDays, Users,
   Trash2, Eye, Printer, Copy, Check, ExternalLink, Receipt,
   Banknote, Wallet, Building, CircleDollarSign, ArrowUpRight,
-  LayoutGrid, List, Sparkles, Clock, User, Mail, Phone, History
+  LayoutGrid, List, Table as TableIcon, Sparkles, Clock, User, Mail, Phone, History,
+  FileSpreadsheet
 } from 'lucide-react';
 import { getPayments, getPaymentStats, deletePayment } from '../../services/adminService';
 import { supabase } from '../../lib/supabase';
@@ -102,8 +103,9 @@ export default function AdminPayments() {
   const [sortBy, setSortBy]               = useState('NEWEST');   // NEWEST | OLDEST | HIGHEST | LOWEST
 
   // Ledger Tab State (Confirmed Receipts vs Pending Receivables)
-  const [activeLedgerTab, setActiveLedgerTab] = useState('confirmed'); // 'confirmed' | 'pending_receivables'
-  const [pendingViewMode, setPendingViewMode] = useState('cards'); // 'cards' | 'table'
+  const [activeLedgerTab, setActiveLedgerTab] = useState('pending_receivables'); // 'pending_receivables' | 'confirmed'
+  const [pendingViewMode, setPendingViewMode] = useState('table'); // 'table' | 'cards'
+  const [unsettledFilter, setUnsettledFilter] = useState('ALL'); // 'ALL' | 'UNPAID' | 'PARTIAL'
 
   // Record Payment Modal State
   const [recordModalOpen, setRecordModalOpen] = useState(() => searchParams.get('action') === 'record');
@@ -235,7 +237,10 @@ export default function AdminPayments() {
   const unsettledBookings = useMemo(() => {
     return bookingsList.filter(b => {
       if (b.status === 'CANCELLED' || b.status === 'REJECTED') return false;
-      const rem = Number(b.remaining_balance ?? b.total_amount ?? 0);
+      const total = Number(b.total_amount || 0);
+      const rem = Number(b.remaining_balance ?? total);
+      // Exclude empty zero-amount bookings that have no balance to collect
+      if (total <= 0 && rem <= 0) return false;
       const status = (b.payment_status || '').toUpperCase();
       // Include any booking that is not fully PAID, or has a remaining balance > 0
       return status !== 'PAID' || rem > 0;
@@ -244,16 +249,62 @@ export default function AdminPayments() {
 
   // Filtered unsettled bookings
   const filteredUnsettled = useMemo(() => {
-    if (!searchTerm.trim()) return unsettledBookings;
-    const q = searchTerm.toLowerCase().trim();
-    return unsettledBookings.filter(b => {
-      const bNum = (b.booking_number || '').toLowerCase();
-      const cName = `${b.customer?.first_name || ''} ${b.customer?.last_name || ''}`.toLowerCase();
-      const sName = (b.service?.name || '').toLowerCase();
-      const phone = (b.customer?.phone || '').toLowerCase();
-      return bNum.includes(q) || cName.includes(q) || sName.includes(q) || phone.includes(q);
-    });
-  }, [unsettledBookings, searchTerm]);
+    let list = unsettledBookings;
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase().trim();
+      list = list.filter(b => {
+        const bNum = (b.booking_number || '').toLowerCase();
+        const cName = `${b.customer?.first_name || ''} ${b.customer?.last_name || ''}`.toLowerCase();
+        const sName = (b.service?.name || '').toLowerCase();
+        const phone = (b.customer?.phone || '').toLowerCase();
+        return bNum.includes(q) || cName.includes(q) || sName.includes(q) || phone.includes(q);
+      });
+    }
+    if (unsettledFilter === 'UNPAID') {
+      list = list.filter(b => !b.payment_status || b.payment_status.toUpperCase() === 'UNPAID');
+    } else if (unsettledFilter === 'PARTIAL') {
+      list = list.filter(b => b.payment_status && b.payment_status.toUpperCase() !== 'UNPAID');
+    }
+    return list;
+  }, [unsettledBookings, searchTerm, unsettledFilter]);
+
+  // Unified Ledger & Balances Filter (combines Remaining Balances options + Confirmed Receipts)
+  const ledgerFilterValue = useMemo(() => {
+    if (activeLedgerTab === 'confirmed') return 'CONFIRMED';
+    return unsettledFilter; // 'ALL' | 'UNPAID' | 'PARTIAL'
+  }, [activeLedgerTab, unsettledFilter]);
+
+  const handleLedgerFilterChange = (val) => {
+    if (val === 'CONFIRMED') {
+      setActiveLedgerTab('confirmed');
+    } else {
+      setActiveLedgerTab('pending_receivables');
+      setUnsettledFilter(val);
+    }
+  };
+
+  const ledgerFilterOptions = useMemo(() => [
+    {
+      value: 'ALL',
+      label: `Remaining Balances (${unsettledBookings.length})`,
+      icon: AlertCircle,
+    },
+    {
+      value: 'UNPAID',
+      label: `Awaiting Downpayment (${stats?.unpaidCount || 0})`,
+      icon: Clock,
+    },
+    {
+      value: 'PARTIAL',
+      label: `Partially Settled (${stats?.partialCount || 0})`,
+      icon: CircleDollarSign,
+    },
+    {
+      value: 'CONFIRMED',
+      label: `Confirmed Receipts (${rows.length})`,
+      icon: CheckCircle2,
+    },
+  ], [unsettledBookings.length, stats?.unpaidCount, stats?.partialCount, rows.length]);
 
   const handleBookingSelect = (bookingId) => {
     setSelectedBookingId(bookingId);
@@ -395,32 +446,114 @@ export default function AdminPayments() {
     setTimeout(() => setCopiedRef(false), 2000);
   };
 
-  // Export Treasury Ledger to CSV
-  const handleExportCSV = () => {
-    if (rows.length === 0) return;
-    const headers = ['Transaction Date', 'Booking #', 'Customer Name', 'Amount (PHP)', 'Classification', 'Payment Channel', 'Reference #', 'Cashier / Recorder', 'Notes'];
-    const csvRows = rows.map(r => [
-      `"${fmtDateTime(r.payment_date)}"`,
-      `"${r.booking?.booking_number || '—'}"`,
-      `"${r.booking?.customer?.first_name || ''} ${r.booking?.customer?.last_name || ''}"`,
-      r.amount || 0,
-      `"${TYPE_LABELS[r.payment_type] || r.payment_type}"`,
-      `"${METHOD_LABELS[r.payment_method] || r.payment_method}"`,
-      `"${r.reference_number || '—'}"`,
-      `"${r.recorder?.first_name || ''} ${r.recorder?.last_name || ''}"`,
-      `"${(r.notes || '').replace(/"/g, '""')}"`,
-    ]);
+  // Export Treasury Ledger to Excel (CSV formatted with UTF-8 BOM for Microsoft Excel)
+  const handleExportExcel = () => {
+    const today = new Date().toISOString().split('T')[0];
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...csvRows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `e-kodak-treasury-ledger-${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    notifySuccess('Treasury ledger exported to CSV successfully.');
+    if (activeLedgerTab === 'pending_receivables') {
+      if (filteredUnsettled.length === 0) {
+        alert('No remaining balance records to export.');
+        return;
+      }
+
+      const headers = [
+        'Booking Ref',
+        'Client Name',
+        'Phone',
+        'Email',
+        'Service Package',
+        'Event Date',
+        'Total Invoiced (PHP)',
+        'Paid So Far (PHP)',
+        'Remaining Balance (PHP)',
+        'Payment Status'
+      ];
+
+      const csvRows = filteredUnsettled.map((b) => {
+        const total = Number(b.total_amount || 0);
+        const paid = Number(b.down_payment_amount || 0);
+        const remaining = b.remaining_balance !== undefined && b.remaining_balance !== null
+          ? Number(b.remaining_balance)
+          : Math.max(0, total - paid);
+        const clientName = `${b.customer?.first_name || ''} ${b.customer?.last_name || ''}`.trim() || 'Valued Client';
+        const phone = b.customer?.phone || '';
+        const email = b.customer?.email || '';
+        const service = b.service?.name || 'Studio Package';
+        const eventDate = b.event_date ? `${fmt(b.event_date)}${b.preferred_time ? ` ${b.preferred_time.substring(0, 5)}` : ''}` : '';
+        const status = b.payment_status || (remaining <= 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID');
+
+        return [
+          `"#${b.booking_number || ''}"`,
+          `"${clientName.replace(/"/g, '""')}"`,
+          `"${phone.replace(/"/g, '""')}"`,
+          `"${email.replace(/"/g, '""')}"`,
+          `"${service.replace(/"/g, '""')}"`,
+          `"${eventDate}"`,
+          total.toFixed(2),
+          paid.toFixed(2),
+          remaining.toFixed(2),
+          `"${status}"`
+        ];
+      });
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...csvRows.map(row => row.join(','))].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `ekodak_remaining_balances_${today}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      notifySuccess(`Exported ${filteredUnsettled.length} remaining balance record(s) to Excel successfully.`);
+    } else {
+      if (filteredRows.length === 0) {
+        alert('No confirmed receipt records to export.');
+        return;
+      }
+
+      const headers = [
+        'Transaction Date',
+        'Official Receipt #',
+        'Booking Ref',
+        'Customer Name',
+        'Amount (PHP)',
+        'Classification',
+        'Payment Channel',
+        'Reference #',
+        'Cashier / Recorder',
+        'Notes'
+      ];
+
+      const csvRows = filteredRows.map((r) => [
+        `"${fmtDateTime(r.payment_date)}"`,
+        `"${(r.id || '').slice(0, 8).toUpperCase()}"`,
+        `"#${r.booking?.booking_number || '—'}"`,
+        `"${(`${r.booking?.customer?.first_name || ''} ${r.booking?.customer?.last_name || ''}`).trim().replace(/"/g, '""')}"`,
+        (Number(r.amount) || 0).toFixed(2),
+        `"${TYPE_LABELS[r.payment_type] || r.payment_type}"`,
+        `"${METHOD_LABELS[r.payment_method] || r.payment_method}"`,
+        `"${(r.reference_number || '—').replace(/"/g, '""')}"`,
+        `"${(`${r.recorder?.first_name || ''} ${r.recorder?.last_name || ''}`).trim().replace(/"/g, '""')}"`,
+        `"${(r.notes || '').replace(/"/g, '""')}"`
+      ]);
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...csvRows.map(row => row.join(','))].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `ekodak_confirmed_receipts_${today}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      notifySuccess(`Exported ${filteredRows.length} confirmed receipt record(s) to Excel successfully.`);
+    }
   };
+
+  const handleExportCSV = handleExportExcel;
 
   // Filter & sort rows locally
   const filteredRows = useMemo(() => {
@@ -470,24 +603,21 @@ export default function AdminPayments() {
       {/* ── 1. Luxury Dark Hero Banner ───────────────────────────────────────── */}
       <AdminHeroBanner
         station={profile?.role || 'finance'}
-        badgeLabel="Finance & Treasury Workstation"
-        badgeIcon={CreditCard}
         title="Payments & Billing Central"
-        subtitle="Manage studio cashflows, verify downpayments, clear final settlements, and track all unpaid, pending, and remaining balances."
-        statusSummary={`${stats?.count || total} Recorded Transactions · ${peso(stats?.total)} Total Revenue · ${peso(stats?.outstanding)} Remaining Balances`}
+        subtitle="Manage studio cashflows, verify downpayments, clear final settlements, and track balances."
         primaryAction={{
           label: 'Record Payment',
           icon: Plus,
           onClick: () => openRecordModal(),
         }}
         secondaryAction={{
-          label: 'Export Ledger',
-          icon: Download,
-          onClick: handleExportCSV,
+          label: 'Export Excel',
+          icon: FileSpreadsheet,
+          onClick: handleExportExcel,
         }}
         onRefresh={load}
         isRefreshing={loading}
-        onExport={handleExportCSV}
+        onExport={handleExportExcel}
         extraTools={[
           { label: 'Activity Logs', href: '/admin/activity-logs', icon: History, iconColor: 'text-gold' },
           { label: 'Bookings Central', href: '/admin/bookings', icon: CalendarDays, iconColor: 'text-gold' },
@@ -495,65 +625,43 @@ export default function AdminPayments() {
         ]}
       />
 
-      {/* ── Page Content Container with Balanced Spacing ─────────────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5 sm:space-y-6 mt-4 sm:mt-5">
+      {/* ── Page Content Container (Full Width Edge-to-Edge) ── */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
       {/* ── 2. Unified Luxury Studio KPI Overview Metric Strip ─────────────── */}
       <CategorizedMetricStrip
         loading={loading}
-        columns="grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"
+        columns="grid-cols-1 sm:grid-cols-3"
         cards={[
           {
-            key: 'TOTAL',
-            label: 'TOTAL',
-            subtitle: 'Confirmed receipts',
-            value: peso(stats?.total),
-            isActive: typeFilter === 'ALL' && channelFilter === 'ALL' && amountTier === 'ALL',
-            onClick: () => {
-              setTypeFilter('ALL');
-              setChannelFilter('ALL');
-              setAmountTier('ALL');
-            },
-          },
-          {
-            key: 'DOWN_PAYMENT',
-            label: 'DEPOSITS',
-            subtitle: 'Initial reservations',
-            value: peso(stats?.down),
-            isActive: typeFilter === 'DOWN_PAYMENT',
-            onClick: () => setTypeFilter(typeFilter === 'DOWN_PAYMENT' ? 'ALL' : 'DOWN_PAYMENT'),
-          },
-          {
-            key: 'FINAL_PAYMENT',
-            label: 'CLEARED',
-            subtitle: 'Settled on handover',
-            value: peso(stats?.final),
-            isActive: typeFilter === 'FINAL_PAYMENT',
-            onClick: () => setTypeFilter(typeFilter === 'FINAL_PAYMENT' ? 'ALL' : 'FINAL_PAYMENT'),
-          },
-          {
             key: 'RECEIVABLES',
-            label: 'BALANCE',
+            label: 'TO BE RECEIVED',
             subtitle: `${stats?.unpaidCount || 0} unpaid · ${stats?.partialCount || 0} partial`,
             value: peso(stats?.outstanding),
             isActive: activeLedgerTab === 'pending_receivables',
-            onClick: () => setActiveLedgerTab(activeLedgerTab === 'pending_receivables' ? 'confirmed' : 'pending_receivables'),
+            onClick: () => setActiveLedgerTab('pending_receivables'),
           },
           {
-            key: 'GROSS',
-            label: 'GROSS',
-            subtitle: 'Order commitments',
-            value: peso(stats?.grossBookings),
-            isActive: false,
-            onClick: () => {},
+            key: 'DOWN_PAYMENT',
+            label: 'DOWNPAYMENT',
+            subtitle: 'Initial booking deposits',
+            value: peso(stats?.down),
+            isActive: typeFilter === 'DOWN_PAYMENT' && activeLedgerTab === 'confirmed',
+            onClick: () => {
+              setTypeFilter(typeFilter === 'DOWN_PAYMENT' ? 'ALL' : 'DOWN_PAYMENT');
+              setActiveLedgerTab('confirmed');
+            },
           },
           {
-            key: 'RATE',
-            label: 'COLLECTED',
-            subtitle: 'Realization rate',
-            value: `${stats?.realizationRate || 0}%`,
-            isActive: false,
-            onClick: () => {},
+            key: 'FINAL_PAYMENT',
+            label: 'FULL PAYMENT',
+            subtitle: 'Final balance settlements',
+            value: peso(stats?.final),
+            isActive: typeFilter === 'FINAL_PAYMENT' && activeLedgerTab === 'confirmed',
+            onClick: () => {
+              setTypeFilter(typeFilter === 'FINAL_PAYMENT' ? 'ALL' : 'FINAL_PAYMENT');
+              setActiveLedgerTab('confirmed');
+            },
           },
         ]}
       />
@@ -592,234 +700,189 @@ export default function AdminPayments() {
         </div>
       )}
 
-      {/* ── 3. Search & Filter Toolbar with CustomDropdown Components ───────── */}
-      <div className="bg-white rounded-2xl border border-neutral-200/90 p-4 sm:p-5 shadow-xs space-y-3.5">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
-          {/* Search Input */}
-          <div className="relative flex-1 min-w-[220px]">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by booking #, customer, reference #, cashier..."
-              className="w-full pl-8 pr-7 py-2 bg-neutral-50 hover:bg-neutral-100/60 focus:bg-white rounded-xl text-xs font-body border border-neutral-200 focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all shadow-2xs"
-            />
-            {searchTerm && (
+      {/* ── 3. Unified Luxury Treasury & Remaining Balances Hub ───────────── */}
+      <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15">
+        {/* Luxury top accent hairline */}
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
+
+        {/* Header Controls Bar */}
+        <div className="p-4 sm:p-5 border-b border-neutral-100 flex-shrink-0 bg-white space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {/* Left: Station Icon & Station Title */}
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white shadow-sm ring-1 ring-amber-600/30 shrink-0">
+                <Receipt size={22} />
+              </div>
+              <h3 className="font-heading text-xl sm:text-2xl font-bold text-neutral-900 tracking-tight">
+                {activeLedgerTab === 'pending_receivables' ? 'Remaining Balances' : 'Confirmed Receipts'}
+              </h3>
+            </div>
+
+            {/* Right: Actions & View Toggles */}
+            <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+              {/* View Switcher (Table / Cards) */}
+              <div className="flex items-center bg-neutral-100/90 p-0.5 rounded-xl border border-neutral-200/70 h-9">
+                <button
+                  type="button"
+                  onClick={() => setPendingViewMode('table')}
+                  className={`h-7 px-2.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center cursor-pointer ${
+                    pendingViewMode === 'table'
+                      ? 'bg-white text-neutral-900 shadow-xs border border-neutral-200/60 font-semibold'
+                      : 'text-neutral-500 hover:text-neutral-900'
+                  }`}
+                  title="Table View"
+                >
+                  <TableIcon size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingViewMode('cards')}
+                  className={`h-7 px-2.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center cursor-pointer ${
+                    pendingViewMode === 'cards'
+                      ? 'bg-white text-neutral-900 shadow-xs border border-neutral-200/60 font-semibold'
+                      : 'text-neutral-500 hover:text-neutral-900'
+                  }`}
+                  title="Grid Cards View"
+                >
+                  <LayoutGrid size={14} />
+                </button>
+              </div>
+
+              {/* Refresh Button */}
               <button
                 type="button"
-                onClick={() => setSearchTerm('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 p-0.5 cursor-pointer"
-                title="Clear search"
+                onClick={() => load()}
+                disabled={loading}
+                className="w-9 h-9 flex items-center justify-center border border-neutral-200/80 hover:border-amber-400/60 rounded-xl bg-white hover:bg-amber-50/40 transition-colors disabled:opacity-50 text-neutral-600 hover:text-neutral-900 cursor-pointer shadow-2xs"
+                title="Refresh ledger records"
               >
-                <X size={13} />
+                <RefreshCw size={14} className={loading ? 'animate-spin text-amber-600' : 'text-neutral-500'} />
               </button>
-            )}
-          </div>
 
-          {/* Custom Dropdown Filters */}
-          <div className="flex items-center gap-2 flex-wrap justify-start lg:justify-end">
-            {/* Payment Classification Filter */}
-            <div className="w-40 sm:w-46">
-              <CustomDropdown
-                value={typeFilter}
-                onChange={setTypeFilter}
-                options={[
-                  { value: 'ALL', label: 'All Classifications' },
-                  { value: 'DOWN_PAYMENT', label: 'Down Payment', dotColor: 'bg-blue-500' },
-                  { value: 'FINAL_PAYMENT', label: 'Final Settlement', dotColor: 'bg-emerald-500' },
-                  { value: 'OTHER', label: 'Add-on / Other', dotColor: 'bg-neutral-400' },
-                ]}
-                placeholder="Classification"
-                icon={Receipt}
-                className="w-full"
-                popoverWidth="w-52"
-              />
-            </div>
+              {/* Export Excel Button */}
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                disabled={activeLedgerTab === 'pending_receivables' ? filteredUnsettled.length === 0 : filteredRows.length === 0}
+                className="h-9 px-3.5 text-xs font-bold flex items-center gap-1.5 border border-neutral-200/80 hover:border-emerald-500/60 rounded-xl bg-white hover:bg-emerald-50/50 text-neutral-700 hover:text-emerald-900 shadow-2xs transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                title={`Export ${activeLedgerTab === 'pending_receivables' ? 'Remaining Balances' : 'Confirmed Receipts'} to Excel`}
+              >
+                <FileSpreadsheet size={14} className="text-emerald-600" />
+                <span>Export Excel</span>
+              </button>
 
-            {/* Payment Channel Filter */}
-            <div className="w-40 sm:w-46">
-              <CustomDropdown
-                value={channelFilter}
-                onChange={setChannelFilter}
-                options={[
-                  { value: 'ALL', label: 'All Channels' },
-                  { value: 'E_WALLET', label: 'GCash / Maya', icon: Wallet },
-                  { value: 'BANK_TRANSFER', label: 'Bank Deposit', icon: Building },
-                  { value: 'CASH', label: 'Cash Desk', icon: Banknote },
-                  { value: 'OTHER', label: 'Other Channel', icon: CircleDollarSign },
-                ]}
-                placeholder="Channel"
-                icon={CreditCard}
-                className="w-full"
-                popoverWidth="w-52"
-              />
-            </div>
-
-            {/* Amount Tier Filter */}
-            <div className="w-36 sm:w-42">
-              <CustomDropdown
-                value={amountTier}
-                onChange={setAmountTier}
-                options={[
-                  { value: 'ALL', label: 'All Amounts' },
-                  { value: 'HIGH', label: 'High (₱3,000+)' },
-                  { value: 'MID', label: 'Standard (₱1k–₱3k)' },
-                  { value: 'LOW', label: 'Micro (< ₱1k)' },
-                ]}
-                placeholder="Amount Tier"
-                icon={CircleDollarSign}
-                className="w-full"
-                popoverWidth="w-48"
-              />
-            </div>
-
-            {/* Sort Dropdown */}
-            <div className="w-36 sm:w-42">
-              <CustomDropdown
-                value={sortBy}
-                onChange={setSortBy}
-                options={[
-                  { value: 'NEWEST', label: 'Newest Recorded' },
-                  { value: 'OLDEST', label: 'Oldest Recorded' },
-                  { value: 'HIGHEST', label: 'Highest Amount' },
-                  { value: 'LOWEST', label: 'Lowest Amount' },
-                ]}
-                placeholder="Sort By"
-                icon={Filter}
-                className="w-full"
-                popoverWidth="w-48"
-              />
+              {/* Record Payment Button */}
+              <button
+                type="button"
+                onClick={() => openRecordModal()}
+                className="h-9 px-3.5 text-xs font-bold flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-[#c9a96e] to-amber-600 hover:brightness-105 text-neutral-900 shadow-xs transition-all cursor-pointer shrink-0"
+                title="Record new payment receipt"
+              >
+                <Plus size={14} className="stroke-[2.5]" />
+                <span>Record Payment</span>
+              </button>
             </div>
           </div>
-        </div>
 
-        {/* Active Filter Badges */}
-        {(typeFilter !== 'ALL' || channelFilter !== 'ALL' || amountTier !== 'ALL' || sortBy !== 'NEWEST' || searchTerm) && (
-          <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-neutral-100 text-xs font-body">
-            <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[11px]">Active Filters:</span>
-            {searchTerm && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-neutral-100 text-neutral-800 text-[11px] font-medium">
-                "{searchTerm}"
-                <X size={11} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setSearchTerm('')} />
-              </span>
-            )}
-            {typeFilter !== 'ALL' && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-neutral-100 to-neutral-200/50 text-neutral-800 border border-neutral-200 text-[11px] font-medium">
-                {TYPE_LABELS[typeFilter] || typeFilter}
-                <X size={11} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setTypeFilter('ALL')} />
-              </span>
-            )}
-            {channelFilter !== 'ALL' && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-emerald-50/80 to-emerald-100/40 text-emerald-800 border border-emerald-200/80 text-[11px] font-medium">
-                {METHOD_LABELS[channelFilter] || channelFilter}
-                <X size={11} className="cursor-pointer text-emerald-600 hover:text-emerald-900" onClick={() => setChannelFilter('ALL')} />
-              </span>
-            )}
-            {amountTier !== 'ALL' && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-neutral-100 to-neutral-200/50 text-neutral-800 border border-neutral-200 text-[11px] font-medium">
-                Tier: {amountTier}
-                <X size={11} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setAmountTier('ALL')} />
-              </span>
-            )}
-            {sortBy !== 'NEWEST' && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-gold/20 via-gold/15 to-transparent text-gold-dark border border-gold/30 text-[11px] font-medium">
-                Sort: {sortBy}
-                <X size={11} className="cursor-pointer text-gold-dark hover:text-primary" onClick={() => setSortBy('NEWEST')} />
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setSearchTerm('');
-                setTypeFilter('ALL');
-                setChannelFilter('ALL');
-                setAmountTier('ALL');
-                setSortBy('NEWEST');
-              }}
-              className="text-gold hover:underline font-semibold text-[11px] ml-1 cursor-pointer"
-            >
-              Reset all
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* ── 4. Main Treasury Transactions & Remaining Balances Container ───────────── */}
-      <div className="bg-gradient-to-b from-white to-neutral-50/30 rounded-2xl border border-neutral-200/90 shadow-warm-sm overflow-hidden">
-        {/* Table Header Tab Switcher */}
-        <div className="flex flex-wrap items-center justify-between border-b border-neutral-200 px-5 sm:px-6 pt-3.5 sm:pt-4 bg-gradient-to-r from-neutral-50 via-white to-neutral-50 gap-3">
-          <div className="flex items-center gap-1 sm:gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveLedgerTab('confirmed')}
-              className={`px-4 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-                activeLedgerTab === 'confirmed'
-                  ? 'border-gold text-primary bg-gradient-to-b from-white via-white to-gold/5 rounded-t-xl shadow-2xs'
-                  : 'border-transparent text-neutral-500 hover:text-primary'
-              }`}
-            >
-              <CheckCircle2 size={15} className={activeLedgerTab === 'confirmed' ? "text-gold" : "text-neutral-400"} />
-              <span>Confirmed Receipts ({filteredRows.length})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveLedgerTab('pending_receivables')}
-              className={`px-4 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-                activeLedgerTab === 'pending_receivables'
-                  ? 'border-amber-600 text-amber-900 bg-gradient-to-b from-white via-white to-amber-50/40 rounded-t-xl shadow-2xs'
-                  : 'border-transparent text-neutral-500 hover:text-amber-700'
-              }`}
-            >
-              <AlertCircle size={15} className={activeLedgerTab === 'pending_receivables' ? "text-amber-600" : "text-neutral-400"} />
-              <span>Remaining Balances Queue ({unsettledBookings.length})</span>
-              {unsettledBookings.length > 0 && (
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+          {/* Search & Filter Controls Row */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
+            {/* Search Input */}
+            <div className="relative flex-1 min-w-[220px]">
+              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder={
+                  activeLedgerTab === 'pending_receivables'
+                    ? "Search client, booking #, service package, contact..."
+                    : "Search booking #, customer, reference #, cashier..."
+                }
+                className="w-full h-9 pl-9 pr-8 bg-neutral-50/80 hover:bg-neutral-100/60 focus:bg-white rounded-xl text-xs sm:text-sm font-body border border-neutral-200/80 focus:border-[#c9a96e] focus:ring-2 focus:ring-[#c9a96e]/20 outline-none transition-all shadow-2xs"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                  title="Clear search"
+                >
+                  <X size={13} />
+                </button>
               )}
-            </button>
-          </div>
+            </div>
 
-          <div className="flex items-center gap-2.5 pb-2 sm:pb-0">
-            {activeLedgerTab === 'confirmed' ? (
-              <span className="text-xs text-neutral-500 font-body font-medium">Audited Studio Cashflow</span>
-            ) : (
-              <div className="flex items-center gap-2.5">
-                <div className="flex items-center bg-neutral-100 p-0.5 rounded-xl border border-neutral-200">
-                  <button
-                    type="button"
-                    onClick={() => setPendingViewMode('cards')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                      pendingViewMode === 'cards'
-                        ? 'bg-white text-primary shadow-2xs'
-                        : 'text-neutral-500 hover:text-primary'
-                    }`}
-                    title="Cards View"
-                  >
-                    <LayoutGrid size={13} />
-                    <span>Cards</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPendingViewMode('table')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                      pendingViewMode === 'table'
-                        ? 'bg-white text-primary shadow-2xs'
-                        : 'text-neutral-500 hover:text-primary'
-                    }`}
-                    title="Table View"
-                  >
-                    <List size={13} />
-                    <span>Table</span>
-                  </button>
-                </div>
-                <span className="text-amber-800 font-semibold text-xs hidden sm:inline">
-                  {unsettledBookings.length} with balance
-                </span>
+            {/* Dropdown Filters */}
+            <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+              {/* Primary Ledger Filter: Remaining Balances vs Confirmed Receipts (Replaces All Balances) */}
+              <div className="w-full sm:w-72 shrink-0">
+                <CustomDropdown
+                  value={ledgerFilterValue}
+                  onChange={handleLedgerFilterChange}
+                  options={ledgerFilterOptions}
+                  placeholder="Filter Balances & Receipts"
+                  icon={Filter}
+                  className="w-full text-xs sm:text-sm"
+                  popoverWidth="w-full min-w-[290px]"
+                />
               </div>
-            )}
+
+              {/* Additional filters when viewing Confirmed Receipts */}
+              {activeLedgerTab === 'confirmed' && (
+                <>
+                  <div className="w-38 sm:w-44">
+                    <CustomDropdown
+                      value={typeFilter}
+                      onChange={setTypeFilter}
+                      options={[
+                        { value: 'ALL', label: 'All Classifications' },
+                        { value: 'DOWN_PAYMENT', label: 'Down Payment' },
+                        { value: 'FINAL_PAYMENT', label: 'Final Settlement' },
+                        { value: 'OTHER', label: 'Add-on / Other' },
+                      ]}
+                      placeholder="Classification"
+                      icon={Receipt}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="w-38 sm:w-44">
+                    <CustomDropdown
+                      value={channelFilter}
+                      onChange={setChannelFilter}
+                      options={[
+                        { value: 'ALL', label: 'All Channels' },
+                        { value: 'E_WALLET', label: 'GCash / Maya', icon: Wallet },
+                        { value: 'BANK_TRANSFER', label: 'Bank Deposit', icon: Building },
+                        { value: 'CASH', label: 'Cash Desk', icon: Banknote },
+                        { value: 'OTHER', label: 'Other Channel', icon: CircleDollarSign },
+                      ]}
+                      placeholder="Channel"
+                      icon={CreditCard}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="w-34 sm:w-40">
+                    <CustomDropdown
+                      value={sortBy}
+                      onChange={setSortBy}
+                      options={[
+                        { value: 'NEWEST', label: 'Newest' },
+                        { value: 'OLDEST', label: 'Oldest' },
+                        { value: 'HIGHEST', label: 'Highest' },
+                        { value: 'LOWEST', label: 'Lowest' },
+                      ]}
+                      placeholder="Sort By"
+                      icon={Filter}
+                      className="w-full"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
+        {/* ── Tab Content Area ── */}
         {loading ? (
           <div className="p-6 space-y-3">
             {[...Array(4)].map((_, i) => (
@@ -827,42 +890,35 @@ export default function AdminPayments() {
             ))}
           </div>
         ) : activeLedgerTab === 'pending_receivables' ? (
-          /* ── REMAINING BALANCES & UNPAID BOOKINGS QUEUE VIEW ── */
+          /* ════════════════════════════════════════════════════════════════════════
+             REMAINING BALANCES & UNSETTLED BOOKINGS QUEUE (DIRECTLY VISIBLE)
+             ════════════════════════════════════════════════════════════════════════ */
           filteredUnsettled.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center px-4">
               <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 mb-2.5">
                 <CheckCircle2 size={24} />
               </div>
-              <p className="text-sm font-semibold text-neutral-700 font-heading">No Remaining Balances</p>
+              <p className="text-sm font-semibold text-neutral-800 font-heading">No Remaining Balances</p>
               <p className="text-xs text-neutral-400 font-body mt-0.5 max-w-sm">
                 All scheduled studio bookings have fulfilled their downpayment requirements and remaining balances.
               </p>
             </div>
-          ) : (
-            <div>
-              {/* Transparency Policy Banner */}
-              <div className="mx-4 mt-4 p-3.5 sm:p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-amber-500/20 text-amber-800 shrink-0 mt-0.5">
-                    <Sparkles size={16} />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-heading font-bold text-amber-950 flex items-center gap-1.5">
-                      <span>Payment-First Policy Transparency</span>
-                      <span className="px-1.5 py-0.5 rounded text-[11px] font-bold uppercase bg-amber-500/20 text-amber-800 border border-amber-500/30">
-                        Admin Operations
-                      </span>
-                    </h4>
-                    <p className="text-[11px] text-amber-900/80 mt-0.5 font-body leading-relaxed">
-                      Customers must submit their 50% reservation downpayment before a booking is accepted and assigned to studio photographers. Cards below display all unpaid bookings, pending downpayments, and remaining balances awaiting settlement.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {pendingViewMode === 'cards' ? (
-                /* Card Grid View */
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
+          ) : pendingViewMode === 'table' ? (
+            /* ── Plain & Textual Table View ── */
+            <div className="overflow-x-auto min-h-[360px]">
+              <table className="w-full text-xs sm:text-sm font-body text-left">
+                <thead className="sticky top-0 z-10 bg-[#faf7f2]/95 border-b border-[#c9a96e]/25 shadow-2xs backdrop-blur-md">
+                  <tr className="border-b border-neutral-200/80 text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                    <th className="px-5 sm:px-6 py-3.5">Booking Ref</th>
+                    <th className="px-5 sm:px-6 py-3.5">Client Information</th>
+                    <th className="px-5 sm:px-6 py-3.5">Service Package</th>
+                    <th className="px-5 sm:px-6 py-3.5">Total Invoiced</th>
+                    <th className="px-5 sm:px-6 py-3.5">Paid So Far</th>
+                    <th className="px-5 sm:px-6 py-3.5">Remaining Balance</th>
+                    <th className="px-5 sm:px-6 py-3.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
                   {filteredUnsettled.map((b) => {
                     const total = Number(b.total_amount || 0);
                     const paid = Number(b.down_payment_amount || 0);
@@ -870,471 +926,402 @@ export default function AdminPayments() {
                       ? Number(b.remaining_balance)
                       : Math.max(0, total - paid);
                     const isUnpaid = !b.payment_status || (b.payment_status || '').toUpperCase() === 'UNPAID';
-                    const downRequired = Math.min(remaining, Math.max(500, Math.round(total * 0.5)));
                     const cName = `${b.customer?.first_name || ''} ${b.customer?.last_name || ''}`.trim() || 'Valued Client';
-                    const paidPct = Math.min(100, Math.round((paid / (total || 1)) * 100));
 
                     return (
-                      <div
-                        key={b.id}
-                        className="bg-neutral-50/70 hover:bg-white border border-neutral-200 hover:border-amber-400/80 rounded-2xl p-4 sm:p-5 transition-all shadow-2xs hover:shadow-md flex flex-col justify-between space-y-4 group"
-                      >
-                        {/* Card Header */}
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between gap-2 border-b border-neutral-200/80 pb-2.5">
-                            <Link
-                              to={`/admin/bookings/${b.id}`}
-                              className="font-heading font-bold text-primary hover:text-gold tracking-wide text-xs sm:text-sm flex items-center gap-1.5"
-                            >
-                              <span>#{b.booking_number}</span>
-                              <ArrowUpRight size={13} className="text-neutral-400 group-hover:text-gold transition-colors" />
-                            </Link>
-
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider border ${
-                              isUnpaid 
-                                ? 'bg-red-50 text-red-700 border-red-200 animate-pulse' 
-                                : 'bg-amber-50 text-amber-800 border-amber-200'
-                            }`}>
-                              {isUnpaid ? 'Pending Downpayment' : 'Partially Settled'}
-                            </span>
-                          </div>
-
-                          {/* Customer & Schedule */}
-                          <div>
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-full bg-neutral-200 border border-neutral-300/80 flex items-center justify-center text-xs font-bold text-neutral-700 uppercase shrink-0">
-                                {cName.charAt(0) || 'C'}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="font-heading font-bold text-xs text-neutral-900 truncate">{cName}</p>
-                                <span className="text-[11px] text-neutral-400 block truncate">
-                                  {b.customer?.phone || b.customer?.email || 'No contact on file'}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px] text-neutral-500">
-                              <span className="inline-flex items-center gap-1 bg-white border border-neutral-200 px-2 py-0.5 rounded-md font-medium text-neutral-700">
-                                <CalendarDays size={12} className="text-neutral-400" />
-                                {fmt(b.event_date)} {b.preferred_time ? `· ${b.preferred_time.substring(0, 5)}` : ''}
-                              </span>
-                              <span className="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded-md text-neutral-700 border border-neutral-200 font-medium">
-                                {b.service?.name || 'Studio Package'}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Transparency Status Note */}
-                          <div className={`p-2.5 rounded-xl text-[11px] font-body leading-relaxed flex items-start gap-2 border ${
-                            isUnpaid
-                              ? 'bg-amber-50 border-amber-200 text-amber-900'
-                              : 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                          }`}>
-                            <AlertCircle size={13} className={`shrink-0 mt-0.5 ${isUnpaid ? 'text-amber-600' : 'text-emerald-600'}`} />
-                            <span>
-                              {isUnpaid
-                                ? `Awaiting customer downpayment (${peso(downRequired)}) before session is accepted & assigned.`
-                                : `Downpayment confirmed. Final balance of ${peso(remaining)} due on session day.`}
-                            </span>
-                          </div>
-
-                          {/* 4 Financial Metrics Mini-Grid */}
-                          <div className="grid grid-cols-2 gap-2 pt-1">
-                            <div className="bg-white p-2.5 rounded-xl border border-neutral-200">
-                              <span className="text-xs text-neutral-400 uppercase font-medium block">Total Price</span>
-                              <span className="text-xs font-bold text-neutral-900">{peso(total)}</span>
-                            </div>
-                            <div className="bg-white p-2.5 rounded-xl border border-neutral-200">
-                              <span className="text-xs text-amber-700 uppercase font-medium block">Downpayment Due</span>
-                              <span className="text-xs font-bold text-amber-700">{peso(downRequired)}</span>
-                            </div>
-                            <div className="bg-white p-2.5 rounded-xl border border-neutral-200">
-                              <span className="text-xs text-emerald-600 uppercase font-medium block">Paid So Far</span>
-                              <span className="text-xs font-bold text-emerald-600">{peso(paid)}</span>
-                            </div>
-                            <div className="bg-white p-2.5 rounded-xl border border-neutral-200">
-                              <span className="text-xs text-primary uppercase font-medium block">Remaining</span>
-                              <span className="text-xs font-bold text-primary">{peso(remaining)}</span>
-                            </div>
-                          </div>
-
-                          {/* Collection Progress Bar */}
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-xs text-neutral-500 font-medium">
-                              <span>Collection Progress</span>
-                              <span className="font-bold text-primary">{paidPct}% Settled</span>
-                            </div>
-                            <div className="w-full bg-neutral-200 rounded-full h-1.5 overflow-hidden">
-                              <div
-                                className="bg-gold h-full rounded-full transition-all duration-300"
-                                style={{ width: `${paidPct}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Card Action Buttons */}
-                        <div className="pt-2.5 border-t border-neutral-200 flex items-center justify-between gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => openRecordModal(b)}
-                            className="flex-1 px-3 py-2 text-xs font-bold text-primary bg-gold hover:bg-gold-light rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
-                            title="Record payment receipt for this booking"
-                          >
-                            <Plus size={13} />
-                            <span>Record Payment</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleSendReminder(b)}
-                            className="p-2 text-neutral-500 hover:text-amber-700 hover:bg-amber-50 rounded-xl transition-colors border border-neutral-200 cursor-pointer"
-                            title="Send payment reminder notice to client"
-                          >
-                            <Send size={13} />
-                          </button>
-
+                      <tr key={b.id} className="hover:bg-amber-50/20 transition-colors group">
+                        {/* Booking Ref */}
+                        <td className="px-5 sm:px-6 py-4">
                           <Link
                             to={`/admin/bookings/${b.id}`}
-                            className="p-2 text-neutral-500 hover:text-primary hover:bg-neutral-100 rounded-xl transition-colors border border-neutral-200 cursor-pointer"
-                            title="View full booking dossier"
+                            className="font-heading font-bold text-neutral-900 hover:text-[#c9a96e] transition-colors text-xs sm:text-sm block"
+                            title="Inspect booking dossier"
                           >
-                            <Eye size={13} />
+                            #{b.booking_number}
                           </Link>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                /* Tabular View */
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs sm:text-sm font-body text-left">
-                    <thead>
-                      <tr className="border-b border-neutral-200 bg-neutral-50/80 text-[11px] sm:text-xs font-bold uppercase tracking-wider text-neutral-500">
-                        <th className="px-5 sm:px-6 py-4">Booking # & Schedule</th>
-                        <th className="px-5 sm:px-6 py-4">Client & Contact</th>
-                        <th className="px-5 sm:px-6 py-4">Service Package</th>
-                        <th className="px-5 sm:px-6 py-4">Total Invoiced</th>
-                        <th className="px-5 sm:px-6 py-4">Downpayment Due</th>
-                        <th className="px-5 sm:px-6 py-4">Paid So Far</th>
-                        <th className="px-5 sm:px-6 py-4">Remaining Balance</th>
-                        <th className="px-5 sm:px-6 py-4">Payment Status</th>
-                        <th className="px-5 sm:px-6 py-4 text-right">Admin Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-100">
-                      {filteredUnsettled.map((b) => {
-                        const total = Number(b.total_amount || 0);
-                        const paid = Number(b.down_payment_amount || 0);
-                        const remaining = b.remaining_balance !== undefined && b.remaining_balance !== null
-                          ? Number(b.remaining_balance)
-                          : Math.max(0, total - paid);
-                        const isUnpaid = !b.payment_status || (b.payment_status || '').toUpperCase() === 'UNPAID';
-                        const downRequired = Math.min(remaining, Math.max(500, Math.round(total * 0.5)));
-                        const cName = `${b.customer?.first_name || ''} ${b.customer?.last_name || ''}`.trim() || 'Valued Client';
+                          {b.event_date && (
+                            <div className="flex items-center gap-1 text-xs text-neutral-400 mt-0.5">
+                              <CalendarDays size={11} className="text-neutral-400 shrink-0" />
+                              <span>{fmt(b.event_date)}{b.preferred_time ? ` · ${b.preferred_time.substring(0, 5)}` : ''}</span>
+                            </div>
+                          )}
+                        </td>
 
-                        return (
-                          <tr key={b.id} className="hover:bg-amber-50/25 transition-colors group">
-                            {/* Booking & Schedule */}
-                            <td className="px-5 sm:px-6 py-4 sm:py-4.5">
-                              <Link
-                                to={`/admin/bookings/${b.id}`}
-                                className="font-heading font-bold text-primary hover:text-gold tracking-wide text-xs sm:text-sm block"
-                                title="Inspect booking"
-                              >
-                                #{b.booking_number}
-                              </Link>
-                              <span className="text-xs text-neutral-400 block mt-0.5">
-                                {fmt(b.event_date)} {b.preferred_time ? `· ${b.preferred_time.substring(0, 5)}` : ''}
-                              </span>
-                            </td>
-
-                            {/* Customer */}
-                            <td className="px-5 sm:px-6 py-4 sm:py-4.5">
-                              <p className="font-semibold text-sm text-neutral-900 leading-tight">{cName}</p>
-                              <span className="text-xs text-neutral-400 block mt-0.5">
-                                {b.customer?.phone || b.customer?.email || '—'}
-                              </span>
-                            </td>
-
-                            {/* Package */}
-                            <td className="px-5 sm:px-6 py-4 sm:py-4.5">
-                              <span className="font-medium text-neutral-800 line-clamp-1">
-                                {b.service?.name || 'Studio Portrait'}
-                              </span>
-                              <span className="text-[11px] text-neutral-400 uppercase font-semibold">
-                                {b.status}
-                              </span>
-                            </td>
-
-                            {/* Total Invoiced */}
-                            <td className="px-5 sm:px-6 py-4 sm:py-4.5 font-bold text-sm sm:text-base text-neutral-800">
-                              {peso(total)}
-                            </td>
-
-                            {/* Downpayment Required */}
-                            <td className="px-5 sm:px-6 py-4 sm:py-4.5">
-                              {isUnpaid ? (
-                                <span className="inline-flex items-center gap-1.5 font-bold text-amber-700 bg-amber-500/15 border border-amber-500/30 px-3 py-1 rounded-lg text-xs">
-                                  <CreditCard size={13} /> {peso(downRequired)}
-                                </span>
-                              ) : (
-                                <span className="text-emerald-700 font-semibold text-xs sm:text-sm flex items-center gap-1">
-                                  <CheckCircle2 size={14} /> Down Paid
-                                </span>
-                              )}
-                            </td>
-
-                            {/* Paid So Far */}
-                            <td className="px-5 sm:px-6 py-4 sm:py-4.5 font-semibold text-emerald-600 text-sm">
-                              {peso(paid)}
-                            </td>
-
-                            {/* Remaining Balance */}
-                            <td className="px-5 sm:px-6 py-4 sm:py-4.5 font-bold text-primary text-sm sm:text-base">
-                              {peso(remaining)}
-                            </td>
-
-                            {/* Payment Status Badge */}
-                            <td className="px-5 sm:px-6 py-4 sm:py-4.5">
-                              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider border ${
-                                isUnpaid 
-                                ? 'bg-red-50 text-red-700 border-red-200' 
-                                : 'bg-amber-50 text-amber-800 border-amber-200'
-                              }`}>
-                                {isUnpaid ? 'Pending Downpayment' : 'Partially Settled'}
-                              </span>
-                            </td>
-
-                            {/* Admin Actions */}
-                            <td className="px-5 sm:px-6 py-4 sm:py-4.5 text-right whitespace-nowrap">
-                              <div className="flex items-center justify-end gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => openRecordModal(b)}
-                                  className="px-3 py-1.5 text-xs font-bold text-primary bg-gold hover:bg-gold-light rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                                  title="Record payment receipt for this booking"
-                                >
-                                  <Plus size={14} />
-                                  <span>Record</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleSendReminder(b)}
-                                  className="p-1.5 text-neutral-500 hover:text-amber-700 hover:bg-amber-50 rounded-xl transition-colors border border-neutral-200 cursor-pointer"
-                                  title="Send payment reminder notice to client"
-                                >
-                                  <Send size={14} />
-                                </button>
-
-                                <Link
-                                  to={`/admin/bookings/${b.id}`}
-                                  className="p-1.5 text-neutral-500 hover:text-primary hover:bg-neutral-100 rounded-xl transition-colors border border-neutral-200 cursor-pointer"
-                                  title="View full booking dossier"
-                                >
-                                  <Eye size={14} />
-                                </Link>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )) : filteredRows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center px-4">
-            <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center text-neutral-400 mb-2.5">
-              <CreditCard size={24} />
-            </div>
-            <p className="text-sm font-semibold text-neutral-700 font-heading">No payment transactions recorded</p>
-            <p className="text-xs text-neutral-400 font-body mt-0.5 max-w-sm">
-              Use "Record Payment Receipt" above or pick a booking from the "Remaining Balances Queue" to log a payment.
-            </p>
-            <div className="flex items-center gap-2 mt-3">
-              <button
-                type="button"
-                onClick={() => openRecordModal()}
-                className="px-3.5 py-2 text-xs sm:text-sm font-bold text-primary bg-gold hover:bg-gold-light rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
-              >
-                <Plus size={14} />
-                <span>Record Receipt</span>
-              </button>
-              {unsettledBookings.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setActiveLedgerTab('pending_receivables')}
-                  className="px-3.5 py-2 text-xs sm:text-sm font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                >
-                  <AlertCircle size={14} className="text-amber-600" />
-                  <span>View Remaining Balances ({unsettledBookings.length})</span>
-                </button>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs sm:text-sm font-body text-left">
-              <thead>
-                <tr className="border-b border-neutral-200 bg-neutral-50/80 text-[11px] sm:text-xs font-bold uppercase tracking-wider text-neutral-500">
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4">Order & Booking Ref</th>
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4">Client Information</th>
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4">Amount Paid</th>
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4">Classification</th>
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4">Channel & Reference</th>
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4">Timestamp</th>
-                  <th className="px-5 sm:px-6 py-3.5 sm:py-4 text-right">Treasury Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {filteredRows.map((p) => {
-                  const MethodIcon = METHOD_ICONS[p.payment_method] || CreditCard;
-                  const cName = `${p.booking?.customer?.first_name || ''} ${p.booking?.customer?.last_name || ''}`.trim() || 'Valued Customer';
-                  const bNum = p.booking?.booking_number || '—';
-
-                  return (
-                    <tr key={p.id} className="hover:bg-amber-50/20 transition-colors">
-                      {/* Order & Booking Ref */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 align-middle">
-                        <div className="space-y-1">
-                          {p.booking?.id ? (
-                            <Link
-                              to={`/admin/bookings/${p.booking.id}`}
-                              className="font-mono text-xs sm:text-sm font-bold text-gold-dark hover:underline inline-flex items-center gap-1.5"
-                              title="Jump to full booking record"
-                            >
-                              <span>#{bNum}</span>
-                              <ExternalLink size={12} className="text-neutral-400" />
-                            </Link>
-                          ) : (
-                            <span className="font-mono text-xs sm:text-sm font-semibold text-neutral-700">
-                              #{bNum}
+                        {/* Client Details */}
+                        <td className="px-5 sm:px-6 py-4">
+                          <p className="font-semibold text-neutral-900 text-xs sm:text-sm">{cName}</p>
+                          {(b.customer?.phone || b.customer?.email) && (
+                            <span className="text-xs text-neutral-400 block mt-0.5">
+                              {b.customer?.phone || b.customer?.email}
                             </span>
                           )}
-                          <p className="font-mono text-[11px] text-neutral-400 truncate max-w-[130px]">
-                            TX: {p.id.slice(0, 8)}...
+                        </td>
+
+                        {/* Service Package */}
+                        <td className="px-5 sm:px-6 py-4">
+                          <p className="font-medium text-neutral-800 text-xs sm:text-sm line-clamp-1">
+                            {b.service?.name || 'Studio Package'}
                           </p>
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* Client Details */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 align-middle min-w-[170px]">
-                        <p className="font-semibold text-sm sm:text-base text-neutral-900 truncate" title={cName}>
-                          {cName}
-                        </p>
-                        {p.booking?.customer?.phone && (
-                          <span className="text-xs text-neutral-400 font-mono block mt-0.5">
-                            {p.booking.customer.phone}
+                        {/* Total Invoiced */}
+                        <td className="px-5 sm:px-6 py-4 font-semibold text-neutral-800 text-xs sm:text-sm">
+                          {peso(total)}
+                        </td>
+
+                        {/* Paid So Far */}
+                        <td className="px-5 sm:px-6 py-4 text-xs sm:text-sm">
+                          <span className={`font-semibold ${paid > 0 ? 'text-emerald-600' : 'text-neutral-400'}`}>
+                            {peso(paid)}
                           </span>
-                        )}
-                      </td>
+                        </td>
 
-                      {/* Amount Paid */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 align-middle whitespace-nowrap">
-                        <span className="font-heading font-bold text-base sm:text-lg text-primary">
-                          {peso(p.amount)}
-                        </span>
-                        {p.booking?.remaining_balance > 0 && (
-                          <span className="block text-xs text-neutral-400 mt-0.5">
-                            Bal: {peso(p.booking.remaining_balance)}
-                          </span>
-                        )}
-                      </td>
+                        {/* Remaining Balance */}
+                        <td className="px-5 sm:px-6 py-4 font-heading font-bold text-sm sm:text-base text-[#8f7441]">
+                          {peso(remaining)}
+                        </td>
 
-                      {/* Classification */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 align-middle whitespace-nowrap">
-                        <span className={`inline-flex items-center text-xs font-bold border px-3 py-1 rounded-full ${TYPE_COLORS[p.payment_type] || ''}`}>
-                          {TYPE_LABELS[p.payment_type] || p.payment_type}
-                        </span>
-                      </td>
-
-                      {/* Channel & Reference */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 align-middle min-w-[160px]">
-                        <div className="flex items-center gap-2 text-xs sm:text-sm text-neutral-800 font-medium">
-                          <MethodIcon size={15} className="text-gold-dark shrink-0" />
-                          <span>{METHOD_LABELS[p.payment_method] || p.payment_method}</span>
-                        </div>
-                        {p.reference_number ? (
-                          <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 font-mono mt-1">
-                            <span>Ref: {p.reference_number}</span>
+                        {/* Actions */}
+                        <td className="px-5 sm:px-6 py-4 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-2">
                             <button
                               type="button"
-                              onClick={() => handleCopyRef(p.reference_number)}
-                              className="p-0.5 text-neutral-400 hover:text-gold cursor-pointer"
-                              title="Copy reference"
+                              onClick={() => handleSendReminder(b)}
+                              className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-400 hover:text-amber-700 hover:bg-amber-50/80 transition-colors border border-neutral-200/90 hover:border-amber-400/70 cursor-pointer shadow-2xs"
+                              title="Send payment reminder to client"
                             >
-                              <Copy size={11} />
+                              <Send size={13} />
+                            </button>
+
+                            <Link
+                              to={`/admin/bookings/${b.id}`}
+                              className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 transition-colors border border-neutral-200/90 hover:border-neutral-400 cursor-pointer shadow-2xs"
+                              title="View full booking dossier"
+                            >
+                              <Eye size={13} />
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            /* ── Modern Studio Cards View ── */
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4 sm:p-5">
+              {filteredUnsettled.map((b) => {
+                const total = Number(b.total_amount || 0);
+                const paid = Number(b.down_payment_amount || 0);
+                const remaining = b.remaining_balance !== undefined && b.remaining_balance !== null
+                  ? Number(b.remaining_balance)
+                  : Math.max(0, total - paid);
+                const isUnpaid = !b.payment_status || (b.payment_status || '').toUpperCase() === 'UNPAID';
+                const downRequired = Math.min(remaining, Math.max(500, Math.round(total * 0.5)));
+                const cName = `${b.customer?.first_name || ''} ${b.customer?.last_name || ''}`.trim() || 'Valued Client';
+                const paidPct = Math.min(100, Math.round((paid / (total || 1)) * 100));
+
+                return (
+                  <div
+                    key={b.id}
+                    className="bg-white hover:bg-[#faf7f2]/40 border border-neutral-200/90 hover:border-[#c9a96e]/70 rounded-2xl p-4 sm:p-5 transition-all shadow-xs hover:shadow-md flex flex-col justify-between space-y-4 group"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2 border-b border-neutral-100 pb-2.5">
+                        <Link
+                          to={`/admin/bookings/${b.id}`}
+                          className="font-heading font-bold text-neutral-900 hover:text-[#c9a96e] text-xs sm:text-sm flex items-center gap-1.5 transition-colors"
+                        >
+                          <span>#{b.booking_number}</span>
+                          <ArrowUpRight size={13} className="text-neutral-400 group-hover:text-[#c9a96e] transition-colors" />
+                        </Link>
+
+                        {isUnpaid && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                            Awaiting Downpayment
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        <p className="font-heading font-bold text-sm text-neutral-900 truncate">{cName}</p>
+                        <span className="text-xs text-neutral-400 block truncate">
+                          {b.customer?.phone || b.customer?.email || 'No contact on file'}
+                        </span>
+                        <div className="mt-2 flex items-center gap-2 text-xs text-neutral-500">
+                          <CalendarDays size={12} className="text-neutral-400" />
+                          <span>{fmt(b.event_date)} {b.preferred_time ? `· ${b.preferred_time.substring(0, 5)}` : ''}</span>
+                          <span className="text-neutral-300">·</span>
+                          <span className="text-neutral-700 truncate">{b.service?.name || 'Studio Package'}</span>
+                        </div>
+                      </div>
+
+                      {/* 4 Financial Metrics Grid */}
+                      <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
+                        <div className="p-2.5 rounded-xl bg-neutral-50 border border-neutral-150">
+                          <span className="text-[11px] text-neutral-400 font-medium block">Total Invoiced</span>
+                          <span className="font-bold text-neutral-800">{peso(total)}</span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-neutral-50 border border-neutral-150">
+                          <span className="text-[11px] text-neutral-400 font-medium block">Downpayment Due</span>
+                          <span className="font-bold text-amber-800">{isUnpaid ? peso(downRequired) : 'Paid ✓'}</span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-neutral-50 border border-neutral-150">
+                          <span className="text-[11px] text-neutral-400 font-medium block">Paid So Far</span>
+                          <span className="font-bold text-emerald-600">{peso(paid)}</span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-amber-50/60 border border-amber-200/60">
+                          <span className="text-[11px] text-amber-800 font-medium block">Remaining Balance</span>
+                          <span className="font-bold font-heading text-amber-950">{peso(remaining)}</span>
+                        </div>
+                      </div>
+
+                      {/* Settlement progress bar */}
+                      <div className="space-y-1 pt-1">
+                        <div className="flex justify-between text-xs text-neutral-500 font-medium">
+                          <span>Settlement Progress</span>
+                          <span className="font-bold text-neutral-800">{paidPct}%</span>
+                        </div>
+                        <div className="w-full bg-neutral-200/80 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className="bg-[#c9a96e] h-full rounded-full transition-all duration-300"
+                            style={{ width: `${paidPct}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Card Actions */}
+                    <div className="pt-2 border-t border-neutral-100 flex items-center justify-between gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openRecordModal(b)}
+                        className="flex-1 px-3 py-2 text-xs font-semibold text-white bg-gradient-to-r from-[#c9a96e] to-[#b8985d] hover:from-[#d4b479] hover:to-[#c9a96e] rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                        title="Record payment receipt for this booking"
+                      >
+                        <Plus size={13} />
+                        <span>Record Payment</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSendReminder(b)}
+                        className="p-2 text-neutral-400 hover:text-amber-700 hover:bg-amber-50 rounded-xl transition-colors border border-neutral-200 cursor-pointer"
+                        title="Send reminder notice"
+                      >
+                        <Send size={13} />
+                      </button>
+
+                      <Link
+                        to={`/admin/bookings/${b.id}`}
+                        className="p-2 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded-xl transition-colors border border-neutral-200 cursor-pointer"
+                        title="View full booking dossier"
+                      >
+                        <Eye size={13} />
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
+        ) : (
+          /* ════════════════════════════════════════════════════════════════════════
+             CONFIRMED RECEIPTS & TREASURY CASHFLOW LEDGER
+             ════════════════════════════════════════════════════════════════════════ */
+          filteredRows.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center px-4">
+              <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center text-neutral-400 mb-2.5">
+                <CreditCard size={24} />
+              </div>
+              <p className="text-sm font-semibold text-neutral-700 font-heading">No payment transactions recorded</p>
+              <p className="text-xs text-neutral-400 font-body mt-0.5 max-w-sm">
+                Use "Record Payment" above or pick a booking from "Remaining Balances" to log a payment.
+              </p>
+              <div className="flex items-center gap-2 mt-3">
+                <button
+                  type="button"
+                  onClick={() => openRecordModal()}
+                  className="px-3.5 py-2 text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-[#c9a96e] to-[#b8985d] hover:from-[#d4b479] hover:to-[#c9a96e] rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  <Plus size={14} />
+                  <span>Record Receipt</span>
+                </button>
+                {unsettledBookings.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleLedgerFilterChange('ALL')}
+                    className="px-3.5 py-2 text-xs sm:text-sm font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  >
+                    <AlertCircle size={14} className="text-amber-600" />
+                    <span>View Remaining Balances ({unsettledBookings.length})</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto min-h-[360px]">
+              <table className="w-full text-xs sm:text-sm font-body text-left">
+                <thead className="sticky top-0 z-10 bg-[#faf7f2]/95 border-b border-[#c9a96e]/25 shadow-2xs backdrop-blur-md">
+                  <tr className="border-b border-neutral-200/80 text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                    <th className="px-5 sm:px-6 py-3.5">Order & Booking Ref</th>
+                    <th className="px-5 sm:px-6 py-3.5">Client Information</th>
+                    <th className="px-5 sm:px-6 py-3.5">Amount Paid</th>
+                    <th className="px-5 sm:px-6 py-3.5">Classification</th>
+                    <th className="px-5 sm:px-6 py-3.5">Channel & Reference</th>
+                    <th className="px-5 sm:px-6 py-3.5">Timestamp</th>
+                    <th className="px-5 sm:px-6 py-3.5 text-right">Treasury Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {filteredRows.map((p) => {
+                    const MethodIcon = METHOD_ICONS[p.payment_method] || CreditCard;
+                    const cName = `${p.booking?.customer?.first_name || ''} ${p.booking?.customer?.last_name || ''}`.trim() || 'Valued Customer';
+                    const bNum = p.booking?.booking_number || '—';
+
+                    return (
+                      <tr key={p.id} className="hover:bg-amber-50/20 transition-colors">
+                        {/* Order & Booking Ref */}
+                        <td className="px-5 sm:px-6 py-4 align-middle">
+                          <div className="space-y-0.5">
+                            {p.booking?.id ? (
+                              <Link
+                                to={`/admin/bookings/${p.booking.id}`}
+                                className="font-heading text-xs sm:text-sm font-bold text-neutral-900 hover:text-[#c9a96e] transition-colors inline-flex items-center gap-1.5"
+                                title="Jump to full booking record"
+                              >
+                                <span>#{bNum}</span>
+                                <ExternalLink size={12} className="text-neutral-400" />
+                              </Link>
+                            ) : (
+                              <span className="font-heading text-xs sm:text-sm font-bold text-neutral-900">
+                                #{bNum}
+                              </span>
+                            )}
+                            <p className="font-mono text-[11px] text-neutral-400 truncate max-w-[130px]">
+                              TX: {p.id.slice(0, 8)}...
+                            </p>
+                          </div>
+                        </td>
+
+                        {/* Client Details */}
+                        <td className="px-5 sm:px-6 py-4 align-middle min-w-[170px]">
+                          <p className="font-semibold text-sm text-neutral-900 truncate" title={cName}>
+                            {cName}
+                          </p>
+                          {p.booking?.customer?.phone && (
+                            <span className="text-xs text-neutral-400 block mt-0.5">
+                              {p.booking.customer.phone}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Amount Paid */}
+                        <td className="px-5 sm:px-6 py-4 align-middle whitespace-nowrap">
+                          <span className="font-heading font-bold text-base text-neutral-900">
+                            {peso(p.amount)}
+                          </span>
+                          {p.booking?.remaining_balance > 0 && (
+                            <span className="block text-xs text-neutral-400 mt-0.5">
+                              Bal: {peso(p.booking.remaining_balance)}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Classification - Plain Textual */}
+                        <td className="px-5 sm:px-6 py-4 align-middle whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-800">
+                            <span className={`w-1.5 h-1.5 rounded-full ${p.payment_type === 'DOWN_PAYMENT' ? 'bg-blue-500' : p.payment_type === 'FINAL_PAYMENT' ? 'bg-emerald-500' : 'bg-neutral-400'}`} />
+                            {TYPE_LABELS[p.payment_type] || p.payment_type}
+                          </span>
+                        </td>
+
+                        {/* Channel & Reference */}
+                        <td className="px-5 sm:px-6 py-4 align-middle min-w-[160px]">
+                          <div className="flex items-center gap-1.5 text-xs sm:text-sm text-neutral-800 font-medium">
+                            <MethodIcon size={14} className="text-[#c9a96e] shrink-0" />
+                            <span>{METHOD_LABELS[p.payment_method] || p.payment_method}</span>
+                          </div>
+                          {p.reference_number ? (
+                            <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 font-mono mt-1">
+                              <span>Ref: {p.reference_number}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyRef(p.reference_number)}
+                                className="p-0.5 text-neutral-400 hover:text-[#c9a96e] cursor-pointer"
+                                title="Copy reference"
+                              >
+                                <Copy size={11} />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-neutral-300 italic block mt-1">No ref #</span>
+                          )}
+                        </td>
+
+                        {/* Timestamp */}
+                        <td className="px-5 sm:px-6 py-4 align-middle whitespace-nowrap text-xs text-neutral-500">
+                          <p className="font-medium text-xs sm:text-sm text-neutral-800">{fmt(p.payment_date)}</p>
+                          <p className="text-[11px] text-neutral-400 mt-0.5">{new Date(p.payment_date).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}</p>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-5 sm:px-6 py-4 align-middle text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {/* Receipt Voucher */}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedReceipt(p)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-neutral-700 bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-[#c9a96e]/80 rounded-xl transition-all shadow-2xs cursor-pointer"
+                              title="View Official Receipt Voucher"
+                            >
+                              <Receipt size={13} className="text-neutral-500" />
+                              <span>Voucher</span>
+                            </button>
+
+                            {/* Quick Clear to Front Desk */}
+                            <button
+                              type="button"
+                              onClick={() => handleSendClearanceLog(p)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl transition-all shadow-2xs cursor-pointer"
+                              title="Dispatch verified clearance to Front Desk Staff"
+                            >
+                              <Send size={12} className="text-emerald-700" />
+                              <span>Clear Desk</span>
+                            </button>
+
+                            {/* Void / Delete Payment */}
+                            <button
+                              type="button"
+                              onClick={() => setDeletingPayment(p)}
+                              className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
+                              title="Void / Delete Payment Entry"
+                            >
+                              <Trash2 size={14} />
                             </button>
                           </div>
-                        ) : (
-                          <span className="text-[11px] text-neutral-300 italic block mt-1">No ref #</span>
-                        )}
-                      </td>
-
-                      {/* Timestamp */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 align-middle whitespace-nowrap text-xs text-neutral-500">
-                        <p className="font-medium text-xs sm:text-sm text-neutral-800">{fmt(p.payment_date)}</p>
-                        <p className="text-[11px] text-neutral-400 mt-0.5">{new Date(p.payment_date).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}</p>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 align-middle text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-2">
-                          {/* Receipt Voucher Modal */}
-                          <button
-                            type="button"
-                            onClick={() => setSelectedReceipt(p)}
-                            className="inline-flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-neutral-700 bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-gold/80 rounded-xl transition-all shadow-2xs cursor-pointer"
-                            title="View Official Receipt Voucher"
-                          >
-                            <Receipt size={14} className="text-neutral-500" />
-                            <span>Voucher</span>
-                          </button>
-
-                          {/* Quick Clear to Front Desk */}
-                          <button
-                            type="button"
-                            onClick={() => handleSendClearanceLog(p)}
-                            className="inline-flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl transition-all shadow-2xs cursor-pointer"
-                            title="Dispatch verified clearance to Front Desk Staff"
-                          >
-                            <Send size={13} className="text-emerald-700" />
-                            <span>Clear Desk</span>
-                          </button>
-
-                          {/* Void / Delete Payment (Admin Tool) */}
-                          <button
-                            type="button"
-                            onClick={() => setDeletingPayment(p)}
-                            className="p-2 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
-                            title="Void / Delete Payment Entry"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
         )}
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-neutral-100 text-xs text-neutral-500 font-body">
+        {/* ── Footer Bar (Pagination for Confirmed Receipts) ── */}
+        {activeLedgerTab === 'confirmed' && totalPages > 1 && (
+          <div className="flex items-center justify-between px-5 py-3.5 border-t border-neutral-100 text-xs text-neutral-500 font-body bg-neutral-50/50">
             <span>Page {page} of {totalPages} ({total} total transactions)</span>
             <div className="flex gap-1.5">
               <button
                 type="button"
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="p-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 disabled:opacity-40 transition-colors cursor-pointer"
+                className="p-1.5 rounded-xl border border-neutral-200 hover:bg-white disabled:opacity-40 transition-colors cursor-pointer"
               >
                 <ChevronLeft size={14} />
               </button>
@@ -1342,7 +1329,7 @@ export default function AdminPayments() {
                 type="button"
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="p-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 disabled:opacity-40 transition-colors cursor-pointer"
+                className="p-1.5 rounded-xl border border-neutral-200 hover:bg-white disabled:opacity-40 transition-colors cursor-pointer"
               >
                 <ChevronRight size={14} />
               </button>

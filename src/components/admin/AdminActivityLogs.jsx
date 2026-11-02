@@ -122,48 +122,48 @@ const ROLE_THEMES = {
   },
   photographer: {
     name: 'Photographer',
-    box: 'bg-gradient-to-r from-white via-purple-50/40 to-purple-100/30 border border-purple-200/90 hover:border-purple-300 shadow-2xs hover:shadow-xs text-neutral-900',
-    avatarRing: 'ring-2 ring-purple-600/70 shadow-xs',
-    avatarFallback: 'bg-purple-100 text-purple-900 ring-1 ring-purple-300',
+    box: 'bg-gradient-to-r from-white via-amber-50/20 to-neutral-50/40 border border-amber-200/70 hover:border-amber-300 shadow-2xs hover:shadow-xs text-neutral-900',
+    avatarRing: 'ring-2 ring-amber-600/70 shadow-xs',
+    avatarFallback: 'bg-amber-100 text-amber-900 ring-1 ring-amber-300',
     nameColor: 'text-neutral-950 font-bold',
     divider: 'sm:border-neutral-200/80',
-    iconBadge: 'bg-purple-50 text-purple-900 border border-purple-200/90 hover:border-purple-300 shadow-2xs',
+    iconBadge: 'bg-amber-50 text-amber-900 border border-amber-200/90 hover:border-amber-300 shadow-2xs',
     message: 'text-neutral-800 font-medium',
     time: 'text-neutral-400',
-    bookingLink: 'bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-300/80',
-    expandedBox: 'bg-purple-50/40 border border-purple-200 text-neutral-800',
-    expandBtn: 'text-neutral-400 hover:text-purple-800 hover:bg-purple-100/60 border-transparent',
-    expandBtnActive: 'bg-purple-100 text-purple-900 border border-purple-300',
+    bookingLink: 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80',
+    expandedBox: 'bg-amber-50/30 border border-amber-200 text-neutral-800',
+    expandBtn: 'text-neutral-400 hover:text-amber-800 hover:bg-amber-100/60 border-transparent',
+    expandBtnActive: 'bg-amber-100 text-amber-900 border border-amber-300',
   },
   staff: {
     name: 'Frontdesk Staff',
-    box: 'bg-gradient-to-r from-white via-blue-50/40 to-blue-100/30 border border-blue-200/90 hover:border-blue-300 shadow-2xs hover:shadow-xs text-neutral-900',
-    avatarRing: 'ring-2 ring-blue-600/70 shadow-xs',
-    avatarFallback: 'bg-blue-100 text-blue-900 ring-1 ring-blue-300',
+    box: 'bg-gradient-to-r from-white via-stone-50/30 to-neutral-50/50 border border-neutral-200/90 hover:border-amber-300 shadow-2xs hover:shadow-xs text-neutral-900',
+    avatarRing: 'ring-2 ring-stone-600/70 shadow-xs',
+    avatarFallback: 'bg-stone-100 text-stone-900 ring-1 ring-stone-300',
     nameColor: 'text-neutral-950 font-bold',
     divider: 'sm:border-neutral-200/80',
-    iconBadge: 'bg-blue-50 text-blue-900 border border-blue-200/90 hover:border-blue-300 shadow-2xs',
+    iconBadge: 'bg-stone-50 text-stone-900 border border-stone-200/90 hover:border-amber-300 shadow-2xs',
     message: 'text-neutral-800 font-medium',
     time: 'text-neutral-400',
-    bookingLink: 'bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-300/80',
-    expandedBox: 'bg-blue-50/40 border border-blue-200 text-neutral-800',
-    expandBtn: 'text-neutral-400 hover:text-blue-800 hover:bg-blue-100/60 border-transparent',
-    expandBtnActive: 'bg-blue-100 text-blue-900 border border-blue-300',
+    bookingLink: 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80',
+    expandedBox: 'bg-stone-50/40 border border-neutral-200 text-neutral-800',
+    expandBtn: 'text-neutral-400 hover:text-neutral-800 hover:bg-neutral-100/60 border-transparent',
+    expandBtnActive: 'bg-neutral-100 text-neutral-900 border border-neutral-300',
   },
   finance: {
     name: 'Finance Officer',
-    box: 'bg-gradient-to-r from-white via-emerald-50/40 to-emerald-100/30 border border-emerald-200/90 hover:border-emerald-300 shadow-2xs hover:shadow-xs text-neutral-900',
-    avatarRing: 'ring-2 ring-emerald-600/70 shadow-xs',
-    avatarFallback: 'bg-emerald-100 text-emerald-900 ring-1 ring-emerald-300',
+    box: 'bg-gradient-to-r from-white via-amber-50/20 to-neutral-50/40 border border-amber-200/70 hover:border-amber-300 shadow-2xs hover:shadow-xs text-neutral-900',
+    avatarRing: 'ring-2 ring-amber-600/70 shadow-xs',
+    avatarFallback: 'bg-amber-100 text-amber-900 ring-1 ring-amber-300',
     nameColor: 'text-neutral-950 font-bold',
     divider: 'sm:border-neutral-200/80',
-    iconBadge: 'bg-emerald-50 text-emerald-900 border border-emerald-200/90 hover:border-emerald-300 shadow-2xs',
+    iconBadge: 'bg-amber-50 text-amber-900 border border-amber-200/90 hover:border-amber-300 shadow-2xs',
     message: 'text-neutral-800 font-medium',
     time: 'text-neutral-400',
-    bookingLink: 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300/80',
-    expandedBox: 'bg-emerald-50/40 border border-emerald-200 text-neutral-800',
-    expandBtn: 'text-neutral-400 hover:text-emerald-800 hover:bg-emerald-100/60 border-transparent',
-    expandBtnActive: 'bg-emerald-100 text-emerald-900 border border-emerald-300',
+    bookingLink: 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80',
+    expandedBox: 'bg-amber-50/30 border border-amber-200 text-neutral-800',
+    expandBtn: 'text-neutral-400 hover:text-amber-800 hover:bg-amber-100/60 border-transparent',
+    expandBtnActive: 'bg-amber-100 text-amber-900 border border-amber-300',
   },
 };
 
@@ -510,37 +510,55 @@ export default function AdminActivityLogs() {
   const [selectedRole, setSelectedRole] = useState('all');
   const [selectedActionType, setSelectedActionType] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [expandedLogId, setExpandedLogId] = useState(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [logsRes, globalRes] = await Promise.all([
-        fetchAdminActivityLogs({
-          role: selectedRole !== 'all' ? selectedRole : null,
-          actionType: selectedActionType !== 'all' ? selectedActionType : null,
-          search: searchQuery,
-          limit: 150,
-        }),
-        fetchAdminActivityLogs({
-          limit: 250,
-        }),
-      ]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-      setLogs(logsRes.data || []);
+  const loadGlobalStats = useCallback(async () => {
+    try {
+      const globalRes = await fetchAdminActivityLogs({ limit: 250 });
       if (globalRes?.data) {
         setAllLogs(globalRes.data);
       }
+    } catch (err) {
+      console.error('Failed loading global activity stats:', err);
+    }
+  }, []);
+
+  const loadFilteredLogs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const logsRes = await fetchAdminActivityLogs({
+        role: selectedRole !== 'all' ? selectedRole : null,
+        actionType: selectedActionType !== 'all' ? selectedActionType : null,
+        search: debouncedSearch,
+        limit: 150,
+      });
+      setLogs(logsRes.data || []);
     } catch (err) {
       console.error('Failed loading admin activity logs:', err);
     } finally {
       setLoading(false);
     }
-  }, [selectedRole, selectedActionType, searchQuery]);
+  }, [selectedRole, selectedActionType, debouncedSearch]);
+
+  const loadData = useCallback(async () => {
+    await Promise.all([loadFilteredLogs(), loadGlobalStats()]);
+  }, [loadFilteredLogs, loadGlobalStats]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadGlobalStats();
+  }, [loadGlobalStats]);
+
+  useEffect(() => {
+    loadFilteredLogs();
+  }, [loadFilteredLogs]);
 
   // ── Compute 4 Useful & Functional KPI Metrics ─────────────────────────────
   const statsSource = allLogs.length > 0 ? allLogs : logs;
@@ -851,104 +869,140 @@ export default function AdminActivityLogs() {
 
       </div>
 
-      {/* ── Main Activity Feed Card ────────────────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs relative font-body overflow-hidden">
-        
-        {/* ── Compact Header & Inline Filters ───────────────────────────────── */}
-        <div className="px-5 py-4 border-b border-neutral-200/80 flex flex-wrap items-center justify-between gap-3.5 bg-neutral-50/70">
-          
-          {/* Left: Title + Movement Counter */}
+      {/* ── Main Activity Feed Luxury Card Hub ──────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
+        {/* Top hairline amber accent */}
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
+
+        {/* Header Bar */}
+        <div className="p-4 sm:p-6 border-b border-[#c9a96e]/20 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-b from-[#faf7f2]/60 to-transparent">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gold/15 text-gold flex items-center justify-center shrink-0 ring-1 ring-gold/25">
-              <History size={16} />
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-900/20 shrink-0">
+              <History size={22} />
             </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-base font-bold text-primary font-heading">
-                Audit Movement Feed
-              </h3>
-              <span className="text-xs font-semibold text-neutral-700 bg-neutral-200/80 px-2.5 py-0.5 rounded-full">
-                {logs.length} logged
-              </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 tracking-tight">
+                  Audit Movement Feed
+                </h2>
+                <span className="text-xs font-bold text-amber-900 bg-amber-50 border border-amber-200/80 px-2.5 py-0.5 rounded-full">
+                  {logs.length} logged
+                </span>
+              </div>
+              <p className="text-xs text-neutral-500 mt-0.5">
+                Live studio actions, bay assignments, clearances &amp; shift updates
+              </p>
             </div>
-            <p className="text-[11px] text-neutral-500">
-              Live studio actions, bay assignments, clearances & shift updates
-            </p>
           </div>
-        </div>
 
-        {/* Right: Inline Filter Controls */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          
-          {/* Role Filter dropdown */}
-          <StudioDropdown
-            value={selectedRole}
-            onChange={setSelectedRole}
-            options={roleOptions}
-            placeholder="All Roles"
-            icon={ShieldCheck}
-            className="w-48 sm:w-52"
-            menuClassName="w-56"
-          />
-
-          {/* Action category dropdown */}
-          <StudioDropdown
-            value={selectedActionType}
-            onChange={setSelectedActionType}
-            options={actionOptions}
-            placeholder="All Movements"
-            icon={Filter}
-            className="w-52 sm:w-60"
-            menuClassName="w-64"
-          />
-
-          {/* Search input with clear button */}
-          <div className="relative flex items-center">
-            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search movements..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="text-xs pl-9 pr-8 py-2 w-40 sm:w-48 bg-white border border-neutral-300/80 rounded-xl focus:outline-none focus:border-gold focus:ring-2 focus:ring-gold/20 shadow-2xs placeholder:text-neutral-400 font-body transition-all"
-            />
-            {searchQuery && (
+          <div className="flex items-center gap-2">
+            {hasActiveFilters && (
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 p-0.5 rounded-full hover:bg-neutral-100"
-                title="Clear search"
+                onClick={handleClearFilters}
+                className="h-9 px-3.5 rounded-xl border border-amber-200 bg-amber-50/70 hover:bg-amber-100/80 text-amber-900 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Reset active filters"
               >
-                <X size={13} />
+                <RotateCcw size={13} className="text-amber-700" />
+                <span>Reset</span>
               </button>
             )}
-          </div>
-
-          {/* Reset Filters Icon Button */}
-          {hasActiveFilters && (
             <button
-              onClick={handleClearFilters}
-              className="p-2 rounded-xl border border-neutral-300/80 bg-white text-neutral-500 hover:text-rose-600 hover:border-rose-300 hover:bg-rose-50 transition-all shadow-2xs cursor-pointer flex items-center justify-center"
-              title="Reset all filters"
-              aria-label="Reset all filters"
+              type="button"
+              onClick={loadData}
+              disabled={loading}
+              className="h-9 px-3 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-neutral-600 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Refresh logs"
             >
-              <RotateCcw size={15} />
+              <RefreshCw size={14} className={loading ? 'animate-spin text-amber-600' : ''} />
             </button>
-          )}
-
-          {/* Refresh button */}
-          <button
-            onClick={loadData}
-            disabled={loading}
-            className="p-2 rounded-xl border border-neutral-300/80 bg-white text-neutral-600 hover:text-primary hover:border-gold/50 hover:bg-neutral-50 transition-all shadow-2xs cursor-pointer flex items-center justify-center"
-            title="Refresh logs"
-            aria-label="Refresh logs"
-          >
-            <RefreshCw size={15} className={loading ? 'animate-spin text-gold' : ''} />
-          </button>
+          </div>
         </div>
 
-      </div>
+        {/* Filter Controls Bar */}
+        <div className="p-4 sm:p-5 border-b border-[#c9a96e]/15 bg-neutral-50/40 space-y-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 justify-between">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search movements, operators, reference numbers..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full text-xs pl-9 pr-8 py-2 bg-white border border-neutral-200/90 rounded-xl focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20 shadow-2xs placeholder:text-neutral-400 font-body transition-all"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 p-0.5 rounded-full hover:bg-neutral-100 cursor-pointer"
+                  title="Clear search"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
+            {/* Role & Movement Filter Dropdowns */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+              <div className="w-full sm:w-48">
+                <StudioDropdown
+                  value={selectedRole}
+                  onChange={setSelectedRole}
+                  options={roleOptions}
+                  placeholder="All Roles"
+                  icon={ShieldCheck}
+                  className="w-full"
+                  menuClassName="w-52"
+                />
+              </div>
+              <div className="w-full sm:w-64">
+                <StudioDropdown
+                  value={selectedActionType}
+                  onChange={setSelectedActionType}
+                  options={actionOptions}
+                  placeholder="All Movements"
+                  icon={Filter}
+                  className="w-full"
+                  menuClassName="w-64"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Active Filter Pill */}
+          {hasActiveFilters && (
+            <div className="flex items-center gap-2 pt-2 border-t border-neutral-200/60 flex-wrap text-xs text-neutral-500">
+              <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[11px]">Active Filter:</span>
+              {searchQuery && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
+                  Search: "{searchQuery}"
+                  <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setSearchQuery('')} />
+                </span>
+              )}
+              {selectedRole !== 'all' && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200/70 text-xs font-medium">
+                  Role: {roleOptions.find(o => o.value === selectedRole)?.label || selectedRole}
+                  <X size={12} className="cursor-pointer text-amber-700 hover:text-amber-950" onClick={() => setSelectedRole('all')} />
+                </span>
+              )}
+              {selectedActionType !== 'all' && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200/70 text-xs font-medium">
+                  Movement: {actionOptions.find(o => o.value === selectedActionType)?.label || selectedActionType}
+                  <X size={12} className="cursor-pointer text-amber-700 hover:text-amber-950" onClick={() => setSelectedActionType('all')} />
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={handleClearFilters}
+                className="text-amber-700 hover:underline font-semibold text-xs ml-1 cursor-pointer"
+              >
+                Reset
+              </button>
+            </div>
+          )}
+        </div>
 
       {/* ── Space-Efficient Activity List with Themed Gradient Cards ───────── */}
       {loading ? (

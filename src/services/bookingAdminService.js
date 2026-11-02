@@ -120,21 +120,23 @@ export async function getAdminBookings({
     if (paymentFilter) query = query.eq('payment_status', paymentFilter);
 
     if (search.trim()) {
-      const term = search.trim();
-      try {
-        const { data: matchedProfiles } = await supabase
-          .from('profiles')
-          .select('id')
-          .or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%`);
+      const term = search.trim().replace(/[,()*\\]/g, '');
+      if (term) {
+        try {
+          const { data: matchedProfiles } = await supabase
+            .from('profiles')
+            .select('id')
+            .or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%`);
 
-        const profileIds = (matchedProfiles || []).map(p => p.id);
-        if (profileIds.length > 0) {
-          query = query.or(`booking_number.ilike.%${term}%,notes.ilike.%${term}%,customer_id.in.(${profileIds.join(',')})`);
-        } else {
+          const profileIds = (matchedProfiles || []).map(p => p.id);
+          if (profileIds.length > 0) {
+            query = query.or(`booking_number.ilike.%${term}%,notes.ilike.%${term}%,customer_id.in.(${profileIds.join(',')})`);
+          } else {
+            query = query.or(`booking_number.ilike.%${term}%,notes.ilike.%${term}%`);
+          }
+        } catch {
           query = query.or(`booking_number.ilike.%${term}%,notes.ilike.%${term}%`);
         }
-      } catch {
-        query = query.or(`booking_number.ilike.%${term}%,notes.ilike.%${term}%`);
       }
     }
 
