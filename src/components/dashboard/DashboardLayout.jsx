@@ -150,7 +150,7 @@ export default function DashboardLayout() {
   }
 
   return (
-    <div className={`h-screen w-full overflow-hidden ${isBookingPage ? 'booking-gradient-bg text-neutral-100' : 'dashboard-gradient-bg text-neutral-900 dark:text-neutral-100'} flex font-body font-light customer-portal-light-typography relative selection:bg-gold/20 selection:text-primary ${sidebarCollapsed ? 'customer-sidebar-collapsed' : ''}`}>
+    <div className={`h-screen w-full overflow-hidden dashboard-gradient-bg text-neutral-900 dark:text-neutral-100 flex font-body font-light customer-portal-light-typography relative selection:bg-gold/20 selection:text-primary ${sidebarCollapsed ? 'customer-sidebar-collapsed' : ''}`}>
       {/* ── Premium Photography Studio Atmosphere with Extensive Gradients ──── */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
         {/* Subtle Photographic Studio Background Image with Multi-stop Gradient Blend */}
@@ -184,7 +184,7 @@ export default function DashboardLayout() {
       {/* Sidebar Backdrop Overlay (for mobile & tablet, or on desktop when booking and sidebar is revealed) */}
       {sidebarOpen && (
         <div 
-          className={`fixed inset-0 bg-neutral-950/60 backdrop-blur-xs z-40 transition-opacity animate-fade-in ${isBookingPage ? 'block' : 'lg:hidden'}`}
+          className="fixed inset-0 bg-neutral-950/60 backdrop-blur-xs z-40 transition-opacity animate-fade-in lg:hidden"
           onClick={() => setSidebarOpen(false)}
           aria-hidden="true"
         />
@@ -198,9 +198,7 @@ export default function DashboardLayout() {
           ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}
           w-64
           lg:translate-x-0 lg:static lg:h-screen lg:flex lg:flex-col
-          ${isBookingPage 
-            ? (sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:hidden') 
-            : (sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0')}
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
         aria-label="Studio navigation menu"
       >

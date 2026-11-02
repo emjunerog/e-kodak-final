@@ -173,16 +173,15 @@ export default function Header({
             type="button"
             whileTap={{ scale: 0.95 }}
             onClick={onMenuClick}
-            className={`${isBookingPage ? 'flex' : 'lg:hidden flex'} p-2 -ml-2 text-neutral-300 hover:text-white hover:bg-white/[0.08] rounded-xl transition-colors flex-shrink-0 cursor-pointer`}
+            className={`lg:hidden flex p-2 -ml-2 text-neutral-300 hover:text-white hover:bg-white/[0.08] rounded-xl transition-colors flex-shrink-0 cursor-pointer`}
             aria-label={isBookingPage ? "Reveal dashboard navigation" : "Open navigation menu"}
             title={isBookingPage ? "Reveal dashboard navigation" : "Open navigation menu"}
           >
-            {isBookingPage ? <LayoutDashboard size={20} className="text-gold" /> : <Menu size={20} />}
+            <Menu size={20} />
           </motion.button>
 
           {/* Compact Logo for Tablet and Mobile (when sidebar is hidden) */}
-          {!isBookingPage && (
-            <Link 
+          <Link 
               to="/dashboard" 
               className="flex lg:hidden items-center gap-2 text-white hover:text-gold transition-colors group shrink-0"
             >
@@ -191,7 +190,6 @@ export default function Header({
               </div>
               <span className="font-heading text-sm font-light tracking-wide">E-KODAK</span>
             </Link>
-          )}
 
           {/* Customer Breadcrumbs Navigation */}
           <Breadcrumb />

@@ -29,7 +29,7 @@ export const customerPaymentService = {
     }
 
     try {
-      // 1. Fetch all bookings for this customer, including services, tiers, and base prices
+      // 1. Fetch all bookings for this customer, including services, tiers, location, notes, and base prices
       const { data: rawBookings, error: bookingsError } = await supabase
         .from('bookings')
         .select(`
@@ -37,6 +37,9 @@ export const customerPaymentService = {
           booking_number,
           event_date,
           preferred_time,
+          location,
+          notes,
+          reference_images,
           total_amount,
           down_payment_amount,
           remaining_balance,
@@ -76,7 +79,55 @@ export const customerPaymentService = {
         payments = paymentsData || [];
       }
 
-      // 3. Resolve accurate pricing for each booking
+      // Helper to clean and format shoot place / venue
+      const cleanPlace = (rawLoc, rawNotes) => {
+        let loc = (rawLoc || '').replace(/\bC[lI]ty\b/gi, 'City').trim();
+        loc = loc.replace(/https?:\/\/[^\s,]+/, '').replace(/,\s*$/, '').trim();
+
+        // Check if notes contains School / Campus
+        let schoolFromNotes = '';
+        let campusFromNotes = '';
+        if (rawNotes) {
+          const schoolMatch = rawNotes.match(/•\s*School:\s*([^\n\r]+)/i);
+          const campusMatch = rawNotes.match(/•\s*Campus\s*(?:\/|\&)\s*Address:\s*([^\n\r]+)/i);
+          if (schoolMatch) schoolFromNotes = schoolMatch[1].trim();
+          if (campusMatch) campusFromNotes = campusMatch[1].trim();
+        }
+
+        if (schoolFromNotes) {
+          if (campusFromNotes && !schoolFromNotes.toLowerCase().includes(campusFromNotes.toLowerCase())) {
+            return `${schoolFromNotes} · ${campusFromNotes}`;
+          }
+          return `${schoolFromNotes} · City of Naga, Cebu`;
+        }
+
+        if (/^school campus:/i.test(loc)) {
+          const clean = loc.replace(/^school campus:\s*/i, '').trim();
+          const match = clean.match(/^([^(]+)\(([^)]+)\)/);
+          if (match) {
+            let name = match[1].trim();
+            const area = match[2].trim();
+            if (/^uling\b/i.test(name) && !/school/i.test(name)) {
+              name = 'Uling National High School';
+            } else if (/^alpaco\b/i.test(name) && !/school/i.test(name)) {
+              name = 'Alpaco Senior High School';
+            }
+            if (name.toLowerCase().includes(area.toLowerCase())) {
+              return name;
+            }
+            return `${name} · ${area}`;
+          }
+          return clean;
+        }
+
+        if (loc) {
+          return loc.replace(/^Studio:\s*/i, '').trim();
+        }
+
+        return 'E-Kodak Studio · 311 Rizal Street, City of Naga, Cebu';
+      };
+
+      // 3. Resolve accurate pricing & detected place for each booking
       const resolvedBookings = bookingList.map((b) => {
         let total = parseFloat(b.total_amount) || 0;
 
@@ -100,29 +151,94 @@ export const customerPaymentService = {
 
         // Ultimate reasonable default if still 0
         if (total <= 0) {
-          total = 1500;
+          total = 1750;
         }
 
+        // 50% deposit standard (₱875)
+        const downpaymentPrice = Math.round(total * 0.5);
+
         // Sum actual payments recorded for this booking
-        const bPayments = payments.filter((p) => p.booking_id === b.id);
+        const bIdStr = String(b.id || '');
+        const bRefStr = String(b.booking_number || '');
+        const bPayments = payments.filter((p) => {
+          const pBookingId = String(p.booking_id || '');
+          const pRef = String(p.booking_reference || p.reference_number || '');
+          return (
+            pBookingId === bIdStr ||
+            (bRefStr && pRef.includes(bRefStr)) ||
+            (bRefStr && pBookingId === bRefStr)
+          );
+        });
         const paidFromRecords = bPayments.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
         const recordedDown = parseFloat(b.down_payment_amount) || 0;
-        const paidSoFar = Math.max(paidFromRecords, recordedDown);
+
+        // Check if booking has advanced past initial unconfirmed pending state
+        const rawStatus = String(b.status || '').toUpperCase();
+        const isAdvancedStatus = [
+          'CONFIRMED',
+          'PHOTOGRAPHER_ASSIGNED',
+          'CAPTURE',
+          'IN_PROGRESS',
+          'EDITING',
+          'RETOUCHING',
+          'FINALIZED',
+          'PRINTING',
+          'READY',
+          'UNDER_DELIVERY',
+          'COMPLETED'
+        ].includes(rawStatus);
+
+        const rawPayStatus = String(b.payment_status || '').toUpperCase();
+        const isPartialOrDown = ['DOWNPAYMENT', 'DOWN_PAYMENT', 'PARTIAL', 'PARTIALLY_PAID'].includes(rawPayStatus);
+
+        const isDownConfirmed = Boolean(b.down_payment_confirmed) || Boolean(b.confirmed_at) || isAdvancedStatus || isPartialOrDown || recordedDown > 0;
+        const confirmedDown = isDownConfirmed ? downpaymentPrice : 0;
+        const paidSoFar = Math.max(paidFromRecords, recordedDown, confirmedDown);
 
         const remaining = Math.max(0, total - paidSoFar);
         const isPaid =
-          String(b.payment_status || '').toUpperCase() === 'PAID' ||
+          rawPayStatus === 'PAID' ||
+          rawPayStatus === 'FULLY_PAID' ||
           (remaining <= 0 && paidSoFar > 0);
 
+        // Auto-heal / sync database record in Supabase so subsequent queries have exact data
+        if (
+          isDownConfirmed &&
+          (!b.down_payment_confirmed ||
+            parseFloat(b.total_amount || 0) <= 0 ||
+            parseFloat(b.down_payment_amount || 0) < downpaymentPrice ||
+            rawPayStatus === 'UNPAID')
+        ) {
+          supabase
+            .from('bookings')
+            .update({
+              total_amount: total,
+              down_payment_amount: paidSoFar,
+              remaining_balance: remaining,
+              payment_status: isPaid ? 'PAID' : (paidSoFar > 0 ? 'PARTIAL' : 'UNPAID'),
+              down_payment_confirmed: true,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', b.id)
+            .then();
+        }
+
         const bookingRef = b.booking_number || `BK-${b.id.slice(0, 8)}`;
+        const detectedPlace = cleanPlace(b.location, b.notes);
 
         return {
           ...b,
           booking_number: bookingRef,
           booking_reference: bookingRef,
           total_amount: total,
+          package_total: total,
+          downpayment_price: downpaymentPrice,
+          down_payment_price: downpaymentPrice,
           down_payment_amount: paidSoFar,
           remaining_balance: remaining,
+          place: detectedPlace,
+          location: detectedPlace,
+          down_payment_confirmed: isDownConfirmed,
           payment_status: isPaid ? 'paid' : (paidSoFar > 0 ? 'partial' : 'unpaid'),
         };
       });
@@ -138,9 +254,9 @@ export const customerPaymentService = {
         };
       });
 
-      // Calculate totals
+      // Calculate totals accurately reflecting recorded downpayments and settlements
       const totalInvoiced = resolvedBookings.reduce((acc, b) => acc + (b.total_amount || 0), 0);
-      const totalPaid = paymentsWithBooking.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
+      const totalPaid = resolvedBookings.reduce((acc, b) => acc + (parseFloat(b.down_payment_amount) || 0), 0);
       const totalBalance = resolvedBookings.reduce((acc, b) => {
         return acc + (b.payment_status === 'paid' ? 0 : b.remaining_balance);
       }, 0);
@@ -169,6 +285,13 @@ export const customerPaymentService = {
         summary: { totalInvoiced: 0, totalPaid: 0, totalBalance: 0, pendingCount: 0, paidCount: 0 } 
       };
     }
+  },
+
+  /**
+   * Alias for getCustomerBillingData to support both naming conventions
+   */
+  async getCustomerBillingOverview(customerId) {
+    return this.getCustomerBillingData(customerId);
   },
 
   /**
