@@ -125,7 +125,7 @@ const normalizeSectionOnly = (input, strandOrCourse = "") => {
     return clean.toUpperCase();
   }
 
-  // Named sections (e.g. "alcala", "duterte", "rizal", "st. thomas", "maria clara")
+  // Named sections (e.g. "alcala", "magsaysay", "rizal", "st. thomas", "maria clara")
   // Format in proper Title Case
   return clean
     .split(/\s+/)
@@ -209,9 +209,11 @@ const getAddOnVisuals = (name = "", category = "") => {
 // ── Helper to Parse Verbose Inclusions into Clean, Balanced Cards (Photo Format) ──
 const formatPieceQuantity = (qty = "") => {
   if (!qty) return "";
-  return qty
+  let clean = qty
     .replace(/\b1\s*pieces?\b/gi, "1 pc")
     .replace(/\b([0-9]+)\s*pieces?\b/gi, "$1 pcs");
+  clean = clean.replace(/\b(pc|pcs)\s+(pc|pcs)\b/gi, "$2");
+  return clean;
 };
 
 const parseInclusionDetails = (rawText = "", allTiers = []) => {
@@ -975,14 +977,22 @@ export default function BookingPage() {
   const [studentSchool, setStudentSchool] = useState("");
   const [studentSchoolAddress, setStudentSchoolAddress] = useState("");
   const [studentCourse, setStudentCourse] = useState("");
-  const [selectedShsStrand, setSelectedShsStrand] = useState("STEM");
-  const [studentBatch, setStudentBatch] = useState("Batch 2026");
+  const [selectedShsStrand, setSelectedShsStrand] = useState("");
+  const [customShsStrand, setCustomShsStrand] = useState("");
+  const [additionalCustomFields, setAdditionalCustomFields] = useState([]);
+  const effectiveShsStrand = useMemo(() => {
+    if (selectedShsStrand === "OTHERS") {
+      return customShsStrand.trim() || "Others";
+    }
+    return selectedShsStrand;
+  }, [selectedShsStrand, customShsStrand]);
+  const [studentBatch, setStudentBatch] = useState("");
   const [studentSection, setStudentSection] = useState("");
   const normalizedStudentSection = useMemo(() => {
     if (!studentSection || !studentSection.trim()) return "";
-    const currentStrand = isSeniorHighService ? selectedShsStrand : studentCourse;
+    const currentStrand = isSeniorHighService ? effectiveShsStrand : studentCourse;
     return normalizeSectionOnly(studentSection, currentStrand) || studentSection.trim();
-  }, [studentSection, isSeniorHighService, selectedShsStrand, studentCourse]);
+  }, [studentSection, isSeniorHighService, effectiveShsStrand, studentCourse]);
   const [studentIdNumber, setStudentIdNumber] = useState("");
   const [univDropdownOpen, setUnivDropdownOpen] = useState(false);
   const [degreeDropdownOpen, setDegreeDropdownOpen] = useState(false);
@@ -1523,8 +1533,16 @@ export default function BookingPage() {
           setValidationError(`Please select or enter your ${isCollegeService ? "University / College" : "High School"}.`);
           return;
         }
+        if (isSeniorHighService && !selectedShsStrand) {
+          setValidationError("Please select your Senior High Academic Strand.");
+          return;
+        }
+        if (isSeniorHighService && selectedShsStrand === "OTHERS" && !customShsStrand.trim()) {
+          setValidationError("Please enter your custom Academic Strand.");
+          return;
+        }
         if (!studentBatch.trim()) {
-          setValidationError("Please enter your Graduating Batch (e.g., Batch 2026).");
+          setValidationError("Please enter your Graduating Batch.");
           return;
         }
         if (!studentSection.trim()) {
@@ -1643,7 +1661,7 @@ export default function BookingPage() {
     consolidatedNotes = consolidatedNotes ? `${beneficiaryBlock}\n\n${consolidatedNotes}` : beneficiaryBlock;
 
     if (isAcademicService) {
-      const studentBlock = `[STUDENT DETAILS]\n• Type: ${studentType === "COLLEGE" ? "College / University" : "Senior High School"}\n• Booking Mode: ${isSchoolPartner ? "School Campus (Date set by school) [SCHOOL_PARTNER]" : "Individual Booking"}\n• Student Name: ${participantFullName || 'N/A'}\n• Middle Name: ${participantMiddleName || 'N/A'}\n• School: ${studentSchool}\n• Campus / Address: ${studentSchoolAddress || 'N/A'}\n• Degree / Strand: ${studentType === "COLLEGE" ? (studentCourse || 'N/A') : (selectedShsStrand || 'N/A')}\n• Batch: ${studentBatch || 'N/A'}\n• Section: ${normalizedStudentSection || studentSection}\n• Student ID: ${studentIdNumber}\n• Yearbook Motto: ${yearbookMotto || 'N/A'}${schoolScheduleNote ? `\n• Note: ${schoolScheduleNote}` : ''}`;
+      const studentBlock = `[STUDENT DETAILS]\n• Type: ${studentType === "COLLEGE" ? "College / University" : "Senior High School"}\n• Booking Mode: ${isSchoolPartner ? "School Campus (Date set by school) [SCHOOL_PARTNER]" : "Individual Booking"}\n• Student Name: ${participantFullName || 'N/A'}\n• Middle Name: ${participantMiddleName || 'N/A'}\n• School: ${studentSchool}\n• Campus / Address: ${studentSchoolAddress || 'N/A'}\n• Degree / Strand: ${studentType === "COLLEGE" ? (studentCourse || 'N/A') : (effectiveShsStrand || 'N/A')}\n• Batch: ${studentBatch || 'N/A'}\n• Section: ${normalizedStudentSection || studentSection}\n• Student ID: ${studentIdNumber}\n• Yearbook Motto: ${yearbookMotto || 'N/A'}${schoolScheduleNote ? `\n• Note: ${schoolScheduleNote}` : ''}`;
       consolidatedNotes = `${consolidatedNotes}\n\n${studentBlock}`;
     } else if (isWeddingService) {
       const weddingBlock = `[WEDDING DETAILS]\n• Couple: ${brideName} & ${groomName}\n• Theme / Palette: ${weddingTheme || 'N/A'}\n• Ceremony Venue: ${ceremonyVenue || 'N/A'}\n• Coordinator: ${coordinatorName || 'N/A'} (${coordinatorContact || 'N/A'})`;
@@ -1678,7 +1696,7 @@ export default function BookingPage() {
         middle_name: participantMiddleName || null,
         school: studentSchool,
         school_address: studentSchoolAddress,
-        course: studentType === "COLLEGE" ? studentCourse : selectedShsStrand,
+        course: studentType === "COLLEGE" ? studentCourse : effectiveShsStrand,
         batch: studentBatch,
         section: normalizedStudentSection || studentSection,
         student_id: studentIdNumber,
@@ -2115,7 +2133,7 @@ export default function BookingPage() {
                         {studentSchool}
                       </p>
                       <p className="text-xs text-gold font-medium truncate max-w-[200px]">
-                        {studentCourse || selectedShsStrand} {studentBatch ? `• ${studentBatch}` : ''}
+                        {studentCourse || effectiveShsStrand} {studentBatch ? `• ${studentBatch}` : ''}
                       </p>
                     </div>
                   )}
@@ -2570,7 +2588,7 @@ export default function BookingPage() {
                         {studentType === "COLLEGE" ? "Degree / Course" : "Academic Strand"}
                       </span>
                       <span className="font-medium text-neutral-900 block mt-0.5">
-                        {studentType === "COLLEGE" ? (studentCourse || "N/A") : (selectedShsStrand || "N/A")}
+                        {studentType === "COLLEGE" ? (studentCourse || "N/A") : (effectiveShsStrand || "N/A")}
                       </span>
                     </div>
                     <div>
@@ -3703,6 +3721,7 @@ export default function BookingPage() {
               {step === 3 && (() => {
                 const activeProfile = customerProfile || profile;
                 const clientInitials = `${(activeProfile?.first_name || user?.email || "C")[0] || ""}${activeProfile?.last_name ? activeProfile.last_name[0] : ""}`.toUpperCase() || "CL";
+                const step4CoverImg = selectedTier?.cover_image || selectedService?.coverImage || selectedService?.cover_image || SERVICE_COVER_MAP[selectedService?.slug] || "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=900&q=80&auto=format&fit=crop";
 
                 return (
                   <div className="space-y-8 animate-fade-in overflow-visible">
@@ -3767,15 +3786,65 @@ export default function BookingPage() {
                       />
                     )}
 
-                    {/* ── CASE 2: FOR MYSELF (WHAT'S INCLUDED CARD) ── */}
+                    {/* ── CASE 2: FOR MYSELF (50% SELECTED PACKAGE + 50% INCLUSIONS) ── */}
                     {bookingFor === "myself" && (
-                      <div
-                        className="relative w-full rounded-3xl overflow-hidden shadow-2xl border border-amber-300/60 flex flex-col justify-between"
-                        style={{
-                          background: "linear-gradient(165deg, #FFFFFF 0%, #FAF8F5 50%, #F5F0E8 100%)",
-                          boxShadow: "0 25px 50px -12px rgba(44, 34, 22, 0.16), 0 0 30px rgba(212,175,55,0.12), inset 0 1px 0 rgba(255,255,255,1)"
-                        }}
-                      >
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch w-full">
+                        {/* ── LEFT HALF: SELECTED PACKAGE CARD (50%) ── */}
+                        <div
+                          className="relative rounded-3xl overflow-hidden shadow-2xl border-2 border-gold ring-2 ring-gold/40 flex flex-col justify-between min-h-[380px]"
+                        >
+                          {/* Full Cover Image - Whole Photo */}
+                          <img
+                            src={step4CoverImg}
+                            alt={selectedTier?.name || selectedService?.name || "Selected Package"}
+                            className="absolute inset-0 w-full h-full object-cover"
+                          />
+                          {/* Smooth vignette gradient (photo stays whole without solid black bottom) */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent z-10 pointer-events-none" />
+                          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-transparent z-10 pointer-events-none" />
+
+                          {/* Top: Edit button to change set */}
+                          <div className="relative z-20 p-5 sm:p-6 flex items-start justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setStep(2)}
+                              className="w-8 h-8 rounded-full bg-black/60 hover:bg-black/85 text-neutral-300 hover:text-gold backdrop-blur-md border border-white/20 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+                              title="Change package set"
+                            >
+                              <Edit3 size={13} />
+                            </button>
+                          </div>
+
+                          {/* Bottom Area: Package Set and Price Aligned on the Same Row with Generous Breathing Room */}
+                          <div className="relative z-20 px-6 sm:px-8 pb-9 sm:pb-11 pt-4 flex items-end justify-between gap-5">
+                            <div className="min-w-0">
+                              <span className="text-[11px] sm:text-xs uppercase tracking-[0.22em] text-amber-300 font-bold font-mono block mb-2 drop-shadow-sm">
+                                Package Set
+                              </span>
+                              <h3 className="font-heading font-black text-white text-3xl sm:text-4xl lg:text-5xl leading-tight drop-shadow-lg tracking-tight">
+                                {selectedTier?.name || "Selected Set"}
+                              </h3>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <span className="text-[11px] sm:text-xs uppercase font-bold tracking-[0.22em] text-amber-300 block leading-none mb-2 font-mono drop-shadow-sm">
+                                Price
+                              </span>
+                              <span className="font-heading font-black text-gold text-2xl sm:text-3xl lg:text-4xl leading-tight block drop-shadow-lg">
+                                {selectedTier?.price || (selectedService?.base_price ? `₱${Number(selectedService.base_price).toLocaleString()}` : "Standard")}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* ── RIGHT HALF: WHAT'S INCLUDED CARD (50%) ── */}
+                        <div
+                          className="relative rounded-3xl overflow-hidden shadow-2xl border border-amber-300/60 flex flex-col justify-between min-h-[380px]"
+                          style={{
+                            background: "linear-gradient(165deg, #FFFFFF 0%, #FAF8F5 50%, #F5F0E8 100%)",
+                            boxShadow: "0 25px 50px -12px rgba(44, 34, 22, 0.16), 0 0 30px rgba(212,175,55,0.12), inset 0 1px 0 rgba(255,255,255,1)"
+                          }}
+                        >
                         {/* Golden luxury top accent line */}
                         <div className="h-1.5 w-full bg-gradient-to-r from-amber-400 via-[#D4AF37] to-amber-500" />
 
@@ -3837,7 +3906,7 @@ export default function BookingPage() {
                                     </span>
                                   ) : p.quantity ? (
                                     <span className="text-[11px] font-heading font-medium text-amber-950/80 px-2.5 py-0.5 rounded-full bg-amber-50/80 border border-amber-200/60 shrink-0">
-                                      {p.quantity} {p.quantity === 1 ? "pc" : "pcs"}
+                                      {formatPieceQuantity(p.quantity)}
                                     </span>
                                   ) : null}
 
@@ -3892,28 +3961,29 @@ export default function BookingPage() {
                           </div>
                         </div>
                       </div>
-                    )}
+                    </div>
+                  )}
 
                     {/* ── CASE 3: FOR SOMEONE ELSE (PARTICIPANT FORM DIRECTLY) ── */}
                     {bookingFor === "someone_else" && (
-                      <div className="p-5 sm:p-7 rounded-3xl bg-white border border-amber-300/80 shadow-2xs space-y-4 animate-fade-in">
+                      <div className="p-5 sm:p-7 rounded-3xl bg-white border border-amber-300/80 shadow-2xs space-y-4 animate-fade-in font-heading">
                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/60 pb-3">
                           <div>
-                            <h5 className="font-heading font-bold text-base text-amber-950 flex items-center gap-2">
-                              <User size={16} className="text-gold" /> Participant Personal Information
+                            <h5 className="font-heading font-bold text-base text-amber-950">
+                              Participant Personal Information
                             </h5>
-                            <p className="text-xs text-neutral-600 font-body mt-0.5">
+                            <p className="text-xs text-neutral-600 font-heading mt-0.5">
                               Enter the information of the person who will be attending this photoshoot.
                             </p>
                           </div>
-                          <span className="text-xs font-bold uppercase tracking-wider text-amber-900 bg-amber-100 px-3 py-1 rounded-full border border-amber-300/80 font-mono">
+                          <span className="text-xs font-heading font-medium uppercase tracking-wider text-amber-900 bg-amber-100 px-3 py-1 rounded-full border border-amber-300/80">
                             Participant Record
                           </span>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
                           <div>
-                            <label className="block text-xs font-bold text-primary mb-1">
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                               Participant First Name <span className="text-red-500">*</span>
                             </label>
                             <input
@@ -3924,14 +3994,14 @@ export default function BookingPage() {
                                 setParticipantFirstName(val);
                                 if (isAcademicService) setStudentFirstName(val);
                               }}
-                              placeholder="e.g. Jude Lawrence"
+                              placeholder="Jude Lawrence"
                               required
-                              className="w-full h-10 px-3 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs font-semibold text-primary outline-none transition-all shadow-2xs"
+                              className="w-full h-10 px-3 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs font-heading text-neutral-900 font-normal placeholder:font-heading outline-none transition-all shadow-2xs"
                             />
                           </div>
 
                           <div>
-                            <label className="block text-xs font-bold text-primary mb-1">
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                               Middle Name
                             </label>
                             <input
@@ -3942,13 +4012,13 @@ export default function BookingPage() {
                                 setParticipantMiddleName(val);
                                 if (isAcademicService) setStudentMiddleName(val);
                               }}
-                              placeholder="e.g. Marie"
+                              placeholder="Marie"
                               className="w-full h-10 px-3 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs font-medium text-primary outline-none transition-all shadow-2xs"
                             />
                           </div>
 
                           <div>
-                            <label className="block text-xs font-bold text-primary mb-1">
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                               Participant Last Name <span className="text-red-500">*</span>
                             </label>
                             <input
@@ -3959,14 +4029,14 @@ export default function BookingPage() {
                                 setParticipantLastName(val);
                                 if (isAcademicService) setStudentLastName(val);
                               }}
-                              placeholder="e.g. Sinugbuhan"
+                              placeholder="Sinugbuhan"
                               required
-                              className="w-full h-10 px-3 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs font-semibold text-primary outline-none transition-all shadow-2xs"
+                              className="w-full h-10 px-3 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs font-heading text-neutral-900 font-normal placeholder:font-heading outline-none transition-all shadow-2xs"
                             />
                           </div>
 
                           <div>
-                            <label className="block text-xs font-bold text-primary mb-1">
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                               Relationship to You
                             </label>
                             <select
@@ -3987,27 +4057,27 @@ export default function BookingPage() {
                           </div>
 
                           <div>
-                            <label className="block text-xs font-bold text-primary mb-1">
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                               Participant Phone
                             </label>
                             <input
                               type="tel"
                               value={participantPhone}
                               onChange={(e) => setParticipantPhone(e.target.value)}
-                              placeholder="e.g. 09123456789"
+                              placeholder="09123456789"
                               className="w-full h-10 px-3 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs font-medium text-primary outline-none transition-all shadow-2xs"
                             />
                           </div>
 
                           <div>
-                            <label className="block text-xs font-bold text-primary mb-1">
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                               Participant Email
                             </label>
                             <input
                               type="email"
                               value={participantEmail}
                               onChange={(e) => setParticipantEmail(e.target.value)}
-                              placeholder="e.g. participant@gmail.com"
+                              placeholder="participant@gmail.com"
                               className="w-full h-10 px-3 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs font-medium text-primary outline-none transition-all shadow-2xs"
                             />
                           </div>
@@ -4103,7 +4173,7 @@ export default function BookingPage() {
                               </div>
                               <Edit3 size={11} className="opacity-0 group-hover:opacity-100 text-gold transition-opacity" />
                             </div>
-                            <span className="font-semibold text-primary truncate text-xs">
+                            <span className="font-heading text-neutral-900 font-normal placeholder:font-heading truncate text-xs">
                               {activeProfile?.first_name || activeProfile?.last_name
                                 ? `${activeProfile?.first_name || ""} ${activeProfile?.last_name || ""}`.trim()
                                 : <span className="text-neutral-400 italic">Click to set</span>}
@@ -4141,7 +4211,7 @@ export default function BookingPage() {
                               </div>
                               <Edit3 size={11} className="opacity-0 group-hover:opacity-100 text-gold transition-opacity" />
                             </div>
-                            <span className="font-semibold text-primary truncate text-xs">
+                            <span className="font-heading text-neutral-900 font-normal placeholder:font-heading truncate text-xs">
                               {activeProfile?.phone ? (
                                 activeProfile.phone
                               ) : (
@@ -4182,7 +4252,7 @@ export default function BookingPage() {
 
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                                 First Name <span className="text-red-500">*</span>
                               </label>
                               <input
@@ -4191,12 +4261,12 @@ export default function BookingPage() {
                                 onChange={(e) => setEditFirstName(e.target.value)}
                                 placeholder="First Name"
                                 required
-                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-primary font-medium outline-none transition-all shadow-2xs"
+                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-body font-normal outline-none transition-all shadow-2xs placeholder:text-neutral-400 placeholder:font-normal"
                               />
                             </div>
 
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                                 Last Name
                               </label>
                               <input
@@ -4204,20 +4274,20 @@ export default function BookingPage() {
                                 value={editLastName}
                                 onChange={(e) => setEditLastName(e.target.value)}
                                 placeholder="Last Name"
-                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-primary font-medium outline-none transition-all shadow-2xs"
+                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-body font-normal outline-none transition-all shadow-2xs placeholder:text-neutral-400 placeholder:font-normal"
                               />
                             </div>
 
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                                 Phone Number
                               </label>
                               <input
                                 type="tel"
                                 value={editPhone}
                                 onChange={(e) => setEditPhone(e.target.value)}
-                                placeholder="e.g. 09102949414"
-                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-primary font-medium outline-none transition-all shadow-2xs"
+                                placeholder=""
+                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-body font-normal outline-none transition-all shadow-2xs placeholder:text-neutral-400 placeholder:font-normal"
                               />
                             </div>
                           </div>
@@ -4278,53 +4348,27 @@ export default function BookingPage() {
                       (Client Profile, Name of the School, Address, Academic Strand & Batching)
                   ───────────────────────────────────────────────────────────── */}
                   {isAcademicService && (
-                    <div className="p-5 sm:p-7 rounded-3xl bg-white border border-neutral-200/90 shadow-2xs space-y-6">
+                    <div className="p-6 sm:p-8 lg:p-9 rounded-3xl bg-white border border-neutral-200/90 shadow-xs space-y-8 font-heading">
                       {/* Form Header */}
-                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-100 pb-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-2xl bg-gold/15 text-gold flex items-center justify-center border border-gold/30 shadow-xs">
-                            <GraduationCap size={20} />
-                          </div>
-                          <div>
-                            <h4 className="font-heading font-bold text-primary text-base sm:text-lg leading-tight">
-                              {isSeniorHighService ? "Senior High Academic Registration" : "College & University Registration"}
-                            </h4>
-                            <p className="text-xs text-neutral-500 font-body">
-                              Verify your contact profile, institution, campus address, and batching records
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/70 px-2.5 py-1 rounded-full shadow-2xs">
-                            <ShieldCheck size={12} className="text-emerald-600" /> Active Student Profile
-                          </span>
-                        </div>
+                      <div className="border-b border-neutral-100 pb-4">
+                        <h4 className="font-heading font-bold text-primary text-base sm:text-lg leading-tight">
+                          {isSeniorHighService ? "Senior High Academic Registration" : "College & University Registration"}
+                        </h4>
                       </div>
 
                       {/* ── 1. STUDENT / GRADUATE DETAILS ─────────────────────────────────── */}
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-lg bg-gold/10 text-gold flex items-center justify-center">
-                              <User size={13} />
-                            </div>
-                            <span className="font-heading text-xs sm:text-sm font-bold text-primary">
-                              1. Student / Graduate Information
-                            </span>
-                          </div>
-                          <span className="text-[11px] text-neutral-500 font-body">
-                            Account Holder: <strong className="text-primary font-semibold">{activeProfile?.first_name || user?.user_metadata?.first_name || "Client"} {activeProfile?.last_name || user?.user_metadata?.last_name || ""}</strong>
-                          </span>
+                      <div className="space-y-4">
+                        <div>
+                          <h5 className="font-heading text-base sm:text-lg font-bold text-primary tracking-tight">
+                            1. Student / Graduate Information
+                          </h5>
                         </div>
-                        <p className="text-[11px] text-neutral-500 font-body">
-                          Enter the full name of the student or graduate appearing in this photoshoot. Booking on behalf of another person will not change your account profile.
-                        </p>
+
 
                         {/* Name Fields (Row 1): Student First Name, Middle Name, Last Name */}
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <div>
-                            <label className="block text-xs font-bold text-primary mb-1">
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                               Student First Name <span className="text-red-500">*</span>
                             </label>
                             <input
@@ -4332,12 +4376,12 @@ export default function BookingPage() {
                               value={studentFirstName}
                               onChange={(e) => setStudentFirstName(e.target.value)}
                               placeholder="First Name"
-                              className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-primary font-semibold outline-none transition-all shadow-2xs"
+                              className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-heading font-normal outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
                             />
                           </div>
 
                           <div>
-                            <label className="block text-xs font-bold text-primary mb-1">
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                               Middle Name
                             </label>
                             <input
@@ -4345,12 +4389,12 @@ export default function BookingPage() {
                               value={studentMiddleName}
                               onChange={(e) => setStudentMiddleName(e.target.value)}
                               placeholder="Middle Name / Initial"
-                              className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-primary font-semibold outline-none transition-all shadow-2xs"
+                              className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-heading font-normal outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
                             />
                           </div>
 
                           <div>
-                            <label className="block text-xs font-bold text-primary mb-1">
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                               Student Last Name
                             </label>
                             <input
@@ -4358,89 +4402,77 @@ export default function BookingPage() {
                               value={studentLastName}
                               onChange={(e) => setStudentLastName(e.target.value)}
                               placeholder="Last Name"
-                              className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-primary font-semibold outline-none transition-all shadow-2xs"
+                              className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-heading font-normal outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
                             />
                           </div>
                         </div>
 
                         {/* Contact Fields (Row 2): Phone Number & Verified Account Email */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 mt-4">
                           <div>
-                            <label className="block text-xs font-bold text-primary mb-1">
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                               Phone Number
                             </label>
                             <input
                               type="tel"
                               value={editPhone}
                               onChange={(e) => setEditPhone(e.target.value)}
-                              placeholder="e.g., 09102949414"
-                              className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-primary font-medium outline-none transition-all shadow-2xs"
+                              placeholder=""
+                              className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-heading font-normal outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
                             />
                           </div>
 
                           <div>
-                            <label className="block text-xs font-bold text-primary mb-1 flex items-center justify-between">
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2 flex items-center justify-between">
                               <span>Email Address</span>
-                              <span className="text-xs text-emerald-600 font-bold flex items-center gap-0.5"><Check size={10} /> Verified</span>
+                              <span className="text-xs text-emerald-600 font-heading font-medium">Verified</span>
                             </label>
-                            <div className="relative flex items-center">
-                              <Mail size={15} className="absolute left-3.5 text-neutral-400 pointer-events-none" />
-                              <input
-                                type="email"
-                                value={activeProfile?.email || user?.email || ""}
-                                readOnly
-                                disabled
-                                className="w-full h-11 pl-10 pr-8 rounded-xl bg-neutral-50 border border-neutral-200 text-xs sm:text-sm text-neutral-600 font-medium outline-none shadow-2xs cursor-not-allowed"
-                              />
-                              <Lock size={12} className="absolute right-3 text-neutral-400" title="Account Email" />
-                            </div>
+                            <input
+                              type="email"
+                              value={activeProfile?.email || user?.email || ""}
+                              readOnly
+                              disabled
+                              className="w-full h-11 px-3.5 rounded-xl bg-neutral-50 border border-neutral-200 text-xs sm:text-sm font-heading text-neutral-600 outline-none shadow-2xs cursor-not-allowed"
+                            />
                           </div>
                         </div>
                       </div>
 
                       {/* Section Divider */}
-                      <div className="border-t border-neutral-100" />
+                      <div className="border-t border-neutral-100/90 my-7 sm:my-8" />
 
                       {/* ── 2. NAME OF THE SCHOOL & ADDRESS ─────────────────────────── */}
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-lg bg-gold/10 text-gold flex items-center justify-center">
-                            <Building size={13} />
-                          </div>
-                          <span className="font-heading text-xs sm:text-sm font-bold text-primary">
-                            2. Name of the School &amp; Campus Address
-                          </span>
-                        </div>
+                      <div className="space-y-4">
+                        <h5 className="font-heading text-base sm:text-lg font-bold text-primary tracking-tight">
+                          2. Name of the School &amp; Campus Address
+                        </h5>
 
                         {isSeniorHighService ? (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                                 High School Name <span className="text-red-500">*</span>
                               </label>
                               <input
                                 type="text"
                                 value={studentSchool}
                                 onChange={e => setStudentSchool(e.target.value)}
-                                placeholder="e.g., Cebu City National Science High School"
-                                className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs font-semibold"
+                                placeholder="Cebu City National Science High School"
+                                className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-heading text-neutral-900 font-normal focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
                               />
                             </div>
 
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                                 School Campus / Address
                               </label>
-                              <div className="relative flex items-center">
-                                <MapPin size={16} className="absolute left-3.5 text-neutral-400 pointer-events-none" />
-                                <input
-                                  type="text"
-                                  value={studentSchoolAddress}
-                                  onChange={e => setStudentSchoolAddress(e.target.value)}
-                                  placeholder="e.g., Salvador St, Labangon, Cebu City"
-                                  className="w-full h-11 pl-10 pr-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs"
-                                />
-                              </div>
+                              <input
+                                type="text"
+                                value={studentSchoolAddress}
+                                onChange={e => setStudentSchoolAddress(e.target.value)}
+                                placeholder="Osmeña Boulevard, Capitol Site, Cebu City"
+                                className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-heading text-neutral-900 focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs placeholder:font-heading placeholder:font-heading placeholder:text-neutral-400"
+                              />
                             </div>
                           </div>
                         ) : (
@@ -4448,7 +4480,7 @@ export default function BookingPage() {
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div ref={univContainerRef} className="relative">
                               <div className="flex items-center justify-between mb-1">
-                                <label className="block text-xs font-bold text-primary">
+                                <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                                   University / College Name <span className="text-red-500">*</span>
                                 </label>
                                 {univDropdownOpen && (
@@ -4463,14 +4495,6 @@ export default function BookingPage() {
                               </div>
 
                               <div className="relative flex items-center">
-                                <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none flex items-center justify-center">
-                                  {activeUnivId ? (
-                                    <SchoolLogo univId={activeUnivId} name={studentSchool} size="sm" />
-                                  ) : (
-                                    <GraduationCap size={18} className="text-neutral-400" />
-                                  )}
-                                </div>
-
                                 <input
                                   type="text"
                                   value={studentSchool}
@@ -4484,8 +4508,8 @@ export default function BookingPage() {
                                     setUnivDropdownOpen(true);
                                     setDegreeDropdownOpen(false);
                                   }}
-                                  placeholder="Type university (e.g., CTU Naga, USC, CIT-U, UC)..."
-                                  className={`w-full h-11 ${activeUnivId ? "pl-11" : "pl-10"} pr-9 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body focus:ring-2 focus:ring-gold/25 focus:border-gold outline-none font-semibold text-primary shadow-2xs transition-all`}
+                                  placeholder="Type university (CTU Naga, USC, CIT-U, UC)..."
+                                  className="w-full h-11 px-3.5 pr-9 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-heading focus:ring-2 focus:ring-gold/25 focus:border-gold outline-none text-neutral-900 shadow-2xs transition-all placeholder:font-heading placeholder:text-neutral-400"
                                 />
 
                                 {studentSchool && (
@@ -4533,8 +4557,8 @@ export default function BookingPage() {
                                             </span>
                                           )}
                                         </div>
-                                        <p className="text-[11px] text-neutral-500 font-body line-clamp-1 mt-0.5 flex items-center gap-1">
-                                          <MapPin size={11} className="shrink-0 text-gold" />
+                                        <p className="text-[11px] text-neutral-500 font-heading line-clamp-1 mt-0.5 flex items-center gap-1">
+                                          
                                           <span className="font-medium text-neutral-700">{item.campusName}</span>
                                           <span className="text-neutral-400">· {item.campusLocation}</span>
                                         </p>
@@ -4546,62 +4570,135 @@ export default function BookingPage() {
                             </div>
 
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                                 Campus / Branch Address
                               </label>
-                              <div className="relative flex items-center">
-                                <MapPin size={16} className="absolute left-3.5 text-neutral-400 pointer-events-none" />
-                                <input
+                              <input
                                   type="text"
                                   value={studentSchoolAddress}
                                   onChange={e => setStudentSchoolAddress(e.target.value)}
-                                  placeholder="e.g., Main Campus, Gorordo Ave, Lahug, Cebu City"
-                                  className="w-full h-11 pl-10 pr-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs"
+                                  placeholder="Main Campus, Gorordo Avenue, Lahug, Cebu City"
+                                  className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-heading text-neutral-900 focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400"
                                 />
-                              </div>
                             </div>
                           </div>
                         )}
                       </div>
 
                       {/* Section Divider */}
-                      <div className="border-t border-neutral-100" />
+                      <div className="border-t border-neutral-100/90 my-7 sm:my-8" />
 
                       {/* ── 3. ACADEMIC STRAND & BATCHING SECTION ───────────────────── */}
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-lg bg-gold/10 text-gold flex items-center justify-center">
-                            <GraduationCap size={13} />
-                          </div>
-                          <span className="font-heading text-xs sm:text-sm font-bold text-primary">
-                            {isSeniorHighService ? "3. Academic Strand & Batching" : "3. Degree Program & Batching"}
-                          </span>
-                        </div>
+                      <div className="space-y-4">
+                        <h5 className="font-heading text-base sm:text-lg font-bold text-primary tracking-tight">
+                          {isSeniorHighService ? "3. Academic Strand & Batching" : "3. Degree Program & Batching"}
+                        </h5>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           {/* Strand or Degree Program */}
                           {isSeniorHighService ? (
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                                 Senior High Academic Strand <span className="text-red-500">*</span>
                               </label>
                               <StudioDropdown
                                 className="w-full block"
-                                triggerClassName="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none shadow-2xs"
+                                triggerClassName="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-heading text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none shadow-2xs"
                                 value={selectedShsStrand}
                                 onChange={val => setSelectedShsStrand(val)}
-                                options={SHS_STRANDS.map(s => ({
-                                  value: s.code,
-                                  label: s.name,
-                                  badge: s.code,
-                                }))}
+                                options={[
+                                  ...SHS_STRANDS.map(s => ({
+                                    value: s.code,
+                                    label: s.name,
+                                  })),
+                                  { value: "OTHERS", label: "Others" }
+                                ]}
                                 placeholder="Select Academic Strand"
                               />
+
+                              {selectedShsStrand === "OTHERS" && (
+                                <div className="mt-3.5 space-y-3 animate-fade-in">
+                                  <div>
+                                    <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
+                                      Specify Academic Strand <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={customShsStrand}
+                                      onChange={e => setCustomShsStrand(e.target.value)}
+                                      className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-heading text-neutral-900 font-normal focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs"
+                                    />
+                                  </div>
+
+                                  {/* Dynamic custom fields */}
+                                  {additionalCustomFields.map((field, idx) => (
+                                    <div key={field.id || idx} className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end p-3 rounded-xl bg-neutral-50 border border-neutral-200/80">
+                                      <div>
+                                        <label className="block text-xs font-heading font-bold text-neutral-700 mb-1">
+                                          Custom Field Name
+                                        </label>
+                                        <input
+                                          type="text"
+                                          value={field.label}
+                                          onChange={e => {
+                                            const updated = [...additionalCustomFields];
+                                            updated[idx].label = e.target.value;
+                                            setAdditionalCustomFields(updated);
+                                          }}
+                                          className="w-full h-10 px-3 bg-white border border-neutral-300 rounded-lg text-xs font-heading text-neutral-900 focus:border-gold outline-none"
+                                        />
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <div className="flex-1">
+                                          <label className="block text-xs font-heading font-bold text-neutral-700 mb-1">
+                                            Field Value
+                                          </label>
+                                          <input
+                                            type="text"
+                                            value={field.value}
+                                            onChange={e => {
+                                              const updated = [...additionalCustomFields];
+                                              updated[idx].value = e.target.value;
+                                              setAdditionalCustomFields(updated);
+                                            }}
+                                            className="w-full h-10 px-3 bg-white border border-neutral-300 rounded-lg text-xs font-heading text-neutral-900 focus:border-gold outline-none"
+                                          />
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setAdditionalCustomFields(prev => prev.filter((_, i) => i !== idx));
+                                          }}
+                                          className="h-10 px-2.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors text-xs font-heading"
+                                          title="Remove field"
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+
+                                  <div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setAdditionalCustomFields(prev => [
+                                          ...prev,
+                                          { id: Date.now(), label: "", value: "" }
+                                        ]);
+                                      }}
+                                      className="inline-flex items-center gap-1.5 text-xs font-heading font-bold text-primary hover:text-gold transition-colors py-1"
+                                    >
+                                      + Add custom field
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <div ref={degreeContainerRef} className="relative">
                               <div className="flex items-center justify-between mb-1">
-                                <label className="block text-xs font-bold text-primary">
+                                <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                                   Degree Program / Course <span className="text-red-500">*</span>
                                 </label>
                                 {degreeDropdownOpen && (
@@ -4628,8 +4725,8 @@ export default function BookingPage() {
                                     setDegreeDropdownOpen(true);
                                     setUnivDropdownOpen(false);
                                   }}
-                                  placeholder="e.g., BS Information Technology"
-                                  className="w-full h-11 pl-3.5 pr-8 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body focus:ring-2 focus:ring-gold/25 focus:border-gold outline-none shadow-2xs font-semibold"
+                                  placeholder="BS Information Technology"
+                                  className="w-full h-11 pl-3.5 pr-8 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-heading focus:ring-2 focus:ring-gold/25 focus:border-gold outline-none shadow-2xs font-heading font-normal text-neutral-900 placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
                                 />
                                 {studentCourse && (
                                   <button
@@ -4674,67 +4771,95 @@ export default function BookingPage() {
 
                           {/* Graduating Batch */}
                           <div>
-                            <label className="block text-xs font-bold text-primary mb-1">
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                               Graduating Batch <span className="text-red-500">*</span>
                             </label>
                             <input
                               type="text"
                               value={studentBatch}
                               onChange={e => setStudentBatch(e.target.value)}
-                              placeholder="e.g., Batch 2026"
-                              className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs font-semibold"
+                              onBlur={() => {
+                                const trimmed = studentBatch.trim();
+                                if (!trimmed) return;
+                                const prefix = isSeniorHighService ? "S.Y. " : "A.Y. ";
+                                if (/^\d{4}(?:-\d{4})?$/.test(trimmed)) {
+                                  setStudentBatch(`${prefix}${trimmed}`);
+                                }
+                              }}
+                              placeholder={isSeniorHighService ? "S.Y. 2025-2026" : "A.Y. 2025-2026"}
+                              className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-heading text-neutral-900 font-normal focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
                             />
                           </div>
 
                           {/* Class Section */}
                           <div>
-                            <label className="block text-xs font-bold text-primary mb-1">
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                               Class Section <span className="text-red-500">*</span>
                             </label>
                             <input
                               type="text"
                               value={studentSection}
                               onChange={e => setStudentSection(e.target.value)}
-                              placeholder={isSeniorHighService ? "e.g., Alcala, Duterte, A, or 1" : "e.g., A, B, 1, or 4-1"}
-                              className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs font-semibold"
+                              placeholder={isSeniorHighService ? "Alcala, Magsaysay, A, or 1" : "A, B, 1, or 4-1"}
+                              className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-heading text-neutral-900 font-normal focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
                             />
                           </div>
 
                           {/* Student ID */}
                           <div>
-                            <label className="block text-xs font-bold text-primary mb-1">
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
                               Student ID Number <span className="text-red-500">*</span>
                             </label>
                             <input
                               type="text"
                               value={studentIdNumber}
                               onChange={e => setStudentIdNumber(e.target.value)}
-                              placeholder={isSeniorHighService ? "e.g., 2026-SHS-0192" : "e.g., 22104582 / 2022-01452"}
-                              className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs"
+                              placeholder=""
+                              className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-heading text-neutral-900 font-normal focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
                             />
                           </div>
 
                           {/* Motto for Yearbook */}
                           <div className="sm:col-span-2 pt-1">
-                            <label className="block text-xs font-bold text-primary mb-1 flex items-center justify-between">
-                              <span className="flex items-center gap-1.5">
-                                <Sparkles size={13} className="text-gold" />
-                                Motto for Yearbook
-                              </span>
-                              <span className="text-xs text-neutral-400 font-normal">Official graduation album print</span>
+                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
+                              Motto for Yearbook
                             </label>
-                            <div className="relative flex items-center">
-                              <Edit3 size={15} className="absolute left-3.5 text-neutral-400 pointer-events-none" />
-                              <input
-                                type="text"
-                                value={yearbookMotto}
-                                onChange={e => setYearbookMotto(e.target.value)}
-                                placeholder='e.g., "The future belongs to those who believe in the beauty of their dreams."'
-                                className="w-full h-11 pl-10 pr-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs italic font-medium"
-                              />
-                            </div>
+                            <input
+                              type="text"
+                              value={yearbookMotto}
+                              onChange={e => setYearbookMotto(e.target.value)}
+                              placeholder=""
+                              className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-heading text-neutral-900 focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs italic placeholder:font-heading placeholder:font-heading placeholder:text-neutral-400"
+                            />
                           </div>
                         </div>
+                      </div>
+
+                      {/* Navigation Actions - Under the Grid of the Form Table on the Right Part */}
+                      <div className="pt-6 border-t border-neutral-100/90 flex items-center justify-end gap-3">
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            setValidationError("");
+                            setStep(step - 1);
+                          }}
+                          className="btn-outline px-6 py-2.5 text-xs font-bold flex items-center gap-2 cursor-pointer hover:border-gold hover:text-gold transition-colors"
+                          disabled={isSubmitting}
+                        >
+                          <ArrowLeft size={15} /> Back
+                        </button>
+                        
+                        <button 
+                          type="submit" 
+                          className="btn-primary flex items-center gap-2 px-8 py-2.5 text-xs font-bold tracking-wider shadow-warm-sm justify-center cursor-pointer"
+                          disabled={isSubmitting}
+                        >
+                          {isSubmitting ? (
+                            <><Loader2 size={16} className="animate-spin" /> Processing Reservation...</>
+                          ) : (
+                            <>Next Step <ArrowRight size={15} /></>
+                          )}
+                        </button>
                       </div>
                     </div>
                   )}
@@ -4758,28 +4883,28 @@ export default function BookingPage() {
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">
+                              <label className="block text-xs font-body font-medium text-neutral-600 mb-1.5">
                                 Bride's Full Name <span className="text-red-500">*</span>
                               </label>
                               <input
                                 type="text"
                                 value={brideName}
                                 onChange={e => setBrideName(e.target.value)}
-                                placeholder="e.g., Maria Santos"
-                                className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs font-semibold"
+                                placeholder="Maria Santos"
+                                className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-neutral-900 font-normal focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs placeholder:text-neutral-400 placeholder:font-normal"
                               />
                             </div>
 
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">
+                              <label className="block text-xs font-body font-medium text-neutral-600 mb-1.5">
                                 Groom's Full Name <span className="text-red-500">*</span>
                               </label>
                               <input
                                 type="text"
                                 value={groomName}
                                 onChange={e => setGroomName(e.target.value)}
-                                placeholder="e.g., Juan Dela Cruz"
-                                className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs font-semibold"
+                                placeholder="Juan Dela Cruz"
+                                className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-neutral-900 font-normal focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs placeholder:text-neutral-400 placeholder:font-normal"
                               />
                             </div>
                           </div>
@@ -4799,18 +4924,18 @@ export default function BookingPage() {
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">Wedding Theme / Color Palette</label>
+                              <label className="block text-xs font-body font-medium text-neutral-600 mb-1.5">Wedding Theme / Color Palette</label>
                               <input
                                 type="text"
                                 value={weddingTheme}
                                 onChange={e => setWeddingTheme(e.target.value)}
-                                placeholder="e.g., Sage Green & Champagne Gold / Rustic Earth"
-                                className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs"
+                                placeholder="Sage Green & Champagne Gold / Rustic Earth"
+                                className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-neutral-900 font-normal focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs placeholder:text-neutral-400 placeholder:font-normal"
                               />
                             </div>
 
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">
+                              <label className="block text-xs font-body font-medium text-neutral-600 mb-1.5">
                                 Ceremony Church / Venue
                               </label>
                               <div className="relative flex items-center">
@@ -4819,8 +4944,8 @@ export default function BookingPage() {
                                   type="text"
                                   value={ceremonyVenue}
                                   onChange={e => setCeremonyVenue(e.target.value)}
-                                  placeholder="e.g., Cebu Metropolitan Cathedral / Chateau de Busay"
-                                  className="w-full h-11 pl-10 pr-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs"
+                                  placeholder="Cebu Metropolitan Cathedral / Chateau de Busay"
+                                  className="w-full h-11 pl-10 pr-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-neutral-900 font-normal focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs placeholder:text-neutral-400 placeholder:font-normal"
                                 />
                               </div>
                             </div>
@@ -4841,24 +4966,24 @@ export default function BookingPage() {
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">Coordinator Name / Team</label>
+                              <label className="block text-xs font-body font-medium text-neutral-600 mb-1.5">Coordinator Name / Team</label>
                               <input
                                 type="text"
                                 value={coordinatorName}
                                 onChange={e => setCoordinatorName(e.target.value)}
-                                placeholder="e.g., Signature Events Management"
-                                className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs"
+                                placeholder="Signature Events Management"
+                                className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-neutral-900 font-normal focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs placeholder:text-neutral-400 placeholder:font-normal"
                               />
                             </div>
 
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">Coordinator Contact Phone</label>
+                              <label className="block text-xs font-body font-medium text-neutral-600 mb-1.5">Coordinator Contact Phone</label>
                               <input
                                 type="tel"
                                 value={coordinatorContact}
                                 onChange={e => setCoordinatorContact(e.target.value)}
-                                placeholder="e.g., 0917 123 4567"
-                                className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs"
+                                placeholder="0917 123 4567"
+                                className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-neutral-900 font-normal focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none transition-all shadow-2xs placeholder:text-neutral-400 placeholder:font-normal"
                               />
                             </div>
                           </div>
@@ -4884,31 +5009,31 @@ export default function BookingPage() {
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">
+                              <label className="block text-xs font-body font-medium text-neutral-600 mb-1.5">
                                 Company / Organization <span className="text-red-500">*</span>
                               </label>
                               <input
                                 type="text"
                                 value={companyName}
                                 onChange={e => setCompanyName(e.target.value)}
-                                placeholder="e.g., Tech Solutions Cebu / Freelance"
+                                placeholder="Tech Solutions Cebu / Freelance"
                                 className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body text-primary focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none font-semibold text-primary shadow-2xs"
                               />
                             </div>
 
                             <div>
-                              <label className="block text-xs font-bold text-primary mb-1">Designation / Role</label>
+                              <label className="block text-xs font-body font-medium text-neutral-600 mb-1.5">Designation / Role</label>
                               <input
                                 type="text"
                                 value={clientRole}
                                 onChange={e => setClientRole(e.target.value)}
-                                placeholder="e.g., Managing Director / Partner / Engineer"
+                                placeholder="Managing Director / Partner / Engineer"
                                 className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl text-xs sm:text-sm font-body focus:border-gold focus:ring-2 focus:ring-gold/25 outline-none shadow-2xs"
                               />
                             </div>
 
                             <div className="sm:col-span-2">
-                              <label className="block text-xs font-bold text-primary mb-1">Primary Photo Usage</label>
+                              <label className="block text-xs font-body font-medium text-neutral-600 mb-1.5">Primary Photo Usage</label>
                               <StudioDropdown
                                 value={photoUsage}
                                 onChange={val => setPhotoUsage(val)}
@@ -5270,7 +5395,7 @@ export default function BookingPage() {
                                       <span>{isSeniorHighService ? "Senior High Strand" : "Degree Program"}</span>
                                     </td>
                                     <td className="py-3 px-4 font-bold text-neutral-950">
-                                      {studentCourse || selectedShsStrand || "STEM"}
+                                      {studentCourse || effectiveShsStrand || "N/A"}
                                     </td>
                                   </tr>
 
@@ -5343,7 +5468,7 @@ export default function BookingPage() {
                               type="text"
                               value={schoolScheduleNote}
                               onChange={e => setSchoolScheduleNote(e.target.value)}
-                              placeholder="e.g., preferred call time window, special assistance, or questions"
+                              placeholder="Preferred call time window, special assistance, or questions"
                               className="w-full h-11 px-4 bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 rounded-xl text-xs sm:text-sm font-body text-primary outline-none transition-all shadow-2xs"
                             />
                           </div>
@@ -5497,7 +5622,7 @@ export default function BookingPage() {
                                 type="text" 
                                 value={customVenue}
                                 onChange={e => setCustomVenue(e.target.value)}
-                                placeholder="e.g., USC Talamban Campus / Waterfront Cebu / Private Residence"
+                                placeholder="USC Talamban Campus / Waterfront Cebu / Private Residence"
                                 className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-gold/25 focus:border-gold outline-none font-body text-xs sm:text-sm shadow-2xs"
                               />
                             </div>
@@ -5513,7 +5638,7 @@ export default function BookingPage() {
                                   required={locationType === "CUSTOM"}
                                   value={customAddress}
                                   onChange={e => setCustomAddress(e.target.value)}
-                                  placeholder="e.g., Gov. M. Cuenco Ave, Brgy. Talamban"
+                                  placeholder="Gov. M. Cuenco Ave, Brgy. Talamban"
                                   className="w-full h-11 pl-10 pr-3.5 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-gold/25 focus:border-gold outline-none font-body text-xs sm:text-sm shadow-2xs"
                                 />
                               </div>
@@ -5525,7 +5650,7 @@ export default function BookingPage() {
                                 type="text" 
                                 value={customBarangayCity}
                                 onChange={e => setCustomBarangayCity(e.target.value)}
-                                placeholder="e.g., Cebu City / Mandaue City"
+                                placeholder="Cebu City / Mandaue City"
                                 className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-gold/25 focus:border-gold outline-none font-body text-xs sm:text-sm shadow-2xs"
                               />
                             </div>
@@ -5536,7 +5661,7 @@ export default function BookingPage() {
                                 type="text" 
                                 value={customLandmark}
                                 onChange={e => setCustomLandmark(e.target.value)}
-                                placeholder="e.g., Near Main Entrance gate, Building B"
+                                placeholder="Near Main Entrance gate, Building B"
                                 className="w-full h-11 px-3.5 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-gold/25 focus:border-gold outline-none font-body text-xs sm:text-sm shadow-2xs"
                               />
                             </div>
@@ -5661,7 +5786,7 @@ export default function BookingPage() {
                         rows={4}
                         value={notes}
                         onChange={e => setNotes(e.target.value)}
-                        placeholder="e.g., Requesting anti-glare lighting for eyeglasses, parents joining for 2 formal shots, preference for soft diffused backdrop..."
+                        placeholder="Requesting anti-glare lighting for eyeglasses, parents joining for 2 formal shots, preference for soft diffused backdrop..."
                         className="w-full p-4 bg-neutral-50/80 hover:bg-white focus:bg-white border border-neutral-200 focus:border-gold rounded-2xl focus:ring-3 focus:ring-gold/20 outline-none font-body text-xs sm:text-sm text-neutral-900 placeholder:text-neutral-400 transition-all resize-none shadow-inner"
                       />
                       <div className="flex items-center justify-between mt-1.5 px-1 text-[11px] text-neutral-500">
@@ -5942,7 +6067,7 @@ export default function BookingPage() {
                                   {studentType === "COLLEGE" ? "Degree / Course" : "Academic Strand"}
                                 </span>
                                 <span className="font-semibold text-neutral-800 text-xs mt-0.5 block truncate">
-                                  {studentType === "COLLEGE" ? (studentCourse || "N/A") : (selectedShsStrand || "N/A")}
+                                  {studentType === "COLLEGE" ? (studentCourse || "N/A") : (effectiveShsStrand || "N/A")}
                                 </span>
                               </div>
 
@@ -6150,7 +6275,7 @@ export default function BookingPage() {
               )}
 
               {/* Navigation Actions (Steps 2-7) - Direct Access Buttons on Right Side (Aligned & Balanced) */}
-              {step > 1 && (
+              {step > 1 && !(step === 3 && isAcademicService) && (
                 <div className="w-full max-w-[1140px] mx-auto mt-6 sm:mt-8 pt-4 border-t border-neutral-200/60 flex items-center justify-end gap-3">
                   {/* Right: Direct Access Navigation Buttons */}
                   <div className="flex items-center justify-end gap-3">
