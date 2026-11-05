@@ -1,3 +1,4 @@
+import { broadcastAvailabilityChange } from './liveAvailabilityService';
 /**
  * bookingAdminService.js
  * ======================
@@ -401,6 +402,7 @@ export async function updateBookingStatus(bookingId, newStatus, remarks = '', ch
       console.warn('updateBookingStatus recordAdminActivity error:', logErr);
     }
 
+    broadcastAvailabilityChange();
     return { error: null };
   } catch (error) {
     console.error('updateBookingStatus error:', error);
@@ -1228,6 +1230,7 @@ export async function softDeleteBooking({
       console.warn('Could not write soft delete to admin_activity_logs DB:', dbErr);
     }
 
+    broadcastAvailabilityChange();
     return { success: true, data: booking || existingBooking, logEntry, error: null };
   } catch (err) {
     console.error('softDeleteBooking error:', err);
@@ -1336,6 +1339,7 @@ export async function restoreBooking({
       console.warn('Could not write restore to admin_activity_logs DB:', dbErr);
     }
 
+    broadcastAvailabilityChange();
     return { success: true, data: booking, logEntry, error: null };
   } catch (err) {
     console.error('restoreBooking error:', err);
@@ -1463,6 +1467,7 @@ export async function deleteBookingPermanently({
 
     if (deleteError) throw deleteError;
 
+    broadcastAvailabilityChange();
     return { success: true, logEntry, error: null };
   } catch (err) {
     console.error('deleteBookingPermanently error:', err);
@@ -1529,6 +1534,7 @@ export async function emptyTrash({ deletedById = null, deletedByName = 'Staff/Ad
       console.warn('Could not record bulk purge to admin_activity_logs:', logErr);
     }
 
+    broadcastAvailabilityChange();
     return { success: true, count: ids.length, error: null };
   } catch (err) {
     console.error('emptyTrash error:', err);

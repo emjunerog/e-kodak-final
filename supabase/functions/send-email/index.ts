@@ -1,65 +1,19 @@
 /**
- * E-Kodak Studio — Supabase Edge Function: send-email (SMTP Edition)
- * ====================================================================
- * Works with ANY SMTP provider: Gmail, Yahoo, Outlook, cPanel, Zoho, etc.
- * No third-party account needed beyond your existing email account.
- *
- * DEPLOY INSTRUCTIONS:
- * --------------------
- * 1. Link project (if not already): supabase link --project-ref <your-ref>
- * 2. Set SMTP secrets (one-time, replace with your Gmail/email credentials):
- *
- *    supabase secrets set SMTP_HOST=smtp.gmail.com
- *    supabase secrets set SMTP_PORT=587
- *    supabase secrets set SMTP_USER=your-email@gmail.com
- *    supabase secrets set SMTP_PASS=your-app-password
- *    supabase secrets set FROM_EMAIL=your-email@gmail.com
- *    supabase secrets set FROM_NAME="E-Kodak Photography Studio"
- *
- * 3. Deploy: supabase functions deploy send-email
- *
- * ── GMAIL SETUP ──
- * Gmail requires an "App Password" (not your regular password):
- *   1. Go to myaccount.google.com → Security → 2-Step Verification (enable)
- *   2. Then: myaccount.google.com → Security → App passwords
- *   3. Create one for "Mail" → copy the 16-character password
- *   4. Use that as SMTP_PASS above
- *
- * ── DATABASE SETUP ──
- * Run this SQL once in Supabase SQL Editor:
- *
- *   CREATE TABLE IF NOT EXISTS public.email_logs (
- *     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
- *     recipient_email   TEXT NOT NULL,
- *     recipient_name    TEXT,
- *     subject           TEXT NOT NULL,
- *     html_body         TEXT,
- *     notification_type TEXT DEFAULT 'BROADCAST',
- *     booking_id        UUID REFERENCES public.bookings(id) ON DELETE SET NULL,
- *     status            TEXT DEFAULT 'QUEUED',
- *     queued_at         TIMESTAMPTZ DEFAULT now(),
- *     sent_at           TIMESTAMPTZ,
- *     error_message     TEXT,
- *     created_at        TIMESTAMPTZ DEFAULT now()
- *   );
- *   ALTER TABLE public.email_logs ENABLE ROW LEVEL SECURITY;
- *   CREATE POLICY "Admins can manage email logs"
- *     ON public.email_logs FOR ALL
- *     USING (auth.jwt() ->> 'role' IN ('admin', 'staff', 'finance'));
+ * E-Kodak Studio — Supabase Edge Function: send-email (Nodemailer SMTP Edition)
+ * ============================================================================
+ * Supports Gmail SMTP, Zoho, Outlook, Resend, or any standard SMTP server.
  */
 
-// Deno SMTP — built into Supabase Edge Functions runtime
-// Rename this file to index.ts inside supabase/functions/send-email/
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { SmtpClient } from 'https://deno.land/x/smtp@v0.7.0/mod.ts';
+import nodemailer from 'npm:nodemailer@6.9.13';
 
-const SMTP_HOST  = Deno.env.get('SMTP_HOST')  ?? 'smtp.gmail.com';
-const SMTP_PORT  = Number(Deno.env.get('SMTP_PORT') ?? '587');
-const SMTP_USER  = Deno.env.get('SMTP_USER')  ?? '';
-const SMTP_PASS  = Deno.env.get('SMTP_PASS')  ?? '';
-const FROM_EMAIL = Deno.env.get('FROM_EMAIL') ?? SMTP_USER;
-const FROM_NAME  = Deno.env.get('FROM_NAME')  ?? 'E-Kodak Photography Studio';
+const SMTP_HOST  = Deno.env.get('SMTP_HOST')  || 'smtp.gmail.com';
+const SMTP_PORT  = Number(Deno.env.get('SMTP_PORT') || '465');
+const SMTP_USER  = Deno.env.get('SMTP_USER')  || '';
+const SMTP_PASS  = Deno.env.get('SMTP_PASS')  || '';
+const FROM_EMAIL = Deno.env.get('FROM_EMAIL') || SMTP_USER || 'admine_kodak@gmail.com';
+const FROM_NAME  = Deno.env.get('FROM_NAME')  || 'E-Kodak Photography Studio';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -97,7 +51,7 @@ serve(async (req) => {
     }
 
     // 2. Parse & validate request body
-    const { to, subject, html, notificationType } = await req.json();
+    const { to, subject, html, notificationType, recipientName, bookingId } = await req.json();
 
     if (!to || !subject || !html) {
       return new Response(
@@ -115,8 +69,7 @@ serve(async (req) => {
       );
     }
 
-    // 3. Enforce role-based authorization:
-    // Staff/admin/finance/photographer can email any studio client; customers can only trigger emails to their own address.
+    // 3. Check caller permissions:
     const { data: callerProfile } = await supabase
       .from('profiles')
       .select('role')
@@ -134,48 +87,66 @@ serve(async (req) => {
       );
     }
 
-    if (notificationType === 'BROADCAST' && !isStaffRole) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Forbidden: Only studio staff may send broadcast notifications' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     if (!SMTP_USER || !SMTP_PASS) {
+      console.warn('[send-email] SMTP_USER or SMTP_PASS not set in Supabase secrets');
       return new Response(
         JSON.stringify({
           success: false,
-          error: 'SMTP credentials not configured. Run: supabase secrets set SMTP_USER=... SMTP_PASS=...'
+          error: 'SMTP credentials not configured. Please set SMTP_USER and SMTP_PASS secrets in Supabase.'
         }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // 4. Connect and send via SMTP
-    const client = new SmtpClient();
-    await client.connectTLS({ hostname: SMTP_HOST, port: SMTP_PORT, username: SMTP_USER, password: SMTP_PASS });
-
-    await client.send({
-      from:    `${FROM_NAME} <${FROM_EMAIL}>`,
-      to:      cleanTo,
-      subject: cleanSubject,
-      content: 'Please enable HTML email to view this message.',
-      html:    String(html),
+    // 4. Create Nodemailer transporter and send
+    const transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: {
+        user: SMTP_USER,
+        pass: SMTP_PASS,
+      },
+      tls: {
+        rejectUnauthorized: false
+      }
     });
 
-    await client.close();
+    const info = await transporter.sendMail({
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to: cleanTo,
+      subject: cleanSubject,
+      text: 'Please enable HTML email to view your booking confirmation.',
+      html: String(html),
+    });
 
-    console.log(`[send-email] SMTP sent → ${cleanTo} | ${cleanSubject} (by ${user.id})`);
+    console.log(`[send-email] Sent successfully to ${cleanTo} (MessageId: ${info.messageId})`);
+
+    // 5. Update or insert into email_logs using service role
+    try {
+      await supabase.from('email_logs').insert({
+        recipient_email: cleanTo,
+        recipient_name: recipientName || cleanTo,
+        subject: cleanSubject,
+        html_body: String(html),
+        notification_type: notificationType || 'BOOKING_CONFIRMATION',
+        booking_id: bookingId || null,
+        status: 'SENT',
+        sent_at: new Date().toISOString()
+      });
+    } catch (logErr) {
+      console.warn('[send-email] email_logs update warning:', logErr);
+    }
 
     return new Response(
-      JSON.stringify({ success: true, provider: 'smtp', to: cleanTo, subject: cleanSubject }),
+      JSON.stringify({ success: true, provider: 'smtp', messageId: info.messageId, to: cleanTo }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (err) {
-    console.error('[send-email] Error:', err);
+    console.error('[send-email] Dispatch Error:', err);
     return new Response(
-      JSON.stringify({ success: false, error: String(err) }),
+      JSON.stringify({ success: false, error: err.message || String(err) }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

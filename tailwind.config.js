@@ -78,6 +78,7 @@ export default {
       // ─── Typography ────────────────────────────────────────────────────────
       fontFamily: {
         heading: ["Playfair Display", "Georgia", "serif"],
+        serif:   ["Playfair Display", "Georgia", "serif"],
         body:    ["Inter", "system-ui", "sans-serif"],
         sans:    ["Inter", "system-ui", "sans-serif"],
         mono:    ["Inter", "system-ui", "sans-serif"],

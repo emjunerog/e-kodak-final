@@ -67,6 +67,7 @@ import BookingQuickInspector from '../../components/admin/BookingQuickInspector'
 import CustomDropdown from '../../components/ui/CustomDropdown';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
+import AdminLiveBookingCalendar from '../../components/admin/AdminLiveBookingCalendar';
 
 function fmtDate(dateStr) {
   if (!dateStr) return '—';
@@ -2024,7 +2025,7 @@ export default function AdminBookings({ initialSection }) {
               />
             </div>
 
-            {/* View Mode: Complete Tables (Default Button) & School Batches (Icon) */}
+            {/* View Mode: Complete Tables | Live Calendar | School Batches */}
             <div className="flex items-center bg-neutral-100 p-1 rounded-xl border border-neutral-200/80 shrink-0">
               <button
                 type="button"
@@ -2038,6 +2039,20 @@ export default function AdminBookings({ initialSection }) {
               >
                 <Table size={13} className={viewMode === 'table' ? 'text-gold' : ''} />
                 <span>Complete Tables</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setViewMode('calendar')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  viewMode === 'calendar'
+                    ? 'bg-white text-neutral-900 shadow-2xs'
+                    : 'text-neutral-500 hover:text-neutral-800'
+                }`}
+                title="Live Booking Calendar"
+              >
+                <CalendarDays size={13} className={viewMode === 'calendar' ? 'text-gold' : ''} />
+                <span>Live Calendar</span>
               </button>
 
               <div className="relative group">
@@ -2134,8 +2149,23 @@ export default function AdminBookings({ initialSection }) {
         </div>
       </div>
 
-      {/* ── 5. Main Bookings View: School Batches vs Flat Table ──────────── */}
-      {viewMode === 'batch' && !isDeletedTab ? (
+      {/* ── 5. Main Bookings View: Live Calendar vs School Batches vs Flat Table ──────────── */}
+      {viewMode === 'calendar' && !isDeletedTab ? (
+        <AdminLiveBookingCalendar
+          bookings={bookings}
+          onInspectBooking={setInspectingBooking}
+          onEditBooking={handleOpenEditModal}
+          onCreateBooking={({ date, time }) => {
+            setFormData(prev => ({
+              ...prev,
+              event_date: date,
+              preferred_time: time
+            }));
+            setIsCreateModalOpen(true);
+          }}
+          onRefresh={loadBookings}
+        />
+      ) : viewMode === 'batch' && !isDeletedTab ? (
         <div className="space-y-4 sm:space-y-5">
           {/* School Partner Directory & Sorting Control Toolbar */}
           <div className="p-4 sm:p-5 bg-white rounded-2xl border border-neutral-200/90 shadow-2xs space-y-3.5">

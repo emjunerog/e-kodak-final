@@ -14,6 +14,8 @@ export interface QRGenerationOptions {
   includeMargin?: boolean;
   foregroundColor?: string;
   backgroundColor?: string;
+  className?: string;
+  style?: React.CSSProperties;
 }
 
 export const QR_PAYLOAD_VERSION = 1;
@@ -129,6 +131,8 @@ export function QRCodeSVG({
       includeMargin={options.includeMargin ?? defaultQRStyle.includeMargin}
       fgColor={options.foregroundColor ?? defaultQRStyle.foregroundColor}
       bgColor={options.backgroundColor ?? defaultQRStyle.backgroundColor}
+      className={options.className}
+      style={options.style}
     />
   );
 }
@@ -146,6 +150,8 @@ export function QRCodeCanvas({
       includeMargin={options.includeMargin ?? defaultQRStyle.includeMargin}
       fgColor={options.foregroundColor ?? defaultQRStyle.foregroundColor}
       bgColor={options.backgroundColor ?? defaultQRStyle.backgroundColor}
+      className={options.className}
+      style={options.style}
     />
   );
 }

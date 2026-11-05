@@ -8,17 +8,30 @@ import {
   ExternalLink, ChevronRight, X, QrCode, Heart, Briefcase, Search,
   ChevronDown, ChevronUp, Eye, Trash2, ShieldCheck, AlertCircle, FileText,
   Video, Edit3, Lock, Palette, UploadCloud, MessageSquare, Plus,
-  Timer, BellRing, CreditCard, Copy, Printer, Download, CheckCircle2, UserCheck, Wifi, WifiOff, Signal
+  Timer, BellRing, CreditCard, Copy, Printer, Receipt, Download, CheckCircle2, UserCheck, Wifi, WifiOff, Signal,
+  Sun, Sunset
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { createBooking, SERVICE_SLUG_TO_UUID } from "../../services/bookingService";
+import { createBooking, SERVICE_SLUG_TO_UUID, toDatabaseTime } from "../../services/bookingService";
+import { customerPaymentService } from "../../services/customerPaymentService";
+import { xenditPaymentService } from "../../services/xenditPaymentService";
+import { sendBookingConfirmationEmail } from "../../services/emailService";
 import { getServices, getAddOns } from "../../services/contentService";
 import { SERVICES } from "../../data/servicesData";
 import { assignPhotographer } from "../../services/aiAssignmentService";
 import { recordCustomerAction } from "../../services/customerAuditService";
 import ReferenceImageUploader from "../../components/booking/ReferenceImageUploader";
 import InteractiveCalendar from "../../components/booking/InteractiveCalendar";
+import StudioLocationMapCard from "../../components/booking/StudioLocationMapCard";
+import {
+  STUDIO_HOURLY_SLOTS,
+  fetchDateAvailability,
+  fetchMonthBlockoutMap,
+  subscribeToAvailabilityUpdates,
+  normalizeSlotTime,
+  getInitialStudioBookingDate,
+} from "../../services/liveAvailabilityService";
 import QRPass from "../../components/booking/QRPass";
 import { QRCodeSVG, generateQRDataURL } from "../../lib/qr.tsx";
 import SchoolLogo from "../../components/booking/SchoolLogo";
@@ -34,6 +47,63 @@ import DashboardHero from "../../components/dashboard/DashboardHero";
 import ClientHeroBanner from "../../components/dashboard/ClientHeroBanner";
 import SchoolMasterlistUploader from "../../components/dashboard/SchoolMasterlistUploader";
 import { motion, AnimatePresence } from "framer-motion";
+
+// ── Format Textual Date Helper (e.g. "November 4, 2026") ───────────────────
+function formatTextualDate(dateStr) {
+  if (!dateStr) return "Date TBD";
+  try {
+    const d = new Date(dateStr + (dateStr.includes("T") ? "" : "T00:00:00"));
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch (e) {
+    return dateStr;
+  }
+}
+
+// ── Format Session Hourly Time Helper (Strict 1-hour session format) ───────────
+function formatSessionTime(timeStr) {
+  if (!timeStr) return "8:00 AM – 9:00 AM";
+  if (typeof timeStr === "string") {
+    const trimmed = timeStr.trim();
+    if (trimmed.toLowerCase().includes("school batch") || trimmed.toLowerCase().includes("wedding")) {
+      return trimmed;
+    }
+    // If it's already an hourly range like "8:00 AM – 9:00 AM" or "3:00 PM – 4:00 PM"
+    if (trimmed.includes("–") || trimmed.includes(" - ")) {
+      if (trimmed.toLowerCase().includes("morning") || trimmed.toLowerCase().includes("afternoon")) {
+        const m = trimmed.match(/(\d{1,2}:\d{2}\s*(?:AM|PM)?)/i);
+        if (m) {
+          const matchSlot = STUDIO_HOURLY_SLOTS.find(s => s.label.includes(m[1]) || s.display === m[1]);
+          if (matchSlot) return matchSlot.label;
+        }
+      } else {
+        return trimmed;
+      }
+    }
+    const matchedSlot = STUDIO_HOURLY_SLOTS.find(
+      s => s.time === trimmed || s.display.toLowerCase() === trimmed.toLowerCase() || s.label.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (matchedSlot) return matchedSlot.label;
+
+    const m = trimmed.match(/(\d{1,2}):?(\d{2})?\s*(am|pm)?/i);
+    if (m) {
+      let hour = parseInt(m[1], 10);
+      const isPM = /pm/i.test(trimmed);
+      const isAM = /am/i.test(trimmed);
+      if (isPM && hour < 12) hour += 12;
+      if (isAM && hour === 12) hour = 0;
+      const h24 = String(hour).padStart(2, "0") + ":00";
+      const slot = STUDIO_HOURLY_SLOTS.find(s => s.time === h24);
+      if (slot) return slot.label;
+    }
+    return trimmed;
+  }
+  return String(timeStr);
+}
 
 // ── Studio Operating Hours & Discrete Time Slots (8:00 AM – 5:00 PM) ───────────
 const STUDIO_TIME_SLOTS = [
@@ -723,11 +793,15 @@ export default function BookingPage() {
       setStudentFirstName(fn);
       setStudentMiddleName(mn);
       setStudentLastName(ln);
+      setAcademicBookingMode("INDIVIDUAL");
+      setLocationType("STUDIO");
     } else if (choice === "school_section") {
       setAcademicBookingMode("SCHOOL_PARTNER");
       setLocationType("CAMPUS");
       setParticipantRelationship("School Section Representative");
     } else {
+      setAcademicBookingMode("INDIVIDUAL");
+      setLocationType("STUDIO");
       const activeP = customerProfile || profile;
       const accountFn = activeP?.first_name || user?.user_metadata?.first_name || "";
       const accountLn = activeP?.last_name || user?.user_metadata?.last_name || "";
@@ -937,6 +1011,166 @@ export default function BookingPage() {
   const [hoveredServiceId, setHoveredServiceId] = useState(null);
   const [selectedTier, setSelectedTier] = useState(null);
   const [selectedAddOns, setSelectedAddOns] = useState([]);
+
+  // Step 6: Payment Gateway State (50% Downpayment required to reserve slot)
+  const [selectedPaymentGateway, setSelectedPaymentGateway] = useState("gcash"); // "gcash" | "maya" | "bank_transfer"
+  const [paymentReferenceNumber, setPaymentReferenceNumber] = useState("");
+  const [selectedBank, setSelectedBank] = useState("bdo"); // "bdo" | "bpi" | "maya_bank"
+  const [copiedKey, setCopiedKey] = useState(null);
+
+  // ── Interactive Maya Business / PayMongo Test Gateway Sandbox States ───────
+  const [showGatewayModal, setShowGatewayModal] = useState(false);
+  const [gatewayStep, setGatewayStep] = useState("input"); // "input" | "otp" | "confirm" | "processing" | "success"
+  const [gatewayPhone, setGatewayPhone] = useState("");
+  const [gatewayOtp, setGatewayOtp] = useState("");
+  const [gatewayError, setGatewayError] = useState("");
+  const [gatewayTxnRef, setGatewayTxnRef] = useState("");
+  const [gatewayOrNumber, setGatewayOrNumber] = useState("");
+  const [paymentReceiptData, setPaymentReceiptData] = useState(null);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [gatewayClearingStage, setGatewayClearingStage] = useState(0);
+  const [showManualRefInput, setShowManualRefInput] = useState(false);
+  const [isRedirectingToXendit, setIsRedirectingToXendit] = useState(false);
+  const [xenditPermissionNotice, setXenditPermissionNotice] = useState(null);
+  const [emailStatus, setEmailStatus] = useState({ state: "idle", message: "" });
+
+  const handleResendConfirmationEmail = async (overrideTarget = null, activeBookingOverride = null) => {
+    const activeBooking = activeBookingOverride || bookingResult;
+    const targetEmail = overrideTarget || (
+      participantEmail ||
+      customerProfile?.email ||
+      profile?.email ||
+      user?.email ||
+      ""
+    );
+    if (!targetEmail) {
+      setEmailStatus({ state: "error", message: "No recipient email address available." });
+      return;
+    }
+    setEmailStatus({ state: "sending", message: "Dispatching email..." });
+    try {
+      const activeP = customerProfile || profile;
+      const accountOwnerFullName = [activeP?.first_name || user?.user_metadata?.first_name || "", activeP?.last_name || user?.user_metadata?.last_name || ""].filter(Boolean).join(" ") || "Client";
+      const participantFullName = [participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") || (bookingFor === "myself" ? accountOwnerFullName : "Participant");
+
+      const res = await sendBookingConfirmationEmail({
+        recipientEmail: targetEmail,
+        recipientName: participantFullName || accountOwnerFullName || "Valued Client",
+        bookingNumber: activeBooking?.booking_number || "BK-2026-00001",
+        bookingId: activeBooking?.id,
+        packageName: selectedService?.name || "Photoshoot Session",
+        tierName: selectedTier?.name || "Standard",
+        eventDate: formatTextualDate(eventDate),
+        preferredTime: formatSessionTime(preferredTime),
+        location: resolvedLocation,
+        downpaymentAmount: downPaymentAmount,
+        remainingBalance: remainingBalance,
+        paymentMethod: (selectedPaymentGateway || "gcash").toUpperCase(),
+        paymentReference: paymentReferenceNumber || gatewayTxnRef || `REF-${Date.now()}`
+      });
+      if (res?.success) {
+        setEmailStatus({ state: "sent", message: `Confirmation email sent to ${targetEmail}!` });
+      } else {
+        setEmailStatus({ state: "error", message: res?.error || "SMTP not configured: please set Gmail App Password in Supabase." });
+      }
+    } catch (e) {
+      setEmailStatus({ state: "error", message: e.message || "Failed to dispatch email." });
+    }
+  };
+
+  const handleProceedToXenditCheckout = async (targetChannel = null) => {
+    const activeChannel = targetChannel || selectedPaymentGateway || "gcash";
+    setIsRedirectingToXendit(true);
+    setXenditPermissionNotice(null);
+
+    const activeP = customerProfile || profile;
+    const accountOwnerFullName = [activeP?.first_name || user?.user_metadata?.first_name || "", activeP?.last_name || user?.user_metadata?.last_name || ""].filter(Boolean).join(" ") || "Client";
+    const participantFullName = [participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") || (bookingFor === "myself" ? accountOwnerFullName : "Participant");
+
+    try {
+      const pendingBooking = {
+        selectedService,
+        selectedTier,
+        customerId: activeCustomerId,
+        serviceId: selectedService?.id,
+        serviceSlug: selectedService?.slug,
+        tierName: selectedTier?.name,
+        selectedAddOns,
+        bookingFor,
+        participantFullName,
+        participantFirstName,
+        participantMiddleName,
+        participantLastName,
+        participantPhone,
+        participantEmail,
+        participantRelationship,
+        studentType,
+        studentSchool,
+        studentSchoolAddress,
+        studentCourse,
+        effectiveShsStrand,
+        studentBatch,
+        studentSection: normalizedStudentSection || studentSection,
+        studentIdNumber,
+        yearbookMotto,
+        schoolScheduleNote,
+        academicBookingMode,
+        totalAmount,
+        downPaymentAmount,
+        remainingBalance,
+        eventDate,
+        preferredTime,
+        location: resolvedLocation,
+        notes,
+        selectedPaymentGateway: activeChannel
+      };
+      sessionStorage.setItem('ekodak_pending_xendit_booking', JSON.stringify(pendingBooking));
+      try { localStorage.setItem('ekodak_pending_xendit_booking', JSON.stringify(pendingBooking)); } catch {}
+    } catch (err) {
+      console.warn("[SessionStorage pending error]", err);
+    }
+
+    const res = await xenditPaymentService.createInvoice({
+      amount: downPaymentAmount,
+      customerName: participantFullName,
+      customerEmail: participantEmail || activeP?.email || user?.email || 'client@e-kodak.ph',
+      customerPhone: participantPhone || activeP?.phone || user?.phone || '+639178880123',
+      serviceName: selectedService?.name,
+      tierName: selectedTier?.name,
+      paymentChannel: activeChannel
+    });
+
+    setIsRedirectingToXendit(false);
+
+    if (res.success && res.invoiceUrl) {
+      window.location.href = res.invoiceUrl;
+    } else if (res.errorCode === 'REQUEST_FORBIDDEN_ERROR') {
+      setXenditPermissionNotice(res.message);
+      handleOpenGatewayCheckout();
+    } else {
+      setValidationError(res.message || "Failed to connect to Xendit. Please try again.");
+      handleOpenGatewayCheckout();
+    }
+  };
+
+  const handleOpenGatewayCheckout = () => {
+    const activeP = customerProfile || profile;
+    const defaultPhone = participantPhone || activeP?.phone || user?.phone || user?.user_metadata?.phone || "0917-888-0123";
+    setGatewayPhone(defaultPhone);
+    setGatewayOtp("");
+    setGatewayError("");
+    setGatewayStep("input");
+    setGatewayClearingStage(0);
+    setShowGatewayModal(true);
+  };
+
+  const handleCopyPaymentInfo = (text, key) => {
+    if (navigator?.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 2000);
+    }
+  };
   const [addonSearch, setAddonSearch] = useState("");
   const [addonCategoryFilter, setAddonCategoryFilter] = useState("ALL");
   
@@ -971,7 +1205,13 @@ export default function BookingPage() {
 
   // Academic Information State
   const [studentType, setStudentType] = useState("COLLEGE"); // "COLLEGE" | "SENIOR_HIGH"
-  const [academicBookingMode, setAcademicBookingMode] = useState("SCHOOL_PARTNER"); // "SCHOOL_PARTNER" | "INDIVIDUAL"
+  const [academicBookingMode, setAcademicBookingMode] = useState("INDIVIDUAL"); // "SCHOOL_PARTNER" | "INDIVIDUAL"
+
+  const isSchoolSection = useMemo(() => {
+    return isAcademicService && (bookingFor === "school_section" || academicBookingMode === "SCHOOL_PARTNER");
+  }, [isAcademicService, bookingFor, academicBookingMode]);
+
+  const isIndividualBooking = !isSchoolSection && !isWeddingService;
   const [schoolScheduleNote, setSchoolScheduleNote] = useState("");
   const [selectedUnivId, setSelectedUnivId] = useState("");
   const [studentSchool, setStudentSchool] = useState("");
@@ -1002,6 +1242,7 @@ export default function BookingPage() {
   const [hoveredInclusionIndex, setHoveredInclusionIndex] = useState(null);
   const [hoveredInclusion, setHoveredInclusion] = useState(null);
   const [hoveredInclusionIndexReview, setHoveredInclusionIndexReview] = useState(null);
+  const [isInclusionsOpen, setIsInclusionsOpen] = useState(false);
   const [isAddonCardHovered, setIsAddonCardHovered] = useState(false);
   const [isAddonPanelHovered, setIsAddonPanelHovered] = useState(false);
   const [isAddonCardPinned, setIsAddonCardPinned] = useState(false);
@@ -1053,15 +1294,26 @@ export default function BookingPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Automatically scroll to top and ensure scroll is unlocked whenever booking step changes
+  // Automatically scroll to top or specific section and ensure scroll is unlocked whenever booking step changes
   useEffect(() => {
     document.body.style.overflow = "";
+    if (step === 4) {
+      setTimeout(() => {
+        const schedEl = document.getElementById("studio-photoshoot-scheduling-section");
+        if (schedEl) {
+          schedEl.scrollIntoView({ behavior: "smooth", block: "start" });
+        } else {
+          window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+        }
+      }, 60);
+      return;
+    }
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
   }, [step]);
 
   // Body scroll lock and Escape key listener for lightbox/peg/confirmation modals
   useEffect(() => {
-    if (step === 7) {
+    if (step === 6 || step === 7) {
       document.body.style.overflow = "";
       return;
     }
@@ -1167,20 +1419,106 @@ export default function BookingPage() {
   const [photoUsage, setPhotoUsage] = useState("LinkedIn & Executive Profile");
 
   // Schedule & Location State
-  const [eventDate, setEventDate] = useState("");
-  const [preferredTime, setPreferredTime] = useState("09:00");
-  const [locationType, setLocationType] = useState("CAMPUS"); // "CAMPUS" | "STUDIO" | "CUSTOM"
+  const [eventDate, setEventDate] = useState(() => getInitialStudioBookingDate());
+  const [preferredTime, setPreferredTime] = useState("");
+  const [sessionCategory, setSessionCategory] = useState(() => {
+    const hr = new Date().getHours();
+    return hr >= 12 ? "AFTERNOON" : "MORNING";
+  }); // Default to current time of day: Afternoon if >= 12:00 PM, Morning if < 12:00 PM
+  const [monthBlockMap, setMonthBlockMap] = useState({});
+  const [dateAvailability, setDateAvailability] = useState(null);
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
+
+  // Fetch month blockout map
+  const handleMonthChange = useCallback(async (year, month) => {
+    try {
+      const map = await fetchMonthBlockoutMap(year, month);
+      setMonthBlockMap(map || {});
+    } catch (err) {
+      console.warn("[BookSession] Failed to fetch month blocks:", err);
+    }
+  }, []);
+
+  // Initial month load
+  useEffect(() => {
+    const now = new Date();
+    handleMonthChange(now.getFullYear(), now.getMonth());
+  }, [handleMonthChange]);
+
+  // Fetch date availability whenever eventDate or service context changes
+  useEffect(() => {
+    if (!eventDate) {
+      setDateAvailability(null);
+      return;
+    }
+    let isCancelled = false;
+    setIsLoadingAvailability(true);
+    fetchDateAvailability(eventDate, {
+      isWedding: isWeddingService,
+      isSchoolSection: isSchoolSection,
+      serviceSlug: selectedService?.slug,
+    })
+      .then((res) => {
+        if (!isCancelled) {
+          setDateAvailability(res);
+          setIsLoadingAvailability(false);
+        }
+      })
+      .catch((err) => {
+        if (!isCancelled) {
+          console.warn("[BookSession] Date availability query error:", err);
+          setIsLoadingAvailability(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [eventDate, isWeddingService, isSchoolSection, selectedService?.slug]);
+
+  // Subscribe to live availability broadcast events
+  useEffect(() => {
+    const unsub = subscribeToAvailabilityUpdates(() => {
+      const now = new Date();
+      handleMonthChange(now.getFullYear(), now.getMonth());
+      if (eventDate) {
+        fetchDateAvailability(eventDate, {
+          isWedding: isWeddingService,
+          isSchoolSection: isSchoolSection,
+          serviceSlug: selectedService?.slug,
+        }).then((res) => setDateAvailability(res));
+      }
+    });
+    return unsub;
+  }, [eventDate, handleMonthChange, isWeddingService, isSchoolSection, selectedService?.slug]);
+
+  // Auto-set preferredTime for school section or wedding, or clear if booked
+  useEffect(() => {
+    if (isSchoolSection) {
+      setPreferredTime("Full-Day School Batch Pictorial (8:00 AM – 5:00 PM)");
+    } else if (isWeddingService) {
+      setPreferredTime("Full-Day Wedding Production (8:00 AM – 5:00 PM)");
+    } else if (isIndividualBooking && dateAvailability && preferredTime) {
+      const slotKey = normalizeSlotTime(preferredTime);
+      if (slotKey && dateAvailability.bookedSlots?.includes(slotKey)) {
+        setPreferredTime("");
+      }
+    }
+  }, [isSchoolSection, isWeddingService, isIndividualBooking, dateAvailability, preferredTime]);
+  const [locationType, setLocationType] = useState("STUDIO"); // "CAMPUS" | "STUDIO" | "CUSTOM"
   const [customVenue, setCustomVenue] = useState("");
   const [customAddress, setCustomAddress] = useState("");
   const [customBarangayCity, setCustomBarangayCity] = useState("");
   const [customLandmark, setCustomLandmark] = useState("");
 
-  // Automatically keep locationType consistent with academic booking mode
+  // Automatically keep locationType and academicBookingMode consistent with bookingFor
   useEffect(() => {
     if (isAcademicService) {
-      if (academicBookingMode === "SCHOOL_PARTNER") {
+      if (bookingFor === "school_section") {
+        setAcademicBookingMode("SCHOOL_PARTNER");
         setLocationType("CAMPUS");
-      } else if (academicBookingMode === "INDIVIDUAL") {
+      } else {
+        setAcademicBookingMode("INDIVIDUAL");
         setLocationType("STUDIO");
       }
     } else {
@@ -1188,7 +1526,7 @@ export default function BookingPage() {
         setLocationType("STUDIO");
       }
     }
-  }, [isAcademicService, academicBookingMode]);
+  }, [isAcademicService, bookingFor]);
   // Visual Reference Pegs & Files
   const [referenceFiles, setReferenceFiles] = useState([]);
   const [notes, setNotes] = useState("");
@@ -1197,6 +1535,7 @@ export default function BookingPage() {
   const [motionEnabled, setMotionEnabled] = useState(true);
   const [hoveredAccordion, setHoveredAccordion] = useState(null);
   const [pinnedAccordions, setPinnedAccordions] = useState({
+    summary: false,
     pkg: false,
     client: false,
     schedule: false,
@@ -1279,7 +1618,7 @@ export default function BookingPage() {
       type: "STUDIO",
       badge: "In-Studio Session",
       venue: "E-Kodak Studio Cebu (Main Studio Bay)",
-      venueAddress: "Studio Bay 1 & 2 • 311 Rizal Street, City of Naga, Cebu",
+      venueAddress: "331 Rizal Street, City of Naga, Cebu",
       scheduleTitle: eventDate ? `${eventDate} • ${preferredTime || 'Time TBD'}` : "Reserved Studio Slot",
       scheduleSubtitle: "Fully equipped air-conditioned studio with dressing & styling bays",
       duration: selectedTier?.duration && !selectedTier.duration.toLowerCase().includes("studio session")
@@ -1308,7 +1647,7 @@ export default function BookingPage() {
     }
     setAcademicBookingMode("SCHOOL_PARTNER");
     setLocationType("CAMPUS");
-    setStep(6); // Jump straight to Review & Confirm!
+    setStep(5); // Jump straight to Review & Confirm!
   };
   const [bookingResult, setBookingResult] = useState(null);
 
@@ -1342,6 +1681,9 @@ export default function BookingPage() {
             if (initialTierName) {
               const tier = srv.tiers?.find(t => t.name === initialTierName || t.name?.toLowerCase() === initialTierName.toLowerCase());
               if (tier) setSelectedTier(tier);
+            } else if (srv.tiers && srv.tiers.length > 0) {
+              const defaultTier = srv.tiers.find(t => t.popular) || srv.tiers[0];
+              setSelectedTier(defaultTier);
             }
             if (initialTierName) setStep(3);
             else setStep(2);
@@ -1379,7 +1721,13 @@ export default function BookingPage() {
   }, [user, authLoading, navigate]);
 
   // Calculations for Pricing
-  const basePrice = parsePrice(selectedTier?.price || selectedService?.base_price || 0);
+  const effectiveBaseTier = selectedTier || selectedService?.tiers?.[0] || null;
+  const basePrice = parsePrice(
+    selectedTier?.price ||
+    selectedService?.tiers?.[0]?.price ||
+    selectedService?.base_price ||
+    (isAcademicService ? 1750 : 0)
+  );
   const addOnsTotal = selectedAddOns.reduce((sum, a) => sum + parsePrice(a.price), 0);
   const totalAmount = basePrice + addOnsTotal;
   const downPaymentAmount = selectedTier?.down_payment ? parsePrice(selectedTier.down_payment) : Math.round(totalAmount * 0.5);
@@ -1388,6 +1736,7 @@ export default function BookingPage() {
   const formattedTotal = `₱${totalAmount.toLocaleString()}`;
   const formattedDownPayment = `₱${downPaymentAmount.toLocaleString()}`;
   const formattedRemaining = `₱${remainingBalance.toLocaleString()}`;
+  const formattedBasePrice = `₱${basePrice.toLocaleString()}`;
 
   // Package inclusions derived from selected tier or base service
   const tierInclusions = useMemo(() => {
@@ -1473,11 +1822,53 @@ export default function BookingPage() {
 
   const resolvedLocation = isSchoolPartnerBatch
     ? (locationType === "STUDIO"
-        ? "E-Kodak Studio, 311 Rizal Street, City of Naga, Cebu, https://www.google.com/maps/search/?api=1&query=311+Rizal+Street,+City+of+Naga,+Cebu"
+        ? "E-Kodak Studio, 331 Rizal Street, City of Naga, Cebu"
         : `School Campus: ${studentSchool || "School Campus"}${studentSchoolAddress ? ` (${studentSchoolAddress})` : ""}`)
     : locationType === "STUDIO"
-    ? "E-Kodak Studio, 311 Rizal Street, City of Naga, Cebu, https://www.google.com/maps/search/?api=1&query=311+Rizal+Street,+City+of+Naga,+Cebu"
+    ? "E-Kodak Studio, 331 Rizal Street, City of Naga, Cebu"
     : [customVenue, customAddress, customBarangayCity, customLandmark ? `(Landmark: ${customLandmark})` : ""].filter(Boolean).join(", ") || "Custom Venue";
+
+  // Unified Review Summary Card Derived Values
+  const reviewClientDisplayName = useMemo(() => {
+    if (bookingFor === "someone_else") {
+      return [participantFirstName, participantLastName].filter(Boolean).join(" ") || "Participant";
+    }
+    if (isAcademicService) {
+      return [studentFirstName, studentMiddleName, studentLastName].filter(Boolean).join(" ") || "Student Profile";
+    }
+    if (isWeddingService) {
+      return `${brideName || 'Bride'} & ${groomName || 'Groom'}`;
+    }
+    return [editFirstName, editLastName].filter(Boolean).join(" ") || "Client Profile";
+  }, [bookingFor, participantFirstName, participantLastName, isAcademicService, studentFirstName, studentMiddleName, studentLastName, isWeddingService, brideName, groomName, editFirstName, editLastName]);
+
+  const reviewClientSecondaryInfo = useMemo(() => {
+    if (bookingFor === "someone_else") {
+      return `Ordered by ${activeProfile?.first_name || user?.user_metadata?.first_name || "Account Owner"}`;
+    }
+    if (isAcademicService) {
+      return studentSchool || "School Campus";
+    }
+    if (isWeddingService) {
+      return weddingTheme || "Wedding Session";
+    }
+    return editPhone || activeProfile?.email || user?.email || "Verified Profile";
+  }, [bookingFor, activeProfile, user, isAcademicService, studentSchool, isWeddingService, weddingTheme, editPhone]);
+
+  const reviewScheduleDisplay = useMemo(() => {
+    if (isAcademicService && academicBookingMode === "SCHOOL_PARTNER") {
+      return "Official School Batch Schedule";
+    }
+    return `${formatTextualDate(eventDate)} • ${formatSessionTime(preferredTime)}`;
+  }, [isAcademicService, academicBookingMode, eventDate, preferredTime]);
+
+  const reviewScheduleSecondaryInfo = useMemo(() => {
+    if (isAcademicService && academicBookingMode === "SCHOOL_PARTNER" && locationType === "CAMPUS") {
+      return `On-Campus (${studentSchool || "School Campus"})`;
+    }
+    return resolvedLocation || "Studio Bay";
+  }, [isAcademicService, academicBookingMode, locationType, studentSchool, resolvedLocation]);
+
 
   // Service-tailored special request template suggestions (Zero emojis)
   const activeSpecialTemplates = useMemo(() => {
@@ -1511,6 +1902,9 @@ export default function BookingPage() {
           return;
         }
         setStep(4);
+        setTimeout(() => {
+          document.getElementById("studio-photoshoot-scheduling-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 60);
         return;
       }
       // Validate participant personal information
@@ -1560,26 +1954,54 @@ export default function BookingPage() {
         }
       }
       setStep(4);
+      setTimeout(() => {
+        document.getElementById("studio-photoshoot-scheduling-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 60);
     } else if (step === 4) {
-      // Formerly Step 5: Schedule & Studio
-      const isSchoolPartnerBatch = isAcademicService && academicBookingMode === "SCHOOL_PARTNER";
-      if (!isSchoolPartnerBatch) {
-        if (!eventDate) {
-          setValidationError("Please choose a target photoshoot date.");
+      // Step 4: Schedule & Studio Location (Live Booking Validation)
+      if (!eventDate) {
+        setValidationError(
+          isSchoolSection
+            ? "Please select a target date for your school batch pictorial."
+            : isWeddingService
+            ? "Please select your wedding date on the calendar."
+            : "Please choose a target photoshoot date."
+        );
+        return;
+      }
+
+      if (dateAvailability?.isFullDayBlocked) {
+        setValidationError(
+          `The selected date (${eventDate}) is fully booked (${dateAvailability.fullDayReason || "Unavailable"}). Please pick another open date.`
+        );
+        return;
+      }
+
+      if (isIndividualBooking) {
+        if (!preferredTime) {
+          setValidationError("Please select an available 1-hour photoshoot session slot.");
+          return;
+        }
+        const slotKey = normalizeSlotTime(preferredTime);
+        if (slotKey && dateAvailability?.bookedSlots?.includes(slotKey)) {
+          setValidationError("The selected time slot is already booked. Please choose an open slot.");
           return;
         }
       }
-      if (locationType === "CUSTOM" && !customAddress.trim() && !isSchoolPartnerBatch) {
+
+      if (locationType === "CUSTOM" && !customAddress.trim() && !isSchoolSection) {
         setValidationError("Please provide the street address for your on-location session.");
         return;
       }
+
+      setValidationError("");
       setStep(5);
     } else if (step === 5) {
-      // Formerly Step 6: Pegs are optional
-      setStep(6);
-    } else if (step === 6) {
-      // Formerly Step 7: Review & Confirm
+      // Step 5: Review & Confirm -> open simple yes/no modal
       setShowOrderConfirmModal(true);
+    } else if (step === 6) {
+      // Step 6: Settle 50% downpayment & finalize reservation via Xendit / Gateway
+      handleProceedToXenditCheckout();
     }
   };
 
@@ -1587,7 +2009,8 @@ export default function BookingPage() {
   const handleSelectPackage = (svc) => {
     setProceedingSvcSlug(svc.slug);
     setSelectedService(svc);
-    setSelectedTier(null);
+    const defaultTier = svc?.tiers?.find(t => t.popular) || svc?.tiers?.[0] || null;
+    setSelectedTier(defaultTier);
     setSelectedAddOns([]);
     setValidationError("");
     if (svc.slug === "senior-high-packages") {
@@ -1602,7 +2025,346 @@ export default function BookingPage() {
     }, 40);
   };
 
-  // Submit Booking
+  // ── Step 6: Complete Booking & Settle 50% Downpayment ───────────────────────
+  const handleCompleteBookingAndPayment = async (customTxnRef = null, customOrNumber = null, pendingOverride = null) => {
+    setValidationError("");
+
+    // Resolve or generate authentic gateway transaction reference & OR number
+    const refNum = (typeof customTxnRef === "string" && customTxnRef.trim())
+      ? customTxnRef.trim()
+      : paymentReferenceNumber.trim()
+      ? paymentReferenceNumber.trim()
+      : `PAY-MAYA-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+    const orNum = (typeof customOrNumber === "string" && customOrNumber.trim())
+      ? customOrNumber.trim()
+      : gatewayOrNumber.trim()
+      ? gatewayOrNumber.trim()
+      : `OR-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    setPaymentReferenceNumber(refNum);
+    setGatewayTxnRef(refNum);
+    setGatewayOrNumber(orNum);
+
+    setIsSubmitting(true);
+
+    const effectiveService = pendingOverride?.selectedService || selectedService || services?.[0] || SERVICES[1];
+    const effectiveTier = pendingOverride?.selectedTier || selectedTier || effectiveService?.tiers?.[0];
+    const resolvedTierPrice = parsePrice(effectiveTier?.price || 1750);
+    const effectiveTotal = (pendingOverride?.totalAmount && pendingOverride.totalAmount > 0)
+      ? pendingOverride.totalAmount
+      : (totalAmount && totalAmount > 0)
+      ? totalAmount
+      : (resolvedTierPrice + (addOnsTotal || 0));
+    const effectiveDownPayment = (pendingOverride?.downPaymentAmount && pendingOverride.downPaymentAmount > 0)
+      ? pendingOverride.downPaymentAmount
+      : (downPaymentAmount && downPaymentAmount > 0)
+      ? downPaymentAmount
+      : Math.round(effectiveTotal * 0.5);
+    const effectiveRemaining = (pendingOverride?.remainingBalance && pendingOverride.remainingBalance > 0)
+      ? pendingOverride.remainingBalance
+      : Math.max(0, effectiveTotal - effectiveDownPayment);
+    const effectiveDate = pendingOverride?.eventDate || eventDate;
+    const effectiveTime = pendingOverride?.preferredTime || preferredTime;
+    const effectiveLocation = pendingOverride?.location || resolvedLocation;
+    const effectiveBookingFor = pendingOverride?.bookingFor || bookingFor;
+    const effectiveParticipantFirst = pendingOverride?.participantFirstName || participantFirstName;
+    const effectiveParticipantMiddle = pendingOverride?.participantMiddleName || participantMiddleName;
+    const effectiveParticipantLast = pendingOverride?.participantLastName || participantLastName;
+    const effectiveParticipantPhone = pendingOverride?.participantPhone || participantPhone;
+    const effectiveParticipantEmail = pendingOverride?.participantEmail || participantEmail;
+    const effectiveAddOns = pendingOverride?.selectedAddOns || selectedAddOns;
+
+    const isSchoolPartner = (effectiveService?.category === "ACADEMIC" || isAcademicService) && (pendingOverride?.academicBookingMode === "SCHOOL_PARTNER" || academicBookingMode === "SCHOOL_PARTNER");
+    const activeP = customerProfile || profile;
+    const accountOwnerFullName = [activeP?.first_name || user?.user_metadata?.first_name || "", activeP?.last_name || user?.user_metadata?.last_name || ""].filter(Boolean).join(" ") || "Client";
+    const participantFullName = [effectiveParticipantFirst, effectiveParticipantMiddle, effectiveParticipantLast].filter(Boolean).join(" ") || (effectiveBookingFor === "myself" ? accountOwnerFullName : "Participant");
+
+    let activeCustomerId = user?.id || activeP?.id;
+    if (!activeCustomerId && isSupabaseConfigured && supabase) {
+      try {
+        const { data: sessData } = await supabase.auth.getSession();
+        if (sessData?.session?.user?.id) {
+          activeCustomerId = sessData.session.user.id;
+        } else {
+          const { data: authData } = await supabase.auth.getUser();
+          if (authData?.user?.id) activeCustomerId = authData.user.id;
+        }
+      } catch (authErr) {
+        console.warn("[Auth Check]", authErr);
+      }
+    }
+
+    if (!activeCustomerId) {
+      try {
+        const cached = sessionStorage.getItem('ekodak_user_profile');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed?.id) activeCustomerId = parsed.id;
+        }
+      } catch {}
+    }
+
+    if (!activeCustomerId) {
+      setIsSubmitting(false);
+      setValidationError("You must be logged in to reserve a photoshoot slot. Please sign in or refresh your session.");
+      return;
+    }
+
+    let resolvedServiceId = effectiveService?.id;
+    if (!resolvedServiceId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedServiceId)) {
+      resolvedServiceId = SERVICE_SLUG_TO_UUID[effectiveService?.slug] || "1471388e-b74f-41ec-96c8-1d220d557a89";
+    }
+
+    // refNum resolved dynamically above
+    const paymentAuditNote = `[50% RESERVATION DOWNPAYMENT]\n• Gateway: ${selectedPaymentGateway.toUpperCase()}\n• Amount Paid: ₱${downPaymentAmount.toLocaleString()}\n• Reference No: ${refNum}\n• Payment Date: ${new Date().toLocaleString()}\n• Remaining Balance: ₱${remainingBalance.toLocaleString()} (Due at studio/carrier)`;
+
+    let fullNotes = notes || "";
+    const beneficiaryBlock = `[BOOKING BENEFICIARY & PARTICIPANT]\n• Booking For: ${bookingFor === "someone_else" ? "Someone Else" : "Myself"}\n• Participant Name: ${participantFullName}\n• Participant Phone: ${participantPhone || 'N/A'}\n• Participant Email: ${participantEmail || 'N/A'}\n• Relationship to Account Owner: ${bookingFor === "someone_else" ? (participantRelationship || 'Beneficiary') : 'Self (Account Owner)'}\n• Account Owner: ${accountOwnerFullName} (${activeP?.email || user?.email || 'N/A'})`;
+    fullNotes = fullNotes ? `${beneficiaryBlock}\n\n${paymentAuditNote}\n\n${fullNotes}` : `${beneficiaryBlock}\n\n${paymentAuditNote}`;
+
+    if (isAcademicService) {
+      const studentBlock = `[STUDENT DETAILS]\n• Type: ${studentType === "COLLEGE" ? "College / University" : "Senior High School"}\n• Booking Mode: ${isSchoolPartner ? "School Campus (Date set by school) [SCHOOL_PARTNER]" : "Individual Booking"}\n• Student Name: ${participantFullName || 'N/A'}\n• Middle Name: ${participantMiddleName || 'N/A'}\n• School: ${studentSchool}\n• Campus / Address: ${studentSchoolAddress || 'N/A'}\n• Degree / Strand: ${studentType === "COLLEGE" ? (studentCourse || 'N/A') : (effectiveShsStrand || 'N/A')}\n• Batch: ${studentBatch || 'N/A'}\n• Section: ${normalizedStudentSection || studentSection}\n• Student ID: ${studentIdNumber}\n• Yearbook Motto: ${yearbookMotto || 'N/A'}${schoolScheduleNote ? `\n• Note: ${schoolScheduleNote}` : ''}`;
+      fullNotes = `${fullNotes}\n\n${studentBlock}`;
+    }
+
+    if (pendingOverride) {
+      if (pendingOverride.selectedService) setSelectedService(pendingOverride.selectedService);
+      if (pendingOverride.selectedTier) setSelectedTier(pendingOverride.selectedTier);
+      if (pendingOverride.totalAmount != null) setTotalAmount(pendingOverride.totalAmount);
+      if (pendingOverride.downPaymentAmount != null) setDownPaymentAmount(pendingOverride.downPaymentAmount);
+      if (pendingOverride.remainingBalance != null) setRemainingBalance(pendingOverride.remainingBalance);
+      if (pendingOverride.eventDate) setEventDate(pendingOverride.eventDate);
+      if (pendingOverride.preferredTime) setPreferredTime(pendingOverride.preferredTime);
+      if (pendingOverride.selectedPaymentGateway) setSelectedPaymentGateway(pendingOverride.selectedPaymentGateway);
+      if (pendingOverride.participantFirstName) setParticipantFirstName(pendingOverride.participantFirstName);
+      if (pendingOverride.participantLastName) setParticipantLastName(pendingOverride.participantLastName);
+      if (pendingOverride.participantEmail) setParticipantEmail(pendingOverride.participantEmail);
+      if (pendingOverride.participantPhone) setParticipantPhone(pendingOverride.participantPhone);
+    }
+
+    const payload = {
+      customer_id: activeCustomerId,
+      service_id: resolvedServiceId,
+      service_slug: effectiveService?.slug || selectedService?.slug || null,
+      tier_name: effectiveTier?.name || selectedTier?.name || null,
+      selected_add_ons: (effectiveAddOns || selectedAddOns).map(a => ({ name: a.name, price: parsePrice(a.price) })),
+      participant_details: {
+        booking_for: effectiveBookingFor,
+        full_name: participantFullName,
+        first_name: effectiveParticipantFirst,
+        middle_name: effectiveParticipantMiddle,
+        last_name: effectiveParticipantLast,
+        phone: effectiveParticipantPhone,
+        email: effectiveParticipantEmail,
+        relationship: effectiveBookingFor === "someone_else" ? (pendingOverride?.participantRelationship || participantRelationship || "Beneficiary") : "Self",
+        account_owner_name: accountOwnerFullName,
+        account_owner_email: activeP?.email || user?.email
+      },
+      student_details: isAcademicService ? {
+        type: pendingOverride?.studentType || studentType,
+        booking_mode: isSchoolPartner ? "SCHOOL_PARTNER" : (pendingOverride?.academicBookingMode || academicBookingMode),
+        student_name: participantFullName,
+        middle_name: effectiveParticipantMiddle || null,
+        school: pendingOverride?.studentSchool || studentSchool,
+        school_address: pendingOverride?.studentSchoolAddress || studentSchoolAddress,
+        course: (pendingOverride?.studentType || studentType) === "COLLEGE" ? (pendingOverride?.studentCourse || studentCourse) : (pendingOverride?.effectiveShsStrand || effectiveShsStrand),
+        batch: pendingOverride?.studentBatch || studentBatch,
+        section: pendingOverride?.studentSection || normalizedStudentSection || studentSection,
+        student_id: pendingOverride?.studentIdNumber || studentIdNumber,
+        yearbook_motto: pendingOverride?.yearbookMotto || yearbookMotto || null,
+        schedule_note: pendingOverride?.schoolScheduleNote || schoolScheduleNote || null,
+        schedule_agreement: isSchoolPartner ? "PENDING_STUDIO_SCHOOL_AGREEMENT" : "SELF_SCHEDULED"
+      } : null,
+      total_amount: effectiveTotal,
+      down_payment_amount: effectiveDownPayment,
+      down_payment_confirmed: true,
+      remaining_balance: effectiveRemaining,
+      status: 'CONFIRMED',
+      payment_status: 'DOWNPAYMENT_PAID',
+      event_date: effectiveDate || null,
+      preferred_time: toDatabaseTime(
+        isSchoolPartner ? (effectiveTime || "08:00:00") : (effectiveTime || null)
+      ),
+      location: isSchoolPartner && (pendingOverride?.locationType === "CUSTOM" || locationType === "CUSTOM")
+        ? `On-Campus Pictorial Venue (${pendingOverride?.studentSchool || studentSchool || 'School Grounds'})`
+        : effectiveLocation,
+      notes: fullNotes || null
+    };
+
+    const { data, error: submitError } = await createBooking(payload, referenceFiles);
+
+    if (submitError) {
+      setIsSubmitting(false);
+      console.error("Booking creation error:", submitError);
+      setValidationError("Failed to reserve slot: " + submitError.message);
+      return;
+    }
+
+    // Record payment directly to payments table and notify admin
+    try {
+      await customerPaymentService.submitPayment({
+        bookingId: data.id,
+        amount: effectiveDownPayment,
+        paymentType: 'downpayment',
+        paymentMethod: selectedPaymentGateway,
+        referenceNumber: refNum,
+        notes: `Initial 50% reservation deposit settled via ${selectedPaymentGateway.toUpperCase()} during checkout.`,
+        recordedBy: activeCustomerId
+      });
+    } catch (payErr) {
+      console.warn("[Payment Service Submission Warning]", payErr);
+      try {
+        let dbMethod = 'E_WALLET';
+        if (selectedPaymentGateway === 'bank_transfer') dbMethod = 'BANK_TRANSFER';
+        else if (selectedPaymentGateway === 'maya') dbMethod = 'E_WALLET';
+        else dbMethod = 'E_WALLET';
+
+        await supabase.from('payments').insert({
+          booking_id: data.id,
+          amount: effectiveDownPayment,
+          payment_type: 'DOWN_PAYMENT',
+          payment_method: dbMethod,
+          reference_number: refNum,
+          payment_date: new Date().toISOString(),
+          recorded_by: activeCustomerId,
+          notes: `50% downpayment via ${selectedPaymentGateway.toUpperCase()} (Ref: ${refNum})`
+        });
+      } catch (dbErr) {
+        console.warn("[Direct Payment Insert Warning]", dbErr);
+      }
+    }
+
+    // Construct high-fidelity official receipt data for instant viewing & printing
+    const activeReceiptData = {
+      receiptNumber: orNum,
+      issuedAt: new Date().toISOString(),
+      bookingNumber: data.booking_number || "BK-2026-00001",
+      clientName: participantFullName || accountOwnerFullName,
+      location: isSchoolPartner && (pendingOverride?.locationType === "CUSTOM" || locationType === "CUSTOM")
+        ? `On-Campus Pictorial Venue (${pendingOverride?.studentSchool || studentSchool || 'School Grounds'})`
+        : effectiveLocation,
+      eventDate: `${formatTextualDate(effectiveDate)} • ${formatSessionTime(effectiveTime)}`,
+      packageName: effectiveService?.name || selectedService?.name || "Senior High Packages and Sets",
+      tierName: effectiveTier?.name || selectedTier?.name || "Set A",
+      total: effectiveTotal,
+      downpaymentPrice: effectiveDownPayment,
+      downPaid: effectiveDownPayment,
+      remaining: effectiveRemaining,
+      payments: [
+        {
+          id: 1,
+          payment_method: selectedPaymentGateway.toUpperCase(),
+          reference_number: refNum,
+          amount: effectiveDownPayment,
+          created_at: new Date().toISOString()
+        }
+      ],
+      merchantName: "E-KODAK STUDIOS PH",
+      merchantPhone: "0928-888-5632"
+    };
+    setPaymentReceiptData(activeReceiptData);
+
+    setIsSubmitting(false);
+    setBookingResult({
+      ...data,
+      down_payment_confirmed: true,
+      down_payment_amount: effectiveDownPayment,
+      remaining_balance: effectiveRemaining,
+      payment_status: 'DOWNPAYMENT_PAID',
+      status: 'CONFIRMED'
+    });
+    setStep(7);
+    document.body.style.overflow = "";
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+
+    // Automatically dispatch booking confirmation notice via SMTP (no manual tagging)
+    const detectedEmail = (
+      effectiveParticipantEmail ||
+      participantEmail ||
+      customerProfile?.email ||
+      profile?.email ||
+      user?.email ||
+      ""
+    );
+    if (detectedEmail) {
+      setEmailStatus({ state: "sending", message: "Dispatching email notice..." });
+      sendBookingConfirmationEmail({
+        recipientEmail: detectedEmail,
+        recipientName: participantFullName || accountOwnerFullName,
+        bookingNumber: data.booking_number || "BK-2026-00001",
+        bookingId: data.id,
+        packageName: effectiveService?.name || selectedService?.name || "Photoshoot Session",
+        tierName: effectiveTier?.name || selectedTier?.name || "Standard",
+        eventDate: formatTextualDate(effectiveDate),
+        preferredTime: formatSessionTime(effectiveTime),
+        location: isSchoolPartner && (pendingOverride?.locationType === "CUSTOM" || locationType === "CUSTOM")
+          ? ("On-Campus Pictorial Venue (" + (pendingOverride?.studentSchool || studentSchool || "School Grounds") + ")")
+          : effectiveLocation,
+        downpaymentAmount: effectiveDownPayment,
+        remainingBalance: effectiveRemaining,
+        paymentMethod: selectedPaymentGateway.toUpperCase(),
+        paymentReference: refNum
+      }).then(res => {
+        if (res?.success) {
+          setEmailStatus({ state: "sent", message: `Sent to ${detectedEmail}` });
+        } else {
+          setEmailStatus({ state: "error", message: res?.error || "SMTP not configured" });
+        }
+      }).catch(emailErr => {
+        console.warn("[SMTP Dispatch Warning]", emailErr);
+        setEmailStatus({ state: "error", message: emailErr.message || "SMTP Dispatch Failed" });
+      });
+    }
+
+    if (activeCustomerId) {
+      try {
+        recordCustomerAction({
+          userId: activeCustomerId,
+          category: 'BOOKING',
+          title: `Slot Reserved & 50% Deposit Paid (#${data.booking_number || 'New'})`,
+          description: `Customer settled 50% deposit (₱${downPaymentAmount.toLocaleString()}) via ${selectedPaymentGateway.toUpperCase()} (Ref: ${refNum}). Dedicated bay locked.`,
+          bookingId: data.id,
+          bookingNumber: data.booking_number
+        });
+      } catch (auditErr) {
+        console.warn("[Audit warning]", auditErr);
+      }
+    }
+  };
+
+  // ── Xendit Payment Return Listener ──────────────────────────────────────
+  const hasProcessedPaymentReturnRef = useRef(false);
+  useEffect(() => {
+    const paymentStatusParam = searchParams.get("payment_status");
+    const invoiceIdParam = searchParams.get("invoice_id");
+
+    if (paymentStatusParam === "success" && !hasProcessedPaymentReturnRef.current) {
+      hasProcessedPaymentReturnRef.current = true;
+      try {
+        const rawPending = sessionStorage.getItem('ekodak_pending_xendit_booking') || localStorage.getItem('ekodak_pending_xendit_booking');
+        let parsedPending = null;
+        if (rawPending) {
+          try { parsedPending = JSON.parse(rawPending); } catch {}
+          sessionStorage.removeItem('ekodak_pending_xendit_booking');
+          try { localStorage.removeItem('ekodak_pending_xendit_booking'); } catch {}
+        }
+        const channelParam = searchParams.get("channel") || parsedPending?.selectedPaymentGateway || selectedPaymentGateway || "gcash";
+        setSelectedPaymentGateway(channelParam);
+
+        const ref = invoiceIdParam
+          ? `XND-${invoiceIdParam.slice(-8).toUpperCase()}`
+          : `XND-${Date.now().toString().slice(-8).toUpperCase()}`;
+        const orNo = `OR-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+
+        handleCompleteBookingAndPayment(ref, orNo, parsedPending);
+      } catch (err) {
+        console.warn("[Xendit Return Handling Warning]", err);
+      }
+    }
+  }, [searchParams]);
+
+  // Submit Booking (fallback legacy)
   const handleSubmitBooking = async () => {
     setIsSubmitting(true);
     setValidationError("");
@@ -1704,10 +2466,14 @@ export default function BookingPage() {
         schedule_note: schoolScheduleNote || null,
         schedule_agreement: isSchoolPartner ? "PENDING_STUDIO_SCHOOL_AGREEMENT" : "SELF_SCHEDULED"
       } : null,
-      total_amount: totalAmount,
-      down_payment_amount: downPaymentAmount,
-      event_date: isSchoolPartner ? null : (eventDate || null),
-      preferred_time: isSchoolPartner ? null : (preferredTime || null),
+      total_amount: totalAmount > 0 ? totalAmount : (parsePrice(selectedTier?.price || selectedService?.tiers?.[0]?.price || 1750) + addOnsTotal),
+      down_payment_amount: downPaymentAmount > 0 ? downPaymentAmount : Math.round((totalAmount > 0 ? totalAmount : (parsePrice(selectedTier?.price || selectedService?.tiers?.[0]?.price || 1750) + addOnsTotal)) * 0.5),
+      event_date: eventDate || null,
+      preferred_time: toDatabaseTime(
+        isSchoolPartner
+          ? (preferredTime || "08:00:00")
+          : (preferredTime || null)
+      ),
       location: isSchoolPartner && locationType === "CUSTOM"
         ? `On-Campus Pictorial Venue (${studentSchool || 'School Grounds'})`
         : resolvedLocation,
@@ -1769,8 +2535,8 @@ export default function BookingPage() {
     }
   };
 
-  // Helper actions for Step 8 QR Pass & Receipt
-  const handleDownloadPassSVG = () => {
+  // Helper actions for Step 7 QR Pass & Receipt
+  const handleDownloadPassSVG = (overrideBookingNumber = null) => {
     const svgEl = qrPassRef.current?.querySelector('svg');
     if (svgEl) {
       const svgData = new XMLSerializer().serializeToString(svgEl);
@@ -1778,7 +2544,8 @@ export default function BookingPage() {
       const svgUrl = URL.createObjectURL(svgBlob);
       const a = document.createElement('a');
       a.href = svgUrl;
-      a.download = `${bookingResult?.booking_number || 'booking'}-studio-pass.svg`;
+      const bNum = overrideBookingNumber || bookingResult?.booking_number || 'BK-2026-00004';
+      a.download = `${bNum}-qr.svg`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1786,8 +2553,8 @@ export default function BookingPage() {
     }
   };
 
-  const handleCopyPassToken = () => {
-    const token = bookingResult?.booking_token || bookingResult?.id;
+  const handleCopyPassToken = (overrideToken = null) => {
+    const token = overrideToken || bookingResult?.booking_token || bookingResult?.id;
     if (token && navigator.clipboard) {
       navigator.clipboard.writeText(token);
       setCopiedToken(true);
@@ -1795,18 +2562,214 @@ export default function BookingPage() {
     }
   };
 
-  const handleCopyPassURL = () => {
-    const token = bookingResult?.booking_token || bookingResult?.id;
+  const handleCopyPassURL = (overrideToken = null) => {
+    const token = overrideToken || bookingResult?.booking_token || bookingResult?.id;
     if (token && navigator.clipboard) {
-      const passUrl = `${window.location.origin}/pass?token=${encodeURIComponent(token)}`;
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const passUrl = `${origin}/pass?token=${encodeURIComponent(token)}`;
       navigator.clipboard.writeText(passUrl);
       setCopiedPassUrl(true);
       setTimeout(() => setCopiedPassUrl(false), 2000);
     }
   };
 
-  const handlePrintReceipt = () => {
-    window.print();
+  const handlePrintOfficialReceipt = (receiptData) => {
+    if (typeof window === "undefined") return;
+    const r = receiptData || paymentReceiptData || {};
+    const printWindow = window.open("", "_blank", "width=480,height=800");
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+    const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Official Payment Receipt - ${r.receiptNumber || "OR-2026"}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;0,900;1,400;1,700&display=swap" rel="stylesheet">
+  <style>
+    @page { size: 80mm auto; margin: 4mm; }
+    @media print {
+      body { margin: 0; padding: 0; background: #fff; }
+      .no-print { display: none !important; }
+    }
+    body {
+      font-family: 'Playfair Display', Georgia, serif;
+      background: #f7f7f7;
+      margin: 0;
+      padding: 16px;
+      color: #111;
+      display: flex;
+      justify-content: center;
+    }
+    .ticket {
+      width: 100%;
+      max-width: 400px;
+      background: #fff;
+      border: 1px dashed #666;
+      padding: 24px;
+      box-sizing: border-box;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      font-family: 'Playfair Display', Georgia, serif;
+    }
+    .header { text-align: center; border-bottom: 2px dashed #444; padding-bottom: 16px; margin-bottom: 16px; font-family: 'Playfair Display', Georgia, serif; }
+    .title { font-size: 19px; font-weight: 900; letter-spacing: 2px; margin: 6px 0; font-family: 'Playfair Display', Georgia, serif; }
+    .sub { font-size: 10.5px; color: #555; text-transform: uppercase; letter-spacing: 1.5px; font-family: 'Playfair Display', Georgia, serif; }
+    .tin { font-size: 9.5px; color: #777; margin-top: 3px; font-family: 'Playfair Display', Georgia, serif; }
+    .meta-row { display: flex; justify-content: space-between; font-size: 11.5px; margin: 8px 0; font-family: 'Playfair Display', Georgia, serif; line-height: 1.4; }
+    .meta-label { color: #666; font-family: 'Playfair Display', Georgia, serif; letter-spacing: 0.5px; }
+    .meta-val { font-weight: 600; text-align: right; font-family: 'Playfair Display', Georgia, serif; }
+    .divider { border-bottom: 1px dashed #ccc; margin: 14px 0; }
+    .thick-divider { border-bottom: 2px dashed #444; margin: 14px 0; }
+    .item-header { display: flex; justify-content: space-between; font-size: 10.5px; font-weight: bold; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 6px; font-family: 'Playfair Display', Georgia, serif; letter-spacing: 0.5px; }
+    .item-row { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: bold; margin: 12px 0; font-family: 'Playfair Display', Georgia, serif; }
+    .stamp {
+      border: 2px solid #dc2626;
+      color: #dc2626;
+      font-weight: 900;
+      text-align: center;
+      padding: 8px;
+      font-size: 11.5px;
+      letter-spacing: 2.5px;
+      margin: 18px auto;
+      transform: rotate(-2deg);
+      max-width: 270px;
+      font-family: 'Playfair Display', Georgia, serif;
+    }
+    .barcode {
+      text-align: center;
+      margin: 16px 0 8px 0;
+      letter-spacing: 4px;
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 11px;
+    }
+    .barcode-bars {
+      height: 32px;
+      background: repeating-linear-gradient(90deg, #111 0, #111 2px, transparent 2px, transparent 4px, #111 4px, #111 7px, transparent 7px, transparent 9px);
+      margin: 6px auto;
+      max-width: 240px;
+    }
+    .btn-bar { margin-top: 16px; text-align: center; font-family: 'Playfair Display', Georgia, serif; }
+    .print-btn {
+      background: #f59e0b;
+      color: #000;
+      border: none;
+      padding: 10px 20px;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      margin-right: 8px;
+      font-family: 'Playfair Display', Georgia, serif;
+    }
+    .close-btn {
+      background: #e5e5e5;
+      color: #333;
+      border: none;
+      padding: 10px 16px;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: 'Playfair Display', Georgia, serif;
+    }
+  </style>
+</head>
+<body>
+  <div class="ticket">
+    <div class="header">
+      <div class="sub">Official Photography Receipt</div>
+      <div class="title">E-KODAK STUDIOS</div>
+      <div class="tin">TIN: 402-991-824-000-NV</div>
+      <div class="tin">331 Rizal Street, City of Naga, Cebu</div>
+    </div>
+
+    <div class="meta-row">
+      <span class="meta-label">OFFICIAL RECEIPT NO:</span>
+      <span class="meta-val" style="font-family: 'Playfair Display', Georgia, serif; font-size: 12px;">${r.receiptNumber || "OR-2026-92841"}</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">TRANSACTION DATE:</span>
+      <span class="meta-val">${new Date(r.issuedAt || Date.now()).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">BOOKING REF / ORDER:</span>
+      <span class="meta-val" style="color: #b45309;">#${r.bookingNumber || "BK-2026-00004"}</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">CLIENT NAME:</span>
+      <span class="meta-val">${r.clientName || "Customer"}</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">CLIENT EMAIL:</span>
+      <span class="meta-val" style="font-size: 10px;">${r.clientEmail || "client@e-kodak.ph"}</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">VENUE:</span>
+      <span class="meta-val">${r.location || "E-Kodak Studio, 331 Rizal Street, City of Naga, Cebu"}</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">SESSION DATE:</span>
+      <span class="meta-val">${r.eventDate || "Studio Slot"}</span>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="item-header">
+      <span>ITEM DESCRIPTION</span>
+      <span>AMOUNT</span>
+    </div>
+    <div class="item-row">
+      <div>
+        <div>${r.packageName || "Photoshoot Package"}</div>
+        <div style="font-size: 10px; color: #666; font-weight: normal;">Tier: ${r.tierName || "Set A"}</div>
+      </div>
+      <span>₱${Number(r.total || 0).toLocaleString()}</span>
+    </div>
+
+    <div class="thick-divider"></div>
+
+    <div class="meta-row">
+      <span class="meta-label">TOTAL PACKAGE VALUE:</span>
+      <span class="meta-val">₱${Number(r.total || 0).toLocaleString()}</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">50% RESERVATION DEPOSIT:</span>
+      <span class="meta-val">₱${Number(r.downpaymentPrice || 0).toLocaleString()}</span>
+    </div>
+    <div class="meta-row" style="color: #047857; font-size: 12px;">
+      <span style="font-weight: bold;">AMOUNT PAID (SETTLED):</span>
+      <span class="meta-val" style="font-weight: 900; font-size: 13px;">₱${Number(r.downPaid || 0).toLocaleString()}</span>
+    </div>
+    <div class="meta-row" style="border-top: 1px solid #ddd; padding-top: 5px; margin-top: 5px;">
+      <span style="font-weight: bold;">BALANCE DUE ON DELIVERY:</span>
+      <span class="meta-val" style="color: #b45309; font-weight: 900;">₱${Number(r.remaining || 0).toLocaleString()}</span>
+    </div>
+
+    <div style="text-align: center; font-size: 10px; color: #555; margin-top: 16px; font-weight: bold;">
+      THANK YOU FOR CHOOSING E-KODAK!
+    </div>
+    <div style="text-align: center; font-size: 9px; color: #777; margin-top: 4px;">
+      Retain this official electronic receipt for studio entrance and pictorial verification.
+    </div>
+
+    <div class="btn-bar no-print">
+      <button class="print-btn" onclick="window.print()">Print Official Receipt / Save PDF</button>
+      <button class="close-btn" onclick="window.close()">Close Window</button>
+    </div>
+  </div>
+  <script>
+    setTimeout(function() {
+      window.print();
+    }, 300);
+  </script>
+</body>
+</html>`;
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
   };
 
   // ── STEP 7: RESERVATION SUCCESS & CAMERA-READY QR PASS ────────────────────
@@ -1814,513 +2777,495 @@ export default function BookingPage() {
     const isSchoolPartner = isAcademicService && academicBookingMode === "SCHOOL_PARTNER";
     const activeBooking = bookingResult || {
       id: "pending",
-      booking_number: "BK-2026-00002",
-      booking_token: "pending",
-      total_amount: totalAmount,
-      down_payment_amount: downPaymentAmount,
+      booking_number: "BK-2026-00004",
+      booking_token: "890f9569-1f2e-427e-a06b-e4f8cd9021a4",
+      total_amount: totalAmount > 0 ? totalAmount : (parsePrice(selectedTier?.price || selectedService?.tiers?.[0]?.price || 1750) + addOnsTotal),
+      down_payment_amount: downPaymentAmount > 0 ? downPaymentAmount : Math.round((totalAmount > 0 ? totalAmount : (parsePrice(selectedTier?.price || selectedService?.tiers?.[0]?.price || 1750) + addOnsTotal)) * 0.5),
       remaining_balance: remainingBalance,
       location: resolvedLocation,
-      status: "PENDING"
+      status: "CONFIRMED"
     };
-    const effectiveToken = activeBooking.booking_token || activeBooking.id;
-    const passUrl = typeof window !== 'undefined' ? `${window.location.origin}/pass?token=${encodeURIComponent(effectiveToken)}` : `/pass?token=${encodeURIComponent(effectiveToken)}`;
 
-    const progressMilestones = [
-      {
-        step: 1,
-        title: "Reserved",
-        badge: "Completed",
-        isCurrent: false,
-        isCompleted: true,
-        icon: CheckCircle2,
-        timing: "Completed",
-        tooltip: "Your photoshoot reservation is logged in our studio queue with your selected package and schedule parameters.",
-        avatarClass: "bg-emerald-500 text-white ring-4 ring-emerald-100 shadow-xs",
-        chipClass: "text-emerald-700 bg-emerald-50 border-emerald-200"
-      },
-      {
-        step: 2,
-        title: "Downpayment",
-        badge: "Action Required",
-        isCurrent: true,
-        isCompleted: false,
-        icon: CreditCard,
-        timing: "Direct payment once confirmed",
-        tooltip: "Once studio administrators review and confirm your booking request, you can directly settle your 50% deposit in Billing & Payments.",
-        avatarClass: "bg-gradient-to-br from-amber-400 to-amber-500 text-neutral-950 ring-4 ring-amber-300/60 shadow-md animate-pulse",
-        chipClass: "text-amber-950 bg-amber-100 border-amber-300"
-      },
-      {
-        step: 3,
-        title: "Confirmed",
-        badge: "Upcoming",
-        isCurrent: false,
-        isCompleted: false,
-        icon: ShieldCheck,
-        timing: "Direct after verification",
-        tooltip: "Studio administrators verify your deposit and issue official confirmation with your assigned photographer credentials.",
-        avatarClass: "bg-neutral-100 text-neutral-500 ring-2 ring-neutral-200/80 group-hover:bg-amber-100 group-hover:text-amber-900 group-hover:ring-gold/40 transition-all",
-        chipClass: "text-neutral-500 bg-neutral-100 border-neutral-200"
-      },
-      {
-        step: 4,
-        title: "Photoshoot",
-        badge: "Session Day",
-        isCurrent: false,
-        isCompleted: false,
-        icon: Camera,
-        timing: "On scheduled date",
-        tooltip: "Arrive at the studio or on-campus venue. Present your digital QR pass at the front desk for instant camera check-in.",
-        avatarClass: "bg-neutral-100 text-neutral-500 ring-2 ring-neutral-200/80 group-hover:bg-amber-100 group-hover:text-amber-900 group-hover:ring-gold/40 transition-all",
-        chipClass: "text-neutral-500 bg-neutral-100 border-neutral-200"
-      },
-      {
-        step: 5,
-        title: "Photo Delivery",
-        badge: "Final Gallery",
-        isCurrent: false,
-        isCompleted: false,
-        icon: Sparkles,
-        timing: "3–5 days post-session",
-        tooltip: "Receive your color-graded high-resolution portrait gallery, downloadable digital proofs, and print fulfillment.",
-        avatarClass: "bg-neutral-100 text-neutral-500 ring-2 ring-neutral-200/80 group-hover:bg-amber-100 group-hover:text-amber-900 group-hover:ring-gold/40 transition-all",
-        chipClass: "text-neutral-500 bg-neutral-100 border-neutral-200"
-      }
-    ];
+    const effectiveToken = activeBooking?.booking_token || activeBooking?.id || "890f9569-1f2e-427e-a06b-e4f8cd9021a4";
+    const shortToken = effectiveToken.length > 28 ? `${effectiveToken.slice(0, 24)}...` : effectiveToken;
+    const passUrl = typeof window !== 'undefined'
+      ? `${window.location.origin}/pass?token=${encodeURIComponent(effectiveToken)}`
+      : `/pass?token=${encodeURIComponent(effectiveToken)}`;
+
+    const detectedClientEmail = (
+      participantEmail ||
+      customerProfile?.email ||
+      profile?.email ||
+      user?.email ||
+      "abiigylo5@gmail.com"
+    );
+
+    const channelName = (
+      selectedPaymentGateway === 'gcash'
+        ? 'GCash'
+        : selectedPaymentGateway === 'maya'
+        ? 'Maya'
+        : 'Online Banking'
+    );
+
+    const resolvedClientName = (
+      [participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") ||
+      [editFirstName, editMiddleName, editLastName].filter(Boolean).join(" ") ||
+      activeBooking?.participant_details?.full_name ||
+      [customerProfile?.first_name || profile?.first_name, customerProfile?.last_name || profile?.last_name].filter(Boolean).join(" ") ||
+      user?.user_metadata?.full_name ||
+      "Abegail Alfante"
+    );
+
+    const candidatePackageName = (
+      activeBooking?.service?.name ||
+      selectedService?.name ||
+      "Senior High Packages and Sets"
+    );
+    const candidateSetName = (
+      activeBooking?.tier_name ||
+      selectedTier?.name ||
+      "Set A"
+    );
+
+    // Dynamic resolution from live database services & catalog
+    const matchedService = (
+      services?.find(s =>
+        (activeBooking?.service_id && s.id === activeBooking.service_id) ||
+        (selectedService?.id && s.id === selectedService.id) ||
+        (activeBooking?.service_slug && s.slug === activeBooking.service_slug) ||
+        (selectedService?.slug && s.slug === selectedService.slug) ||
+        (s.name && candidatePackageName && s.name.trim().toLowerCase() === candidatePackageName.trim().toLowerCase())
+      ) ||
+      SERVICES.find(s =>
+        (activeBooking?.service_id && s.id === activeBooking.service_id) ||
+        (selectedService?.id && s.id === selectedService.id) ||
+        (activeBooking?.service_slug && s.slug === activeBooking.service_slug) ||
+        (selectedService?.slug && s.slug === selectedService.slug) ||
+        (s.name && candidatePackageName && s.name.trim().toLowerCase() === candidatePackageName.trim().toLowerCase())
+      ) ||
+      selectedService ||
+      SERVICES[1] // Senior High Packages and Sets
+    );
+
+    const actualPackageName = matchedService?.name || candidatePackageName;
+
+    const matchedTier = (
+      matchedService?.tiers?.find(t =>
+        (t.name && candidateSetName && t.name.trim().toLowerCase() === candidateSetName.trim().toLowerCase()) ||
+        (activeBooking?.tier_name && t.name.trim().toLowerCase() === activeBooking.tier_name.trim().toLowerCase())
+      ) ||
+      selectedTier ||
+      matchedService?.tiers?.[0]
+    );
+
+    const actualSetName = matchedTier?.name || candidateSetName;
+
+    const actualTimedSession = (
+      matchedTier?.duration ||
+      selectedTier?.duration ||
+      matchedService?.duration ||
+      selectedService?.duration ||
+      "45–60 Mins (Dedicated Studio Slot)"
+    );
+    const actualDate = activeBooking?.event_date || eventDate;
+    const actualTime = activeBooking?.preferred_time || preferredTime;
+    const actualDateTime = (actualDate && actualTime)
+      ? `${formatTextualDate(actualDate)} • ${formatSessionTime(actualTime)}`
+      : actualDate
+      ? formatTextualDate(actualDate)
+      : "November 5, 2026 • 8:00 AM – 9:00 AM";
+    const actualVenue = (
+      activeBooking?.location ||
+      resolvedLocation ||
+      "331 Rizal Street, City of Naga, Cebu"
+    );
+
+    // Fetch and resolve actual prices with strict positive verification
+    const catalogTierPrice = parsePrice(
+      matchedTier?.price ||
+      selectedTier?.price ||
+      activeBooking?.tier?.price ||
+      activeBooking?.service?.price ||
+      selectedService?.price ||
+      1750
+    );
+
+    const dbTotal = Number(activeBooking?.total_amount);
+    const effectiveTotal = (dbTotal && dbTotal > 0)
+      ? dbTotal
+      : (totalAmount && totalAmount > 0)
+      ? totalAmount
+      : (catalogTierPrice + (addOnsTotal || 0));
+
+    const dbDown = Number(activeBooking?.down_payment_amount);
+    const effectiveDownpayment = (dbDown && dbDown > 0)
+      ? dbDown
+      : (downPaymentAmount && downPaymentAmount > 0)
+      ? downPaymentAmount
+      : (matchedTier?.down_payment ? parsePrice(matchedTier.down_payment) : Math.round(effectiveTotal * 0.5));
+
+    const dbRemaining = Number(activeBooking?.remaining_balance);
+    const effectiveRemaining = (dbRemaining !== undefined && !isNaN(dbRemaining) && dbRemaining > 0)
+      ? dbRemaining
+      : Math.max(0, effectiveTotal - effectiveDownpayment);
+
+    const formattedActualBasePrice = `₱${catalogTierPrice.toLocaleString()}`;
+    const formattedActualTotal = `₱${effectiveTotal.toLocaleString()}`;
+    const formattedActualDownpayment = `₱${effectiveDownpayment.toLocaleString()}`;
+    const formattedActualRemaining = `₱${effectiveRemaining.toLocaleString()}`;
+
+    const effectiveReceipt = {
+      receiptNumber: (typeof customOrNumber === "string" && customOrNumber.trim()) || gatewayOrNumber || `OR-2026-${(activeBooking.booking_number || '').replace(/\D/g, '').padStart(5, '0') || '92841'}`,
+      issuedAt: activeBooking?.created_at || new Date().toISOString(),
+      bookingNumber: activeBooking.booking_number || 'BK-2026-00004',
+      clientName: resolvedClientName || 'Client',
+      clientEmail: detectedClientEmail || 'client@e-kodak.ph',
+      location: actualVenue,
+      eventDate: actualDateTime,
+      packageName: actualPackageName,
+      tierName: actualSetName,
+      total: effectiveTotal,
+      downpaymentPrice: effectiveDownpayment,
+      downPaid: effectiveDownpayment,
+      remaining: effectiveRemaining,
+      paymentMethod: channelName,
+      referenceNumber: gatewayTxnRef || paymentReferenceNumber || activeBooking.booking_token?.slice(0, 16) || `PAY-${channelName.toUpperCase()}-2026`
+    };
 
     return (
-      <div className="animate-fade-in w-full max-w-[1440px] mx-auto px-2 sm:px-4 py-2 sm:py-4 font-body relative">
+      <div className="animate-fade-in w-full px-2 sm:px-3 lg:px-4 py-2 sm:py-3 font-heading relative">
         {/* Subtle Ambient Studio Lighting */}
         <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true">
           <div className="absolute top-0 left-1/4 w-[600px] h-[600px] rounded-full bg-amber-300/5 blur-[120px] pointer-events-none" />
           <div className="absolute top-1/3 right-10 w-[500px] h-[500px] rounded-full bg-gold/5 blur-[120px] pointer-events-none" />
         </div>
 
-        {/* ── THE SIGNATURE E-KODAK WARM CREAM / CHAMPAGNE STUDIO FOLIO CONTAINER ── */}
-        <div className="rounded-3xl sm:rounded-[32px] p-5 sm:p-7 lg:p-8 shadow-2xl relative z-10 bg-[#faf7f2] border border-amber-200/70 overflow-hidden space-y-5">
-          
-          {/* ── Clean, Non-Repetitive Top Header ── */}
-          <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs border border-neutral-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center shrink-0 shadow-2xs">
-                <CheckCircle2 size={22} />
+        {/* ── THE SIGNATURE E-KODAK STUDIO FOLIO CONTAINER ── */}
+        <div className="w-full rounded-2xl sm:rounded-3xl lg:rounded-[32px] p-4 sm:p-6 lg:p-7 shadow-xl relative z-10 bg-[#faf7f2] border border-amber-200/70 overflow-hidden space-y-5">
+
+          {/* ── Top Bar: Booking Reserved & Downpayment Confirmation ── */}
+          <div className="bg-gradient-to-r from-[#0d2a1c] via-[#091f14] to-[#0d1c15] text-white rounded-3xl p-5 sm:p-7 shadow-xl border border-emerald-500/30 flex flex-col lg:flex-row lg:items-center justify-between gap-5 relative overflow-hidden">
+            {/* Luminous emerald ambient accent glow */}
+            <div className="absolute top-0 right-1/4 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Left: Checkmark Icon & Booking Notice */}
+            <div className="flex items-center gap-4 sm:gap-5 relative z-10">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-500 text-neutral-950 flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/25">
+                <Check size={26} strokeWidth={3} className="text-neutral-950" />
               </div>
-              <div>
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <h1 className="font-heading text-lg sm:text-xl font-bold text-neutral-950">
-                    Booking Reserved Successfully!
-                  </h1>
-                  <span className="font-mono text-xs font-bold bg-amber-500/10 text-amber-900 border border-amber-500/30 px-2.5 py-0.5 rounded-lg">
-                    #{activeBooking.booking_number}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Tentatively Held
-                  </span>
-                </div>
-                <p className="text-xs text-neutral-500 mt-0.5">
-                  Slot secured in studio schedule queue. Once admin confirms your reservation, you can pay your downpayment directly.
-                </p>
+              <div className="flex flex-col">
+                <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-bold text-white tracking-tight leading-tight">
+                  Booking Received
+                </h1>
+                <span className="font-heading text-xs sm:text-sm text-emerald-400 font-semibold tracking-widest uppercase mt-0.5">
+                  Confirmed
+                </span>
               </div>
             </div>
 
-            {/* Hold Window Capsule */}
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs shrink-0 font-medium self-start sm:self-auto">
-              <Timer size={14} className="text-amber-700 shrink-0" />
-              <span>50% Downpayment: <strong className="font-bold text-neutral-950">{formattedDownPayment}</strong></span>
-              <span className="text-neutral-300">·</span>
-              <span className="text-[11px] text-amber-800 font-semibold">Direct Payment Once Confirmed</span>
+            {/* Right: Package Price / Downpayment Paid & Open Gmail Button */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5 shrink-0 pt-3 lg:pt-0 border-t lg:border-t-0 border-white/10 justify-between lg:justify-end relative z-10">
+              <div className="text-left lg:text-right">
+                <span className="text-[10px] font-heading tracking-widest text-emerald-400 font-bold uppercase block">
+                  DOWNPAYMENT PAID
+                </span>
+                <span className="font-heading font-black text-2xl sm:text-3xl text-white block mt-0.5 drop-shadow-sm">
+                  {formattedActualDownpayment}
+                </span>
+              </div>
+
+              <div className="flex flex-col items-start sm:items-end gap-1.5">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleResendConfirmationEmail(detectedClientEmail, activeBooking)}
+                    disabled={emailStatus.state === "sending"}
+                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 sm:py-3 rounded-full border border-white/20 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold cursor-pointer transition-all"
+                    title="Send or resend confirmation email"
+                  >
+                    <Mail size={13} className={emailStatus.state === "sending" ? "animate-spin" : "text-amber-400"} />
+                    <span>{emailStatus.state === "sending" ? "Sending..." : "Resend Email"}</span>
+                  </button>
+
+                  <a
+                    href={detectedClientEmail.includes("@gmail.com") 
+                      ? `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(detectedClientEmail)}`
+                      : "https://mail.google.com"
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5 sm:py-3 rounded-full bg-gradient-to-r from-amber-400 via-gold to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 text-xs sm:text-sm font-bold shadow-lg shadow-gold/25 hover:scale-105 active:scale-95 transition-all shrink-0 font-heading cursor-pointer"
+                  >
+                    <Mail size={15} className="text-neutral-950" />
+                    <span>Open Gmail</span>
+                  </a>
+                </div>
+
+                {emailStatus.state === "error" && (
+                  <span className="text-[10px] text-amber-300 font-heading bg-amber-950/70 border border-amber-500/40 px-2.5 py-0.5 rounded-md text-right max-w-[280px]">
+                    ⚠️ {emailStatus.message}
+                  </span>
+                )}
+                {emailStatus.state === "sent" && (
+                  <span className="text-[10px] text-emerald-300 font-heading bg-emerald-950/70 border border-emerald-500/40 px-2.5 py-0.5 rounded-md text-right">
+                    ✓ {emailStatus.message}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* ── 3-Column Balanced Layout: Left (QR Pass) · Center (Details & Payment) · Right (Progress Sidebar) ── */}
+          {/* ── 2-Column Responsive Layout ── */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-            
-            {/* ── 1. LEFT COLUMN: PROMINENT LARGE QR STUDIO PASS (lg:col-span-4) ── */}
-            <div className="lg:col-span-4 bg-gradient-to-b from-[#121115] via-[#16151c] to-[#0f0e13] rounded-2xl sm:rounded-3xl p-5 sm:p-6 text-white shadow-xl border border-gold/30 flex flex-col justify-between h-full relative overflow-hidden space-y-4">
-              <div className="absolute top-0 right-0 w-44 h-44 bg-gold/10 rounded-full blur-3xl pointer-events-none" />
 
-              {/* Pass Header */}
-              <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-white/10 text-xs relative z-10">
+            {/* ── 1. LEFT COLUMN: ORDER TRACKING QR CODE (lg:col-span-5) ── */}
+            <div className="lg:col-span-5 bg-[#141416] rounded-3xl overflow-hidden text-white shadow-xl border border-white/10 flex flex-col justify-between h-full">
+              {/* Top Header */}
+              <div className="flex items-center justify-between px-5 sm:px-6 pt-5 pb-3.5 border-b border-white/10 text-xs">
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span className="font-mono font-bold text-gold text-xs uppercase tracking-wider">
-                    Camera-Ready Pass
+                  <QrCode size={15} className="text-amber-400" />
+                  <span className="font-heading text-sm tracking-wide text-white uppercase font-bold">
+                    Order Tracking QR Code
                   </span>
                 </div>
-                <span className="font-mono text-neutral-400 text-xs">
+                <span className="font-heading text-neutral-400 text-xs">
                   #{activeBooking.booking_number}
                 </span>
               </div>
 
-              {/* Prominent Large QR Code Canvas */}
-              <div className="relative text-center my-auto py-1 z-10 flex flex-col items-center justify-center">
-                <div className="relative inline-block">
-                  {/* Precision Gold Camera Viewfinder Reticle Brackets */}
-                  <div className="absolute -top-2 -left-2 w-6 h-6 border-t-2 border-l-2 border-gold rounded-tl-xs pointer-events-none z-20" />
-                  <div className="absolute -top-2 -right-2 w-6 h-6 border-t-2 border-r-2 border-gold rounded-tr-xs pointer-events-none z-20" />
-                  <div className="absolute -bottom-2 -left-2 w-6 h-6 border-b-2 border-l-2 border-gold rounded-bl-xs pointer-events-none z-20" />
-                  <div className="absolute -bottom-2 -right-2 w-6 h-6 border-b-2 border-r-2 border-gold rounded-br-xs pointer-events-none z-20" />
-                  
-                  <div 
-                    ref={qrPassRef}
-                    className="bg-white p-3.5 sm:p-4 rounded-2xl shadow-2xl inline-block border border-gold/60 cursor-pointer hover:scale-[1.02] transition-transform group relative overflow-hidden"
-                    onClick={handleCopyPassURL}
-                    title="Click to copy public pass URL"
-                  >
+              {/* QR Code Canvas — Elegantly Proportioned Centered White Pass */}
+              <div className="flex-1 flex items-center justify-center p-4 sm:p-5 py-4 sm:py-6">
+                <div
+                  ref={qrPassRef}
+                  className="bg-white rounded-[28px] sm:rounded-[32px] p-4 sm:p-5 shadow-2xl flex items-center justify-center cursor-pointer hover:bg-neutral-50 transition-colors relative group select-none"
+                  onClick={() => handleCopyPassURL(effectiveToken)}
+                  title="Click to copy tracking URL"
+                >
+                  <div className="w-[260px] sm:w-[310px] md:w-[340px] aspect-square flex items-center justify-center relative">
                     <QRCodeSVG
                       bookingToken={effectiveToken}
-                      size={220}
+                      size={340}
                       level="Q"
                       foregroundColor="#0a0a0f"
                       backgroundColor="#ffffff"
                       includeMargin={false}
+                      className="w-full h-full max-w-full max-h-full"
                     />
-                    <div className="absolute inset-0 bg-neutral-950/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                      <span className="bg-neutral-950/90 text-gold text-xs font-bold px-2.5 py-1 rounded-md border border-gold/30 flex items-center gap-1.5 font-mono shadow-lg">
-                        <QrCode size={11} /> Scan Pass
-                      </span>
+                    {/* Central App Logo */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#111111] p-1.5 sm:p-2 border-2 border-white shadow-xl flex items-center justify-center overflow-hidden">
+                        <img src="/logo-mark.png" alt="E-Kodak" className="w-full h-full object-contain" />
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Digital Token & Copy Strip */}
-              <div className="bg-white/[0.06] border border-white/10 px-3 py-2 rounded-xl flex items-center justify-between text-xs font-mono text-neutral-300 relative z-10">
-                <div className="min-w-0 pr-2">
-                  <span className="text-[11.5px] text-neutral-400 block uppercase font-sans font-medium">Digital Token:</span>
-                  <span className="truncate block max-w-[170px] text-white font-semibold text-xs">{effectiveToken}</span>
+              {/* Bottom Actions & Scanner Note */}
+              <div className="px-5 sm:px-6 pt-2 pb-5 space-y-3 border-t border-white/5">
+                {/* Action Buttons: Download QR & Copy Link */}
+                <div className="grid grid-cols-2 gap-2.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadPassSVG(activeBooking.booking_number)}
+                    className="h-10 px-3 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-neutral-200 text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer font-heading"
+                  >
+                    <Download size={13} className="text-neutral-400" />
+                    <span>Download QR</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyPassURL(effectiveToken)}
+                    className="h-10 px-3 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-neutral-200 text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer font-heading"
+                  >
+                    {copiedPassUrl ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} className="text-neutral-400" />}
+                    <span>{copiedPassUrl ? "Copied" : "Copy Link"}</span>
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleCopyPassToken}
-                  className="text-xs font-bold text-gold hover:text-white bg-gold/15 border border-gold/30 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
-                >
-                  {copiedToken ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-                  {copiedToken ? "Copied" : "Copy"}
-                </button>
-              </div>
 
-              {/* 2x2 Action Buttons Grid (Clean, equal heights) */}
-              <div className="grid grid-cols-2 gap-2 text-xs relative z-10">
-                <a
-                  href={passUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="h-10 px-2.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 hover:border-gold/50 text-neutral-200 hover:text-white flex items-center justify-center gap-1.5 transition-all font-medium text-xs text-center"
-                >
-                  <ExternalLink size={12} className="text-gold shrink-0" /> Open Pass
-                </a>
-
-                <button
-                  type="button"
-                  onClick={handleDownloadPassSVG}
-                  className="h-10 px-2.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 hover:border-gold/50 text-neutral-200 hover:text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer font-medium text-xs text-center"
-                >
-                  <Download size={12} className="text-gold shrink-0" /> Download
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleCopyPassURL}
-                  className="h-10 px-2.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 hover:border-gold/50 text-neutral-200 hover:text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer font-medium text-xs text-center"
-                >
-                  {copiedPassUrl ? <Check size={12} className="text-emerald-400 shrink-0" /> : <Copy size={12} className="text-gold shrink-0" />}
-                  {copiedPassUrl ? "Copied" : "Copy Link"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handlePrintReceipt}
-                  className="h-10 px-2.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 hover:border-gold/50 text-neutral-200 hover:text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer font-medium text-xs text-center"
-                >
-                  <Printer size={12} className="text-gold shrink-0" /> Print
-                </button>
-              </div>
-
-              {/* Clean Micro Sync Footer */}
-              <div className="pt-2 border-t border-white/10 text-center text-xs text-neutral-400 relative z-10">
-                <span className="text-gold font-medium">📱 Live Studio Pass:</span> Present at reception for instant check-in.
+                {/* Application Order Scanner Footer */}
+                <p className="text-[11px] text-neutral-400 text-center leading-relaxed font-heading">
+                  Application Order Scanner: Scan with the app to look up orders and track deliverables.
+                </p>
               </div>
             </div>
 
-            {/* ── 2. CENTER COLUMN: RESERVATION DETAILS & PAYMENT SUMMARY (lg:col-span-5) ── */}
-            <div className="lg:col-span-5 flex flex-col justify-between h-full space-y-4">
-              
-              {/* Top: Photoshoot Details Card */}
-              <div className="bg-white rounded-2xl sm:rounded-3xl p-5 shadow-xs border border-neutral-200/80 space-y-3.5">
-                <div className="flex items-center justify-between pb-2.5 border-b border-neutral-100">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
-                      <Camera size={14} />
-                    </div>
-                    <h3 className="font-heading text-sm font-bold text-neutral-950">
-                      Photoshoot Details
-                    </h3>
+            {/* ── 2. RIGHT COLUMN: PHOTOSHOOT DETAILS & PAYMENT BREAKDOWN (lg:col-span-7) ── */}
+            <div className="lg:col-span-7 flex flex-col justify-between h-full space-y-5">
+
+              {/* Card 1: Photoshoot Details Card */}
+              <div className="bg-white rounded-3xl p-6 sm:p-7 border border-neutral-100 shadow-xs space-y-5">
+                {/* Header */}
+                <div className="flex items-center gap-2.5 pb-4 border-b border-neutral-100">
+                  <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-800 border border-amber-200/50 flex items-center justify-center shrink-0">
+                    <Camera size={15} />
                   </div>
-                  <span className="text-[11px] font-semibold text-neutral-500">
-                    Studio Confirmed
-                  </span>
+                  <h3 className="font-heading text-lg font-bold text-neutral-900">
+                    Photoshoot Details
+                  </h3>
                 </div>
 
                 {/* 2-Column Grid: Package & Schedule */}
-                <div className="grid sm:grid-cols-2 gap-2.5 text-xs items-stretch">
-                  {/* Package Card */}
-                  <div className="p-3 rounded-xl bg-amber-50/40 border border-amber-200/70 flex flex-col justify-between space-y-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {/* Left Column: Package */}
+                  <div className="space-y-4">
                     <div>
-                      <span className="text-[11.5px] font-mono font-bold uppercase tracking-wider text-amber-900/70 block">
-                        Package &amp; Tier
+                      <span className="text-[11px] font-heading font-medium uppercase tracking-wider text-neutral-400 block mb-1">
+                        PACKAGE
                       </span>
-                      <p className="font-heading font-bold text-neutral-950 text-xs sm:text-sm mt-0.5 truncate">
-                        {selectedService?.name}
+                      <p className="font-heading font-bold text-base sm:text-lg text-neutral-900 leading-snug">
+                        {actualPackageName} — {actualSetName}
                       </p>
-                      <p className="text-[11.5px] text-neutral-700 font-medium">
-                        Tier: <span className="font-semibold text-amber-950">{selectedTier?.name || "Standard"}</span>
+                      <p className="font-heading text-xs text-neutral-500 mt-1">
+                        {actualTimedSession}
                       </p>
                     </div>
-                    <p className="text-xs text-neutral-600 flex items-center gap-1 pt-1 border-t border-amber-200/40">
-                      <Clock size={11} className="text-gold shrink-0" />
-                      <span>{detectedSessionInfo.duration}</span>
-                    </p>
                   </div>
 
-                  {/* Schedule Card */}
-                  <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200/70 flex flex-col justify-between space-y-1">
+                  {/* Right Column: Date & Venue */}
+                  <div className="sm:border-l sm:border-neutral-100 sm:pl-6 space-y-3">
                     <div>
-                      <span className="text-[11.5px] font-mono font-bold uppercase tracking-wider text-neutral-400 block">
-                        {detectedSessionInfo.isSchool ? "Date & School Venue" : "Date & Studio Venue"}
+                      <span className="text-[11px] font-heading font-medium uppercase tracking-wider text-neutral-400 block mb-1">
+                        DATE &amp; STUDIO VENUE
                       </span>
-                      <p className="font-heading font-bold text-neutral-950 text-xs sm:text-sm mt-0.5 flex items-center gap-1 truncate">
-                        <Calendar size={12} className="text-gold shrink-0" />
-                        <span className="truncate">
-                          {isSchoolPartner
-                            ? "Official School Batch Schedule"
-                            : (eventDate ? eventDate : "Date TBD")}
-                        </span>
+                      <p className="font-heading font-semibold text-sm sm:text-base text-neutral-900 leading-snug">
+                        {actualDateTime}
                       </p>
-                      <p className="text-[11.5px] text-neutral-700 font-medium">
-                        {!isSchoolPartner && preferredTime 
-                          ? (STUDIO_TIME_SLOTS.find(s => s.time === preferredTime)?.label || preferredTime) 
-                          : (isSchoolPartner ? "School Batch Hours" : "Time Slot TBD")}
-                      </p>
+                      <div className="pt-2 space-y-0.5">
+                        <p className="font-heading text-sm font-medium text-neutral-800">
+                          E-Kodak Studio
+                        </p>
+                        <p className="font-heading text-xs text-neutral-500 leading-relaxed">
+                          {actualVenue}
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-xs text-neutral-600 flex items-center gap-1 pt-1 border-t border-neutral-200/40 truncate">
-                      <MapPin size={11} className="text-gold shrink-0" />
-                      <span className="truncate">{resolvedLocation}</span>
-                    </p>
                   </div>
                 </div>
 
-                {/* Graduate & Participant Strip */}
-                <div className="p-3 rounded-xl bg-neutral-50/80 border border-neutral-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                  <div>
-                    <span className="text-[11.5px] font-mono font-bold uppercase tracking-wider text-neutral-400 block">
-                      {isAcademicService ? "Graduate / Student" : "Client"}
-                    </span>
-                    <p className="font-heading font-bold text-neutral-950 text-xs mt-0.5">
-                      {isAcademicService 
-                        ? ([studentFirstName, studentMiddleName, studentLastName].filter(Boolean).join(" ") || "Student")
-                        : ([editFirstName, editMiddleName, editLastName].filter(Boolean).join(" ") || "Client")}
-                      {editPhone && <span className="text-neutral-500 font-normal ml-1 text-[11px]">({editPhone})</span>}
-                    </p>
-                  </div>
-
-                  {isAcademicService && studentSchool && (
-                    <div className="text-left sm:text-right">
-                      <span className="text-[11.5px] font-mono font-bold uppercase tracking-wider text-neutral-400 block">
-                        Academic Campus
-                      </span>
-                      <p className="font-semibold text-neutral-900 text-xs truncate max-w-[200px]">
-                        {studentSchool}
-                      </p>
-                      <p className="text-xs text-gold font-medium truncate max-w-[200px]">
-                        {studentCourse || effectiveShsStrand} {studentBatch ? `• ${studentBatch}` : ''}
-                      </p>
-                    </div>
-                  )}
+                {/* Section: Client */}
+                <div className="pt-3 border-t border-neutral-100">
+                  <span className="text-[11px] font-heading font-medium uppercase tracking-wider text-neutral-400 block mb-1">
+                    CLIENT
+                  </span>
+                  <p className="font-heading font-semibold text-base text-neutral-900">
+                    {resolvedClientName}
+                  </p>
+                  <p className="font-heading text-xs text-neutral-500 truncate mt-0.5">
+                    {detectedClientEmail}
+                  </p>
                 </div>
-
-                {/* Add-ons mini strip (if any) */}
-                {selectedAddOns.length > 0 && (
-                  <div className="px-3 py-2 rounded-xl bg-amber-50/30 border border-amber-200/60 flex items-center justify-between text-xs">
-                    <span className="text-neutral-700 text-[11px] truncate max-w-[240px]">
-                      Add-ons: <strong className="text-neutral-900">{selectedAddOns.map(a => a.name).join(', ')}</strong>
-                    </span>
-                    <span className="font-bold text-gold text-xs shrink-0">+₱{addOnsTotal.toLocaleString()}</span>
-                  </div>
-                )}
               </div>
 
-              {/* Bottom: Payment Breakdown & CTAs */}
-              <div className="bg-white rounded-2xl sm:rounded-3xl p-5 shadow-xs border border-neutral-200/80 space-y-3.5">
-                <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
-                  <div className="flex items-center gap-2">
-                    <CreditCard size={15} className="text-amber-700" />
-                    <h3 className="font-heading text-sm font-bold text-neutral-950">
-                      Payment Breakdown
-                    </h3>
+              {/* Card 2: Payment Breakdown Card */}
+              <div className="bg-white rounded-3xl p-6 sm:p-7 border border-neutral-100 shadow-xs space-y-4">
+                {/* Header */}
+                <div className="flex items-center gap-2.5 pb-3.5 border-b border-neutral-100">
+                  <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-800 border border-amber-200/50 flex items-center justify-center shrink-0">
+                    <CreditCard size={15} />
                   </div>
-                  <span className="text-[11px] font-mono font-semibold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-                    Guaranteed Rate
-                  </span>
+                  <h3 className="font-heading text-lg font-bold text-neutral-900">
+                    Payment Breakdown
+                  </h3>
                 </div>
 
-                <div className="space-y-1.5 text-xs">
-                  <div className="flex justify-between items-center text-neutral-600 text-[11.5px]">
-                    <span>Base Package</span>
-                    <span className="font-medium text-neutral-900">₱{basePrice.toLocaleString()}</span>
+                {/* Amount Line Items */}
+                <div className="space-y-2 text-xs sm:text-sm">
+                  <div className="flex justify-between items-center py-1">
+                    <span className="font-heading text-sm text-neutral-700">
+                      {actualPackageName} ({actualSetName})
+                    </span>
+                    <span className="font-heading font-bold text-base text-neutral-900">
+                      {formattedActualBasePrice}
+                    </span>
                   </div>
 
                   {selectedAddOns.length > 0 && (
-                    <div className="flex justify-between items-center text-neutral-600 text-[11.5px]">
-                      <span>Selected Add-ons</span>
-                      <span className="font-medium text-gold">+₱{addOnsTotal.toLocaleString()}</span>
+                    <div className="flex justify-between items-center py-1">
+                      <span className="font-heading text-sm text-neutral-700">
+                        Selected Add-ons ({selectedAddOns.length})
+                      </span>
+                      <span className="font-heading font-bold text-base text-neutral-900">
+                        +₱{addOnsTotal.toLocaleString()}
+                      </span>
                     </div>
                   )}
 
-                  <div className="flex justify-between items-center pt-1.5 border-t border-neutral-100 text-xs font-bold text-neutral-950">
-                    <span>Total Package Value</span>
-                    <span className="font-heading text-base font-bold text-neutral-950">{formattedTotal}</span>
-                  </div>
-                </div>
-
-                {/* Highlighted 50% Downpayment Banner */}
-                <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-400/20 to-amber-500/15 border border-gold/60 flex items-center justify-between gap-3 shadow-2xs">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-900 flex items-center justify-center shrink-0 border border-gold/40">
-                      <Timer size={16} className="text-amber-800" />
-                    </div>
-                    <div>
-                      <span className="text-[11.5px] font-mono font-bold uppercase tracking-wider text-amber-900/80 block">
-                        50% Downpayment Due
-                      </span>
-                      <p className="text-[11px] text-amber-950">
-                        Payable Upon Admin Confirmation
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="font-heading font-extrabold text-base sm:text-lg text-neutral-950 block">
-                      {formattedDownPayment}
+                  <div className="flex justify-between items-center py-1 border-t border-neutral-100 pt-2">
+                    <span className="font-heading text-sm font-semibold text-neutral-700">
+                      Total Package Value
                     </span>
-                    <span className="text-[11.5px] text-amber-800 font-medium">Due Now</span>
+                    <span className="font-heading font-bold text-base text-neutral-900">
+                      {formattedActualTotal}
+                    </span>
+                  </div>
+
+                  {/* Downpayment Settled Box */}
+                  <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-100 flex items-center justify-between mt-2">
+                    <div className="flex items-center gap-3">
+                      <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                        <Check size={14} strokeWidth={2.5} />
+                      </div>
+                      <div>
+                        <span className="font-heading font-bold text-sm text-neutral-900 block leading-tight">
+                          Downpayment Settled
+                        </span>
+                        <span className="text-[11px] text-neutral-500 font-heading block mt-0.5">
+                          Verified via {channelName}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-heading font-bold text-base text-neutral-900 block">
+                        {formattedActualDownpayment}
+                      </span>
+                      <span className="text-[11px] font-heading text-emerald-600 font-semibold uppercase block">
+                        Confirmed
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Remaining Balance */}
+                  <div className="flex justify-between items-center pt-2">
+                    <span className="font-heading text-sm font-semibold text-neutral-800">
+                      Balance payable at studio / on delivery:
+                    </span>
+                    <span className="font-heading font-bold text-base text-neutral-900">
+                      {formattedActualRemaining}
+                    </span>
                   </div>
                 </div>
 
-                <div className="flex justify-between items-center text-[11px] text-neutral-500 px-0.5">
-                  <span>Balance payable at studio:</span>
-                  <span className="font-semibold text-neutral-800">{formattedRemaining}</span>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="space-y-2 pt-1">
-                  <Link
-                    to="/dashboard/payments"
-                    className="btn-primary w-full h-11 flex items-center justify-center gap-2 text-xs sm:text-sm font-bold !bg-gradient-to-r !from-amber-400 !via-gold !to-amber-500 !text-neutral-950 shadow-md shadow-gold/25 hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer rounded-xl"
+                {/* Actions */}
+                <div className="pt-2 space-y-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowReceiptModal(true)}
+                    className="w-full h-11 bg-neutral-950 hover:bg-neutral-800 text-white rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer font-heading shadow-xs"
                   >
-                    <CreditCard size={16} /> Pay Downpayment in Billing &amp; Payments <ArrowRight size={15} />
-                  </Link>
+                    <Receipt size={14} className="text-gold" />
+                    <span>View Official Payment Receipt (OR)</span>
+                  </button>
 
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <Link
-                      to={`/dashboard/bookings/${activeBooking.id}`}
-                      className="h-9 flex items-center justify-center gap-1.5 font-medium rounded-lg border border-neutral-200 hover:border-gold hover:text-neutral-950 text-neutral-700 bg-neutral-50/50 hover:bg-neutral-100 transition-colors text-xs text-center"
+                  <div className="flex flex-col sm:flex-row items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => handlePrintOfficialReceipt(effectiveReceipt)}
+                      className="w-full sm:flex-1 h-10 px-4 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-neutral-700 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer font-heading"
                     >
-                      <FileText size={12} className="text-gold shrink-0" /> Order Details
-                    </Link>
+                      <Printer size={13} className="text-neutral-500" />
+                      <span>Print Receipt</span>
+                    </button>
+
                     <Link
                       to="/dashboard/bookings"
-                      className="h-9 flex items-center justify-center gap-1.5 font-medium rounded-lg border border-neutral-200 hover:border-gold hover:text-neutral-950 text-neutral-700 bg-neutral-50/50 hover:bg-neutral-100 transition-colors text-xs text-center"
+                      className="w-full sm:flex-1 h-10 px-4 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-neutral-700 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors font-heading"
                     >
-                      My Bookings
+                      <span>My Bookings →</span>
                     </Link>
                   </div>
                 </div>
-              </div>
-
-            </div>
-
-            {/* ── 3. RIGHT VERTICAL SIDEBAR: ANIMATED BOOKING PROGRESS & WHAT HAPPENS NEXT (lg:col-span-3) ── */}
-            <div className="lg:col-span-3 bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs border border-neutral-200/80 flex flex-col justify-between h-full space-y-3 relative">
-              
-              {/* Header */}
-              <div className="pb-2.5 border-b border-neutral-100">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-gold/15 text-gold flex items-center justify-center shrink-0 border border-gold/30">
-                    <Sparkles size={14} />
-                  </div>
-                  <div>
-                    <h3 className="font-heading text-sm font-bold text-neutral-950 leading-tight">
-                      Booking Progress
-                    </h3>
-                    <p className="text-xs text-neutral-400">
-                      Hover steps for full details
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Vertical Animated Progress Stepper */}
-              <div className="relative flex-1 flex flex-col justify-between py-1 space-y-2.5">
-                {/* Connecting Vertical Track Line */}
-                <div className="absolute top-4 bottom-4 left-5 w-0.5 bg-neutral-200 z-0" />
-                <div className="absolute top-4 left-5 w-0.5 h-[25%] bg-gradient-to-b from-emerald-500 to-amber-500 z-0" />
-
-                {progressMilestones.map((item) => {
-                  const StepIcon = item.icon;
-                  return (
-                    <div 
-                      key={item.step}
-                      className="group relative z-10 flex items-start gap-3 p-2 rounded-xl transition-all duration-200 hover:bg-amber-50/60 border border-transparent hover:border-amber-200/70 cursor-pointer"
-                    >
-                      {/* Animated Icon Avatar */}
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-200 ${item.avatarClass}`}>
-                        <StepIcon size={18} />
-                      </div>
-
-                      {/* Step Text Summary */}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-[11.5px] font-mono font-bold uppercase tracking-wider text-neutral-400">
-                            Step {item.step}
-                          </span>
-                          <span className={`text-[11px] font-semibold px-1.5 py-0.2 rounded ${item.chipClass}`}>
-                            {item.badge}
-                          </span>
-                        </div>
-                        <h4 className="font-heading font-bold text-xs text-neutral-950 mt-0.5">
-                          {item.title}
-                        </h4>
-                        <p className="text-xs text-neutral-500 truncate mt-0.5">
-                          {item.timing}
-                        </p>
-                      </div>
-
-                      {/* ── Interactive Hoverable Text Display Popover / Floating Tooltip ── */}
-                      <div className="absolute right-full mr-2.5 top-1/2 -translate-y-1/2 w-64 p-3.5 bg-neutral-950/95 text-white rounded-2xl shadow-2xl border border-gold/40 pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 z-50 backdrop-blur-md hidden lg:block">
-                        <div className="flex items-center justify-between gap-1 pb-1.5 border-b border-white/10 mb-2">
-                          <span className="text-xs font-mono font-bold text-gold uppercase tracking-wider flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-gold" /> Step {item.step}: {item.title}
-                          </span>
-                          <span className="text-[11px] text-neutral-400">
-                            {item.timing}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-neutral-300 leading-snug">
-                          {item.tooltip}
-                        </p>
-                        {/* Caret / Pointer Arrow */}
-                        <div className="absolute top-1/2 -translate-y-1/2 -right-1.5 w-3 h-3 bg-neutral-950 border-r border-t border-gold/40 rotate-45" />
-                      </div>
-
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Bottom Quick Help Tip */}
-              <div className="pt-2 border-t border-neutral-100 text-xs text-neutral-400 flex items-center gap-1.5">
-                <Info size={12} className="text-gold shrink-0" />
-                <span>Next: Settle 50% deposit in Payments</span>
               </div>
 
             </div>
@@ -2328,12 +3273,189 @@ export default function BookingPage() {
           </div>
 
         </div>
+
+        {/* ── Official Payment Receipt Modal (Rendered via Portal into body) ── */}
+        {showReceiptModal && typeof document !== "undefined" && createPortal(
+          <div 
+            className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md animate-fade-in overflow-y-auto font-heading"
+            onClick={() => setShowReceiptModal(false)}
+          >
+            <div 
+              className="relative w-full max-w-[420px] sm:max-w-[450px] bg-[#fffdf9] text-neutral-900 border border-neutral-300 shadow-2xl font-heading mx-auto my-auto overflow-hidden text-xs rounded-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Top Serrated Sawtooth Edge */}
+              <div className="w-full h-3.5 bg-neutral-950 overflow-hidden flex text-[#fffdf9]">
+                <svg className="w-full h-3.5" preserveAspectRatio="none" viewBox="0 0 100 10">
+                  <polygon points="0,10 5,0 10,10 15,0 20,10 25,0 30,10 35,0 40,10 45,0 50,10 55,0 60,10 65,0 70,10 75,0 80,10 85,0 90,10 95,0 100,10" fill="currentColor" />
+                </svg>
+              </div>
+
+              <div className="p-6 sm:p-8 space-y-4 font-heading">
+                {/* Close X (Top Right corner) */}
+                <div className="flex justify-end print:hidden -mt-2 -mr-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowReceiptModal(false)}
+                    aria-label="Close receipt"
+                    className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-900 hover:bg-neutral-200/60 transition-colors cursor-pointer font-heading text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Studio Header & Registration */}
+                <div className="text-center pt-1 pb-4 border-b-2 border-dashed border-neutral-300 font-heading space-y-1">
+                  <div className="flex items-center justify-center gap-2 mb-1.5 text-amber-700">
+                    <Camera size={18} />
+                    <span className="font-heading font-black tracking-widest text-base sm:text-lg text-neutral-950">E-KODAK STUDIOS</span>
+                  </div>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-neutral-500 font-bold font-heading">Official Photography Receipt</p>
+                  <p className="text-[9.5px] text-neutral-500 font-heading">TIN: 402-991-824-000</p>
+                  <p className="text-[9.5px] text-neutral-600 font-medium font-heading">331 Rizal Street, City of Naga, Cebu</p>
+                </div>
+
+                {/* Receipt Metadata */}
+                <div className="py-3 sm:py-3.5 space-y-2.5 sm:space-y-3 text-xs border-b border-dashed border-neutral-300 text-neutral-800 font-heading">
+                  <div className="flex justify-between items-baseline py-0.5">
+                    <span className="text-neutral-500 font-heading tracking-wider text-[10.5px] uppercase font-semibold">RECEIPT NO:</span>
+                    <span className="font-bold text-neutral-950 font-heading tracking-wide">
+                      {effectiveReceipt.receiptNumber}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-baseline py-0.5">
+                    <span className="text-neutral-500 font-heading tracking-wider text-[10.5px] uppercase font-semibold">DATE:</span>
+                    <span className="font-heading text-neutral-900">
+                      {new Date(effectiveReceipt.issuedAt).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-baseline py-0.5">
+                    <span className="text-neutral-500 font-heading tracking-wider text-[10.5px] uppercase font-semibold">BOOKING REF:</span>
+                    <span className="font-bold text-amber-700 font-heading tracking-wide">
+                      #{effectiveReceipt.bookingNumber}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-baseline py-0.5">
+                    <span className="text-neutral-500 font-heading tracking-wider text-[10.5px] uppercase font-semibold">CLIENT:</span>
+                    <span className="font-bold truncate max-w-[210px] text-neutral-950 font-heading">
+                      {effectiveReceipt.clientName}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-baseline py-0.5">
+                    <span className="text-neutral-500 font-heading tracking-wider text-[10.5px] uppercase font-semibold">EMAIL:</span>
+                    <span className="truncate max-w-[210px] text-neutral-700 text-[11px] font-heading">
+                      {effectiveReceipt.clientEmail}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-start py-0.5">
+                    <span className="text-neutral-500 shrink-0 font-heading tracking-wider text-[10.5px] uppercase font-semibold pt-0.5">VENUE:</span>
+                    <span className="font-medium text-right max-w-[210px] text-neutral-950 leading-relaxed font-heading text-[11.5px]">
+                      {effectiveReceipt.location}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-baseline py-0.5">
+                    <span className="text-neutral-500 font-heading tracking-wider text-[10.5px] uppercase font-semibold">SESSION DATE:</span>
+                    <span className="truncate max-w-[210px] font-heading text-neutral-900">
+                      {effectiveReceipt.eventDate}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Itemized Line Items */}
+                <div className="py-3 sm:py-3.5 space-y-2 border-b border-dashed border-neutral-300 text-xs font-heading">
+                  <div className="flex justify-between text-[10px] font-bold text-neutral-500 uppercase tracking-wider pb-2 border-b border-neutral-200 font-heading">
+                    <span className="font-heading">ITEM DESCRIPTION</span>
+                    <span className="font-heading">AMOUNT (PHP)</span>
+                  </div>
+                  <div className="flex justify-between items-start pt-2 font-heading">
+                    <div className="pr-2 font-heading">
+                      <span className="font-bold block text-neutral-950 font-heading text-xs sm:text-sm leading-snug">
+                        {effectiveReceipt.packageName}
+                      </span>
+                      <span className="text-[11px] text-neutral-500 font-heading mt-1 block">
+                        Tier: {effectiveReceipt.tierName}
+                      </span>
+                    </div>
+                    <span className="font-bold text-neutral-950 shrink-0 font-heading text-xs sm:text-sm pt-0.5">
+                      ₱{Number(effectiveReceipt.total).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Ledger & Balances */}
+                <div className="py-3 sm:py-3.5 space-y-2.5 text-xs border-b-2 border-dashed border-neutral-400 font-heading">
+                  <div className="flex justify-between items-center text-neutral-800 font-heading py-0.5">
+                    <span className="text-neutral-500 font-heading tracking-wider text-[10.5px] uppercase font-semibold">PACKAGE TOTAL:</span>
+                    <span className="font-bold text-neutral-950 font-heading">
+                      ₱{Number(effectiveReceipt.total).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-amber-900 font-heading py-0.5">
+                    <span className="text-neutral-500 font-heading tracking-wider text-[10.5px] uppercase font-semibold">50% DOWNPAYMENT:</span>
+                    <span className="font-semibold font-heading">
+                      ₱{Number(effectiveReceipt.downpaymentPrice).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-emerald-800 font-heading py-0.5">
+                    <span className="font-semibold font-heading tracking-wider text-[10.5px] uppercase">AMOUNT PAID:</span>
+                    <span className="font-bold font-heading">
+                      ₱{Number(effectiveReceipt.downPaid).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs sm:text-sm font-black pt-3 pb-0.5 border-t border-neutral-300 text-neutral-950 font-heading">
+                    <span className="font-heading tracking-wide">BALANCE REMAINING:</span>
+                    <span className="text-amber-800 font-heading text-sm">
+                      ₱{Number(effectiveReceipt.remaining).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Receipt Footnote */}
+                <div className="py-3 text-center space-y-1.5 font-heading">
+                  <p className="text-[10px] text-neutral-600 uppercase tracking-wider font-semibold font-heading">
+                    THANK YOU FOR CHOOSING E-KODAK!
+                  </p>
+                  <p className="text-[9px] text-neutral-400 font-heading leading-relaxed max-w-[280px] mx-auto">
+                    Retain this receipt for studio check-in.
+                  </p>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="pt-3 pb-1 flex items-center justify-center gap-2.5 border-t border-dashed border-neutral-300 print:hidden font-heading">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintOfficialReceipt(effectiveReceipt)}
+                    className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 font-heading"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Print Official Receipt</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowReceiptModal(false)}
+                    className="px-4 py-2.5 rounded-xl bg-neutral-200 hover:bg-neutral-300 text-neutral-800 text-xs font-bold transition-all cursor-pointer font-heading"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+
+              {/* Bottom Serrated Sawtooth Edge */}
+              <div className="w-full h-3.5 bg-neutral-950 overflow-hidden flex text-[#fffdf9]">
+                <svg className="w-full h-3.5" preserveAspectRatio="none" viewBox="0 0 100 10">
+                  <polygon points="0,0 5,10 10,0 15,10 20,0 25,10 30,0 35,10 40,0 45,10 50,0 55,10 60,0 65,10 70,0 75,10 80,0 85,10 90,0 95,10 100,0" fill="currentColor" />
+                </svg>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
       </div>
     );
   }
 
-      const stepTitles = [
-    "Service", "Package Tier", "Client Details", "Schedule & Studio", "Style Pegs", "Review"
+  const stepTitles = [
+    "Service", "Package Tier", "Client Details", "Schedule & Studio", "Review", "Payment", "Confirmation"
   ];
 
   const stepSubtitles = [
@@ -2341,8 +3463,9 @@ export default function BookingPage() {
     "Select your package tier",
     "Provide identification details",
     "Pick date, time & location",
-    "Set your style inspiration",
-    "Review & confirm your booking"
+    "Review & confirm your booking",
+    "Settle downpayment to reserve slot",
+    "Official receipt, Gmail confirmation & QR pass"
   ];
 
   return (
@@ -2383,7 +3506,7 @@ export default function BookingPage() {
               <p className="text-xs text-neutral-400">50% down</p>
             </div>
             <span className="text-[11px] font-bold bg-gold text-primary px-3 py-1.5 rounded-full">
-              Step {step}/7
+              Step {step}/6
             </span>
           </div>
         </div>
@@ -2410,47 +3533,36 @@ export default function BookingPage() {
       )}
 
       
-      {/* ── Order Confirmation Modal Before Step 8 (QR Pass) (Luxury White Theme) ────────── */}
+      {/* ── Order Confirmation Modal (Simple Yes/No Dialog) ────────── */}
       {showOrderConfirmModal && typeof document !== "undefined" && createPortal(
         <div 
-          className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-fade-in"
+          className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-fade-in font-heading"
           onClick={() => !isSubmitting && setShowOrderConfirmModal(false)}
         >
           <div
-            className="relative w-full max-w-2xl sm:max-w-3xl rounded-3xl overflow-hidden shadow-2xl border border-amber-300/80 my-auto animate-scale-up"
+            className="relative w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl border border-amber-300/80 my-auto animate-scale-up bg-white"
             style={{
-              background: "linear-gradient(165deg, #FFFFFF 0%, #FAF8F5 50%, #F5F0E8 100%)",
-              boxShadow: "0 25px 60px -15px rgba(44, 34, 22, 0.22), 0 0 35px rgba(212,175,55,0.15), inset 0 1px 0 rgba(255,255,255,1)",
+              boxShadow: "0 25px 60px -15px rgba(44, 34, 22, 0.22), 0 0 35px rgba(212,175,55,0.15)",
             }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Golden top decorative bar */}
-            <div className="h-1.5 w-full bg-gradient-to-r from-amber-400 via-[#D4AF37] to-amber-500" />
+            <div className="h-1.5 w-full bg-gradient-to-r from-amber-400 via-gold to-amber-500" />
 
             {/* Header */}
-            <div 
-              className="p-6 sm:p-7 pb-4 border-b border-amber-200/60 flex items-start justify-between gap-4"
-              style={{
-                background: "linear-gradient(90deg, rgba(212,175,55,0.12) 0%, rgba(255,255,255,0.85) 100%)",
-              }}
-            >
+            <div className="p-6 pb-4 border-b border-neutral-100 flex items-start justify-between gap-4">
               <div>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-xs font-bold uppercase tracking-widest text-amber-900 bg-amber-500/15 border border-amber-500/30 px-3 py-1 rounded-full flex items-center gap-1.5 shadow-2xs font-mono">
-                    <Sparkles size={11} className="text-amber-700" /> Pre-Submission Verification
-                  </span>
-                </div>
-                <h3 className="font-heading text-2xl sm:text-3xl font-extrabold text-neutral-950 tracking-tight mt-1">
-                  Confirm Your Reservation
+                <h3 className="font-heading text-xl sm:text-2xl font-extrabold text-neutral-950 tracking-tight">
+                  Proceed to Payment?
                 </h3>
-                <p className="text-xs sm:text-sm text-neutral-500 font-medium mt-1">
-                  Please review your photoshoot session details before we generate your digital QR pass.
+                <p className="text-xs sm:text-sm text-neutral-500 font-heading mt-1">
+                  Are you sure you want to confirm your details and proceed to the 50% downpayment step?
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => !isSubmitting && setShowOrderConfirmModal(false)}
-                className="w-9 h-9 rounded-full bg-white/90 hover:bg-white text-neutral-500 hover:text-neutral-900 border border-neutral-200/80 flex items-center justify-center transition-colors shrink-0 shadow-2xs cursor-pointer disabled:opacity-50"
+                className="w-9 h-9 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-500 hover:text-neutral-900 flex items-center justify-center transition-colors shrink-0 cursor-pointer disabled:opacity-50"
                 disabled={isSubmitting}
                 title="Close modal"
               >
@@ -2458,232 +3570,632 @@ export default function BookingPage() {
               </button>
             </div>
 
-            {/* Price banner */}
-            <div className="px-6 sm:px-7 py-3.5 bg-gradient-to-r from-amber-50/90 via-[#FAF7F2] to-amber-50/60 border-b border-amber-200/70 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                <span className="font-heading font-bold text-neutral-800 text-xs sm:text-sm tracking-tight">
-                  Total Package : <span className="text-neutral-950 font-extrabold">{formattedTotal}</span>
-                </span>
-              </div>
-              <div className="flex items-center gap-3 text-xs">
-                <span className="text-neutral-600 font-medium">
-                  Down Payment (50%): <span className="text-[#B5883F] font-bold">{formattedDownPayment}</span>
-                </span>
-                <span className="text-neutral-300 hidden sm:inline">•</span>
-                <span className="text-neutral-600 font-medium">
-                  At Studio: <span className="text-neutral-900 font-bold">{formattedRemaining}</span>
-                </span>
-              </div>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 sm:p-7 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar font-body">
-              {/* Top Validation & Reservation Error Alert */}
-              {validationError && (
-                <div className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-300 flex items-start gap-3 text-xs text-rose-900 shadow-md animate-shake">
-                  <AlertCircle size={20} className="text-rose-600 shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <strong className="block font-bold text-sm text-rose-950">Unable to Reserve Photoshoot Slot</strong>
-                    <p className="mt-1 text-xs text-rose-800 leading-relaxed font-medium">{validationError}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Package & Inclusions Card */}
-              <div className="rounded-2xl border border-amber-200/80 bg-white p-4 sm:p-5 shadow-2xs space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
-                  <div className="flex items-center gap-2">
-                    <Package size={16} className="text-amber-700" />
-                    <span className="font-heading font-bold text-sm sm:text-base text-neutral-950">
-                      {selectedService?.name} — <span className="text-amber-800">{selectedTier?.name || "Standard"}</span>
-                    </span>
-                  </div>
-                  <span className="text-xs sm:text-sm font-mono font-bold text-[#B5883F]">₱{basePrice.toLocaleString()}</span>
-                </div>
-
-                {/* Inclusions List */}
-                {tierInclusions.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold text-amber-900 uppercase tracking-wider font-mono">
-                        Package Inclusions ({tierInclusions.length} items)
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {tierInclusions.map((item, idx) => (
-                        <div key={idx} className="flex items-start gap-2 p-2 px-2.5 rounded-xl bg-gradient-to-r from-amber-50/30 via-white to-white border border-neutral-200/80 text-xs text-neutral-800 shadow-2xs">
-                          <Check size={13} className="text-emerald-600 mt-0.5 shrink-0 stroke-[2.5]" />
-                          <span className="leading-tight">{item}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Client / Student Information */}
-              <div className="rounded-2xl border border-amber-200/80 bg-white p-4 sm:p-5 shadow-2xs space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
-                  <div className="flex items-center gap-2">
-                    {isAcademicService ? <GraduationCap size={16} className="text-amber-700" /> : <User size={16} className="text-amber-700" />}
-                    <span className="font-heading font-bold text-sm sm:text-base text-neutral-950">
-                      Participant &amp; Account Details
-                    </span>
-                  </div>
-                  <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border font-mono ${
-                    bookingFor === "someone_else"
-                      ? "bg-amber-100 text-amber-900 border-amber-300"
-                      : "bg-emerald-50 text-emerald-800 border-emerald-300"
-                  }`}>
-                    {bookingFor === "someone_else" ? "Someone Else" : "Personal (Self)"}
-                  </span>
-                </div>
-
-                {/* Account Owner vs Participant Distinction Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  {/* Account Owner */}
-                  <div className="p-3 rounded-xl bg-neutral-50/80 border border-neutral-200/80">
-                    <span className="text-xs uppercase text-neutral-500 block font-bold font-mono">Account Owner (Payer)</span>
-                    <span className="font-bold text-neutral-900 text-sm block mt-0.5">
-                      {activeProfile?.first_name || user?.user_metadata?.first_name || "Mark June"} {activeProfile?.last_name || user?.user_metadata?.last_name || "Repunte"}
-                    </span>
-                    <span className="text-[11px] text-neutral-500 block truncate mt-0.5">{activeProfile?.email || user?.email}</span>
-                  </div>
-
-                  {/* Booking Participant */}
-                  <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-300/80">
-                    <span className="text-xs uppercase text-amber-900 block font-bold font-mono">
-                      {isAcademicService ? "Graduate / Student" : "Photoshoot Participant"}
-                    </span>
-                    <span className="font-bold text-neutral-950 text-sm block mt-0.5">
-                      {[participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") || "Participant"}
-                    </span>
-                    {bookingFor === "someone_else" && participantRelationship && (
-                      <span className="text-xs text-amber-800 font-medium block mt-0.5">
-                        Relationship: <strong>{participantRelationship}</strong>
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Direct Contact for Participant if Someone Else */}
-                {bookingFor === "someone_else" && (participantPhone || participantEmail) && (
-                  <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-700 pt-1 border-t border-neutral-100">
-                    {participantPhone && <span>Direct Mobile: <strong className="text-neutral-900">{participantPhone}</strong></span>}
-                    {participantEmail && <span>Participant Email: <strong className="text-neutral-900">{participantEmail}</strong></span>}
-                  </div>
-                )}
-
-                {isAcademicService && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs pt-2.5 border-t border-neutral-100">
-                    <div>
-                      <span className="text-xs uppercase text-neutral-500 block font-bold font-mono">School / Campus</span>
-                      <span className="font-medium text-neutral-900 truncate block mt-0.5" title={studentSchool}>
-                        {studentSchool || "N/A"}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-xs uppercase text-neutral-500 block font-bold font-mono">
-                        {studentType === "COLLEGE" ? "Degree / Course" : "Academic Strand"}
-                      </span>
-                      <span className="font-medium text-neutral-900 block mt-0.5">
-                        {studentType === "COLLEGE" ? (studentCourse || "N/A") : (effectiveShsStrand || "N/A")}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-xs uppercase text-neutral-500 block font-bold font-mono">Section &amp; Batch</span>
-                      <span className="font-bold text-amber-900 block mt-0.5">
-                        {studentSection ? (studentSection.toLowerCase().startsWith('section') ? studentSection : `Section ${studentSection}`) : "N/A"} • <span className="text-neutral-500 font-normal">{studentBatch || "Batch 2026"}</span>
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-xs uppercase text-neutral-500 block font-bold font-mono">Student ID</span>
-                      <span className="font-mono text-neutral-900 font-semibold block mt-0.5">{studentIdNumber || "N/A"}</span>
-                    </div>
-                    {yearbookMotto && (
-                      <div className="sm:col-span-2 p-2.5 rounded-xl bg-amber-50/40 border border-amber-200/80">
-                        <span className="text-xs uppercase text-amber-900 block font-bold font-mono">Yearbook Motto</span>
-                        <p className="italic text-neutral-800 mt-0.5">&quot;{yearbookMotto}&quot;</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Photoshoot Schedule & Location */}
-              <div className="rounded-2xl border border-amber-200/80 bg-white p-4 sm:p-5 shadow-2xs space-y-2.5 text-xs">
-                <div className="flex items-center gap-2 pb-2 border-b border-neutral-100">
-                  <Calendar size={16} className="text-amber-700" />
-                  <span className="font-heading font-bold text-sm text-neutral-950">Schedule &amp; Location</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <div>
-                    <span className="text-xs uppercase text-neutral-500 block font-bold font-mono">Date &amp; Time</span>
-                    <span className="font-bold text-neutral-900 block mt-0.5">
-                      {isAcademicService && academicBookingMode === "SCHOOL_PARTNER"
-                        ? "Official School Batch Schedule (Agreed with School)"
-                        : `${eventDate || "Date TBD"} at ${STUDIO_TIME_SLOTS.find(s => s.time === preferredTime)?.label || preferredTime || "TBD"}`}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-xs uppercase text-neutral-500 block font-bold font-mono">Pictorial Venue</span>
-                    <span className="font-bold text-neutral-900 block mt-0.5 truncate" title={resolvedLocation}>
-                      {isAcademicService && academicBookingMode === "SCHOOL_PARTNER" && locationType === "CAMPUS"
-                        ? `On-Campus (${studentSchool || "School Campus"})`
-                        : resolvedLocation}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Slot Reservation Hold Notice */}
-              <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-300/80 flex items-start gap-2.5 text-xs text-amber-950 shadow-2xs">
-                <Timer size={18} className="text-amber-700 shrink-0 mt-0.5" />
-                <span>
-                  Confirming will place your photoshoot slot on <strong className="text-amber-900 font-bold">Reserved</strong> status. Once our studio admin reviews and confirms your reservation, you can settle your 50% reservation downpayment of <strong>₱{downPaymentAmount.toLocaleString()}</strong> directly in Billing &amp; Payments without any expiration timer.
-                </span>
-              </div>
-
-              {/* In-Modal Validation & Reservation Error Alert */}
+            {/* Body: Concise reservation overview */}
+            <div className="p-6 space-y-4">
               {validationError && (
                 <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-300 flex items-start gap-2.5 text-xs text-rose-900 shadow-2xs animate-shake">
                   <AlertCircle size={18} className="text-rose-600 shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <strong className="block font-bold text-rose-950">Unable to Reserve Photoshoot Slot</strong>
+                    <strong className="block font-bold text-rose-950">Unable to Reserve Slot</strong>
                     <p className="mt-0.5 text-rose-800 leading-relaxed">{validationError}</p>
                   </div>
                 </div>
               )}
+
+              <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/70 space-y-2.5 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-neutral-500 font-heading">Service &amp; Set</span>
+                  <span className="font-bold text-neutral-900 font-heading text-right">
+                    {selectedService?.name || "Senior High Packages and Sets"} — {selectedTier?.name || "Set A"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-neutral-500 font-heading">Schedule</span>
+                  <span className="font-bold text-neutral-900 font-heading text-right">
+                    {formatTextualDate(eventDate)} • {formatSessionTime(preferredTime)}
+                  </span>
+                </div>
+                <div className="pt-2 border-t border-amber-200/60 flex justify-between items-center">
+                  <span className="text-neutral-600 font-bold font-heading">Total Amount</span>
+                  <span className="font-extrabold text-amber-950 text-base font-heading">
+                    {formattedTotal}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-amber-800 font-bold font-heading">50% Down Payment Due</span>
+                  <span className="font-extrabold text-gold text-base font-heading">
+                    {formattedDownPayment}
+                  </span>
+                </div>
+              </div>
             </div>
 
-            {/* Footer Actions */}
-            <div className="p-4 sm:p-5 px-6 sm:px-7 bg-white/95 border-t border-amber-200/60 flex items-center justify-between gap-3">
+            {/* Footer Actions: Simple Yes or No */}
+            <div className="p-4 sm:p-5 px-6 bg-neutral-50 border-t border-neutral-100 flex items-center justify-end gap-3">
               <button
                 type="button"
-                onClick={() => !isSubmitting && setShowOrderConfirmModal(false)}
-                className="px-5 py-2.5 rounded-xl border border-neutral-200 hover:border-amber-400 bg-white hover:bg-neutral-50 text-neutral-700 hover:text-neutral-900 text-xs font-bold transition-all flex items-center gap-2 shadow-2xs cursor-pointer disabled:opacity-50"
-                disabled={isSubmitting}
+                onClick={() => setShowOrderConfirmModal(false)}
+                className="px-5 py-2.5 rounded-xl border border-neutral-300 bg-white hover:bg-neutral-100 text-neutral-700 text-xs sm:text-sm font-bold font-heading transition-all shadow-2xs cursor-pointer"
               >
-                <ArrowLeft size={14} /> Back to Review
+                No, Go Back
               </button>
 
               <button
                 type="button"
-                onClick={handleSubmitBooking}
-                disabled={isSubmitting}
-                className="group flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 via-gold to-amber-500 hover:from-amber-300 hover:to-amber-500 text-neutral-950 font-heading font-black text-xs sm:text-sm h-11 px-6 sm:px-7 rounded-xl shadow-md shadow-gold/25 hover:shadow-gold/45 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shrink-0 disabled:opacity-50"
+                onClick={() => {
+                  setShowOrderConfirmModal(false);
+                  setStep(6);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className="flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 via-gold to-amber-500 hover:from-amber-300 hover:to-amber-500 text-neutral-950 font-heading font-black text-xs sm:text-sm h-10 sm:h-11 px-6 rounded-xl shadow-md shadow-gold/25 hover:shadow-gold/45 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
               >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" /> Reserving Slot...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle size={16} className="stroke-[2.5]" /> Confirm &amp; Reserve Slot
-                  </>
-                )}
+                <CheckCircle size={16} className="stroke-[2.5]" /> Yes, Proceed to Payment
               </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Interactive Maya Business & PayMongo Test Gateway Checkout Modal ── */}
+      {showGatewayModal && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[99999] bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in font-heading"
+          onClick={() => !isSubmitting && gatewayStep !== 'processing' && setShowGatewayModal(false)}
+        >
+          <div
+            className="relative w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl border border-neutral-700 my-auto animate-scale-up bg-[#0f1117] text-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Test Sandbox Active Banner */}
+            <div className="bg-gradient-to-r from-amber-500/20 via-amber-400/25 to-amber-500/20 border-b border-amber-500/30 px-5 py-2.5 flex items-center justify-between text-xs text-amber-200">
+              <span className="flex items-center gap-2 font-bold tracking-wide">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                SANDBOX TEST MODE ACTIVE
+              </span>
+              <span className="text-[10px] bg-amber-400/20 border border-amber-400/40 text-amber-200 px-2 py-0.5 rounded-full font-bold">
+                Maya Business Rail
+              </span>
+            </div>
+
+            {/* Gateway Top Header */}
+            <div className="p-5 sm:p-6 pb-4 border-b border-white/10 flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-black text-lg shadow-sm shrink-0 ${
+                  selectedPaymentGateway === 'gcash' ? 'bg-blue-600 text-white' :
+                  selectedPaymentGateway === 'maya' ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'
+                }`}>
+                  {selectedPaymentGateway === 'gcash' ? 'G' : selectedPaymentGateway === 'maya' ? 'm' : <Building size={20} />}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-white">
+                      {selectedPaymentGateway === 'gcash' ? 'GCash via Maya Gateway' :
+                       selectedPaymentGateway === 'maya' ? 'Maya Business Direct' : 'Online Banking / InstaPay'}
+                    </span>
+                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 rounded-full">
+                      Secure
+                    </span>
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    BSP Supervised • 256-Bit SSL Encrypted Rail
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGatewayModal(false)}
+                disabled={gatewayStep === 'processing' || isSubmitting}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-neutral-400 hover:text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer disabled:opacity-40"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Destination Merchant Card (PayMongo / Maya Business Standard) */}
+            <div className="px-5 sm:px-6 pt-4 pb-2">
+              <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-between gap-3 text-xs">
+                <div>
+                  <span className="text-neutral-400 text-[11px] block">PAY TO MERCHANT:</span>
+                  <strong className="text-sm font-extrabold text-white">E-KODAK STUDIOS PH</strong>
+                  <span className="text-[11px] text-emerald-400 font-mono block mt-0.5">
+                    Merchant Number: 0928-888-5632
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-neutral-400 text-[11px] block">DOWNPAYMENT DUE:</span>
+                  <span className="text-xl font-black text-amber-400">
+                    ₱{downPaymentAmount.toLocaleString()}
+                  </span>
+                  <span className="text-[10px] text-neutral-400 block">50% Reservation</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Gateway Step 1: Input Payer Mobile/Account */}
+            {gatewayStep === 'input' && (
+              <div className="p-5 sm:p-6 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-neutral-300 mb-1.5">
+                    {selectedPaymentGateway === 'bank_transfer' ? 'Payer Bank / Mobile Number' : 'Your Mobile Number'}
+                  </label>
+                  <input
+                    type="text"
+                    value={gatewayPhone}
+                    onChange={(e) => {
+                      setGatewayPhone(e.target.value);
+                      setGatewayError("");
+                    }}
+                    placeholder="09XX-XXX-XXXX"
+                    className="w-full h-12 px-4 rounded-xl bg-white/10 border border-white/20 text-white font-mono text-base focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 outline-none"
+                  />
+                </div>
+
+                {/* Quick Auto-Fill Test Account Shortcut */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGatewayPhone("0917-888-0123");
+                    setGatewayError("");
+                  }}
+                  className="w-full p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between hover:bg-amber-500/20 transition-colors cursor-pointer"
+                >
+                  <span>⚡ <strong>Quick Test Account:</strong> 0917-888-0123</span>
+                  <span className="text-[10px] font-bold bg-amber-400/30 px-2 py-0.5 rounded-md">Auto-Fill</span>
+                </button>
+
+                {gatewayError && (
+                  <p className="text-xs text-rose-400 flex items-center gap-1.5 font-medium">
+                    <AlertCircle size={14} /> {gatewayError}
+                  </p>
+                )}
+
+                <div className="pt-2 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowGatewayModal(false)}
+                    className="px-4 py-2.5 rounded-xl border border-white/20 text-neutral-300 hover:bg-white/10 text-xs font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!gatewayPhone.trim()) {
+                        setGatewayError("Please enter your mobile or account number to proceed.");
+                        return;
+                      }
+                      setGatewayStep('otp');
+                    }}
+                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 text-xs font-black shadow-md cursor-pointer flex items-center gap-1.5"
+                  >
+                    Next: Send Authentication Code →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Gateway Step 2: OTP Verification */}
+            {gatewayStep === 'otp' && (
+              <div className="p-5 sm:p-6 space-y-4">
+                <div className="text-center space-y-1">
+                  <h4 className="text-base font-bold text-white">Enter 6-Digit Authentication Code</h4>
+                  <p className="text-xs text-neutral-400">
+                    An SMS with an authorization code was sent to <strong className="text-white">{gatewayPhone}</strong> to authorize payment to <strong className="text-amber-400">E-KODAK STUDIOS PH</strong>.
+                  </p>
+                </div>
+
+                {/* Test Mode OTP Badge & Auto Fill */}
+                <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-200">
+                  <div>
+                    <span className="font-bold block text-white">Sandbox Test OTP:</span>
+                    <span className="font-mono text-base font-black text-amber-300 tracking-widest">123456</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGatewayOtp("123456");
+                      setGatewayError("");
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold text-xs shadow-xs cursor-pointer"
+                  >
+                    ⚡ Fill 123456
+                  </button>
+                </div>
+
+                <div>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={gatewayOtp}
+                    onChange={(e) => {
+                      setGatewayOtp(e.target.value.replace(/[^0-9]/g, ''));
+                      setGatewayError("");
+                    }}
+                    placeholder="123456"
+                    className="w-full h-14 text-center tracking-[0.4em] font-mono text-2xl font-black rounded-2xl bg-white/10 border border-white/20 text-white focus:border-amber-400 focus:ring-2 focus:ring-amber-400/25 outline-none"
+                  />
+                </div>
+
+                {gatewayError && (
+                  <p className="text-xs text-rose-400 flex items-center gap-1.5 font-medium justify-center">
+                    <AlertCircle size={14} /> {gatewayError}
+                  </p>
+                )}
+
+                <div className="pt-2 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setGatewayStep('input')}
+                    className="px-4 py-2.5 rounded-xl border border-white/20 text-neutral-300 hover:bg-white/10 text-xs font-bold cursor-pointer"
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (gatewayOtp.trim().length < 6) {
+                        setGatewayError("Please enter the complete 6-digit test code (123456).");
+                        return;
+                      }
+                      setGatewayStep('confirm');
+                    }}
+                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 text-xs font-black shadow-md cursor-pointer flex items-center gap-1.5"
+                  >
+                    Verify Code & Continue →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Gateway Step 3: Authorization & Deduction Confirmation */}
+            {gatewayStep === 'confirm' && (
+              <div className="p-5 sm:p-6 space-y-4">
+                <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2.5 text-xs">
+                  <div className="flex justify-between items-center text-neutral-400">
+                    <span>Debiting Account:</span>
+                    <span className="font-mono font-bold text-white">{gatewayPhone}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-neutral-400">
+                    <span>Simulated Wallet Balance:</span>
+                    <span className="font-mono text-emerald-400 font-bold">₱5,000.00</span>
+                  </div>
+                  <div className="flex justify-between items-center text-neutral-400 pt-2 border-t border-white/10">
+                    <span>Crediting Merchant:</span>
+                    <span className="font-bold text-white">E-KODAK STUDIOS PH</span>
+                  </div>
+                  <div className="flex justify-between items-center text-neutral-400">
+                    <span>Merchant Number:</span>
+                    <span className="font-mono text-emerald-400 font-bold">0928-888-5632</span>
+                  </div>
+                  <div className="flex justify-between items-center text-neutral-400">
+                    <span>Service / Set:</span>
+                    <span className="font-semibold text-white">{selectedService?.name || 'Senior High'} — {selectedTier?.name || 'Set A'}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-neutral-400">
+                    <span>Gateway Convenience Fee:</span>
+                    <span className="font-bold text-emerald-400">₱0.00 (Waived)</span>
+                  </div>
+                  <div className="pt-2 border-t border-white/10 flex justify-between items-center">
+                    <span className="font-bold text-white text-sm">Total Deducted to Merchant:</span>
+                    <span className="font-black text-amber-400 text-lg">₱{downPaymentAmount.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setGatewayStep('otp')}
+                    className="px-4 py-2.5 rounded-xl border border-white/20 text-neutral-300 hover:bg-white/10 text-xs font-bold cursor-pointer"
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGatewayStep('processing');
+                      setGatewayClearingStage(1);
+                      const generatedTxn = `PAY-MAYA-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+                      const generatedOr = `OR-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+                      setGatewayTxnRef(generatedTxn);
+                      setGatewayOrNumber(generatedOr);
+
+                      setTimeout(() => setGatewayClearingStage(2), 500);
+                      setTimeout(() => setGatewayClearingStage(3), 1000);
+                      setTimeout(() => {
+                        setGatewayStep('success');
+                      }, 1500);
+                    }}
+                    className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-neutral-950 text-xs sm:text-sm font-black shadow-lg shadow-emerald-500/25 cursor-pointer flex items-center gap-2"
+                  >
+                    <Lock size={15} /> Authorize & Pay ₱{downPaymentAmount.toLocaleString()}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Gateway Step 4: Live Processing Animation */}
+            {gatewayStep === 'processing' && (
+              <div className="p-8 sm:p-10 text-center space-y-6">
+                <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
+                  <div className="w-16 h-16 rounded-full border-4 border-amber-400/20 border-t-amber-400 animate-spin" />
+                  <Lock size={22} className="text-amber-400 absolute" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <h4 className="text-lg font-extrabold text-white">Authorizing with Maya Business Rail</h4>
+                  <p className="text-xs text-neutral-400">Please do not refresh or close this window.</p>
+                </div>
+
+                <div className="max-w-xs mx-auto space-y-2 text-left text-xs text-neutral-300 font-mono">
+                  <div className={`flex items-center gap-2 ${gatewayClearingStage >= 1 ? 'text-emerald-400' : 'text-neutral-500'}`}>
+                    <CheckCircle2 size={14} className={gatewayClearingStage >= 1 ? 'text-emerald-400' : 'text-neutral-600'} />
+                    <span>Verifying payer wallet token...</span>
+                  </div>
+                  <div className={`flex items-center gap-2 ${gatewayClearingStage >= 2 ? 'text-emerald-400' : 'text-neutral-500'}`}>
+                    <CheckCircle2 size={14} className={gatewayClearingStage >= 2 ? 'text-emerald-400' : 'text-neutral-600'} />
+                    <span>Crediting E-KODAK STUDIOS PH (0928-888-5632)...</span>
+                  </div>
+                  <div className={`flex items-center gap-2 ${gatewayClearingStage >= 3 ? 'text-emerald-400' : 'text-neutral-500'}`}>
+                    <CheckCircle2 size={14} className={gatewayClearingStage >= 3 ? 'text-emerald-400' : 'text-neutral-600'} />
+                    <span>Generating official receipt & locking schedule...</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Gateway Step 5: Gateway Success */}
+            {gatewayStep === 'success' && (
+              <div className="p-6 sm:p-8 text-center space-y-5 animate-scale-up">
+                <div className="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-500 text-emerald-400 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/25">
+                  <CheckCircle2 size={36} />
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-3 py-0.5 rounded-full border border-emerald-500/30">
+                    Payment Cleared & Confirmed
+                  </span>
+                  <h3 className="text-xl sm:text-2xl font-black text-white mt-1">
+                    ₱{downPaymentAmount.toLocaleString()} Sent to Merchant
+                  </h3>
+                  <p className="text-xs text-neutral-400">
+                    Recipient: E-KODAK STUDIOS PH (0928-888-5632)
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-1 text-xs font-mono text-left max-w-sm mx-auto">
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">TXN REFERENCE:</span>
+                    <span className="text-amber-400 font-bold">{gatewayTxnRef}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">OFFICIAL RECEIPT:</span>
+                    <span className="text-white font-bold">{gatewayOrNumber}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">CHANNEL:</span>
+                    <span className="text-emerald-400 font-bold">{selectedPaymentGateway.toUpperCase()} via Maya Business</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={async () => {
+                    setShowGatewayModal(false);
+                    await handleCompleteBookingAndPayment(gatewayTxnRef, gatewayOrNumber);
+                  }}
+                  className="w-full max-w-sm mx-auto py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 via-gold to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 font-black text-sm shadow-xl flex items-center justify-center gap-2 cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  {isSubmitting ? (
+                    <><Loader2 size={16} className="animate-spin" /> Finalizing Studio Reservation...</>
+                  ) : (
+                    <><CheckCircle size={16} /> View Camera-Ready Pass &amp; Official Receipt →</>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Authentic Thermal Studio Official Receipt Slip Modal ── */}
+      {showReceiptModal && typeof document !== "undefined" && createPortal(
+        <div 
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md animate-fade-in overflow-y-auto"
+          onClick={() => setShowReceiptModal(false)}
+        >
+          <div 
+            className="relative w-full max-w-[380px] sm:max-w-[410px] bg-[#fffdf9] text-neutral-900 border border-neutral-300 shadow-2xl font-mono mx-auto my-auto overflow-hidden text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top Serrated Sawtooth Edge */}
+            <div className="w-full h-3 bg-neutral-950 overflow-hidden flex text-[#fffdf9]">
+              <svg className="w-full h-3" preserveAspectRatio="none" viewBox="0 0 100 10">
+                <polygon points="0,10 5,0 10,10 15,0 20,10 25,0 30,10 35,0 40,10 45,0 50,10 55,0 60,10 65,0 70,10 75,0 80,10 85,0 90,10 95,0 100,10" fill="currentColor" />
+              </svg>
+            </div>
+
+            <div className="p-5 sm:p-7 space-y-3.5">
+              {/* Close X (Top Right corner) */}
+              <div className="flex justify-end print:hidden -mt-1 -mr-1">
+                <button
+                  type="button"
+                  onClick={() => setShowReceiptModal(false)}
+                  aria-label="Close receipt"
+                  className="p-1 rounded-md text-neutral-400 hover:text-neutral-900 hover:bg-neutral-200/60 transition-colors cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Studio Header & Registration */}
+              <div className="text-center pt-1 pb-3 border-b-2 border-dashed border-neutral-400">
+                <div className="flex items-center justify-center gap-1.5 mb-1 text-amber-700">
+                  <Camera size={18} />
+                  <span className="font-heading font-black tracking-widest text-base text-neutral-950">E-KODAK STUDIOS</span>
+                </div>
+                <p className="text-[10px] uppercase tracking-widest text-neutral-600 font-bold">Official Photography Receipt</p>
+                <p className="text-[9px] text-neutral-500 mt-0.5">TIN: 402-991-824-000 • POS STATION 01</p>
+                <p className="text-[9px] text-neutral-600 font-medium">311 Rizal Street, City of Naga, Cebu</p>
+                <p className="text-[9px] text-emerald-800 font-bold mt-0.5">Maya Business Merchant: 0928-888-5632</p>
+              </div>
+
+              {/* Receipt Metadata */}
+              <div className="py-1.5 space-y-1 text-[11px] border-b border-dashed border-neutral-300 text-neutral-800">
+                <div className="flex justify-between">
+                  <span className="text-neutral-500">RECEIPT NO:</span>
+                  <span className="font-bold text-neutral-950 font-mono">
+                    {paymentReceiptData?.receiptNumber || gatewayOrNumber || 'OR-2026-92841'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-neutral-500">DATE:</span>
+                  <span>
+                    {new Date(paymentReceiptData?.issuedAt || Date.now()).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-neutral-500">BOOKING REF:</span>
+                  <span className="font-bold text-amber-700">
+                    #{paymentReceiptData?.bookingNumber || bookingResult?.booking_number || 'BK-2026-00001'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-neutral-500">CLIENT:</span>
+                  <span className="font-bold truncate max-w-[200px] text-neutral-950">
+                    {paymentReceiptData?.clientName || (participantFirstName ? `${participantFirstName} ${participantLastName}` : 'Customer')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-start">
+                  <span className="text-neutral-500 shrink-0">VENUE / PLACE:</span>
+                  <span className="font-semibold text-right max-w-[200px] text-neutral-950 leading-tight">
+                    {paymentReceiptData?.location || resolvedLocation}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-neutral-500">SESSION DATE:</span>
+                  <span className="truncate max-w-[200px]">
+                    {paymentReceiptData?.eventDate || `${formatTextualDate(eventDate)} • ${formatSessionTime(preferredTime)}`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Itemized Line Items */}
+              <div className="py-1.5 space-y-1.5 border-b border-dashed border-neutral-300 text-[11px]">
+                <div className="flex justify-between text-[10px] font-bold text-neutral-500 uppercase pb-1 border-b border-neutral-200">
+                  <span>ITEM DESCRIPTION</span>
+                  <span>AMOUNT (PHP)</span>
+                </div>
+                <div className="flex justify-between items-start pt-1">
+                  <div className="pr-2">
+                    <span className="font-bold block text-neutral-950">
+                      {paymentReceiptData?.packageName || selectedService?.name || 'Photoshoot Package'}
+                    </span>
+                    <span className="text-[10px] text-neutral-500">
+                      Tier: {paymentReceiptData?.tierName || selectedTier?.name || 'Set A'}
+                    </span>
+                  </div>
+                  <span className="font-bold text-neutral-950 shrink-0">
+                    ₱{(paymentReceiptData?.total || totalAmount).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Ledger & Balances */}
+              <div className="py-1.5 space-y-1.5 text-[11px] border-b-2 border-dashed border-neutral-400">
+                <div className="flex justify-between text-neutral-800">
+                  <span className="text-neutral-500">PACKAGE TOTAL:</span>
+                  <span className="font-bold text-neutral-950">
+                    ₱{(paymentReceiptData?.total || totalAmount).toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between text-amber-900">
+                  <span className="text-neutral-500">50% DOWNPAYMENT:</span>
+                  <span className="font-semibold">
+                    ₱{(paymentReceiptData?.downpaymentPrice || downPaymentAmount).toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between text-emerald-800">
+                  <span className="font-semibold">AMOUNT PAID:</span>
+                  <span className="font-bold">
+                    ₱{(paymentReceiptData?.downPaid || downPaymentAmount).toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs font-black pt-1.5 border-t border-neutral-300 text-neutral-950">
+                  <span>BALANCE REMAINING:</span>
+                  <span className="text-amber-800">
+                    ₱{(paymentReceiptData?.remaining || remainingBalance).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Payment Breakdown */}
+              <div className="py-1 space-y-1 border-b border-dashed border-neutral-300 text-[10px]">
+                <span className="text-neutral-500 font-bold uppercase block mb-1">TRANSACTION BREAKDOWN:</span>
+                <div className="flex justify-between text-neutral-700">
+                  <span>
+                    {selectedPaymentGateway.toUpperCase()} ({paymentReceiptData?.payments?.[0]?.reference_number || gatewayTxnRef || paymentReferenceNumber || 'PAY-MAYA-2026'})
+                  </span>
+                  <span className="font-bold text-neutral-950">₱{downPaymentAmount.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-neutral-500 text-[9px]">
+                  <span>Receiver: E-KODAK STUDIOS PH</span>
+                  <span>Tel: 0928-888-5632</span>
+                </div>
+              </div>
+
+              {/* Official Stamp & Simulated Barcode */}
+              <div className="py-2 text-center space-y-2.5">
+                <div className="inline-block border-2 border-red-600 text-red-600 px-3 py-1 font-black text-[10.5px] uppercase tracking-widest rotate-[-3deg] shadow-2xs">
+                  ★ OFFICIAL RECEIPT · VERIFIED ★
+                </div>
+
+                <div className="flex flex-col items-center pt-1">
+                  <div className="flex items-center gap-[2px] h-8">
+                    {[2,1,3,1,2,4,1,2,1,3,2,1,4,1,2,3,1,2,1,4,2,1,3,1,2,4,1,3,2,1,4,1,2,3,1,2].map((w, idx) => (
+                      <div key={idx} className="h-full bg-neutral-900" style={{ width: `${w}px` }} />
+                    ))}
+                  </div>
+                  <span className="text-[8.5px] text-neutral-500 tracking-[0.25em] mt-1 font-mono">
+                    * {paymentReceiptData?.receiptNumber || gatewayOrNumber || 'OR-2026-92841'} *
+                  </span>
+                </div>
+
+                <p className="text-[9.5px] text-neutral-500 uppercase tracking-wider font-semibold">
+                  THANK YOU FOR CHOOSING E-KODAK!
+                </p>
+                <p className="text-[8.5px] text-neutral-400">
+                  Retain this receipt for studio check-in.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 pb-1 flex items-center justify-center gap-2 border-t border-dashed border-neutral-300 print:hidden font-body">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Receipt</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowReceiptModal(false)}
+                  className="px-4 py-2 rounded-xl bg-neutral-200 hover:bg-neutral-300 text-neutral-800 text-xs font-bold transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {/* Bottom Serrated Sawtooth Edge */}
+            <div className="w-full h-3 bg-neutral-950 overflow-hidden flex text-[#fffdf9]">
+              <svg className="w-full h-3" preserveAspectRatio="none" viewBox="0 0 100 10">
+                <polygon points="0,0 5,10 10,0 15,10 20,0 25,10 30,0 35,10 40,0 45,10 50,0 55,10 60,0 65,10 70,0 75,10 80,0 85,10 90,0 95,10 100,0" fill="currentColor" />
+              </svg>
             </div>
           </div>
         </div>,
@@ -3152,7 +4664,7 @@ export default function BookingPage() {
                 </span>
               </div>
 
-              {/* 6-Segment Progress Track */}
+              {/* 5-Segment Progress Track */}
               <div className="grid grid-cols-6 gap-1.5 sm:gap-2.5 mb-2 sm:mb-3">
                 {[1, 2, 3, 4, 5, 6].map((s) => {
                   const isActive = step === s;
@@ -4087,7 +5599,7 @@ export default function BookingPage() {
                         <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-200 text-[11px] text-neutral-600 flex items-start gap-2.5">
                           <ShieldCheck size={16} className="text-emerald-600 shrink-0 mt-0.5" />
                           <div className="leading-relaxed">
-                            <span className="font-bold text-primary">Account Owner Protection:</span> You are currently logged in as <strong className="text-primary font-semibold">{activeProfile?.first_name || user?.user_metadata?.first_name || "Mark June"} {activeProfile?.last_name || user?.user_metadata?.last_name || "Repunte"}</strong>. You will hold ownership of the billing and order tracking, but this session will be recorded and personalized for <strong className="text-gold font-bold">{participantFirstName || "the participant"} {participantLastName || ""}</strong>.
+                            <span className="font-bold text-primary">Account Owner Protection:</span> You are currently logged in as <strong className="text-primary font-semibold">{[activeProfile?.first_name || user?.user_metadata?.first_name, activeProfile?.last_name || user?.user_metadata?.last_name].filter(Boolean).join(" ") || "Account Owner"}</strong>. You will hold ownership of the billing and order tracking, but this session will be recorded and personalized for <strong className="text-gold font-bold">{participantFirstName || "the participant"} {participantLastName || ""}</strong>.
                           </div>
                         </div>
                       </div>
@@ -5059,223 +6571,498 @@ export default function BookingPage() {
                   STEP 4: SCHEDULE & STUDIO LOCATION (8AM-5PM, BATCH SCHEDULING)
               ───────────────────────────────────────────────────────────── */}
               {step === 4 && (
-                <div className="space-y-6 animate-fade-in">
+                <div id="studio-photoshoot-scheduling-section" className="space-y-6 animate-fade-in scroll-mt-6">
                   {/* Section Title Header matching Steps 1 to 4 */}
                   <div className="text-center mb-6 sm:mb-8 relative z-10 pt-4 sm:pt-6">
-                    <span className="text-[11px] uppercase font-bold tracking-widest text-amber-900 bg-amber-500/15 px-3.5 py-1 rounded-full border border-amber-500/30 inline-block mb-2 shadow-xs">
-                      {isAcademicService
-                        ? "Graduation Pictorial Arrangement"
-                        : "Schedule & Studio Location"}
-                    </span>
+                    {(!isAcademicService || bookingFor === "school_section") && (
+                      <span className="text-[11px] uppercase font-bold tracking-widest text-amber-900 bg-amber-500/15 px-3.5 py-1 rounded-full border border-amber-500/30 inline-block mb-2 shadow-xs">
+                        {isAcademicService
+                          ? "School Campus Pictorial Schedule"
+                          : "Schedule & Studio Location"}
+                      </span>
+                    )}
                     <h2 className="text-2xl sm:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight drop-shadow-xs">
                       {isAcademicService
-                        ? "Photoshoot Scheduling Arrangement"
-                        : "Session date, time & studio location"}
+                        ? (bookingFor === "school_section"
+                            ? "Campus Batch Pictorial Arrangement"
+                            : "Select Photoshoot Schedule")
+                        : "Select Photoshoot Schedule"}
                     </h2>
                     <p className="text-xs sm:text-sm text-neutral-600 font-body mt-1 max-w-md mx-auto">
                       {isAcademicService
-                        ? "Choose whether your graduation pictorial will be held at school or at the studio."
-                        : "Studio operating hours: strictly 8:00 AM – 5:00 PM. Pick your preferred camera bay date."}
+                        ? (bookingFor === "school_section"
+                            ? "Your graduation pictorial will be conducted on-site at your school campus following your official batch schedule."
+                            : "Choose your preferred photoshoot date and time slot.")
+                        : "Choose your preferred photoshoot date and time slot."}
                     </p>
                   </div>
 
-                  {/* ── ACADEMIC SCHEDULING ARRANGEMENT SELECTOR ── */}
-                  {isAcademicService && (
-                    <div className="p-4 sm:p-5 rounded-2xl bg-white border border-neutral-200/90 shadow-2xs space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 pb-2.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-gold/15 text-gold flex items-center justify-center">
-                            <Calendar size={15} />
-                          </div>
-                          <span className="font-heading text-xs sm:text-sm font-bold text-primary">
-                            Photoshoot Venue Arrangement Option
-                          </span>
-                        </div>
-                      </div>
+                                                      {/* ── LIVE BOOKING CALENDAR & AVAILABILITY ENGINE ── */}
+                  <div className="space-y-6 animate-fade-in">
+                    {/* Section Top Label */}
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-xs font-bold text-primary">
+                        <span className="font-heading font-bold text-neutral-900 text-xs sm:text-sm">
+                          {isSchoolSection
+                            ? "Preferred Graduation Pictorial Date"
+                            : isWeddingService
+                            ? "Preferred Wedding Coverage Date"
+                            : "Preferred Photoshoot Date & Call Time"} <span className="text-red-500">*</span>
+                        </span>
+                      </label>
 
-                      {/* 2-Card Arrangement Selector: AT SCHOOL and AT STUDIO */}
-                      <div className="grid sm:grid-cols-2 gap-3.5 pt-1">
-                        {/* Option 1: AT SCHOOL */}
-                        <div
-                          onClick={() => {
-                            setAcademicBookingMode("SCHOOL_PARTNER");
-                            setLocationType("CAMPUS");
-                          }}
-                          className={`p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 flex flex-col justify-between ${
-                            academicBookingMode === "SCHOOL_PARTNER"
-                              ? "border-primary bg-neutral-900 text-white shadow-md ring-2 ring-gold/40"
-                              : "border-neutral-200 bg-neutral-50/70 hover:border-gold/60 hover:bg-white text-neutral-900"
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className={`text-xs sm:text-sm font-bold flex items-center gap-1.5 ${academicBookingMode === "SCHOOL_PARTNER" ? "text-white" : "text-primary"}`}>
-                                <GraduationCap size={16} className={academicBookingMode === "SCHOOL_PARTNER" ? "text-gold" : "text-amber-700"} />
-                                AT SCHOOL
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="radio"
-                                  name="step5AcademicBookingMode"
-                                  checked={academicBookingMode === "SCHOOL_PARTNER"}
-                                  onChange={() => {
-                                    setAcademicBookingMode("SCHOOL_PARTNER");
-                                    setLocationType("CAMPUS");
-                                  }}
-                                  className="accent-gold w-4 h-4 cursor-pointer"
-                                />
-                              </div>
-                            </div>
-                            <p className={`text-xs font-body leading-relaxed ${academicBookingMode === "SCHOOL_PARTNER" ? "text-neutral-300" : "text-neutral-600"}`}>
-                              Your graduation pictorial will be held at your school, following the official school batch schedule.
-                            </p>
-                          </div>
-                          <div className={`mt-3 pt-2.5 border-t flex items-center gap-1.5 text-[11px] font-semibold ${
-                            academicBookingMode === "SCHOOL_PARTNER"
-                              ? "border-white/10 text-gold"
-                              : "border-neutral-200 text-amber-800"
-                          }`}>
-                            <Clock size={12} className="shrink-0" />
-                            <span>Date and time are set by the school</span>
-                          </div>
-                        </div>
-
-                        {/* Option 2: AT STUDIO */}
-                        <div
-                          onClick={() => {
-                            setAcademicBookingMode("INDIVIDUAL");
-                            setLocationType("STUDIO");
-                          }}
-                          className={`p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 flex flex-col justify-between ${
-                            academicBookingMode === "INDIVIDUAL"
-                              ? "border-primary bg-neutral-900 text-white shadow-md ring-2 ring-gold/40"
-                              : "border-neutral-200 bg-neutral-50/70 hover:border-gold/60 hover:bg-white text-neutral-900"
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className={`text-xs sm:text-sm font-bold flex items-center gap-1.5 ${academicBookingMode === "INDIVIDUAL" ? "text-white" : "text-primary"}`}>
-                                <Building size={16} className={academicBookingMode === "INDIVIDUAL" ? "text-gold" : "text-emerald-700"} />
-                                AT STUDIO
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="radio"
-                                  name="step5AcademicBookingMode"
-                                  checked={academicBookingMode === "INDIVIDUAL"}
-                                  onChange={() => {
-                                    setAcademicBookingMode("INDIVIDUAL");
-                                    setLocationType("STUDIO");
-                                  }}
-                                  className="accent-gold w-4 h-4 cursor-pointer"
-                                />
-                              </div>
-                            </div>
-                            <p className={`text-xs font-body leading-relaxed ${academicBookingMode === "INDIVIDUAL" ? "text-neutral-300" : "text-neutral-600"}`}>
-                              Your graduation pictorial will be held at the studio. Choose your preferred date and time below.
-                            </p>
-                          </div>
-                          <div className={`mt-3 pt-2.5 border-t flex items-center gap-1.5 text-[11px] font-semibold ${
-                            academicBookingMode === "INDIVIDUAL"
-                              ? "border-white/10 text-emerald-400"
-                              : "border-neutral-200 text-emerald-800"
-                          }`}>
-                            <Calendar size={12} className="shrink-0" />
-                            <span>Select your preferred studio photoshoot date on the calendar below.</span>
-                          </div>
-                        </div>
-                      </div>
                     </div>
-                  )}
 
-                  {/* ── CALENDAR & TIME SLOTS: ONLY FOR AT STUDIO OR NON-ACADEMIC BOOKINGS ── */}
-                  {(!isAcademicService || academicBookingMode === "INDIVIDUAL") && (
-                    <div className="space-y-6 animate-fade-in">
-                      {/* Notice for Individual Student Booking */}
-                      {isAcademicService && academicBookingMode === "INDIVIDUAL" && (
-                        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-300/60 flex items-start gap-2.5 text-xs text-primary font-body animate-fade-in">
-                          <CheckCircle size={18} className="text-gold shrink-0 mt-0.5" />
+                    {/* Shared Space 50/50 Split: Calendar on Left, Live Time & Availability on Right */}
+                    <div className="grid md:grid-cols-2 gap-4 lg:gap-5 items-stretch">
+                      {/* Left Half: Interactive Calendar (Matching Image 1) */}
+                      <InteractiveCalendar
+                        value={eventDate}
+                        onChange={(d) => setEventDate(d)}
+                        minDate={new Date().toISOString().split("T")[0]}
+                        blockedDates={monthBlockMap}
+                        onMonthChange={handleMonthChange}
+                      />
+
+                      {/* Right Half: Live Booking Time & Availability (Matching Image 2) */}
+                      <div className="p-4 sm:p-5 rounded-3xl bg-white border border-neutral-200/90 text-xs shadow-2xs space-y-4 flex flex-col justify-between">
+                        {/* Card Header */}
+                        <div className="flex items-center justify-between pb-3 border-b border-neutral-100 flex-wrap gap-2">
                           <div>
-                            <span className="font-bold block text-xs text-primary">
-                              In-Studio Graduation Pictorial
-                            </span>
-                            <span className="text-[11px] text-neutral-600">
-                              Please select your preferred photoshoot date and studio time slot from the calendar below.
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-heading font-extrabold text-base sm:text-lg text-neutral-950 tracking-tight">
+                                Live Booking Time &amp; Availability
+                              </h3>
+                            </div>
+                            <span className="text-xs text-neutral-500 font-medium block mt-0.5">
+                              {eventDate ? (
+                                <span className="font-semibold text-neutral-900">
+                                  {new Date(eventDate + "T00:00:00").toLocaleDateString("en-PH", {
+                                    weekday: "long",
+                                    month: "long",
+                                    day: "numeric",
+                                    year: "numeric",
+                                  })}
+                                </span>
+                              ) : (
+                                "Please select a date on calendar"
+                              )}
                             </span>
                           </div>
-                        </div>
-                      )}
 
-                      {/* Target Date Picker with Interactive Calendar */}
-                      <div>
-                        <label className="block text-xs font-bold text-primary mb-2 flex items-center justify-between">
-                          <span>Preferred Photoshoot Date <span className="text-red-500">*</span></span>
-                          <span className="text-xs text-neutral-400 font-normal">Interactive Calendar View</span>
-                        </label>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* Session Period Switcher (Morning | Afternoon | All) */}
+                            {!isSchoolSection && !isWeddingService && (
+                              <div className="inline-flex items-center p-0.5 bg-neutral-100 rounded-xl border border-neutral-200/90 shadow-2xs">
+                                <button
+                                  type="button"
+                                  onClick={() => setSessionCategory("MORNING")}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                                    sessionCategory === "MORNING"
+                                      ? "bg-white text-neutral-950 shadow-xs border border-neutral-200/90 font-extrabold"
+                                      : "text-neutral-500 hover:text-neutral-900"
+                                  }`}
+                                >
+                                  <span>☀️</span>
+                                  <span>Morning</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSessionCategory("AFTERNOON")}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                                    sessionCategory === "AFTERNOON"
+                                      ? "bg-white text-neutral-950 shadow-xs border border-neutral-200/90 font-extrabold"
+                                      : "text-neutral-500 hover:text-neutral-900"
+                                  }`}
+                                >
+                                  <span>🌤️</span>
+                                  <span>Afternoon</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSessionCategory("ALL")}
+                                  className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                                    sessionCategory === "ALL"
+                                      ? "bg-white text-neutral-950 shadow-xs border border-neutral-200/90 font-extrabold"
+                                      : "text-neutral-500 hover:text-neutral-900"
+                                  }`}
+                                >
+                                  All
+                                </button>
+                              </div>
+                            )}
 
-                        <div className="grid md:grid-cols-2 gap-4 items-start">
-                          <InteractiveCalendar 
-                            value={eventDate}
-                            onChange={d => setEventDate(d)}
-                            minDate={new Date().toISOString().split('T')[0]}
-                          />
-                          <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200 text-xs space-y-3">
-                            <div className="flex items-center gap-2 text-primary font-heading font-semibold text-sm border-b border-neutral-200/60 pb-2">
-                              <Calendar size={16} className="text-gold" />
-                              <span>Selected Session Date</span>
-                            </div>
-                            <div className="p-3 bg-white rounded-xl border border-neutral-200/80 font-body text-sm font-bold text-primary flex items-center justify-between">
-                              <span>{eventDate ? new Date(eventDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : 'Please pick a date on calendar'}</span>
-                              {eventDate && <CheckCircle size={16} className="text-emerald-500" />}
-                            </div>
-                            <p className="text-[11px] text-neutral-500 font-body leading-relaxed">
-                              Studio operating hours are strictly 8:00 AM to 5:00 PM. Weekend sessions fill quickly, so selecting your preferred date early secures your camera bay.
-                            </p>
+                            {eventDate ? (
+                              dateAvailability?.isFullDayBlocked ? (
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-rose-800 bg-rose-50 border border-rose-200 px-2.5 py-0.5 rounded-full">
+                                  Date Reserved
+                                </span>
+                              ) : isSchoolSection ? (
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 bg-amber-50 border border-amber-300 px-2.5 py-0.5 rounded-full">
+                                  Full-Day Lock
+                                </span>
+                              ) : isWeddingService ? (
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 bg-amber-50 border border-amber-300 px-2.5 py-0.5 rounded-full">
+                                  Full-Day Wedding
+                                </span>
+                              ) : null
+                            ) : (
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded-full">
+                                Awaiting Date
+                              </span>
+                            )}
                           </div>
                         </div>
-                      </div>
 
-                      {/* Discrete Time Slots (8AM - 5PM) */}
-                      <div>
-                        <label className="block text-xs font-bold text-primary mb-2 flex items-center justify-between">
-                          <span>Select Appointment Time Slot <span className="text-red-500">*</span></span>
-                          <span className="text-xs text-neutral-400 font-normal">8:00 AM – 5:00 PM Operating Hours</span>
-                        </label>
+                        {/* Card Body */}
+                        <div className="flex-1 space-y-4">
+                          {!eventDate ? (
+                            <div className="py-12 px-4 text-center bg-neutral-50/60 rounded-2xl border border-dashed border-neutral-200 space-y-2">
+                              <Clock size={32} className="mx-auto text-neutral-300" />
+                              <h4 className="font-heading font-bold text-sm text-neutral-700">No Date Selected</h4>
+                              <p className="text-xs text-neutral-400 max-w-xs mx-auto">
+                                Please pick your target photoshoot date on the calendar to view available morning &amp; afternoon session time slots.
+                              </p>
+                            </div>
+                          ) : isSchoolSection ? (
+                            /* School Section Full-Day Lock Card */
+                            <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-400/15 to-transparent border border-gold/50 shadow-2xs space-y-2">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-xl bg-amber-400/30 text-amber-950 flex items-center justify-center shrink-0">
+                                  <GraduationCap size={18} />
+                                </div>
+                                <h4 className="font-heading text-sm text-neutral-950 font-extrabold">
+                                  Full-Day Campus Pictorial Day Reserved
+                                </h4>
+                              </div>
+                              <p className="text-xs text-neutral-700 font-body leading-relaxed">
+                                Reserving this date locks out the entire day for your school cohort ({studentSchool || "Partner School"}). No individual customer bookings can take this date.
+                              </p>
+                              <div className="pt-1 flex items-center gap-2">
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-neutral-950 text-gold border border-gold/40">
+                                  Entire Day Locked (8:00 AM – 5:00 PM)
+                                </span>
+                              </div>
+                            </div>
+                          ) : isWeddingService ? (
+                            /* Wedding Full-Day Lock Card */
+                            <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-400/15 to-transparent border border-gold/50 shadow-2xs space-y-2">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-xl bg-amber-400/30 text-amber-950 flex items-center justify-center shrink-0">
+                                  <Sparkles size={18} />
+                                </div>
+                                <h4 className="font-heading text-sm text-neutral-950 font-extrabold">
+                                  Full-Day Wedding Photo &amp; Video Production
+                                </h4>
+                              </div>
+                              <p className="text-xs text-neutral-700 font-body leading-relaxed">
+                                Your wedding shoot reserves our entire production and creative crew for the full day. This date is locked exclusively for your wedding.
+                              </p>
+                              <div className="pt-1 flex items-center gap-2">
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-neutral-950 text-gold border border-gold/40">
+                                  Full-Day Exclusive Crew
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            /* Individual / For Others: Morning & Afternoon Slot Cards Matching Image 2 */
+                            <div className="space-y-4 max-h-[460px] overflow-y-auto pr-1">
+                              {/* ☀️ MORNING SECTION */}
+                              {(sessionCategory === "MORNING" || sessionCategory === "ALL") && (
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between text-xs font-heading font-extrabold text-neutral-800 tracking-wider">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-amber-500 text-sm">☀️</span>
+                                      <span className="uppercase">MORNING</span>
+                                    </div>
+                                    <span className="text-[11px] text-neutral-400 font-mono font-normal">
+                                      8:00 AM – 12:00 PM
+                                    </span>
+                                  </div>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                          {STUDIO_TIME_SLOTS.map((slot) => {
-                            const isSlotSelected = preferredTime === slot.time;
-                            return (
-                              <button
-                                key={slot.time}
-                                type="button"
-                                onClick={() => setPreferredTime(slot.time)}
-                                className={`p-3 rounded-2xl border text-center transition-all flex flex-col items-center justify-center ${
-                                  isSlotSelected
-                                    ? "border-primary bg-primary text-white shadow-md ring-2 ring-primary/10"
-                                    : "border-neutral-200 bg-white hover:border-gold/50 text-neutral-700"
-                                }`}
-                              >
-                                <span className="text-xs uppercase font-bold opacity-75">{slot.period}</span>
-                                <span className="text-xs font-bold font-body mt-0.5">{slot.label}</span>
-                              </button>
-                            );
-                          })}
+                                <div className="space-y-2">
+                                  {STUDIO_HOURLY_SLOTS.slice(0, 4).map((slot) => {
+                                    const isBooked = dateAvailability?.bookedSlots?.includes(slot.time);
+                                    const isSelected = preferredTime === slot.label;
+
+                                    // Check if today and slot time has already passed
+                                    const now = new Date();
+                                    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                                    const isSelectedToday = eventDate === todayStr;
+                                    const slotStartHour = parseInt(slot.time.split(":")[0], 10);
+                                    const isPastHourToday = isSelectedToday && (slotStartHour <= now.getHours());
+
+                                    if (isPastHourToday) {
+                                      return (
+                                        <div
+                                          key={slot.time}
+                                          className="p-3 sm:p-3.5 rounded-2xl bg-neutral-50/70 border border-neutral-200 text-neutral-400 flex items-center justify-between shadow-2xs select-none opacity-50 h-[78px]"
+                                        >
+                                          <span className="font-mono font-bold text-base sm:text-lg text-neutral-400 shrink-0 min-w-[5.2rem]">
+                                            {slot.display || slot.time}
+                                          </span>
+                                          <div className="min-w-0 flex-1 px-3">
+                                            <div className="font-semibold text-xs text-neutral-500 truncate">
+                                              Time Slot Closed
+                                            </div>
+                                            <div className="text-[11px] text-neutral-400 mt-0.5">
+                                              Past Studio Operating Hours
+                                            </div>
+                                          </div>
+                                          <div className="shrink-0">
+                                            <span className="bg-neutral-100 text-neutral-500 text-xs font-semibold px-3 py-1 rounded-xl border border-neutral-200">
+                                              Closed
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+
+                                    if (isBooked) {
+                                      return (
+                                        <div
+                                          key={slot.time}
+                                          className="p-3 sm:p-3.5 rounded-2xl bg-neutral-100/80 border border-neutral-200/80 text-neutral-400 flex items-center justify-between shadow-2xs select-none transition-all h-[78px] opacity-75"
+                                        >
+                                          <span className="font-mono font-bold text-base sm:text-lg text-neutral-400 shrink-0 min-w-[5.2rem]">
+                                            {slot.display || slot.time}
+                                          </span>
+                                          <div className="min-w-0 flex-1 px-3">
+                                            <div className="font-bold text-xs sm:text-sm text-neutral-600 truncate font-heading">
+                                              Reserved Slot
+                                            </div>
+                                            <div className="text-[11px] text-neutral-400 font-medium mt-0.5">
+                                              Unavailable for booking
+                                            </div>
+                                          </div>
+                                          <div className="shrink-0">
+                                            <span className="bg-neutral-200/90 text-neutral-600 text-xs font-semibold px-3.5 py-1 rounded-xl border border-neutral-300/60">
+                                              Reserved
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+
+                                    if (isSelected) {
+                                      return (
+                                        <div
+                                          key={slot.time}
+                                          className="p-3 sm:p-3.5 rounded-2xl bg-neutral-950 border-2 border-gold text-white flex items-center justify-between shadow-md ring-2 ring-gold/50 select-none transition-all h-[78px]"
+                                        >
+                                          <span className="font-mono font-extrabold text-base sm:text-lg text-gold shrink-0 min-w-[5.2rem]">
+                                            {slot.display || slot.time}
+                                          </span>
+                                          <div className="min-w-0 flex-1 px-3 flex flex-col justify-center">
+                                            <div className="font-bold text-xs sm:text-sm text-white truncate">
+                                              Selected Time Slot
+                                            </div>
+                                          </div>
+                                          <div className="shrink-0">
+                                            <span className="bg-gold text-neutral-950 font-extrabold text-xs px-3.5 py-1.5 rounded-xl shadow-xs inline-flex items-center gap-1">
+                                              <span>Selected</span>
+                                              <span>✓</span>
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+
+                                    return (
+                                      <div
+                                        key={slot.time}
+                                        className="p-3 sm:p-3.5 rounded-2xl bg-amber-50/30 hover:bg-amber-50/60 border-2 border-amber-300/80 hover:border-gold flex items-center justify-between shadow-2xs transition-all h-[78px]"
+                                      >
+                                        <span className="font-mono font-extrabold text-base sm:text-lg text-neutral-900 shrink-0 min-w-[5.2rem]">
+                                          {slot.display || slot.time}
+                                        </span>
+                                        <div className="min-w-0 flex-1 px-3">
+                                          <div className="font-bold text-xs sm:text-sm text-neutral-950 truncate">
+                                            Available
+                                          </div>
+                                          <div className="text-[11px] text-neutral-500 font-medium mt-0.5">
+                                            Click to book
+                                          </div>
+                                        </div>
+                                        <div className="shrink-0">
+                                          <button
+                                            type="button"
+                                            onClick={() => setPreferredTime(slot.label)}
+                                            className="bg-neutral-950 hover:bg-black active:scale-95 text-white hover:text-gold border border-gold/30 text-xs font-bold px-4 py-1.5 rounded-xl shadow-xs transition-all cursor-pointer"
+                                          >
+                                            Book now
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                              {/* 🌤️ AFTERNOON SECTION */}
+                              {(sessionCategory === "AFTERNOON" || sessionCategory === "ALL") && (
+                                <div className="space-y-2 pt-1">
+                                  <div className="flex items-center justify-between text-xs font-heading font-extrabold text-neutral-800 tracking-wider">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-amber-500 text-sm">🌤️</span>
+                                      <span className="uppercase">AFTERNOON</span>
+                                    </div>
+                                    <span className="text-[11px] text-neutral-400 font-mono font-normal">
+                                      1:00 PM – 5:00 PM
+                                    </span>
+                                  </div>
+
+                                <div className="space-y-2">
+                                  {STUDIO_HOURLY_SLOTS.slice(4).map((slot) => {
+                                    const isBooked = dateAvailability?.bookedSlots?.includes(slot.time);
+                                    const isSelected = preferredTime === slot.label;
+
+                                    // Check if today and slot time has already passed
+                                    const now = new Date();
+                                    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                                    const isSelectedToday = eventDate === todayStr;
+                                    const slotStartHour = parseInt(slot.time.split(":")[0], 10);
+                                    const isPastHourToday = isSelectedToday && (slotStartHour <= now.getHours());
+
+                                    if (isPastHourToday) {
+                                      return (
+                                        <div
+                                          key={slot.time}
+                                          className="p-3 sm:p-3.5 rounded-2xl bg-neutral-50/70 border border-neutral-200 text-neutral-400 flex items-center justify-between shadow-2xs select-none opacity-50 h-[78px]"
+                                        >
+                                          <span className="font-mono font-bold text-base sm:text-lg text-neutral-400 shrink-0 min-w-[5.2rem]">
+                                            {slot.display || slot.time}
+                                          </span>
+                                          <div className="min-w-0 flex-1 px-3">
+                                            <div className="font-semibold text-xs text-neutral-500 truncate">
+                                              Time Slot Closed
+                                            </div>
+                                            <div className="text-[11px] text-neutral-400 mt-0.5">
+                                              Past Studio Operating Hours
+                                            </div>
+                                          </div>
+                                          <div className="shrink-0">
+                                            <span className="bg-neutral-100 text-neutral-500 text-xs font-semibold px-3 py-1 rounded-xl border border-neutral-200">
+                                              Closed
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+
+                                    if (isBooked) {
+                                      return (
+                                        <div
+                                          key={slot.time}
+                                          className="p-3 sm:p-3.5 rounded-2xl bg-neutral-100/80 border border-neutral-200/80 text-neutral-400 flex items-center justify-between shadow-2xs select-none transition-all h-[78px] opacity-75"
+                                        >
+                                          <span className="font-mono font-bold text-base sm:text-lg text-neutral-400 shrink-0 min-w-[5.2rem]">
+                                            {slot.display || slot.time}
+                                          </span>
+                                          <div className="min-w-0 flex-1 px-3">
+                                            <div className="font-bold text-xs sm:text-sm text-neutral-600 truncate font-heading">
+                                              Reserved Slot
+                                            </div>
+                                            <div className="text-[11px] text-neutral-400 font-medium mt-0.5">
+                                              Unavailable for booking
+                                            </div>
+                                          </div>
+                                          <div className="shrink-0">
+                                            <span className="bg-neutral-200/90 text-neutral-600 text-xs font-semibold px-3.5 py-1 rounded-xl border border-neutral-300/60">
+                                              Reserved
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+
+                                    if (isSelected) {
+                                      return (
+                                        <div
+                                          key={slot.time}
+                                          className="p-3 sm:p-3.5 rounded-2xl bg-neutral-950 border-2 border-gold text-white flex items-center justify-between shadow-md ring-2 ring-gold/50 select-none transition-all h-[78px]"
+                                        >
+                                          <span className="font-mono font-extrabold text-base sm:text-lg text-gold shrink-0 min-w-[5.2rem]">
+                                            {slot.display || slot.time}
+                                          </span>
+                                          <div className="min-w-0 flex-1 px-3 flex flex-col justify-center">
+                                            <div className="font-bold text-xs sm:text-sm text-white truncate">
+                                              Selected Time Slot
+                                            </div>
+                                          </div>
+                                          <div className="shrink-0">
+                                            <span className="bg-gold text-neutral-950 font-extrabold text-xs px-3.5 py-1.5 rounded-xl shadow-xs inline-flex items-center gap-1">
+                                              <span>Selected</span>
+                                              <span>✓</span>
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+
+                                    return (
+                                      <div
+                                        key={slot.time}
+                                        className="p-3 sm:p-3.5 rounded-2xl bg-amber-50/30 hover:bg-amber-50/60 border-2 border-amber-300/80 hover:border-gold flex items-center justify-between shadow-2xs transition-all h-[78px]"
+                                      >
+                                        <span className="font-mono font-extrabold text-base sm:text-lg text-neutral-900 shrink-0 min-w-[5.2rem]">
+                                          {slot.display || slot.time}
+                                        </span>
+                                        <div className="min-w-0 flex-1 px-3">
+                                          <div className="font-bold text-xs sm:text-sm text-neutral-950 truncate">
+                                            Available
+                                          </div>
+                                          <div className="text-[11px] text-neutral-500 font-medium mt-0.5">
+                                            Click to book
+                                          </div>
+                                        </div>
+                                        <div className="shrink-0">
+                                          <button
+                                            type="button"
+                                            onClick={() => setPreferredTime(slot.label)}
+                                            className="bg-neutral-950 hover:bg-black active:scale-95 text-white hover:text-gold border border-gold/30 text-xs font-bold px-4 py-1.5 rounded-xl shadow-xs transition-all cursor-pointer"
+                                          >
+                                            Book now
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                            </div>
+                          )}
                         </div>
+
+                        {/* Card Footer: Selected Session Time Status */}
+                        {preferredTime && (
+                          <div className="pt-3 border-t border-neutral-100 flex items-center justify-end text-xs font-body">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-neutral-950 bg-amber-500/15 border border-amber-500/30 px-3 py-1 rounded-full">
+                              <CheckCircle size={13} className="text-emerald-600 shrink-0" />
+                              <span>
+                                {isSchoolSection || isWeddingService
+                                  ? preferredTime
+                                  : `Session Time: ${preferredTime} | 1hr Session`}
+                              </span>
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )}
+                  </div>
 
-                  {/* ── PICTORIAL LOCATION / VENUE: ACADEMIC FLOW ── */}
+{/* ── PICTORIAL LOCATION / VENUE: ACADEMIC FLOW ── */}
                   {isAcademicService ? (
                     <div className="space-y-4 pt-3 border-t border-neutral-100">
                       <div className="flex items-center justify-between">
                         <div>
-                          <label className="block text-xs sm:text-sm font-bold text-primary">
+                          <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900">
                             Pictorial Location / Venue
                           </label>
                           <p className="text-[11px] text-neutral-500 font-body">
-                            {academicBookingMode === "SCHOOL_PARTNER"
+                            {bookingFor === "school_section"
                               ? "Official on-campus photoshoot at your school"
                               : "In-studio portrait session at E-Kodak Studio"}
                           </p>
@@ -5303,25 +7090,8 @@ export default function BookingPage() {
                           </div>
                         </div>
                       ) : (
-                        /* Only E-Kodak Studio when studio is selected */
-                        <div className="p-4 sm:p-5 rounded-2xl border-2 border-neutral-900 bg-gradient-to-br from-[#f8eddc] via-[#f5e6c8] to-[#eedabb] shadow-md ring-2 ring-gold/50 text-neutral-950">
-                          <div>
-                            <div className="flex items-center justify-between gap-2 mb-1.5">
-                              <div className="flex items-center gap-2 font-heading font-bold text-sm sm:text-base text-neutral-950">
-                                <Building size={17} className="text-amber-800" /> E-Kodak Studio
-                              </div>
-                              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-neutral-900 text-gold border border-gold/40 shadow-2xs">
-                                Selected
-                              </span>
-                            </div>
-                            <p className="text-xs sm:text-sm text-neutral-950 font-bold font-body truncate mt-1">
-                              311 Rizal Street, City of Naga, Cebu
-                            </p>
-                            <p className="text-[11px] text-neutral-600 font-body truncate mt-0.5">
-                              For individual scheduled in-studio portrait sessions
-                            </p>
-                          </div>
-                        </div>
+                        /* Shared Official Studio Location Card (Texts on Left, Map on Right with View Selectors) */
+                        <StudioLocationMapCard />
                       )}
 
                       {/* On-Campus Information Card: User will be informed on scheduled time once set by studio and school */}
@@ -5475,51 +7245,7 @@ export default function BookingPage() {
                         </div>
                       )}
 
-                      {/* Studio Information Card for Academic Studio Session */}
-                      {locationType === "STUDIO" && (
-                        <div className="p-4 rounded-2xl border border-neutral-200 bg-neutral-50/80 space-y-3 animate-fade-in">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-200/60 pb-3">
-                            <div>
-                              <h4 className="font-heading text-sm sm:text-base text-primary font-bold">Studio Location</h4>
-                              <p className="text-xs text-neutral-600 font-body mt-0.5">
-                                311 Rizal Street, City of Naga, Cebu
-                              </p>
-                            </div>
-                            <a 
-                              href="https://www.google.com/maps/search/?api=1&query=311+Rizal+Street,+City+of+Naga,+Cebu"
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="btn-outline text-xs font-bold py-1.5 px-3 flex items-center gap-1.5 shrink-0 bg-white shadow-xs"
-                            >
-                              <MapPin size={13} className="text-gold" /> Open in Google Maps <ExternalLink size={12} />
-                            </a>
-                          </div>
 
-                          <div className="w-full h-40 rounded-xl overflow-hidden border border-neutral-200 shadow-inner bg-neutral-100">
-                            <iframe
-                              title="E-Kodak Studio Location"
-                              width="100%"
-                              height="100%"
-                              style={{ border: 0 }}
-                              loading="lazy"
-                              allowFullScreen
-                              referrerPolicy="no-referrer-when-downgrade"
-                              src="https://maps.google.com/maps?q=311+Rizal+Street,+City+of+Naga,+Cebu&z=16&output=embed"
-                            />
-                          </div>
-
-                          <div className="grid sm:grid-cols-2 gap-2 text-xs font-body text-neutral-600">
-                            <div>
-                              <span className="font-bold text-primary block">Business Hours:</span>
-                              <span>Mon – Sat: 8:00 AM – 6:00 PM</span>
-                            </div>
-                            <div>
-                              <span className="font-bold text-primary block">Contact:</span>
-                              <span>+63 917 123 4567 · contact@e-kodak.com</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   ) : (
                     /* Standard Location Selector for Independent & Other Services */
@@ -5539,7 +7265,7 @@ export default function BookingPage() {
                               <Building size={16} className="text-gold" /> E-Kodak Studio
                             </div>
                             <p className="text-xs text-neutral-500 font-body mt-1">
-                              311 Rizal Street, City of Naga, Cebu
+                              331 Rizal Street, City of Naga, Cebu
                             </p>
                           </div>
 
@@ -5563,48 +7289,7 @@ export default function BookingPage() {
 
                       {/* STUDIO ADDRESS & INTERACTIVE GOOGLE MAPS EMBED */}
                       {locationType === "STUDIO" ? (
-                        <div className="p-4 rounded-2xl border border-neutral-200 bg-neutral-50/80 space-y-3 animate-fade-in">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-200/60 pb-3">
-                            <div>
-                              <h4 className="font-heading text-sm sm:text-base text-primary font-bold">Studio Location</h4>
-                              <p className="text-xs text-neutral-600 font-body mt-0.5">
-                                311 Rizal Street, City of Naga, Cebu
-                              </p>
-                            </div>
-                            <a 
-                              href="https://www.google.com/maps/search/?api=1&query=311+Rizal+Street,+City+of+Naga,+Cebu"
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="btn-outline text-xs font-bold py-1.5 px-3 flex items-center gap-1.5 shrink-0 bg-white shadow-xs"
-                            >
-                              <MapPin size={13} className="text-gold" /> Open in Google Maps <ExternalLink size={12} />
-                            </a>
-                          </div>
-
-                          <div className="w-full h-44 rounded-xl overflow-hidden border border-neutral-200 shadow-inner bg-neutral-100">
-                            <iframe
-                              title="E-Kodak Studio Location"
-                              width="100%"
-                              height="100%"
-                              style={{ border: 0 }}
-                              loading="lazy"
-                              allowFullScreen
-                              referrerPolicy="no-referrer-when-downgrade"
-                              src="https://maps.google.com/maps?q=311+Rizal+Street,+City+of+Naga,+Cebu&z=16&output=embed"
-                            />
-                          </div>
-
-                          <div className="grid sm:grid-cols-2 gap-3 text-xs font-body text-neutral-600">
-                            <div>
-                              <span className="font-bold text-primary block">Business Hours:</span>
-                              <span>Monday – Saturday: 8:00 AM – 6:00 PM | Sunday: By Appointment</span>
-                            </div>
-                            <div>
-                              <span className="font-bold text-primary block">Contact:</span>
-                              <span>+63 917 123 4567 · contact@e-kodak.com</span>
-                            </div>
-                          </div>
-                        </div>
+                        <StudioLocationMapCard />
                       ) : (
                         /* CUSTOM ON-LOCATION ADDRESS */
                         <div className="p-5 sm:p-6 rounded-3xl border border-neutral-200/90 bg-white space-y-4 animate-fade-in shadow-2xs">
@@ -5675,136 +7360,10 @@ export default function BookingPage() {
               )}
 
               {/* ─────────────────────────────────────────────────────────────
-                  STEP 5: PHOTO STYLE & REFERENCES (Clean, Readable UI)
+                  STEP 5: SMART COLLAPSIBLE REVIEW & CONFIRM
               ───────────────────────────────────────────────────────────── */}
               {step === 5 && (
-                <div className="space-y-6 animate-fade-in">
-                  {/* Section Title Header matching Steps 1 to 4 */}
-                  <div className="text-center mb-6 sm:mb-8 relative z-10 pt-4 sm:pt-6">
-                    <span className="text-[11px] uppercase font-bold tracking-widest text-amber-900 bg-amber-500/15 px-3.5 py-1 rounded-full border border-amber-500/30 inline-block mb-2 shadow-xs">
-                      Creative Direction &amp; Moodboard
-                    </span>
-                    <h2 className="text-2xl sm:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight drop-shadow-xs">
-                      Photo style &amp; creative references
-                    </h2>
-                    <p className="text-xs sm:text-sm text-neutral-600 font-body mt-1 max-w-md mx-auto">
-                      Upload sample reference photos or provide special instructions for our studio lighting and camera team.
-                    </p>
-                  </div>
-
-                  {/* ── CARD 1: UPLOAD REFERENCE PHOTOS & VISUAL PEGS ── */}
-                  <div className="p-5 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-neutral-200/90 shadow-2xs space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 pb-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0">
-                          <UploadCloud size={16} />
-                        </div>
-                        <div>
-                          <h3 className="font-heading text-sm sm:text-base font-bold text-primary">
-                            Upload Visual Pegs &amp; Sample Poses
-                          </h3>
-                          <p className="text-[11px] text-neutral-500 font-body">
-                            Attach sample poses, moodboards, or styles you'd like our photographer to reference
-                          </p>
-                        </div>
-                      </div>
-                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200/70">
-                        Max 3 Photos · 3MB each
-                      </span>
-                    </div>
-
-                    <ReferenceImageUploader 
-                      files={referenceFiles} 
-                      setFiles={setReferenceFiles}
-                      maxFiles={3}
-                      maxSizeMB={3}
-                    />
-                  </div>
-
-                  {/* ── CARD 3: SPECIAL REQUESTS & INSTRUCTIONS ── */}
-                  <div className="p-5 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-neutral-200/90 shadow-2xs space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 pb-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold flex items-center justify-center shrink-0">
-                          <MessageSquare size={16} />
-                        </div>
-                        <div>
-                          <h3 className="font-heading text-sm sm:text-base font-bold text-primary">
-                            Special Instructions &amp; Requests
-                          </h3>
-                          <p className="text-[11px] text-neutral-500 font-body">
-                            Pose requests, backdrop nuances, family inclusions, or styling preferences
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {notes && (
-                          <button
-                            type="button"
-                            onClick={() => setNotes("")}
-                            className="text-[11px] font-semibold text-neutral-400 hover:text-red-500 transition-colors flex items-center gap-1 cursor-pointer"
-                            title="Clear notes"
-                          >
-                            <Trash2 size={12} /> Clear text
-                          </button>
-                        )}
-                        <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200/70">
-                          Optional
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Pre-template suggestions with high-contrast chips */}
-                    {activeSpecialTemplates.length > 0 && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-neutral-700 block">
-                            Quick Add Suggestions:
-                          </span>
-                          <span className="text-xs text-neutral-400 font-body">Click to insert note</span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {activeSpecialTemplates.map((tmpl, idx) => (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => setNotes(prev => prev ? `${prev}\n• ${tmpl.text}` : `• ${tmpl.text}`)}
-                              className="text-xs font-semibold px-3 py-1.5 rounded-full bg-neutral-100 hover:bg-gold/15 text-neutral-800 hover:text-primary border border-neutral-200/80 hover:border-gold/50 transition-all flex items-center gap-1.5 shadow-2xs group cursor-pointer active:scale-95"
-                            >
-                              <Plus size={12} className="text-gold group-hover:rotate-90 transition-transform" />
-                              <span>{tmpl.label}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Modern Textarea with Helper and character tip */}
-                    <div className="relative">
-                      <textarea 
-                        id="notes"
-                        rows={4}
-                        value={notes}
-                        onChange={e => setNotes(e.target.value)}
-                        placeholder="Requesting anti-glare lighting for eyeglasses, parents joining for 2 formal shots, preference for soft diffused backdrop..."
-                        className="w-full p-4 bg-neutral-50/80 hover:bg-white focus:bg-white border border-neutral-200 focus:border-gold rounded-2xl focus:ring-3 focus:ring-gold/20 outline-none font-body text-xs sm:text-sm text-neutral-900 placeholder:text-neutral-400 transition-all resize-none shadow-inner"
-                      />
-                      <div className="flex items-center justify-between mt-1.5 px-1 text-[11px] text-neutral-500">
-                        <span className="flex items-center gap-1">
-                          <CheckCircle size={12} className="text-emerald-500" /> Photographers review your notes before the shoot
-                        </span>
-                        <span>{notes.length} characters</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ─────────────────────────────────────────────────────────────
-                  STEP 6: SMART COLLAPSIBLE REVIEW & CONFIRM
-              ───────────────────────────────────────────────────────────── */}
-              {step === 6 && (
-                <div className="space-y-6 animate-fade-in">
+                <div className="space-y-6 animate-fade-in font-heading">
                   {/* Section Title Header matching Steps 1 to 4 */}
                   <div className="text-center mb-6 sm:mb-8 relative z-10 pt-4 sm:pt-6">
                     <span className="text-[11px] uppercase font-bold tracking-widest text-amber-900 bg-amber-500/15 px-3.5 py-1 rounded-full border border-amber-500/30 inline-block mb-2 shadow-xs">
@@ -5813,470 +7372,721 @@ export default function BookingPage() {
                     <h2 className="text-2xl sm:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight drop-shadow-xs">
                       Review &amp; confirm your reservation
                     </h2>
-                    <p className="text-xs sm:text-sm text-neutral-600 font-body mt-1 max-w-md mx-auto">
-                      Review all session data below. Move cursor over any section to auto-inspect, click to lock open, or click &quot;Edit&quot; to change details.
+                    <p className="text-xs sm:text-sm text-neutral-600 font-heading mt-1 max-w-md mx-auto">
+                      Please review your student profile, photoshoot schedule, and package inclusions below before confirming.
                     </p>
                   </div>
 
-                  {/* Quick Action: Expand All */}
-                  <div className="flex justify-end px-1 pb-0.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPinnedAccordions({ pkg: true, client: true, schedule: true, pegs: true });
-                      }}
-                      className="px-3 py-1.5 rounded-xl text-xs font-bold text-neutral-600 hover:text-neutral-900 bg-neutral-100/90 hover:bg-neutral-200/90 transition-colors border border-neutral-200/80 shadow-2xs"
-                    >
-                      Expand All
-                    </button>
-                  </div>
-
-                  <div className="space-y-3.5">
+                                    {/* ─────────────────────────────────────────────────────────────
+                      STEP 5: TWO DIRECT REVIEW CARDS MATCHING DESIGN SYSTEM
+                      Card 1: Student / Client & Academic Profile
+                      Card 2: Selected Time & Date, Package Price & Inclusions
+                  ───────────────────────────────────────────────────────────── */}
+                  <div className="space-y-6">
                     
-                    {/* Accordion A: Service & Package */}
-                    <ReviewAccordionItem
-                      id="pkg"
-                      isOpen={isAccordionOpen("pkg")}
-                      isPinned={pinnedAccordions.pkg}
-                      icon={<Package size={16} />}
-                      title="Service & Package Tier"
-                      subtitle={
-                        <>
-                          {selectedService?.name} • <span className="font-semibold text-gold">{selectedTier?.name || "Standard"}</span>
-                        </>
-                      }
-                      onEdit={() => setStep(2)}
-                      onMouseEnter={() => handleAccordionMouseEnter("pkg")}
-                      onMouseMove={() => handleAccordionMouseEnter("pkg")}
-                      onMouseLeave={() => handleAccordionMouseLeave("pkg")}
-                      onTogglePin={() => toggleAccordionPin("pkg")}
-                    >
-                      <div className="p-4 pt-3 text-xs font-body space-y-3">
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                          <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                            <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Service</span>
-                            <span className="font-bold text-primary text-xs mt-0.5 block truncate" title={selectedService?.name}>{selectedService?.name}</span>
+                    {/* CARD 1: STUDENT & ACADEMIC PROFILE */}
+                    <div className="border border-neutral-200/90 rounded-3xl bg-white shadow-sm p-6 sm:p-8 transition-all font-heading">
+                      {/* Top Header */}
+                      <div className="flex items-start justify-between gap-4 pb-2">
+                        <div className="flex items-start gap-3.5">
+                          <div className="w-12 h-12 rounded-full bg-amber-500/15 text-amber-800 flex items-center justify-center shrink-0 border border-amber-500/25 mt-0.5">
+                            {isAcademicService ? <GraduationCap size={22} /> : <User size={22} />}
                           </div>
-                          <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                            <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Package Tier</span>
-                            <span className="font-bold text-gold text-xs mt-0.5 block">{selectedTier?.name || "Standard"}</span>
-                          </div>
-                          <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60 col-span-2 sm:col-span-1">
-                            <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Base Price</span>
-                            <span className="font-extrabold text-primary text-xs mt-0.5 block">₱{basePrice.toLocaleString()}</span>
-                          </div>
-                        </div>
-
-                        {/* Detected Session Arrangement & Estimated Duration (School vs Studio) */}
-                        <div className="mt-3.5 p-3.5 rounded-2xl bg-gradient-to-br from-amber-50/80 via-white to-neutral-50/80 border border-amber-200/80 shadow-2xs">
-                          <div className="flex items-center justify-between gap-2 mb-2.5 pb-2 border-b border-amber-200/50 flex-wrap">
-                            <div className="flex items-center gap-2">
-                              <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 ${
-                                detectedSessionInfo.isSchool
-                                  ? "bg-amber-100 text-amber-900 border-amber-300"
-                                  : detectedSessionInfo.isStudio
-                                  ? "bg-emerald-50 text-emerald-900 border-emerald-300"
-                                  : "bg-blue-50 text-blue-900 border-blue-300"
-                              }`}>
-                                {detectedSessionInfo.isSchool ? (
-                                  <GraduationCap size={12} className="text-amber-800" />
-                                ) : detectedSessionInfo.isStudio ? (
-                                  <Building size={12} className="text-emerald-800" />
-                                ) : (
-                                  <MapPin size={12} className="text-blue-800" />
-                                )}
-                                <span>{detectedSessionInfo.badge}</span>
-                              </span>
-                              <span className="text-[11px] font-semibold text-neutral-600">
-                                {detectedSessionInfo.isSchool ? "At School Campus" : detectedSessionInfo.isStudio ? "At Studio Bay" : "At Custom Venue"}
-                              </span>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => setStep(5)}
-                              className="text-[11px] font-bold text-gold hover:underline flex items-center gap-1 cursor-pointer"
-                              title="Change between Studio and School session in Step 5"
-                            >
-                              <Edit3 size={11} /> Change Venue
-                            </button>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                            {/* Venue / Location Details */}
-                            <div className="flex items-start gap-2.5">
-                              <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-900 border border-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                                {detectedSessionInfo.isSchool ? <GraduationCap size={15} /> : detectedSessionInfo.isStudio ? <Building size={15} /> : <MapPin size={15} />}
-                              </div>
-                              <div className="min-w-0">
-                                <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 block">
-                                  Session Location / Venue:
-                                </span>
-                                <span className="font-bold text-neutral-900 block truncate">
-                                  {detectedSessionInfo.venue}
-                                </span>
-                                <span className="text-[11px] text-neutral-500 line-clamp-1">
-                                  {detectedSessionInfo.venueAddress}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Estimated Duration & Schedule Mode */}
-                            <div className="flex items-start gap-2.5 sm:border-l sm:border-neutral-200 sm:pl-3">
-                              <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold border border-gold/30 flex items-center justify-center shrink-0 mt-0.5">
-                                <Clock size={15} />
-                              </div>
-                              <div className="min-w-0">
-                                <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 block">
-                                  Estimated Session Duration:
-                                </span>
-                                <span className="font-bold text-primary block">
-                                  {detectedSessionInfo.duration}
-                                </span>
-                                <span className="text-[11px] text-amber-800 font-medium line-clamp-1">
-                                  {detectedSessionInfo.scheduleTitle}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Complete Inclusions List */}
-                        {tierInclusions.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-neutral-100">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1.5">
-                                <Sparkles size={12} className="text-gold" /> Included in This Package
-                              </span>
-                              <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
-                                {tierInclusions.length} Inclusions Included
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {tierInclusions.map((item, idx) => (
-                                <div key={idx} className="flex items-start gap-2 p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60 text-xs text-neutral-800">
-                                  <Check size={14} className="text-emerald-600 mt-0.5 shrink-0 stroke-[2.5]" />
-                                  <span className="font-medium leading-relaxed">{item}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </ReviewAccordionItem>
-
-                    {/* Accordion B: Client & Institutional Information */}
-                    <ReviewAccordionItem
-                      id="client"
-                      isOpen={isAccordionOpen("client")}
-                      isPinned={pinnedAccordions.client}
-                      icon={isAcademicService ? <GraduationCap size={16} /> : isWeddingService ? <Heart size={16} className="text-rose-500" /> : <User size={16} className="text-blue-500" />}
-                      title={
-                        bookingFor === "someone_else" 
-                          ? "Participant & Account Owner Details"
-                          : (isAcademicService ? "Student Details" : isWeddingService ? "Wedding Information" : "Client Details")
-                      }
-                      subtitle={
-                        bookingFor === "someone_else"
-                          ? `For: ${[participantFirstName, participantLastName].filter(Boolean).join(" ") || "Participant"} · By: ${activeProfile?.first_name || "Account Owner"}`
-                          : isAcademicService 
-                          ? ([studentFirstName, studentMiddleName, studentLastName].filter(Boolean).join(" ") || "Student Profile")
-                          : isWeddingService ? `${brideName || 'Bride'} & ${groomName || 'Groom'}`
-                          : [editFirstName, editLastName].filter(Boolean).join(" ") || "Client Profile"
-                      }
-                      onEdit={() => setStep(4)}
-                      onMouseEnter={() => handleAccordionMouseEnter("client")}
-                      onMouseMove={() => handleAccordionMouseEnter("client")}
-                      onMouseLeave={() => handleAccordionMouseLeave("client")}
-                      onTogglePin={() => toggleAccordionPin("client")}
-                    >
-                      <div className="p-4 pt-3 text-xs font-body space-y-3">
-                        {/* Booking Recipient & Account Distinction Card */}
-                        <div className="p-3.5 rounded-2xl bg-neutral-50/90 border border-neutral-200/80 space-y-2.5">
-                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200/60 pb-2">
-                            <span className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-                              Booking Recipient &amp; Account Distinction
+                          <div>
+                            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-neutral-400 font-heading block">
+                              {isAcademicService ? "STUDENT & ACADEMIC PROFILE" : "CLIENT & PROFILE INFORMATION"}
                             </span>
-                            <span className={`text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                              bookingFor === "someone_else"
-                                ? "bg-amber-100 text-amber-900 border-amber-300 font-semibold"
-                                : "bg-emerald-100 text-emerald-900 border-emerald-300 font-semibold"
-                            }`}>
-                              {bookingFor === "someone_else" ? `Someone Else · ${participantRelationship || 'Participant'}` : "Myself (Account Owner)"}
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                            <div className="p-2.5 rounded-xl bg-white border border-neutral-200/70">
-                              <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">
-                                Participant / Beneficiary
-                              </span>
-                              <span className="font-bold text-primary text-xs mt-0.5 block truncate">
-                                {[participantFirstName, participantLastName].filter(Boolean).join(" ") || "Valued Participant"}
-                              </span>
-                              {participantPhone && (
-                                <span className="text-xs text-neutral-500 font-mono mt-0.5 block">{participantPhone}</span>
-                              )}
-                            </div>
-                            <div className="p-2.5 rounded-xl bg-white border border-neutral-200/70">
-                              <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">
-                                Account Owner (Payer)
-                              </span>
-                              <span className="font-bold text-neutral-700 text-xs mt-0.5 block truncate">
-                                {activeProfile?.first_name || user?.user_metadata?.first_name || "Client"} {activeProfile?.last_name || user?.user_metadata?.last_name || ""}
-                              </span>
-                              <span className="text-xs text-neutral-500 font-mono mt-0.5 block truncate">
-                                {activeProfile?.email || user?.email || "Account Holder"}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        {isAcademicService && (
-                          <>
-                            {/* Student Profile Top Banner */}
-                            <div className="p-3 rounded-xl bg-amber-50/40 border border-amber-200/50 flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 rounded-lg bg-gold/20 text-gold flex items-center justify-center shrink-0">
-                                  <User size={14} />
-                                </div>
-                                <div>
-                                  <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider leading-none">Student Name</span>
-                                  <span className="font-heading font-extrabold text-primary text-sm">
-                                    {[studentFirstName, studentMiddleName, studentLastName].filter(Boolean).join(" ") || "Student Name"}
-                                  </span>
-                                </div>
-                              </div>
-                              {studentIdNumber && (
-                                <span className="text-[11px] font-mono font-bold text-primary bg-white px-2.5 py-1 rounded-lg border border-neutral-200 shadow-2xs">
+                            <h3 className="font-heading text-2xl sm:text-3xl font-extrabold text-neutral-900 tracking-tight mt-0.5">
+                              {[studentFirstName, studentMiddleName, studentLastName].filter(Boolean).join(" ") || [participantFirstName, participantLastName].filter(Boolean).join(" ") || [editFirstName, editLastName].filter(Boolean).join(" ") || "Student Name"}
+                            </h3>
+                            {studentIdNumber && (
+                              <div className="mt-1">
+                                <span className="text-[11px] text-neutral-400 font-heading">
                                   ID: {studentIdNumber}
                                 </span>
-                              )}
-                            </div>
-
-                            {/* Core Academic Details Grid */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                              <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Institution / School</span>
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                  {activeUnivId && <SchoolLogo univId={activeUnivId} name={studentSchool} size="xs" />}
-                                  <span className="font-bold text-primary text-xs truncate" title={studentSchool}>{studentSchool || "N/A"}</span>
-                                </div>
-                              </div>
-
-                              <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">
-                                  {studentType === "COLLEGE" ? "Degree / Course" : "Academic Strand"}
-                                </span>
-                                <span className="font-semibold text-neutral-800 text-xs mt-0.5 block truncate">
-                                  {studentType === "COLLEGE" ? (studentCourse || "N/A") : (effectiveShsStrand || "N/A")}
-                                </span>
-                              </div>
-
-                              <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Class Section &amp; Batch</span>
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                  <span className="font-bold text-gold bg-gold/10 px-2 py-0.5 rounded text-[11px]">
-                                    {normalizedStudentSection ? (normalizedStudentSection.toLowerCase().startsWith('section') ? normalizedStudentSection : `Section ${normalizedStudentSection}`) : "N/A"}
-                                  </span>
-                                  <span className="text-neutral-400">•</span>
-                                  <span className="font-medium text-neutral-700 text-xs">{studentBatch || "Batch 2026"}</span>
-                                </div>
-                              </div>
-
-                              <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Arrangement Protocol</span>
-                                <span className={`inline-block font-semibold px-2 py-0.5 rounded text-xs mt-0.5 ${
-                                  academicBookingMode === "SCHOOL_PARTNER"
-                                    ? "bg-amber-100 text-amber-900 border border-amber-300"
-                                    : "bg-emerald-100 text-emerald-900 border border-emerald-300"
-                                }`}>
-                                  {academicBookingMode === "SCHOOL_PARTNER" ? "School Campus (Date set by school)" : "Individual Booking"}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Yearbook Motto Card (if provided) */}
-                            {yearbookMotto && (
-                              <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-200/60 flex items-start gap-2.5">
-                                <Sparkles size={14} className="text-gold shrink-0 mt-0.5" />
-                                <div className="min-w-0">
-                                  <span className="text-xs font-bold text-amber-900/70 uppercase tracking-wider block">Yearbook Motto</span>
-                                  <p className="text-xs font-serif italic text-neutral-800 mt-0.5">&quot;{yearbookMotto}&quot;</p>
-                                </div>
-                              </div>
-                            )}
-
-                            {schoolScheduleNote && (
-                              <div className="p-2.5 rounded-xl bg-neutral-100 border border-neutral-200 text-neutral-700 text-xs">
-                                <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider block">Schedule Note:</span>
-                                <p className="italic mt-0.5">{schoolScheduleNote}</p>
-                              </div>
-                            )}
-                          </>
-                        )}
-
-                        {isWeddingService && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                              <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Couple</span>
-                              <span className="font-bold text-primary text-xs mt-0.5 block">{brideName} &amp; {groomName}</span>
-                            </div>
-                            {weddingTheme && (
-                              <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Wedding Theme</span>
-                                <span className="font-medium text-neutral-800 text-xs mt-0.5 block">{weddingTheme}</span>
                               </div>
                             )}
                           </div>
-                        )}
+                        </div>
 
-                        {!isAcademicService && !isWeddingService && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                              <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Client Full Name</span>
-                              <span className="font-bold text-primary text-xs mt-0.5 block">
-                                {[editFirstName, editLastName].filter(Boolean).join(" ") || "Client"}
+                        <button
+                          type="button"
+                          onClick={() => setStep(3)}
+                          className="px-4 py-2 rounded-full border border-amber-300/80 bg-amber-50/60 hover:bg-amber-100/70 text-xs font-bold font-heading text-neutral-800 flex items-center gap-1.5 transition-colors shadow-2xs shrink-0 cursor-pointer"
+                        >
+                          <Edit3 size={13} /> Edit Details
+                        </button>
+                      </div>
+
+                      {/* Section 1: Personal & Contact Details */}
+                      <div className="flex items-center gap-3 pt-6 pb-4">
+                        <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-neutral-400 font-heading whitespace-nowrap">
+                          PERSONAL &amp; CONTACT DETAILS
+                        </span>
+                        <div className="h-px bg-neutral-200/70 flex-1" />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-neutral-200/70">
+                        <div className="pb-3 md:pb-0 md:pr-6">
+                          <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
+                            COMPLETE NAME
+                          </span>
+                          <span className="font-bold text-neutral-900 text-sm sm:text-base block truncate">
+                            {[studentFirstName, studentMiddleName, studentLastName].filter(Boolean).join(" ") || [participantFirstName, participantLastName].filter(Boolean).join(" ") || [editFirstName, editLastName].filter(Boolean).join(" ") || "Student Name"}
+                          </span>
+                        </div>
+                        <div className="py-3 md:py-0 md:px-6">
+                          <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
+                            PHONE NUMBER
+                          </span>
+                          <span className={`text-sm sm:text-base block truncate ${
+                            (editPhone || participantPhone || activeProfile?.phone || user?.user_metadata?.phone)
+                              ? "font-bold text-neutral-900"
+                              : "italic text-neutral-400 font-normal"
+                          }`}>
+                            {editPhone || participantPhone || activeProfile?.phone || user?.user_metadata?.phone || "Not provided"}
+                          </span>
+                        </div>
+                        <div className="pt-3 md:pt-0 md:pl-6">
+                          <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
+                            EMAIL ADDRESS
+                          </span>
+                          <span className="font-bold text-neutral-900 text-sm sm:text-base block truncate">
+                            {user?.email || activeProfile?.email || participantEmail || "Not provided"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Section 2: School & Campus Location (for academic services) */}
+                      {isAcademicService && (
+                        <>
+                          <div className="flex items-center gap-3 pt-6 pb-4">
+                            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-neutral-400 font-heading whitespace-nowrap">
+                              SCHOOL &amp; CAMPUS LOCATION
+                            </span>
+                            <div className="h-px bg-neutral-200/70 flex-1" />
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-neutral-200/70">
+                            <div className="pb-3 md:pb-0 md:pr-6">
+                              <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
+                                NAME OF THE SCHOOL
+                              </span>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {activeUnivId && <SchoolLogo univId={activeUnivId} name={studentSchool} size="xs" />}
+                                <span className="font-bold text-neutral-900 text-sm sm:text-base block truncate" title={studentSchool}>
+                                  {studentSchool || "N/A"}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="pt-3 md:pt-0 md:pl-6">
+                              <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
+                                SCHOOL ADDRESS
+                              </span>
+                              <span className="font-bold text-neutral-900 text-sm sm:text-base block truncate" title={studentSchoolAddress}>
+                                {studentSchoolAddress || (locationType === "STUDIO" ? "Main Studio Partner / Standard Campus" : "Official Campus grounds, Cebu")}
                               </span>
                             </div>
-                            {editPhone && (
-                              <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                                <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Contact Phone</span>
-                                <span className="font-medium text-neutral-800 text-xs mt-0.5 block">{editPhone}</span>
+                          </div>
+
+                          {/* Section 3: Academic Year & Section Classification */}
+                          <div className="flex items-center gap-3 pt-6 pb-4">
+                            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-neutral-400 font-heading whitespace-nowrap">
+                              ACADEMIC YEAR &amp; SECTION CLASSIFICATION
+                            </span>
+                            <div className="h-px bg-neutral-200/70 flex-1" />
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-neutral-200/70">
+                            <div className="pr-4">
+                              <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
+                                {studentType === "COLLEGE" ? "DEGREE / COURSE" : "STRAND"}
+                              </span>
+                              {/* Direct bold text without circle/pill per user request */}
+                              <span className="font-bold text-neutral-900 text-sm sm:text-base block truncate">
+                                {studentType === "COLLEGE" ? (studentCourse || "N/A") : (effectiveShsStrand || "STEM")}
+                              </span>
+                            </div>
+                            <div className="px-4">
+                              <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
+                                BATCH YEAR
+                              </span>
+                              <span className="font-bold text-neutral-900 text-sm sm:text-base block">
+                                {studentBatch || "Batch 2026"}
+                              </span>
+                            </div>
+                            <div className="px-4">
+                              <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
+                                CLASS SECTION
+                              </span>
+                              <div>
+                                <span className="font-bold text-amber-800 text-sm sm:text-base block truncate">
+                                  {normalizedStudentSection ? (normalizedStudentSection.toLowerCase().startsWith('section') ? normalizedStudentSection : `Section ${normalizedStudentSection}`) : "N/A"}
+                                </span>
+                                <div className="w-8 h-0.5 bg-amber-400/80 mt-1 rounded-full" />
                               </div>
-                            )}
+                            </div>
+                            <div className="pl-4">
+                              <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
+                                ID NUMBER
+                              </span>
+                              <span className="font-bold text-neutral-900 text-sm sm:text-base block">
+                                {studentIdNumber || "N/A"}
+                              </span>
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    </ReviewAccordionItem>
 
-                    {/* Accordion C: Schedule & Studio Location */}
-                    <ReviewAccordionItem
-                      id="schedule"
-                      isOpen={isAccordionOpen("schedule")}
-                      isPinned={pinnedAccordions.schedule}
-                      icon={<Calendar size={16} />}
-                      title="Schedule & Studio Location"
-                      subtitle={
-                        isAcademicService && academicBookingMode === "SCHOOL_PARTNER" 
-                          ? "Official School Batch Schedule" 
-                          : `${eventDate || "Date TBD"} • ${preferredTime || "Time TBD"}`
-                      }
-                      onEdit={() => setStep(5)}
-                      onMouseEnter={() => handleAccordionMouseEnter("schedule")}
-                      onMouseMove={() => handleAccordionMouseEnter("schedule")}
-                      onMouseLeave={() => handleAccordionMouseLeave("schedule")}
-                      onTogglePin={() => toggleAccordionPin("schedule")}
-                    >
-                      <div className="p-4 pt-3 text-xs font-body space-y-2.5">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                          <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                            <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Date &amp; Time</span>
-                            <span className="font-bold text-primary text-xs mt-0.5 block">
+                          {/* Section 4: Yearbook Motto */}
+                          {yearbookMotto && (
+                            <>
+                              <div className="flex items-center gap-3 pt-6 pb-4">
+                                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-neutral-400 font-heading whitespace-nowrap">
+                                  YEARBOOK MOTTO
+                                </span>
+                                <div className="h-px bg-neutral-200/70 flex-1" />
+                              </div>
+                              <div className="px-1">
+                                <p className="font-heading italic text-neutral-900 text-sm sm:text-base font-medium">
+                                  &quot;{yearbookMotto}&quot;
+                                </p>
+                              </div>
+                            </>
+                          )}
+                        </>
+                      )}
+
+                      {/* If wedding service */}
+                      {isWeddingService && (
+                        <>
+                          <div className="flex items-center gap-3 pt-6 pb-4">
+                            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-neutral-400 font-heading whitespace-nowrap">
+                              WEDDING INFORMATION
+                            </span>
+                            <div className="h-px bg-neutral-200/70 flex-1" />
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-neutral-200/70">
+                            <div className="pb-3 md:pb-0 md:pr-6">
+                              <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
+                                COUPLE
+                              </span>
+                              <span className="font-bold text-neutral-900 text-sm sm:text-base block">
+                                {brideName} &amp; {groomName}
+                              </span>
+                            </div>
+                            <div className="pt-3 md:pt-0 md:pl-6">
+                              <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
+                                WEDDING THEME
+                              </span>
+                              <span className="font-bold text-neutral-900 text-sm sm:text-base block">
+                                {weddingTheme || "Standard Wedding"}
+                              </span>
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      {/* If booking for someone else */}
+                      {bookingFor === "someone_else" && (
+                        <div className="mt-5 text-[11px] text-neutral-600 bg-amber-50/70 border border-amber-200/60 px-3.5 py-2 rounded-xl flex items-center justify-between">
+                          <span>
+                            Booked by account owner: <span className="font-bold text-neutral-800">{activeProfile?.first_name || user?.user_metadata?.first_name} {activeProfile?.last_name || user?.user_metadata?.last_name}</span> ({activeProfile?.email || user?.email})
+                          </span>
+                          <span className="text-amber-800 font-semibold">{participantRelationship || "Beneficiary"}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* CARD 2: PHOTOSHOOT SCHEDULE, PACKAGE PRICE & PACKAGE INCLUSIONS */}
+                    <div className="border border-neutral-200/90 rounded-3xl bg-white shadow-sm p-6 sm:p-8 transition-all font-heading">
+                      {/* Top Header */}
+                      <div className="flex items-start justify-between gap-4 pb-2">
+                        <div className="flex items-start gap-3.5">
+                          <div className="w-12 h-12 rounded-full bg-emerald-500/15 text-emerald-800 flex items-center justify-center shrink-0 border border-emerald-500/25 mt-0.5">
+                            <Calendar size={22} />
+                          </div>
+                          <div>
+                            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-neutral-400 font-heading block">
+                              SCHEDULE &amp; PACKAGE DELIVERABLES
+                            </span>
+                            <h3 className="font-heading text-2xl sm:text-3xl font-extrabold text-neutral-900 tracking-tight mt-0.5">
+                              {selectedService?.name || "Photoshoot Service"}
+                            </h3>
+                            <p className="text-sm sm:text-base font-bold text-amber-900 font-heading mt-0.5">
+                              {selectedTier?.name || "Set A"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setStep(4)}
+                            className="px-4 py-2 rounded-full border border-amber-300/80 bg-amber-50/60 hover:bg-amber-100/70 text-xs font-bold font-heading text-neutral-800 flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                          >
+                            <Edit3 size={13} /> Edit Schedule
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setStep(2)}
+                            className="px-4 py-2 rounded-full border border-neutral-300 bg-neutral-50 hover:bg-neutral-100 text-xs font-bold font-heading text-neutral-800 flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                          >
+                            Change Set
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Section 1: Selected Time, Date & Venue */}
+                      <div className="flex items-center gap-3 pt-6 pb-4">
+                        <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-neutral-400 font-heading whitespace-nowrap">
+                          DATE, TIME &amp; STUDIO VENUE
+                        </span>
+                        <div className="h-px bg-neutral-200/70 flex-1" />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-neutral-200/70 items-center">
+                        <div className="pb-3 md:pb-0 md:pr-6 md:col-span-2">
+                          <div className="flex items-center gap-2.5">
+                            <Calendar size={18} className="text-gold shrink-0" />
+                            <span className="font-bold text-neutral-900 text-sm sm:text-base font-heading">
                               {isAcademicService && academicBookingMode === "SCHOOL_PARTNER"
-                                ? "Official School Batch Schedule (Agreed with School)"
-                                : `${eventDate || "Date not selected"} at ${STUDIO_TIME_SLOTS.find(s => s.time === preferredTime)?.label || preferredTime || "TBD"}`}
+                                ? "Official School Batch Schedule"
+                                : `${formatTextualDate(eventDate)} • ${formatSessionTime(preferredTime)}`}
                             </span>
                           </div>
-                          <div className="p-2.5 rounded-xl bg-neutral-50/80 border border-neutral-200/60">
-                            <span className="text-xs uppercase font-bold text-neutral-400 block tracking-wider">Designated Venue</span>
-                            <span className="font-bold text-primary text-xs mt-0.5 block truncate" title={resolvedLocation}>
-                              {isAcademicService && academicBookingMode === "SCHOOL_PARTNER" && locationType === "CAMPUS"
-                                ? `On-Campus (${studentSchool || "School Campus"})`
-                                : resolvedLocation}
-                            </span>
-                          </div>
+                          <p className="text-xs text-neutral-500 mt-1.5 flex items-center gap-1.5 font-heading">
+                            <MapPin size={13} className="text-neutral-400 shrink-0" />
+                            <span>{resolvedLocation || "E-Kodak Studio, 331 Rizal Street, City of Naga, Cebu"}</span>
+                          </p>
+                        </div>
+
+                        <div className="pt-3 md:pt-0 md:pl-6">
+                          <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
+                            PACKAGE PRICE
+                          </span>
+                          <span className="font-heading font-extrabold text-2xl sm:text-3xl text-amber-900 block">
+                            ₱{basePrice.toLocaleString()}
+                          </span>
+                          <span className="text-[11px] text-neutral-500 block mt-0.5 font-heading">
+                            {selectedTier?.name || "Set A"} Set Price
+                          </span>
                         </div>
                       </div>
-                    </ReviewAccordionItem>
 
-                    {/* Accordion E: Uploaded References & Instructions */}
-                    {(referenceFiles.length > 0 || notes) && (
-                      <ReviewAccordionItem
-                        id="pegs"
-                        isOpen={isAccordionOpen("pegs")}
-                        isPinned={pinnedAccordions.pegs}
-                        icon={<Camera size={16} />}
-                        title="Creative References & Instructions"
-                        subtitle={`${referenceFiles.length} reference photo(s) ${notes ? '• Special notes included' : ''}`}
-                        onEdit={() => setStep(6)}
-                        onMouseEnter={() => handleAccordionMouseEnter("pegs")}
-                        onMouseMove={() => handleAccordionMouseEnter("pegs")}
-                        onMouseLeave={() => handleAccordionMouseLeave("pegs")}
-                        onTogglePin={() => toggleAccordionPin("pegs")}
-                      >
-                        <div className="p-4 pt-3 text-xs font-body space-y-2.5">
-                          {referenceFiles.length > 0 && (
-                            <div className="text-neutral-700">
-                              <span className="text-neutral-400 block mb-0.5 text-xs font-bold uppercase tracking-wider">Uploaded Photos:</span>
-                              <span className="font-semibold text-primary">{referenceFiles.length} reference file(s) attached</span>
+                      {/* Section 2: Package Inclusions (Collapsible Dropdown under User Control) */}
+                      {tierInclusions.length > 0 && (
+                        <div className="pt-6">
+                          <button
+                            type="button"
+                            onClick={() => setIsInclusionsOpen((prev) => !prev)}
+                            className="w-full flex items-center justify-between gap-3 group cursor-pointer pb-2 text-left focus:outline-none select-none"
+                            aria-expanded={isInclusionsOpen}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-neutral-500 group-hover:text-neutral-900 font-heading whitespace-nowrap transition-colors">
+                                PACKAGE INCLUSIONS ({tierInclusions.length})
+                              </span>
                             </div>
-                          )}
-                          {notes && (
-                            <div className="p-2.5 rounded-xl bg-neutral-50 border border-neutral-200">
-                              <span className="text-neutral-400 block mb-0.5 text-xs font-bold uppercase tracking-wider">Special Requests:</span>
-                              <p className="text-neutral-700 italic">{notes}</p>
+                            <div className="h-px bg-neutral-200/70 flex-1 group-hover:bg-neutral-300 transition-colors" />
+                            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-neutral-200/90 bg-neutral-50 group-hover:bg-amber-50 group-hover:border-amber-300/80 text-xs font-bold font-heading text-neutral-700 group-hover:text-amber-900 transition-all shadow-2xs shrink-0">
+                              <span>{isInclusionsOpen ? "Hide Inclusions" : "Show Inclusions"}</span>
+                              <ChevronDown
+                                size={14}
+                                className={`text-neutral-500 group-hover:text-amber-800 transition-transform duration-200 ${
+                                  isInclusionsOpen ? "rotate-180" : ""
+                                }`}
+                              />
                             </div>
-                          )}
+                          </button>
+
+                          <AnimatePresence initial={false}>
+                            {isInclusionsOpen && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.25, ease: "easeInOut" }}
+                                className="overflow-hidden pt-2"
+                              >
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 pb-1">
+                                  {tierInclusions.map((item, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="flex items-start gap-2.5 p-3 rounded-2xl bg-neutral-50/70 border border-neutral-200/60 text-xs text-neutral-800"
+                                    >
+                                      <Check size={15} className="text-emerald-600 mt-0.5 shrink-0 stroke-[2.5]" />
+                                      <span className="font-medium leading-relaxed font-heading">{item}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
-                      </ReviewAccordionItem>
-                    )}
+                      )}
+
+                      {/* Selected Add-ons if any */}
+                      {selectedAddOns.length > 0 && (
+                        <>
+                          <div className="flex items-center gap-3 pt-6 pb-4">
+                            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-neutral-400 font-heading whitespace-nowrap">
+                              SELECTED ADD-ONS ({selectedAddOns.length})
+                            </span>
+                            <div className="h-px bg-neutral-200/70 flex-1" />
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {selectedAddOns.map((addon, idx) => (
+                              <div key={idx} className="flex items-center justify-between p-3 rounded-2xl bg-neutral-50/70 border border-neutral-200/60 text-xs">
+                                <span className="font-medium text-neutral-800">{addon.name}</span>
+                                <span className="font-bold text-gold">+₱{parsePrice(addon.price).toLocaleString()}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Special instructions / notes if any */}
+                      {notes && (
+                        <>
+                          <div className="flex items-center gap-3 pt-6 pb-4">
+                            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-neutral-400 font-heading whitespace-nowrap">
+                              SPECIAL REQUESTS / INSTRUCTIONS
+                            </span>
+                            <div className="h-px bg-neutral-200/70 flex-1" />
+                          </div>
+                          <p className="italic text-neutral-700 text-xs bg-neutral-50 p-3 rounded-2xl border border-neutral-200/60">
+                            &quot;{notes}&quot;
+                          </p>
+                        </>
+                      )}
+
+                      {/* Reference photos count if any */}
+                      {referenceFiles.length > 0 && (
+                        <div className="pt-3 text-[11px] text-neutral-500">
+                          {referenceFiles.length} creative reference photo(s) attached
+                        </div>
+                      )}
+                    </div>
+
                   </div>
 
+                  {/* Pricing Breakdown & Payment Terms Summary (Split 50/50 Card) */}
+                  <div className="p-6 rounded-3xl bg-gradient-to-br from-neutral-900 via-primary to-neutral-950 text-white border border-gold/30 shadow-lg font-heading">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:divide-x md:divide-white/10">
+                      
+                      {/* Left Half: Total Package Breakdown */}
+                      <div className="space-y-3.5 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between pb-2.5 border-b border-white/10">
+                            <span className="text-xs font-bold uppercase tracking-widest text-gold flex items-center gap-1.5 font-heading">
+                              <Sparkles size={12} className="text-gold" /> Total Package Breakdown
+                            </span>
+                          </div>
+                        </div>
 
-                  {/* Pricing Breakdown Summary */}
-                  <div className="p-5 rounded-3xl bg-gradient-to-br from-neutral-900 via-primary to-neutral-950 text-white border border-gold/30 shadow-lg space-y-3 font-body">
-                    <div className="flex items-center justify-between pb-2 border-b border-white/10">
-                      <span className="text-xs font-bold uppercase tracking-widest text-gold font-mono flex items-center gap-1.5">
-                        <Sparkles size={11} className="text-gold" /> Total Package Breakdown
-                      </span>
-                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-gold/20 text-gold border border-gold/40 font-semibold">
-                        Guaranteed Rate
-                      </span>
-                    </div>
+                        <div className="flex-1 flex flex-col justify-center py-3.5 sm:py-5 space-y-3">
+                          <div className="flex justify-between items-center font-heading">
+                            <div>
+                              <span className="text-white text-base sm:text-lg font-bold block font-heading">
+                                Base Package ({selectedTier?.name || "Set A"})
+                              </span>
+                              <span className="text-xs text-neutral-400 mt-0.5 block font-heading">
+                                {selectedService?.name || "Senior High Packages and Sets"}
+                              </span>
+                            </div>
+                            <span className="font-heading font-extrabold text-white text-2xl sm:text-3xl tracking-tight">
+                              ₱{basePrice.toLocaleString()}
+                            </span>
+                          </div>
 
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-neutral-300">Base Package ({selectedTier?.name || 'Standard'})</span>
-                      <span className="font-semibold text-white">₱{basePrice.toLocaleString()}</span>
-                    </div>
+                          {selectedAddOns.length > 0 && (
+                            <div className="flex justify-between items-center font-heading pt-3 border-t border-white/10">
+                              <div>
+                                <span className="text-gold text-sm sm:text-base font-bold block font-heading">
+                                  Selected Add-ons ({selectedAddOns.length})
+                                </span>
+                                <span className="text-xs text-neutral-400 mt-0.5 block font-heading truncate max-w-[200px]">
+                                  {selectedAddOns.map((a) => a.name).join(", ")}
+                                </span>
+                              </div>
+                              <span className="font-heading font-extrabold text-gold text-2xl sm:text-3xl tracking-tight">
+                                +₱{addOnsTotal.toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
 
-                    {selectedAddOns.length > 0 && (
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-neutral-300">Selected Add-ons ({selectedAddOns.length})</span>
-                        <span className="font-semibold text-gold">+₱{addOnsTotal.toLocaleString()}</span>
+                        <div className="flex justify-between items-center pt-3 border-t border-white/10 font-heading mt-auto">
+                          <div>
+                            <span className="text-xs text-neutral-400 block font-heading">Total Package Rate</span>
+                            <span className="font-bold text-white text-sm sm:text-base font-heading">Total Amount</span>
+                          </div>
+                          <span className="font-heading font-extrabold text-gold text-3xl sm:text-4xl tracking-tight">{formattedTotal}</span>
+                        </div>
                       </div>
-                    )}
 
-                    <div className="flex justify-between items-center pt-2.5 border-t border-white/10">
-                      <span className="font-bold text-white text-sm">Total Amount</span>
-                      <span className="font-heading font-extrabold text-gold text-xl tracking-tight">{formattedTotal}</span>
-                    </div>
+                      {/* Right Half: Payment Terms (Downpayment & Studio/Delivery Carrier) */}
+                      <div className="space-y-3.5 md:pl-6 flex flex-col justify-between pt-4 md:pt-0 border-t md:border-t-0 border-white/10">
+                        <div className="flex items-center justify-between pb-2.5 border-b border-white/10">
+                          <span className="text-xs font-bold uppercase tracking-widest text-neutral-300 flex items-center gap-1.5 font-heading">
+                            <CreditCard size={13} className="text-amber-400" /> Payment Terms
+                          </span>
+                          <span className="text-xs text-neutral-400 font-heading">Balance Split</span>
+                        </div>
 
-                    <div className="grid grid-cols-2 gap-2.5 pt-1">
-                      <div className="bg-white/10 backdrop-blur-xs rounded-2xl p-3 text-center border border-white/10">
-                        <p className="text-xs text-neutral-300 uppercase font-medium">50% Down Payment</p>
-                        <p className="font-bold text-gold text-base mt-0.5">{formattedDownPayment}</p>
-                        <p className="text-[11px] text-neutral-400 mt-0.5">Due upon confirmation</p>
+                        <div className="space-y-2.5 flex-1 flex flex-col justify-center">
+                          {/* 50% Down Payment */}
+                          <div className="bg-white/10 backdrop-blur-xs rounded-2xl p-3.5 sm:p-4 border border-white/10 flex items-center justify-between">
+                            <div>
+                              <p className="text-xs text-amber-300 uppercase font-bold tracking-wider font-heading">Down Payment</p>
+                              <p className="text-[11px] sm:text-xs text-neutral-300 mt-0.5 font-heading">Due upon confirmation</p>
+                            </div>
+                            <p className="font-extrabold text-gold text-2xl sm:text-3xl font-heading">{formattedDownPayment}</p>
+                          </div>
+
+                          {/* Remaining Payment at Studio or in Delivery Carrier */}
+                          <div className="bg-white/10 backdrop-blur-xs rounded-2xl p-3.5 sm:p-4 border border-white/10 flex items-center justify-between">
+                            <div>
+                              <p className="text-xs text-neutral-200 uppercase font-bold tracking-wider font-heading">Remaining Balance</p>
+                              <p className="text-[11px] sm:text-xs text-neutral-300 mt-0.5 font-heading">Payable at studio or in delivery carrier</p>
+                            </div>
+                            <p className="font-extrabold text-white text-2xl sm:text-3xl font-heading">{formattedRemaining}</p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="bg-white/10 backdrop-blur-xs rounded-2xl p-3 text-center border border-white/10">
-                        <p className="text-xs text-neutral-300 uppercase font-medium">Remaining at Studio</p>
-                        <p className="font-bold text-white text-base mt-0.5">{formattedRemaining}</p>
-                        <p className="text-[11px] text-neutral-400 mt-0.5">Payable on session day</p>
-                      </div>
+
                     </div>
                   </div>
 
                   {/* Summary Guarantee Card */}
-                  <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 flex items-start gap-2.5 text-xs text-amber-950 font-body shadow-2xs">
+                  <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 flex items-start gap-2.5 text-xs text-amber-950 font-heading shadow-2xs">
                     <ShieldCheck size={18} className="text-gold shrink-0 mt-0.5" />
                     <span>
-                      Clicking &quot;Confirm &amp; Submit Booking&quot; will open an authorization modal to double check your selections. Once authorized, your booking is securely locked into the studio queue and your official digital QR pass is generated immediately.
+                      Please verify your photoshoot parameters above. Clicking &quot;Confirm &amp; Proceed to Payment&quot; will guide you to Step 6 to settle your reservation downpayment (₱{downPaymentAmount.toLocaleString()}) via payment gateway to guarantee your slot.
                     </span>
+                  </div>
+                </div>
+              )}
+
+              {/* ── STEP 6: PAYMENT PROCESS (PAY 50% DEPOSIT TO RESERVE SLOT) ── */}
+              {step === 6 && (
+                <div className="space-y-6 animate-fade-in font-heading">
+                  {/* Step Header */}
+                  <div className="text-center mb-6 sm:mb-8 relative z-10 pt-2 sm:pt-4">
+                    <h2 className="text-2xl sm:text-3xl font-heading font-extrabold text-neutral-950 tracking-tight drop-shadow-xs">
+                      Pay Downpayment to Reserve Slot
+                    </h2>
+                    <p className="text-xs sm:text-sm text-neutral-600 font-heading mt-1.5 max-w-md mx-auto">
+                      A downpayment of ₱{downPaymentAmount.toLocaleString()} is required to guarantee your dedicated studio slot and reserve your booking in the admin ledger.
+                    </p>
+                  </div>
+
+                  {/* Validation Error Alert */}
+                  {validationError && (
+                    <div className="p-4 rounded-2xl bg-rose-50 border border-rose-300 flex items-start gap-3 text-xs text-rose-900 shadow-2xs animate-shake">
+                      <AlertCircle size={18} className="text-rose-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="block font-bold text-rose-950">Payment Verification Required</strong>
+                        <p className="mt-0.5 text-rose-800 leading-relaxed font-medium">{validationError}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Top Order Summary Card */}
+                  <div className="border border-gold/30 rounded-3xl bg-gradient-to-br from-neutral-950 via-[#18181b] to-neutral-950 text-white p-6 sm:p-7 shadow-lg">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                      <div className="space-y-2 flex-1 min-w-0">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-gold block font-heading">
+                          Reservation Order Summary
+                        </span>
+                        <h4 className="text-lg sm:text-xl font-bold text-white font-heading">
+                          {selectedService?.name || "Senior High Packages and Sets"} — {selectedTier?.name || "Set A"}
+                        </h4>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-neutral-300 pt-0.5 font-heading">
+                          <span className="inline-flex items-center gap-1.5 text-neutral-200">
+                            <Calendar size={13} className="text-gold shrink-0" />
+                            {formatTextualDate(eventDate)} • {formatSessionTime(preferredTime)}
+                          </span>
+                          <span className="hidden sm:inline text-neutral-600">•</span>
+                          <span className="inline-flex items-center gap-1.5 text-neutral-300 truncate max-w-md" title={resolvedLocation}>
+                            <MapPin size={13} className="text-neutral-400 shrink-0" />
+                            {resolvedLocation}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-white/10 md:pl-8 flex flex-col md:items-end justify-center shrink-0 font-heading">
+                        <span className="text-[11px] text-neutral-400 uppercase font-bold tracking-wider">
+                          Downpayment Due Now
+                        </span>
+                        <span className="text-3xl sm:text-4xl font-extrabold text-gold tracking-tight mt-1">
+                          ₱{downPaymentAmount.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Payment Gateway Selector & Clean Channel Checkout Box */}
+                  <div className="border border-neutral-200/90 rounded-3xl bg-white shadow-sm p-6 sm:p-8 space-y-6">
+                    <div>
+                      <div className="mb-4">
+                        <label className="block text-xs font-bold uppercase tracking-wider text-neutral-500 font-heading">
+                          Choose Payment Channel
+                        </label>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                        {/* GCash */}
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedPaymentGateway("gcash"); setValidationError(""); }}
+                          className={`group relative p-5 rounded-2xl border-2 transition-all cursor-pointer font-heading text-left flex flex-col justify-between ${
+                            selectedPaymentGateway === "gcash"
+                              ? "border-blue-600 bg-gradient-to-br from-blue-50/90 via-white to-blue-100/70 shadow-lg shadow-blue-500/15 ring-2 ring-blue-500/30"
+                              : "border-neutral-200/90 hover:border-blue-400 bg-gradient-to-br from-white via-blue-50/20 to-blue-50/40 hover:from-white hover:to-blue-100/40 hover:shadow-md"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full mb-3">
+                            <div className="h-10 px-3.5 py-1 rounded-xl bg-white shadow-xs border border-blue-100 flex items-center justify-center">
+                              <img src="/images/payments/gcash.svg" alt="GCash" className="h-6 w-auto max-w-[100px] object-contain" />
+                            </div>
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                              selectedPaymentGateway === "gcash" ? "border-blue-600 bg-blue-600" : "border-neutral-300 group-hover:border-blue-400"
+                            }`}>
+                              {selectedPaymentGateway === "gcash" && <div className="w-2 h-2 rounded-full bg-white" />}
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-base font-extrabold block text-neutral-900 group-hover:text-blue-900 transition-colors">GCash</span>
+                            <span className="text-xs text-neutral-500 block font-medium">QR Ph & E-Wallet</span>
+                          </div>
+                        </button>
+
+                        {/* Maya */}
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedPaymentGateway("maya"); setValidationError(""); }}
+                          className={`group relative p-5 rounded-2xl border-2 transition-all cursor-pointer font-heading text-left flex flex-col justify-between ${
+                            selectedPaymentGateway === "maya"
+                              ? "border-emerald-600 bg-gradient-to-br from-emerald-50/90 via-white to-emerald-100/70 shadow-lg shadow-emerald-500/15 ring-2 ring-emerald-500/30"
+                              : "border-neutral-200/90 hover:border-emerald-400 bg-gradient-to-br from-white via-emerald-50/20 to-emerald-50/40 hover:from-white hover:to-emerald-100/40 hover:shadow-md"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full mb-3">
+                            <div className="h-10 px-3 py-1 rounded-xl bg-[#0a1b12] shadow-xs border border-emerald-950 flex items-center justify-center">
+                              <img src="/images/payments/maya.svg" alt="Maya" className="h-5 w-auto max-w-[85px] object-contain" />
+                            </div>
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                              selectedPaymentGateway === "maya" ? "border-emerald-600 bg-emerald-600" : "border-neutral-300 group-hover:border-emerald-400"
+                            }`}>
+                              {selectedPaymentGateway === "maya" && <div className="w-2 h-2 rounded-full bg-white" />}
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-base font-extrabold block text-neutral-900 group-hover:text-emerald-950 transition-colors">Maya</span>
+                            <span className="text-xs text-neutral-500 block font-medium">Maya App & QR Ph</span>
+                          </div>
+                        </button>
+
+                        {/* Bank Transfer */}
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedPaymentGateway("bank_transfer"); setValidationError(""); }}
+                          className={`group relative p-5 rounded-2xl border-2 transition-all cursor-pointer font-heading text-left flex flex-col justify-between ${
+                            selectedPaymentGateway === "bank_transfer"
+                              ? "border-amber-600 bg-gradient-to-br from-amber-50/90 via-white to-amber-100/70 shadow-lg shadow-amber-600/15 ring-2 ring-amber-600/30"
+                              : "border-neutral-200/90 hover:border-amber-400 bg-gradient-to-br from-white via-amber-50/20 to-amber-50/40 hover:from-white hover:to-amber-100/40 hover:shadow-md"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full mb-3">
+                            <div className="h-10 px-2.5 py-1 rounded-xl bg-white shadow-xs border border-amber-200 flex items-center justify-center gap-1.5">
+                              <img src="/images/payments/bdo.svg" alt="BDO" className="h-3.5 max-w-[34px] object-contain" />
+                              <span className="text-neutral-300 text-xs">|</span>
+                              <img src="/images/payments/bpi.svg" alt="BPI" className="h-3.5 max-w-[30px] object-contain" />
+                              <span className="text-neutral-300 text-xs">|</span>
+                              <img src="/images/payments/unionbank.svg" alt="UnionBank" className="h-3.5 max-w-[34px] object-contain" />
+                            </div>
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                              selectedPaymentGateway === "bank_transfer" ? "border-amber-600 bg-amber-600" : "border-neutral-300 group-hover:border-amber-400"
+                            }`}>
+                              {selectedPaymentGateway === "bank_transfer" && <div className="w-2 h-2 rounded-full bg-white" />}
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-base font-extrabold block text-neutral-900 group-hover:text-amber-950 transition-colors">Bank Transfer</span>
+                            <span className="text-xs text-neutral-500 block font-medium">BDO • BPI • UnionBank</span>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Active Channel Action Card (Direct Xendit Integration based on customer's choice) */}
+                    <div className={`p-5 sm:p-6 rounded-2xl border transition-all font-heading ${
+                      selectedPaymentGateway === "gcash"
+                        ? "bg-gradient-to-r from-blue-50/80 via-white to-blue-50/40 border-blue-200/90 shadow-xs"
+                        : selectedPaymentGateway === "maya"
+                        ? "bg-gradient-to-r from-emerald-50/80 via-white to-emerald-50/40 border-emerald-200/90 shadow-xs"
+                        : "bg-gradient-to-r from-amber-50/80 via-white to-amber-50/40 border-amber-200/90 shadow-xs"
+                    }`}>
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                          {selectedPaymentGateway === "gcash" ? (
+                            <div className="h-12 px-3.5 py-1.5 rounded-xl bg-white border border-blue-200 shadow-xs flex items-center justify-center shrink-0">
+                              <img src="/images/payments/gcash.svg" alt="GCash" className="h-6 w-auto max-w-[100px] object-contain" />
+                            </div>
+                          ) : selectedPaymentGateway === "maya" ? (
+                            <div className="h-12 px-3.5 py-1.5 rounded-xl bg-[#0a1b12] border border-emerald-950 shadow-xs flex items-center justify-center shrink-0">
+                              <img src="/images/payments/maya.svg" alt="Maya" className="h-5 w-auto max-w-[85px] object-contain" />
+                            </div>
+                          ) : (
+                            <div className="h-12 px-3 py-1 rounded-xl bg-white border border-amber-200 shadow-xs flex items-center justify-center gap-1.5 shrink-0">
+                              <img src="/images/payments/bdo.svg" alt="BDO" className="h-4 max-w-[36px] object-contain" />
+                              <span className="text-neutral-300 text-xs">|</span>
+                              <img src="/images/payments/bpi.svg" alt="BPI" className="h-4 max-w-[32px] object-contain" />
+                              <span className="text-neutral-300 text-xs">|</span>
+                              <img src="/images/payments/unionbank.svg" alt="UnionBank" className="h-4 max-w-[36px] object-contain" />
+                            </div>
+                          )}
+                          <div>
+                            <h4 className="font-heading font-extrabold text-base sm:text-lg text-neutral-900">
+                              {selectedPaymentGateway === "gcash" ? "Pay with GCash" :
+                               selectedPaymentGateway === "maya" ? "Pay with Maya" : "Pay via Online Banking"}
+                            </h4>
+                            <span className="text-xs text-neutral-500 font-medium">
+                              {selectedPaymentGateway === "gcash" ? "Direct checkout via GCash / QR Ph" :
+                               selectedPaymentGateway === "maya" ? "Direct checkout via Maya app / QR Ph" : "Direct payment via BDO, BPI, UnionBank, RCBC"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isRedirectingToXendit}
+                          onClick={() => handleProceedToXenditCheckout(selectedPaymentGateway)}
+                          className={`w-full sm:w-auto px-7 py-3.5 rounded-xl font-heading font-black text-xs sm:text-sm text-white shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0 ${
+                            selectedPaymentGateway === "gcash"
+                              ? "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-blue-600/25"
+                              : selectedPaymentGateway === "maya"
+                              ? "bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 shadow-emerald-600/25"
+                              : "bg-gradient-to-r from-amber-700 to-amber-900 hover:from-amber-800 hover:to-amber-950 shadow-amber-800/25"
+                          }`}
+                        >
+                          {isRedirectingToXendit ? (
+                            <><Loader2 size={16} className="animate-spin" /> Connecting to Xendit...</>
+                          ) : (
+                            <><Lock size={15} /> Pay ₱{downPaymentAmount.toLocaleString()} via {selectedPaymentGateway === "gcash" ? "GCash" : selectedPaymentGateway === "maya" ? "Maya" : "Bank"} →</>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+
                   </div>
                 </div>
               )}
 
               {/* Navigation Actions (Steps 2-7) - Direct Access Buttons on Right Side (Aligned & Balanced) */}
               {step > 1 && !(step === 3 && isAcademicService) && (
-                <div className="w-full max-w-[1140px] mx-auto mt-6 sm:mt-8 pt-4 border-t border-neutral-200/60 flex items-center justify-end gap-3">
+                <div className="w-full mt-6 sm:mt-8 pt-4 border-t border-neutral-200/60 flex items-center justify-end gap-3">
                   {/* Right: Direct Access Navigation Buttons */}
                   <div className="flex items-center justify-end gap-3">
                     <button 
@@ -6285,7 +8095,7 @@ export default function BookingPage() {
                         setValidationError("");
                         setStep(step - 1);
                       }}
-                      className="btn-outline px-6 py-2.5 text-xs font-bold flex items-center gap-2 cursor-pointer hover:border-gold hover:text-gold transition-colors"
+                      className="btn-outline px-6 py-2.5 text-xs font-bold font-heading flex items-center gap-2 cursor-pointer hover:border-gold hover:text-gold transition-colors"
                       disabled={isSubmitting}
                     >
                       <ArrowLeft size={15} /> Back
@@ -6293,13 +8103,15 @@ export default function BookingPage() {
                     
                     <button 
                       type="submit" 
-                      className="btn-primary flex items-center gap-2 px-8 py-2.5 text-xs font-bold tracking-wider shadow-warm-sm justify-center cursor-pointer"
+                      className="btn-primary flex items-center gap-2 px-8 py-2.5 text-xs font-bold font-heading tracking-wider shadow-warm-sm justify-center cursor-pointer"
                       disabled={isSubmitting}
                     >
                       {isSubmitting ? (
                         <><Loader2 size={16} className="animate-spin" /> Processing Reservation...</>
+                      ) : step === 5 ? (
+                        <><CheckCircle size={15} /> Confirm &amp; Proceed to Payment</>
                       ) : step === 6 ? (
-                        <><CheckCircle size={15} /> Confirm & Submit Booking</>
+                        <><Lock size={15} /> Pay ₱{downPaymentAmount.toLocaleString()} &amp; Reserve Slot</>
                       ) : (
                         <>Next Step <ArrowRight size={15} /></>
                       )}

@@ -5,7 +5,7 @@
  */
 
 import React, { Suspense, lazy } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 
 // ── Global Components ─────────────────────────────────────────────────────────
 import ScrollToTop from "./components/layout/ScrollToTop";
@@ -115,6 +115,12 @@ function ComingSoon({ page }) {
   );
 }
 
+// Helper to preserve query strings on redirect (e.g. payment_status=success)
+function RedirectWithSearch({ to }) {
+  const location = useLocation();
+  return <Navigate to={`${to}${location.search}`} replace />;
+}
+
 export default function App() {
   return (
     <SiteConfigProvider>
@@ -135,6 +141,23 @@ export default function App() {
             <Route path="/terms" element={<Legal slug="terms" />} />
             <Route path="/pass" element={<PublicPassPage />} />
 
+            {/* Direct aliases & Xendit callback redirects (preserving search parameters) */}
+            <Route path="/book" element={<RedirectWithSearch to="/dashboard/book" />} />
+            <Route path="/book-session" element={<RedirectWithSearch to="/dashboard/book" />} />
+            <Route path="/booking" element={<RedirectWithSearch to="/dashboard/book" />} />
+            <Route path="/bookings" element={<RedirectWithSearch to="/dashboard/bookings" />} />
+            <Route path="/payment-return" element={<RedirectWithSearch to="/dashboard/book" />} />
+            <Route path="/payment-success" element={<RedirectWithSearch to="/dashboard/book" />} />
+            <Route path="/payments/success" element={<RedirectWithSearch to="/dashboard/book" />} />
+            <Route path="/payment_success" element={<RedirectWithSearch to="/dashboard/book" />} />
+            <Route path="/payment/success" element={<RedirectWithSearch to="/dashboard/book" />} />
+            <Route path="/checkout-return" element={<RedirectWithSearch to="/dashboard/book" />} />
+            <Route path="/checkout-success" element={<RedirectWithSearch to="/dashboard/book" />} />
+            <Route path="/checkout/success" element={<RedirectWithSearch to="/dashboard/book" />} />
+            <Route path="/booking-success" element={<RedirectWithSearch to="/dashboard/book" />} />
+            <Route path="/booking/success" element={<RedirectWithSearch to="/dashboard/book" />} />
+            <Route path="/tracker" element={<Navigate to="/pass" replace />} />
+
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/admin-login" element={<Navigate to="/login" replace />} />
@@ -146,6 +169,13 @@ export default function App() {
             <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
               <Route index element={<DashboardHome />} />
               <Route path="book" element={<BookSessionPage />} />
+              <Route path="book-session" element={<BookSessionPage />} />
+              <Route path="booking" element={<BookSessionPage />} />
+              <Route path="payment-return" element={<BookSessionPage />} />
+              <Route path="payment-success" element={<BookSessionPage />} />
+              <Route path="checkout-return" element={<BookSessionPage />} />
+              <Route path="checkout-success" element={<BookSessionPage />} />
+              <Route path="booking-success" element={<BookSessionPage />} />
               <Route path="bookings" element={<BookingDetailsPage />} />
               <Route path="bookings/:id" element={<BookingDetailsPage />} />
               <Route path="progress" element={<BookingProgressPage />} />

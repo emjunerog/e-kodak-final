@@ -1,3 +1,4 @@
+import { broadcastAvailabilityChange } from './liveAvailabilityService';
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { generateAndStoreQRCode, rotateBookingToken } from './qrService';
 import { getCustomerAuditLogs, recordCustomerAction } from './customerAuditService';
@@ -31,6 +32,35 @@ function safeRandomUUID() {
     const v = c === 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
+}
+
+/**
+ * Normalizes any user/UI time string (e.g. "8:00 AM – 9:00 AM", "1:00 PM – 2:00 PM",
+ * "Full-Day School Batch Pictorial (8:00 AM – 5:00 PM)", "08:00") into a PostgreSQL-compatible
+ * TIME format ("HH:MM:SS").
+ */
+export function toDatabaseTime(timeStr) {
+  if (!timeStr) return null;
+  const s = String(timeStr).trim();
+  // Already in HH:MM:SS or HH:MM 24-hour format
+  if (/^\d{2}:\d{2}(:\d{2})?$/.test(s)) {
+    return s.length === 5 ? `${s}:00` : s;
+  }
+  // Extract first time sequence (e.g. "8:00 AM", "1:00 PM", "8:00")
+  const match = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+  if (!match) return null;
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2] || "00";
+  const modifier = match[3] ? match[3].toLowerCase() : null;
+
+  if (modifier === "pm" && hours < 12) {
+    hours += 12;
+  } else if (modifier === "am" && hours === 12) {
+    hours = 0;
+  }
+
+  if (isNaN(hours) || hours < 0 || hours > 23) return null;
+  return `${String(hours).padStart(2, '0')}:${minutes}:00`;
 }
 
 // ── createBooking ─────────────────────────────────────────────────────────────
@@ -159,7 +189,7 @@ export async function createBooking(bookingData, referenceFiles = []) {
       service_id: resolvedServiceId,
       tier_name: bookingData.tier_name || null,
       event_date: bookingData.event_date || null,
-      preferred_time: bookingData.preferred_time || null,
+      preferred_time: toDatabaseTime(bookingData.preferred_time),
       location: bookingData.location || "Studio",
       notes: consolidatedNotes || null,
       total_amount: bookingData.total_amount || 0,
@@ -679,6 +709,7 @@ export async function cancelBooking(bookingId) {
 
     if (error) throw error;
     invalidateCustomerBookingsCache(data?.customer_id);
+    broadcastAvailabilityChange();
 
     return { data, error: null };
   } catch (error) {
