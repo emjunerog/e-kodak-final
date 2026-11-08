@@ -18,10 +18,10 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-const groqApiKey = (import.meta.env.VITE_GROQ_API_KEY || "").trim();
-const configuredGroqModel = (import.meta.env.VITE_GROQ_MODEL || "qwen/qwen3.8-27b").trim();
+const groqApiKey = (import.meta.env?.VITE_GROQ_API_KEY || "").trim();
+const configuredGroqModel = (import.meta.env?.VITE_GROQ_MODEL || "qwen/qwen3.8-27b").trim();
 
-const geminiApiKey = (import.meta.env.VITE_GEMINI_API_KEY || "").trim();
+const geminiApiKey = (import.meta.env?.VITE_GEMINI_API_KEY || "").trim();
 
 const isGroqValid =
   Boolean(groqApiKey) &&

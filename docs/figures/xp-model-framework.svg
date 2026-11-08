@@ -1,0 +1,236 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1850" width="1400" height="1850" style="background:#ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <marker id="arrow-down" viewBox="0 0 10 10" refX="5" refY="10" markerWidth="8" markerHeight="8" orient="auto">
+      <polygon points="0 0, 10 0, 5 10" fill="#000000" />
+    </marker>
+    <marker id="arrow-up" viewBox="0 0 10 10" refX="5" refY="0" markerWidth="8" markerHeight="8" orient="auto">
+      <polygon points="0 10, 10 10, 5 0" fill="#000000" />
+    </marker>
+  </defs>
+
+  <!-- ========================================================================= -->
+  <!-- 1. PLANNING BOX (Top)                                                     -->
+  <!-- ========================================================================= -->
+  <g id="box-planning">
+    <rect x="50" y="30" width="450" height="90" fill="#ffffff" stroke="#000000" stroke-width="1.8" />
+    <text x="275" y="62" text-anchor="middle" font-size="16" font-weight="700" fill="#000000">Planning</text>
+    <text x="70" y="98" font-size="12" font-weight="500" fill="#000000">Project Context</text>
+    <text x="210" y="98" font-size="12" font-weight="500" fill="#000000">Purpose &amp; Description</text>
+    <text x="390" y="98" font-size="12" font-weight="500" fill="#000000">Objective</text>
+  </g>
+
+  <!-- ========================================================================= -->
+  <!-- 2. ANALYSIS BOX (Large Middle)                                            -->
+  <!-- ========================================================================= -->
+  <g id="box-analysis">
+    <rect x="50" y="180" width="1000" height="700" fill="#ffffff" stroke="#000000" stroke-width="1.8" />
+    <text x="550" y="222" text-anchor="middle" font-size="16" font-weight="700" fill="#000000">Analysis</text>
+
+    <!-- Sub-Headers -->
+    <text x="370" y="260" text-anchor="middle" font-size="14" font-weight="700" fill="#000000">Functional Requirements</text>
+    <text x="830" y="260" text-anchor="middle" font-size="14" font-weight="700" fill="#000000">Non- Functional Requirements</text>
+
+    <!-- Functional Requirements: Column 1 (Sequential: Discovery -> Booking -> Tracking -> Mobile) -->
+    <g font-size="11.5" fill="#000000">
+      <text x="90" y="295">• Register</text>
+      <text x="90" y="320">• Login with Role-Based Access</text>
+      <text x="90" y="345">• View Service Packages &amp; Pricing</text>
+      <text x="90" y="370">• View Portfolio Gallery</text>
+      <text x="90" y="395">• Ask AI Assistant for Inquiries</text>
+      <text x="90" y="420">• Track Booking via Public Pass</text>
+      <text x="90" y="445">• Book Photo Session</text>
+      <text x="90" y="470">• Select Date &amp; Time Schedule</text>
+      <text x="90" y="495">• Review Booking Summary</text>
+      <text x="90" y="520">• Submit Downpayment &amp; Billing</text>
+      <text x="90" y="545">• Generate Booking QR Pass</text>
+      <text x="90" y="570">• View Booking Details &amp; Dossier</text>
+      <text x="90" y="595">• Track Photo Production Status</text>
+      <text x="90" y="620">• View &amp; Download Soft Copies</text>
+      <text x="90" y="645">• Cancel or Reschedule Booking</text>
+      <text x="90" y="670">• Scan QR Code in Mobile App</text>
+      <text x="90" y="695">• Track Milestones on Mobile</text>
+      <text x="90" y="720">• Save Bookings for Offline Access</text>
+    </g>
+
+    <!-- Functional Requirements: Column 2 (Sequential: Photographer -> Yearbook -> Admin -> Logout) -->
+    <g font-size="11.5" fill="#000000">
+      <text x="380" y="295">• Manage Photographer Availability</text>
+      <text x="380" y="320">• View Assigned Shoot Roster</text>
+      <text x="380" y="345">• Upload Photo Deliverables</text>
+      <text x="380" y="370">• Upload School Masterlist</text>
+      <text x="380" y="395">• Scan &amp; Parse Masterlist</text>
+      <text x="380" y="420">• Manage School Masterlists</text>
+      <text x="380" y="445">• Manage Yearbook Projects</text>
+      <text x="380" y="470">• Manage Yearbook Page Layouts</text>
+      <text x="380" y="495">• Batch Upload Yearbook Portraits</text>
+      <text x="380" y="520">• View Yearbook Flipbook</text>
+      <text x="380" y="545">• Export Yearbook (PDF/Print)</text>
+      <text x="380" y="570">• View Analytical Dashboard</text>
+      <text x="380" y="595">• Manage Bookings &amp; Assignments</text>
+      <text x="380" y="620">• Manage Customer Directory</text>
+      <text x="380" y="645">• Verify Payments &amp; Record Treasury</text>
+      <text x="380" y="670">• Manage Services &amp; Add-Ons</text>
+      <text x="380" y="695">• Manage Studio Settings &amp; CMS</text>
+      <text x="380" y="720">• Logout</text>
+    </g>
+
+    <!-- Non-Functional Requirements (Hardware and Software) -->
+    <g font-size="11.5" fill="#000000">
+      <text x="700" y="295" font-weight="700">Hardware</text>
+      <text x="720" y="325">• PC / Laptop</text>
+      <text x="720" y="355">• Mobile Smartphone</text>
+
+      <text x="700" y="415" font-weight="700">Software</text>
+      <text x="720" y="440">• Operating System</text>
+      <text x="720" y="462">• React.js</text>
+      <text x="720" y="484">• Tailwind CSS</text>
+      <text x="720" y="506">• JavaScript</text>
+      <text x="720" y="528">• Vite</text>
+      <text x="720" y="550">• React Native / Expo</text>
+      <text x="720" y="572">• Supabase (PostgreSQL)</text>
+      <text x="720" y="594">• Netlify</text>
+      <text x="720" y="616">• Python (FastAPI / OR-Tools)</text>
+      <text x="720" y="638">• Google Gemini API</text>
+      <text x="720" y="660">• pdfjs-dist / jsPDF / docx</text>
+    </g>
+  </g>
+
+  <!-- ========================================================================= -->
+  <!-- 3. DESIGN & DEVELOPMENT BOX                                               -->
+  <!-- ========================================================================= -->
+  <g id="box-design-dev">
+    <rect x="50" y="920" width="1000" height="380" fill="#ffffff" stroke="#000000" stroke-width="1.8" />
+    <text x="550" y="960" text-anchor="middle" font-size="16" font-weight="700" fill="#000000">Design &amp; Development</text>
+
+    <!-- Sub-headers for the 6 sections -->
+    <g font-size="12" font-weight="700" fill="#000000">
+      <text x="65" y="1005">Data Monitoring</text>
+      <text x="215" y="1005">UX &amp; UI Design</text>
+      <text x="360" y="1005">Dashboard</text>
+      <text x="500" y="1005">Data Storage &amp;</text>
+      <text x="515" y="1022">Management</text>
+      <text x="690" y="1005">Data Security &amp;</text>
+      <text x="715" y="1022">Privacy</text>
+      <text x="880" y="1005">Documentation</text>
+    </g>
+
+    <!-- Sub-content items -->
+    <g font-size="10.5" fill="#000000">
+      <!-- 1. Data Monitoring -->
+      <text x="65" y="1055">• Hierarchical</text>
+      <text x="75" y="1075">Input-Process-</text>
+      <text x="75" y="1095">Output</text>
+      <text x="65" y="1130">• Database Design</text>
+      <text x="65" y="1165">• Diagrams</text>
+
+      <!-- 2. UX & UI Design -->
+      <text x="215" y="1055">• Initial System</text>
+      <text x="225" y="1075">Layout and UI</text>
+      <text x="225" y="1095">Wireframes</text>
+      <text x="215" y="1130">• User Flow</text>
+      <text x="215" y="1160">• Responsive</text>
+      <text x="225" y="1180">Layout Tokens</text>
+
+      <!-- 3. Dashboard (Cleaned: Customer, Admin, Photographer only) -->
+      <text x="360" y="1055">• Role-Specific</text>
+      <text x="370" y="1075">Dashboard for</text>
+      <text x="370" y="1095">Customer,</text>
+      <text x="370" y="1120">Admin, and</text>
+      <text x="370" y="1145">Photographer</text>
+
+      <!-- 4. Data Storage & Management -->
+      <text x="500" y="1055">• Supabase</text>
+      <text x="510" y="1075">(PostgreSQL)</text>
+      <text x="510" y="1095">Relational Schema</text>
+      <text x="500" y="1130">• Database Table</text>
+      <text x="510" y="1150">Normalization</text>
+      <text x="500" y="1180">• CRUD Operations</text>
+
+      <!-- 5. Data Security & Privacy -->
+      <text x="690" y="1055">• Authentication</text>
+      <text x="690" y="1085">• Data Protection</text>
+      <text x="700" y="1105">&amp; RLS Policies</text>
+      <text x="690" y="1135">• Password Policy</text>
+      <text x="690" y="1165">• Input Sanitization</text>
+
+      <!-- 6. Documentation -->
+      <text x="880" y="1055">• User Manual</text>
+      <text x="880" y="1085">• Survey</text>
+      <text x="890" y="1105">Questionnaire</text>
+      <text x="880" y="1135">• System Ops</text>
+      <text x="890" y="1155">Guide</text>
+    </g>
+  </g>
+
+  <!-- ========================================================================= -->
+  <!-- 4. IMPLEMENTATION BOX (Bottom)                                            -->
+  <!-- ========================================================================= -->
+  <g id="box-implementation">
+    <rect x="50" y="1340" width="1000" height="270" fill="#ffffff" stroke="#000000" stroke-width="1.8" />
+    <text x="550" y="1380" text-anchor="middle" font-size="16" font-weight="700" fill="#000000">Implementation</text>
+
+    <!-- Left Column: Technical Build -->
+    <g font-size="12" fill="#000000">
+      <text x="75" y="1420">• Set up the Supabase (PostgreSQL) database defined</text>
+      <text x="85" y="1440">in the design stage</text>
+      <text x="75" y="1470">• Develop the web application using React.js and Vite</text>
+      <text x="75" y="1500">• Build cross-platform mobile companion using React Native</text>
+      <text x="85" y="1520">and Expo SDK 57</text>
+      <text x="75" y="1550">• Build role-based access and dashboards for Customer,</text>
+      <text x="85" y="1570">Admin, and Photographer</text>
+      <text x="75" y="1600">• Build and test each module</text>
+    </g>
+
+    <!-- Right Column: XP Values & Evaluation -->
+    <g font-size="12" fill="#000000">
+      <text x="550" y="1420">• Communication</text>
+      <text x="550" y="1448">• Simplification</text>
+      <text x="550" y="1476">• Feedback</text>
+      <text x="550" y="1504">• Deploy the system on Netlify</text>
+      <text x="550" y="1532">• Testing the system's performance using ISO 25010</text>
+      <text x="560" y="1552">standards and user acceptance using UTAUT</text>
+    </g>
+  </g>
+
+  <!-- ========================================================================= -->
+  <!-- 5. SYSTEM BOX (Right)                                                     -->
+  <!-- ========================================================================= -->
+  <g id="box-system">
+    <rect x="1090" y="680" width="270" height="190" fill="#ffffff" stroke="#000000" stroke-width="1.8" />
+    <text x="1225" y="718" text-anchor="middle" font-size="16" font-weight="700" fill="#000000">System</text>
+    <text x="1105" y="750" font-size="11" fill="#000000">• Develop and evaluate the web-</text>
+    <text x="1115" y="768" font-size="11" fill="#000000">based and cross-platform photography</text>
+    <text x="1115" y="786" font-size="11" fill="#000000">studio management system (E-KODAK)</text>
+    <text x="1115" y="804" font-size="11" fill="#000000">for managing student records, booking</text>
+    <text x="1115" y="822" font-size="11" fill="#000000">appointments, photo tracking, graduation</text>
+    <text x="1115" y="840" font-size="11" fill="#000000">yearbook applications, and studio</text>
+    <text x="1115" y="858" font-size="11" fill="#000000">operations.</text>
+  </g>
+
+  <!-- ========================================================================= -->
+  <!-- CONNECTING ARROWS & XP ITERATIVE FEEDBACK LOOP                            -->
+  <!-- ========================================================================= -->
+
+  <g id="connecting-arrows">
+    <!-- 1. Planning -> Analysis (Leaves right of Planning, straight right, turns 90° straight DOWN into Analysis) -->
+    <path d="M 500 75 L 530 75 L 530 166" fill="none" stroke="#000000" stroke-width="2.2" />
+    <polygon points="522,166 538,166 530,180" fill="#000000" />
+
+    <!-- 2. Analysis -> Design & Development (Connects bottom of Analysis to top of Design) -->
+    <path d="M 550 880 L 550 906" fill="none" stroke="#000000" stroke-width="2.2" />
+    <polygon points="542,906 558,906 550,920" fill="#000000" />
+
+    <!-- 3. Design & Development -> Implementation (Connects bottom of Design to top of Implementation) -->
+    <path d="M 550 1300 L 550 1326" fill="none" stroke="#000000" stroke-width="2.2" />
+    <polygon points="542,1326 558,1326 550,1340" fill="#000000" />
+
+    <!-- 4. Implementation -> System (Drops from bottom of Implementation, goes right, turns UP to System) -->
+    <path d="M 800 1610 L 800 1710 L 1225 1710 L 1225 884" fill="none" stroke="#000000" stroke-width="2.2" />
+    <polygon points="1217,884 1233,884 1225,870" fill="#000000" />
+
+    <!-- 5. System -> Analysis Feedback Loop (Leaves top of System, goes UP, turns LEFT, turns DOWN into Analysis) -->
+    <path d="M 1225 680 L 1225 75 L 750 75 L 750 166" fill="none" stroke="#000000" stroke-width="2.2" />
+    <polygon points="742,166 758,166 750,180" fill="#000000" />
+  </g>
+
+</svg>

@@ -25,8 +25,21 @@
  */
 
 import * as pdfjsLib from "pdfjs-dist";
+import JSZip from "jszip";
 import universalClient, { isAiConfigured, chatWithGroq, isGroqConfigured } from "../lib/ai.js";
 import { validateStudentCompleteName } from "./masterlistTemplateService.js";
+import { convertDocumentToPdfFile } from "./documentConverterService.js";
+
+// Polyfill Uint8Array.prototype.toHex for pdfjs-dist v5 compatibility across all browsers & runtimes
+if (typeof Uint8Array !== "undefined" && typeof Uint8Array.prototype.toHex !== "function") {
+  Uint8Array.prototype.toHex = function () {
+    let hex = "";
+    for (let i = 0; i < this.length; i++) {
+      hex += this[i].toString(16).padStart(2, "0");
+    }
+    return hex;
+  };
+}
 
 // Configure PDF.js worker in browser environments
 if (typeof window !== "undefined") {
@@ -168,18 +181,41 @@ export function parseMasterlistRoster(fullText, pages = [], validTiers = ["Set A
   let adviserPhone = "";
   let selectedPackage = "";
 
+  const stripTrailingLabels = (val) =>
+    (val || "")
+      .replace(
+        /\s+(?:BATCH\s*#?|CLASS\s*SECTION|SECTION|ACADEMIC\s*STRAND|STRAND|ADVISER\s*PHONE|PHONE|CONTACT|TEL|ADVISER\s*EMAIL|EMAIL|PACKAGE\s*CATEGORY|SELECTED\s*PACKAGE|SECTION\s*PACKAGE|PACKAGE)\s*[:\-–—][\s\S]*$/i,
+        ""
+      )
+      .replace(/^[_\s\-:]+|[_\s\-:]+$/g, "")
+      .trim();
+
   // 1. Detect School Name from header lines
-  const schoolRegex = /(?:NAME\s*OF\s*SCHOOL|SCHOOL\s*NAME|INSTITUTION)[\s:\-–—]+([^\n\r,]+)|(?:university|college|school|academy|institute|high school|national high)\b/i;
+  const explicitSchoolRegex = /(?:NAME\s*OF\s*SCHOOL|SCHOOL\s*NAME|INSTITUTION)[\s:\-–—]+([^\n\r,]+)/i;
   for (let i = 0; i < Math.min(25, allLines.length); i++) {
-    const line = allLines[i];
-    const match = line.match(schoolRegex);
+    const match = allLines[i].match(explicitSchoolRegex);
     if (match && !school) {
-      if (match[1]) {
-        school = match[1].replace(/^[_\s\-:]+/, "").trim();
-      } else {
-        school = line.replace(/^[^a-zA-Z]+/, "").replace(/^[_\s\-:]+/, "").trim();
+      const candidate = stripTrailingLabels(match[1]);
+      if (candidate && !/^name\s*of\s*school$/i.test(candidate)) {
+        school = candidate;
+        break;
       }
-      break;
+    }
+  }
+  if (!school) {
+    const fallbackSchoolRegex = /(?:university|college|school|academy|institute|high school|national high)\b/i;
+    for (let i = 0; i < Math.min(25, allLines.length); i++) {
+      const line = allLines[i];
+      if (/E-KODAK\s*STUDIO|OFFICIAL\s*SCHOOL\s*SECTION\s*MASTERLIST|Masterlist\s*Verification\s*System/i.test(line)) {
+        continue;
+      }
+      if (fallbackSchoolRegex.test(line)) {
+        const candidate = stripTrailingLabels(line.replace(/^[^a-zA-Z]+/, ""));
+        if (candidate && !/^name\s*of\s*school$/i.test(candidate)) {
+          school = candidate;
+          break;
+        }
+      }
     }
   }
 
@@ -188,8 +224,11 @@ export function parseMasterlistRoster(fullText, pages = [], validTiers = ["Set A
   for (let i = 0; i < Math.min(25, allLines.length); i++) {
     const match = allLines[i].match(strandRegex);
     if (match && !strand) {
-      strand = (match[1] || match[2] || "").replace(/^[_\s\-:]+/, "").trim();
-      break;
+      const candidate = stripTrailingLabels(match[1] || match[2] || "");
+      if (candidate && !/^academic\s*strand$/i.test(candidate)) {
+        strand = candidate;
+        break;
+      }
     }
   }
 
@@ -198,8 +237,11 @@ export function parseMasterlistRoster(fullText, pages = [], validTiers = ["Set A
   for (let i = 0; i < Math.min(25, allLines.length); i++) {
     const match = allLines[i].match(sectionRegex);
     if (match && !section) {
-      section = match[1].replace(/^[_\s\-:]+/, "").trim();
-      break;
+      const candidate = stripTrailingLabels(match[1]);
+      if (candidate && !/^(?:class\s*section|masterlist)$/i.test(candidate)) {
+        section = candidate;
+        break;
+      }
     }
   }
 
@@ -209,8 +251,11 @@ export function parseMasterlistRoster(fullText, pages = [], validTiers = ["Set A
     for (let i = 0; i < Math.min(25, allLines.length); i++) {
       const match = allLines[i].match(combinedRegex);
       if (match) {
-        section = match[1].replace(/^[_\s\-:]+/, "").trim();
-        break;
+        const candidate = stripTrailingLabels(match[1]);
+        if (candidate && !/^(?:class\s*section|academic\s*strand)$/i.test(candidate)) {
+          section = candidate;
+          break;
+        }
       }
     }
   }
@@ -229,12 +274,15 @@ export function parseMasterlistRoster(fullText, pages = [], validTiers = ["Set A
   }
 
   // 5. Detect Class Adviser Name
-  const adviserRegex = /(?:CLASS\s*ADVISER\s*NAME|ADVISER\s*NAME|ADVISER|INSTRUCTOR)[\s:\-–—]+([^\n\r,]+)/i;
+  const adviserRegex = /(?:CLASS\s*ADVISER\s*NAME|ADVISER\s*NAME|CLASS\s*ADVISER|ADVISER|INSTRUCTOR)[\s:\-–—]+([^\n\r,]+)/i;
   for (let i = 0; i < Math.min(25, allLines.length); i++) {
     const match = allLines[i].match(adviserRegex);
     if (match && !adviserName) {
-      const candidate = match[1].replace(/^[_\s\-:]+/, "").trim();
-      if (candidate && !/^(email|phone|contact|batch)/i.test(candidate)) {
+      const candidate = stripTrailingLabels(match[1]);
+      if (
+        candidate &&
+        !/^(email|phone|contact|batch|class\s*adviser\s*name|_+)$/i.test(candidate)
+      ) {
         adviserName = candidate;
         break;
       }
@@ -262,12 +310,14 @@ export function parseMasterlistRoster(fullText, pages = [], validTiers = ["Set A
   }
 
   // 7.5. Detect Selected Package from header & metadata lines
-  const packageRegex = /(?:SELECTED\s*PACKAGE|SECTION\s*PACKAGE|PACKAGE\s*CATEGORY|PACKAGE)[\s:\-–—]+([^\n\r,]+)|(?:senior high|college|graduation|yearbook)\s*packages?\b/i;
+  const packageRegex = /(?:SELECTED\s*PACKAGE|SECTION\s*PACKAGE|PACKAGE\s*CATEGORY|PACKAGE)[\s:\-–—]+([^\n\r,]+)|(?:senior high|college|graduation|yearbook)\s*packages?(?:\s*and\s*sets?)?\b/i;
   for (let i = 0; i < Math.min(30, allLines.length); i++) {
-    const match = allLines[i].match(packageRegex);
+    const line = allLines[i];
+    if (/PACKAGE\s*&\s*SET|SET\s*CATEGORY/i.test(line)) continue;
+    const match = line.match(packageRegex);
     if (match && !selectedPackage) {
       if (match[1]) {
-        selectedPackage = match[1].replace(/^[_\s\-:]+/, "").trim();
+        selectedPackage = stripTrailingLabels(match[1]);
       } else {
         selectedPackage = match[0].trim();
       }
@@ -277,7 +327,7 @@ export function parseMasterlistRoster(fullText, pages = [], validTiers = ["Set A
 
   // 8. Scan student records, package orders, and mottos
   const students = [];
-  const studentIndexRegex = /^\s*(?:(?:#|no\.?|id)?\s*(\d+)[\.\)]?\s+)?((?:20\d{2}[-\s]?\d{3,6}|\d{7,10}|STU-\d{3,}))?\s*([A-Za-z\s,\.\-–—']+?)\s+(?:[-–—|:]\s*)?(Set\s*[A-D]|Package\s*[A-D]|Tier\s*[A-D]|\b[A-D]\b)(.*)$/i;
+  const studentIndexRegex = /^\s*(?:(?:#|no\.?|id)?\s*(\d+)[\.\)]?\s+)?((?:20\d{2}[-\s]?\d{2,6}|\d{6,12}|(?:STU|LRN|ID|SHS|COL)[-\s]?\d{2,10}))?\s*([A-Za-z\s,\.\-–—']+?)\s+(?:[-–—|:]\s*)?(Set\s*[A-D]|Package\s*[A-D]|Tier\s*[A-D]|\b[A-D]\b)(.*)$/i;
 
   let rowCounter = 1;
 
@@ -289,7 +339,11 @@ export function parseMasterlistRoster(fullText, pages = [], validTiers = ["Set A
     ) {
       continue;
     }
-    if (/CRITICAL\s*INTAKE|VALIDATION\s*RULES|Complete\s*Name\s*must\s*have/i.test(line)) {
+    if (
+      /CRITICAL\s*INTAKE|VALIDATION\s*RULES|Complete\s*Name\s*must\s*have|Last\s*Name,\s*First\s*Name|Set\s*A,\s*B,\s*C|STUDENT\s*COMPLETE\s*NAME|SET\s*CATEGORY/i.test(
+        line
+      )
+    ) {
       continue;
     }
 
@@ -543,24 +597,325 @@ Return pure JSON only, no markdown wrapping, no explanation.`;
 }
 
 /**
- * 4. Master Orchestrator: Scan a School Masterlist PDF
+ * 3.5. Scan an editable Microsoft Word (.docx) masterlist uploaded by an adviser
+ */
+export async function scanSchoolMasterlistDocx(fileOrBuffer, validTiers = ["Set A", "Set B", "Set C", "Set D"]) {
+  let arrayBuffer;
+  if (fileOrBuffer instanceof ArrayBuffer) {
+    arrayBuffer = fileOrBuffer;
+  } else if (fileOrBuffer instanceof Blob || (typeof File !== "undefined" && fileOrBuffer instanceof File)) {
+    arrayBuffer = await fileOrBuffer.arrayBuffer();
+  } else {
+    throw new Error("Invalid file provided. Please provide a Word (.docx) file.");
+  }
+
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const docXmlFile = zip.file("word/document.xml");
+  if (!docXmlFile) {
+    throw new Error("Invalid Word document structure. Could not find word/document.xml.");
+  }
+
+  const xml = await docXmlFile.async("string");
+
+  // Extract all tables from the document
+  const tableMatches = xml.match(/<w:tbl[\s\S]*?<\/w:tbl>/g) || [];
+
+  let school = "";
+  let strand = "";
+  let section = "";
+  let batch = "";
+  let adviserName = "";
+  let adviserEmail = "";
+  let adviserPhone = "";
+  let selectedPackage = "";
+  const students = [];
+
+  const decodeXmlEntities = (str) =>
+    (str || "")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'");
+
+  const extractParagraphText = (pXml) => {
+    const tMatches = pXml.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g) || [];
+    return decodeXmlEntities(
+      tMatches.map((t) => t.replace(/<[^>]+>/g, "")).join("")
+    ).trim();
+  };
+
+  const extractRowCells = (rowXml) => {
+    const cellMatches = rowXml.match(/<w:tc[\s\S]*?<\/w:tc>/g) || [];
+    return cellMatches.map((cellXml) => {
+      const pMatches = cellXml.match(/<w:p[\s>][\s\S]*?<\/w:p>/g) || [];
+      if (pMatches.length > 0) {
+        return pMatches
+          .map(extractParagraphText)
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+      }
+      return extractParagraphText(cellXml);
+    });
+  };
+
+  for (const tbl of tableMatches) {
+    const rowMatches = tbl.match(/<w:tr[\s\S]*?<\/w:tr>/g) || [];
+    for (const rXml of rowMatches) {
+      const cells = extractRowCells(rXml);
+      if (cells.length === 0) continue;
+
+      // Check metadata labels
+      for (let c = 0; c < cells.length; c++) {
+        const val = cells[c];
+        const nextVal = (cells[c + 1] || "").trim();
+
+        if (/NAME\s*OF\s*SCHOOL/i.test(val) && nextVal && !/^name\s*of\s*school$/i.test(nextVal) && !school) {
+          school = nextVal;
+        } else if (/ACADEMIC\s*STRAND/i.test(val) && nextVal && !/^academic\s*strand$/i.test(nextVal) && !strand) {
+          strand = nextVal;
+        } else if (/CLASS\s*SECTION/i.test(val) && nextVal && !/^class\s*section$/i.test(nextVal) && !section) {
+          section = nextVal;
+        } else if (/BATCH/i.test(val) && nextVal && !batch) {
+          batch = nextVal;
+        } else if (/CLASS\s*ADVISER/i.test(val) && nextVal && !/^class\s*adviser(?:\s*name)?$/i.test(nextVal) && !adviserName) {
+          adviserName = nextVal;
+        } else if (/ADVISER\s*PHONE/i.test(val) && nextVal && !/^09XX-XXX-XXXX$/i.test(nextVal) && !adviserPhone) {
+          adviserPhone = nextVal;
+        } else if (/ADVISER\s*EMAIL/i.test(val) && nextVal && !/^adviser@school\.edu\.ph$/i.test(nextVal) && !adviserEmail) {
+          adviserEmail = nextVal;
+        } else if (/PACKAGE/i.test(val) && !/SET\s*CATEGORY/i.test(val) && nextVal && !selectedPackage) {
+          selectedPackage = nextVal;
+        }
+      }
+
+      // Check student roster rows
+      if (cells.length >= 3) {
+        if (
+          /STUDENT\s*ID|COMPLETE\s*NAME|SET\s*CATEGORY/i.test(cells.join(" ")) ||
+          /NAME\s*OF\s*SCHOOL|ACADEMIC\s*STRAND|CLASS\s*ADVISER|ADVISER\s*EMAIL/i.test(cells.join(" "))
+        ) {
+          continue;
+        }
+
+        let id = "";
+        let name = "";
+        let set = "";
+        let motto = "";
+
+        if (cells.length >= 5) {
+          id = cells[1] || "";
+          name = cells[2] || "";
+          set = cells[3] || "";
+          motto = cells[4] || "";
+        } else if (cells.length >= 4) {
+          id = cells[0] || "";
+          name = cells[1] || "";
+          set = cells[2] || "";
+          motto = cells[3] || "";
+        } else {
+          name = cells[0] || "";
+          set = cells[1] || "";
+          motto = cells[2] || "";
+        }
+
+        name = name.replace(/^(?:Type Student Name Here|STUDENT COMPLETE NAME)$/i, "").trim();
+        id = id.replace(/^(?:STUDENT ID|ID)$/i, "").trim();
+
+        if (name && name.length >= 3) {
+          const formattedName = toTitleCase(name);
+          const validatedName = validateStudentCompleteName(formattedName);
+          const matchedSet = normalizePackageSet(set, validTiers);
+
+          students.push({
+            id: students.length + 1,
+            studentNo: id || `2026-${String(students.length + 101).padStart(4, "0")}`,
+            name: validatedName.formatted || formattedName,
+            rawName: name,
+            packageSet: matchedSet,
+            motto: motto || "",
+            section: section || "Class Section",
+            strand: strand || "Academic Strand",
+            isValidName: validatedName.isValid,
+            validationError: validatedName.isValid ? null : validatedName.reason,
+            status: validatedName.isValid ? "verified" : "invalid_name"
+          });
+        }
+      }
+    }
+  }
+
+  // Fallback: if the Word document used plain paragraphs instead of tables
+  if (students.length === 0) {
+    const allParagraphs = (xml.match(/<w:p[\s>][\s\S]*?<\/w:p>/g) || [])
+      .map(extractParagraphText)
+      .filter(Boolean)
+      .join("\n");
+    if (allParagraphs) {
+      const fallbackParsed = parseMasterlistRoster(allParagraphs, [], validTiers);
+      if (fallbackParsed.students.length > 0) {
+        return {
+          ...fallbackParsed,
+          numPages: 1,
+          extractionMethod: "docx_paragraph_fallback"
+        };
+      }
+    }
+  }
+
+  const setCounts = {};
+  validTiers.forEach((t) => {
+    setCounts[t] = 0;
+  });
+  let validStudents = 0;
+  let invalidStudents = 0;
+
+  students.forEach((s) => {
+    setCounts[s.packageSet] = (setCounts[s.packageSet] || 0) + 1;
+    if (s.isValidName) validStudents++;
+    else invalidStudents++;
+  });
+
+  return {
+    success: students.length > 0,
+    school: school || "Partner School",
+    strand: strand || "Academic Strand",
+    section: section || "Class Section",
+    batch: batch || "Batch 2026",
+    adviserName: adviserName || "",
+    adviserEmail: adviserEmail || "",
+    adviserPhone: adviserPhone || "",
+    selectedPackage: selectedPackage || "Senior High Packages",
+    packageName: selectedPackage || "Senior High Packages",
+    students,
+    summary: {
+      total: students.length,
+      validStudents,
+      invalidStudents,
+      setCounts
+    },
+    numPages: 1,
+    extractionMethod: "docx_xml_native"
+  };
+}
+
+/**
+ * 4. Master Orchestrator: Scan a School Masterlist (Prioritizes PDF; silently converts other formats to PDF first)
  */
 export async function scanSchoolMasterlistPDF(fileOrBuffer, validTiers = ["Set A", "Set B", "Set C", "Set D"]) {
-  // Step 1: Extract text
-  const { fullText, pages, numPages } = await extractTextFromPDF(fileOrBuffer);
+  // Step 0: Run through the Document Converter Pipeline
+  // - If fileOrBuffer is already a PDF, it is prioritized directly (wasConverted = false).
+  // - If fileOrBuffer is a completed .docx template (or .xlsx, .csv, .txt, .rtf, .doc),
+  //   it is converted into a real PDF File (application/pdf) first so the program reads the PDF.
+  const {
+    pdfFile,
+    wasConverted,
+    sourceFormat,
+    extractedData
+  } = await convertDocumentToPdfFile(fileOrBuffer, validTiers);
+
+  // Step 1: Extract text from the PDF file (either native PDF or converted PDF)
+  const { fullText, pages, numPages } = await extractTextFromPDF(pdfFile);
 
   if (!fullText || fullText.trim().length === 0) {
+    if (wasConverted && extractedData && extractedData.students?.length > 0) {
+      return {
+        ...extractedData,
+        convertedToPdf: true,
+        convertedPdfFileName: pdfFile?.name || "Converted_Masterlist.pdf",
+        sourceFormat
+      };
+    }
     throw new Error("The uploaded PDF has no extractable text. Please ensure it is not a scanned image with zero text layers.");
   }
 
-  // Step 2: Try fast heuristic regex extraction
+  // Step 2: Run fast heuristic regex extraction on the PDF text
   const heuristicResult = parseMasterlistRoster(fullText, pages, validTiers);
 
-  // If heuristic detected at least 1 student, return immediately
+  // If the file was converted to PDF from a structured template (e.g., .docx),
+  // reconcile any wrapped multi-line cells (such as long yearbook mottos or custom IDs)
+  // so reading the converted PDF is 100% lossless.
+  if (wasConverted && extractedData && extractedData.students?.length > 0) {
+    const pdfStudents = heuristicResult.students || [];
+    const reconciledStudents =
+      pdfStudents.length === extractedData.students.length
+        ? pdfStudents.map((pdfStu, idx) => {
+            const srcStu = extractedData.students[idx];
+            return {
+              ...pdfStu,
+              studentNo: srcStu?.studentNo || pdfStu.studentNo,
+              name: srcStu?.name || pdfStu.name,
+              packageSet: srcStu?.packageSet || pdfStu.packageSet,
+              motto:
+                srcStu?.motto && srcStu.motto.length >= (pdfStu.motto || "").length
+                  ? srcStu.motto
+                  : pdfStu.motto,
+              isValidName: srcStu?.isValidName ?? pdfStu.isValidName,
+              validationError: srcStu?.validationError ?? pdfStu.validationError,
+              status: srcStu?.status || pdfStu.status
+            };
+          })
+        : extractedData.students;
+
+    const setCounts = {};
+    validTiers.forEach((t) => {
+      setCounts[t] = 0;
+    });
+    let validStudents = 0;
+    let invalidStudents = 0;
+    reconciledStudents.forEach((s) => {
+      setCounts[s.packageSet] = (setCounts[s.packageSet] || 0) + 1;
+      if (s.isValidName) validStudents++;
+      else invalidStudents++;
+    });
+
+    return {
+      ...heuristicResult,
+      success: reconciledStudents.length > 0,
+      school:
+        extractedData.school && extractedData.school !== "Partner School"
+          ? extractedData.school
+          : heuristicResult.school,
+      strand:
+        extractedData.strand && extractedData.strand !== "Academic Strand"
+          ? extractedData.strand
+          : heuristicResult.strand,
+      section:
+        extractedData.section && extractedData.section !== "Class Section"
+          ? extractedData.section
+          : heuristicResult.section,
+      batch: extractedData.batch || heuristicResult.batch,
+      adviserName: extractedData.adviserName || heuristicResult.adviserName,
+      adviserEmail: extractedData.adviserEmail || heuristicResult.adviserEmail,
+      adviserPhone: extractedData.adviserPhone || heuristicResult.adviserPhone,
+      selectedPackage: extractedData.selectedPackage || heuristicResult.selectedPackage,
+      packageName: extractedData.packageName || heuristicResult.packageName,
+      students: reconciledStudents,
+      summary: {
+        total: reconciledStudents.length,
+        validStudents,
+        invalidStudents,
+        setCounts
+      },
+      numPages,
+      pdfFile,
+      convertedToPdf: true,
+      convertedPdfFileName: pdfFile?.name || "Converted_Masterlist.pdf",
+      sourceFormat,
+      extractionMethod: `converted_${sourceFormat}_to_pdf_scan`,
+      rawText: fullText
+    };
+  }
+
+  // If heuristic detected at least 1 student from native PDF, return immediately
   if (heuristicResult.success && heuristicResult.students.length > 0) {
     return {
       ...heuristicResult,
       numPages,
+      pdfFile,
+      convertedToPdf: false,
+      sourceFormat: "pdf",
       extractionMethod: "instant_regex",
       rawText: fullText
     };
@@ -574,6 +929,7 @@ export async function scanSchoolMasterlistPDF(fileOrBuffer, validTiers = ["Set A
         return {
           ...aiResult,
           numPages,
+          pdfFile,
           extractionMethod: "ai_vision_ocr",
           rawText: fullText
         };
@@ -586,6 +942,7 @@ export async function scanSchoolMasterlistPDF(fileOrBuffer, validTiers = ["Set A
   return {
     ...heuristicResult,
     numPages,
+    pdfFile,
     extractionMethod: "heuristic_empty",
     rawText: fullText
   };

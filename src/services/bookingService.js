@@ -6,7 +6,8 @@ import {
   validateUploadFile,
   sanitizeFileName,
   sanitizeText,
-  validateBookingSecurity
+  validateBookingSecurity,
+  FILE_SECURITY_POLICIES
 } from '../lib/securityValidator';
 
 export const SERVICE_SLUG_TO_UUID = {
@@ -86,13 +87,15 @@ export async function createBooking(bookingData, referenceFiles = []) {
   }
 
   try {
-    const uploadedPaths = [];
+    const uploadedPaths = Array.isArray(bookingData.reference_images)
+      ? [...bookingData.reference_images]
+      : [];
 
     // 1. Safe File Upload Handling (Asset 6 - Unsafe File Upload Controls)
     if (referenceFiles && referenceFiles.length > 0) {
       for (const file of referenceFiles) {
-        // Validate MIME type, extension, and file size limit (10MB)
-        const fileCheck = validateUploadFile(file, { maxSizeBytes: 10 * 1024 * 1024 });
+        // Validate MIME type, extension, and file size limit (supports images & official PDF masterlists)
+        const fileCheck = validateUploadFile(file, FILE_SECURITY_POLICIES.PHOTO_OUTPUT);
         if (!fileCheck.valid) {
           console.warn(`[Security] Rejected unsafe upload: ${fileCheck.error}`);
           continue; // Skip invalid or dangerous files

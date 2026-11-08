@@ -21,6 +21,19 @@
 
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import {
+  Document,
+  Packer,
+  Paragraph,
+  TextRun,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  AlignmentType,
+  ShadingType,
+  BorderStyle
+} from "docx";
 
 /**
  * Validates whether a student name is complete.
@@ -100,10 +113,10 @@ export function validateStudentCompleteName(fullName) {
 }
 
 /**
- * Generates and downloads the Official School Section Masterlist PDF Template.
- * Can generate either a blank template for schools to fill, or a pre-populated template.
+ * Builds the jsPDF document instance for the Official School Section Masterlist PDF.
+ * Used both for direct PDF downloads and for internal document-to-PDF conversion.
  */
-export function generateMasterlistPDFTemplate({
+export function buildMasterlistPDFDoc({
   school = "Lipata Senior High School",
   strand = "ABM (Accountancy, Business & Management)",
   section = "Alcala",
@@ -134,9 +147,9 @@ export function generateMasterlistPDFTemplate({
   doc.setFillColor(217, 119, 6); // amber-600 / gold
   doc.rect(0, 27, pageWidth, 1.5, "F");
 
-  // Studio Title (Sized comfortably to never collide with the badge)
+  // Studio Title
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   doc.setTextColor(255, 255, 255);
   doc.text("E-KODAK STUDIO · OFFICIAL SCHOOL SECTION MASTERLIST", 14, 12);
 
@@ -145,20 +158,6 @@ export function generateMasterlistPDFTemplate({
   doc.setTextColor(203, 213, 225); // slate-300
   doc.text("Standard Graduation Portrait & Yearbook Intake Specification", 14, 17.5);
   doc.text("Academic Year & Graduation Session Roster", 14, 22.5);
-
-  // Template Type Badge (Right side of header with centered text)
-  const badgeW = 38;
-  const badgeH = 10;
-  const badgeX = pageWidth - 14 - badgeW; // 158mm
-  const badgeY = 9;
-  doc.setFillColor(217, 119, 6);
-  doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 1.5, 1.5, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
-  doc.setTextColor(255, 255, 255);
-  const badgeText = isSample ? "SAMPLE TEMPLATE" : "OFFICIAL TEMPLATE";
-  const badgeTw = doc.getTextWidth(badgeText);
-  doc.text(badgeText, badgeX + (badgeW - badgeTw) / 2, badgeY + 6.5);
 
   // ── Metadata Grid (School, Strand, Section, Adviser, Batch) ───────────────
   const startY = 35;
@@ -258,31 +257,6 @@ export function generateMasterlistPDFTemplate({
   doc.setFontSize(8.5);
   doc.setTextColor(15, 23, 42);
   doc.text(packageName || "Senior High Packages", rightValX, r4Y);
-
-  // ── Mandatory Validation Notice Callout Box ───────────────────────────────
-  const noticeY = startY + 41;
-  doc.setFillColor(254, 243, 199); // amber-100
-  doc.setDrawColor(245, 158, 11); // amber-500
-  doc.roundedRect(14, noticeY, pageWidth - 28, 14, 1.5, 1.5, "FD");
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.setTextColor(146, 64, 14); // amber-900
-  doc.text("CRITICAL INTAKE & VALIDATION RULES:", 18, noticeY + 5);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.setTextColor(180, 83, 9); // amber-800
-  doc.text(
-    "1. Complete Name must have Last Name, First Name, and Middle Name/Initial (e.g. Santos, Maria Clara P.). Entries without middle or last name are INVALID.",
-    18,
-    noticeY + 9
-  );
-  doc.text(
-    `2. Section Package: ${packageName || "Senior High Packages"}. Each student must have a Student ID Number, an assigned Set Category (Set A, Set B, Set C, or Set D), and an official Yearbook Motto.`,
-    18,
-    noticeY + 12.5
-  );
 
   // ── Student Roster Table Data ─────────────────────────────────────────────
   let tableRows = [];
@@ -398,7 +372,7 @@ export function generateMasterlistPDFTemplate({
 
   // ── Render Table with jspdf-autotable ──────────────────────────────────────
   autoTable(doc, {
-    startY: noticeY + 17,
+    startY: startY + 44,
     head: [
       [
         "#",
@@ -423,7 +397,7 @@ export function generateMasterlistPDFTemplate({
       fontSize: 7.5,
       textColor: [30, 41, 59], // slate-800
       cellPadding: 2.5,
-      valign: "middle"
+      valign: "top"
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252] // slate-50
@@ -465,7 +439,293 @@ export function generateMasterlistPDFTemplate({
       ? `E-Kodak_SAMPLE_Masterlist_${sanitizedSchool}_${sanitizedSection}.pdf`
       : `E-Kodak_Masterlist_Template_${sanitizedSchool}_${sanitizedSection}.pdf`);
 
+  return { doc, targetFileName };
+}
+
+/**
+ * Generates and downloads the Official School Section Masterlist PDF Template.
+ */
+export function generateMasterlistPDFTemplate(options = {}) {
+  const { doc, targetFileName } = buildMasterlistPDFDoc(options);
   doc.save(targetFileName);
+  return targetFileName;
+}
+
+/**
+ * Generates an in-memory PDF ArrayBuffer from masterlist data (used by converter pipeline).
+ */
+export function generateMasterlistPDFBuffer(options = {}) {
+  const { doc, targetFileName } = buildMasterlistPDFDoc(options);
+  const arrayBuffer = doc.output("arraybuffer");
+  return { arrayBuffer, targetFileName };
+}
+
+/**
+ * Generates a browser File (or Blob) object of type application/pdf from masterlist data.
+ */
+export function generateMasterlistPDFFile(options = {}) {
+  const { arrayBuffer, targetFileName } = generateMasterlistPDFBuffer(options);
+  const pdfName = targetFileName.endsWith(".pdf")
+    ? targetFileName
+    : `${targetFileName.replace(/\.[^.]+$/, "")}.pdf`;
+
+  if (typeof File !== "undefined") {
+    return new File([arrayBuffer], pdfName, { type: "application/pdf" });
+  }
+  const blob = new Blob([arrayBuffer], { type: "application/pdf" });
+  blob.name = pdfName;
+  return blob;
+}
+
+/**
+ * Builds an in-memory 100% Editable Microsoft Word (.docx) Masterlist Blob.
+ * Solves the issue where opening a PDF in MS Word flattens into an uneditable image.
+ * When opened in MS Word, teachers can type directly into table cells.
+ */
+export async function generateMasterlistDocxBlob({
+  school = "Name of School",
+  strand = "Academic Strand",
+  section = "Class Section",
+  batch = "Batch 2026",
+  adviserName = "",
+  adviserEmail = "",
+  adviserPhone = "",
+  packageName = "Senior High Packages",
+  students = null,
+  fileName = null
+} = {}) {
+  const cellBorder = { style: BorderStyle.SINGLE, size: 4, color: "CBD5E1" };
+  const borders = { top: cellBorder, bottom: cellBorder, left: cellBorder, right: cellBorder };
+
+  const metaLabelCell = (text) =>
+    new TableCell({
+      width: { size: 22, type: WidthType.PERCENTAGE },
+      shading: { fill: "F8FAFC", type: ShadingType.CLEAR },
+      borders,
+      margins: { top: 90, bottom: 90, left: 120, right: 120 },
+      children: [
+        new Paragraph({
+          children: [new TextRun({ text, bold: true, size: 18, color: "475569", font: "Arial" })]
+        })
+      ]
+    });
+
+  const metaValCell = (text, isGold = false) =>
+    new TableCell({
+      width: { size: 28, type: WidthType.PERCENTAGE },
+      borders,
+      margins: { top: 90, bottom: 90, left: 120, right: 120 },
+      children: [
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: text || " ",
+              bold: true,
+              size: 18,
+              color: isGold ? "D97706" : "0F172A",
+              font: "Arial"
+            })
+          ]
+        })
+      ]
+    });
+
+  const metadataTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [
+      new TableRow({
+        children: [
+          metaLabelCell("NAME OF SCHOOL:"),
+          metaValCell(school || "Name of School"),
+          metaLabelCell("BATCH #:"),
+          metaValCell(batch || "Batch 2026")
+        ]
+      }),
+      new TableRow({
+        children: [
+          metaLabelCell("ACADEMIC STRAND:"),
+          metaValCell(strand || "Academic Strand"),
+          metaLabelCell("CLASS SECTION:"),
+          metaValCell(section || "Class Section")
+        ]
+      }),
+      new TableRow({
+        children: [
+          metaLabelCell("CLASS ADVISER:"),
+          metaValCell(adviserName || "Class Adviser Name"),
+          metaLabelCell("ADVISER PHONE:"),
+          metaValCell(adviserPhone || "09XX-XXX-XXXX")
+        ]
+      }),
+      new TableRow({
+        children: [
+          metaLabelCell("ADVISER EMAIL:"),
+          metaValCell(adviserEmail || "adviser@school.edu.ph"),
+          metaLabelCell("PACKAGE:"),
+          metaValCell(packageName || "Senior High Packages", true)
+        ]
+      })
+    ]
+  });
+
+  // Table Header Cell for Student Roster
+  const rosterHeaderCell = (text, widthPercent) =>
+    new TableCell({
+      width: { size: widthPercent, type: WidthType.PERCENTAGE },
+      shading: { fill: "0F172A", type: ShadingType.CLEAR },
+      borders,
+      margins: { top: 120, bottom: 120, left: 100, right: 100 },
+      children: [
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [new TextRun({ text, bold: true, color: "FFFFFF", size: 17, font: "Arial" })]
+        })
+      ]
+    });
+
+  // Body Cell for Student Roster
+  const rosterBodyCell = (text, widthPercent, align = AlignmentType.LEFT, isAlt = false) =>
+    new TableCell({
+      width: { size: widthPercent, type: WidthType.PERCENTAGE },
+      shading: isAlt ? { fill: "F8FAFC", type: ShadingType.CLEAR } : undefined,
+      borders,
+      margins: { top: 90, bottom: 90, left: 100, right: 100 },
+      children: [
+        new Paragraph({
+          alignment: align,
+          children: [new TextRun({ text: text || " ", size: 18, color: "1E293B", font: "Arial" })]
+        })
+      ]
+    });
+
+  const rosterRows = [
+    new TableRow({
+      tableHeader: true,
+      children: [
+        rosterHeaderCell("#", 6),
+        rosterHeaderCell("STUDENT ID", 18),
+        rosterHeaderCell("STUDENT COMPLETE NAME\n(Last Name, First Name Middle Name)", 34),
+        rosterHeaderCell("SET CATEGORY\n(Set A, B, C, D)", 16),
+        rosterHeaderCell("YEARBOOK MOTTO", 26)
+      ]
+    })
+  ];
+
+  const rowCount = students && students.length > 0 ? students.length : 35;
+  for (let i = 1; i <= rowCount; i++) {
+    const s = students && students[i - 1] ? students[i - 1] : null;
+    const isAlt = i % 2 === 0;
+    rosterRows.push(
+      new TableRow({
+        children: [
+          rosterBodyCell(String(i), 6, AlignmentType.CENTER, isAlt),
+          rosterBodyCell(s ? (s.studentNo || s.student_id || "") : "", 18, AlignmentType.LEFT, isAlt),
+          rosterBodyCell(s ? (s.name || s.student_name || "") : "", 34, AlignmentType.LEFT, isAlt),
+          rosterBodyCell(s ? (s.packageSet || s.package || "Set A") : "", 16, AlignmentType.CENTER, isAlt),
+          rosterBodyCell(s ? (s.motto || s.yearbook_motto || "") : "", 26, AlignmentType.LEFT, isAlt)
+        ]
+      })
+    );
+  }
+
+  const rosterTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: rosterRows
+  });
+
+  const doc = new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            margin: {
+              top: 1000,
+              bottom: 1000,
+              left: 1000,
+              right: 1000
+            }
+          }
+        },
+        children: [
+          new Paragraph({
+            spacing: { after: 60 },
+            children: [
+              new TextRun({
+                text: "E-KODAK STUDIO · OFFICIAL SCHOOL SECTION MASTERLIST",
+                bold: true,
+                size: 26,
+                color: "0F172A",
+                font: "Arial"
+              })
+            ]
+          }),
+          new Paragraph({
+            spacing: { after: 40 },
+            children: [
+              new TextRun({
+                text: "Standard Graduation Portrait & Yearbook Intake Specification",
+                size: 18,
+                color: "64748B",
+                font: "Arial"
+              })
+            ]
+          }),
+          new Paragraph({
+            spacing: { after: 200 },
+            children: [
+              new TextRun({
+                text: "Academic Year & Graduation Session Roster",
+                size: 18,
+                color: "64748B",
+                font: "Arial"
+              })
+            ]
+          }),
+          metadataTable,
+          new Paragraph({ spacing: { after: 240 } }),
+          rosterTable,
+          new Paragraph({
+            spacing: { before: 200 },
+            alignment: AlignmentType.CENTER,
+            children: [
+              new TextRun({
+                text: "E-Kodak Studio Graduation Masterlist Verification System · Confidential School Roster",
+                size: 16,
+                color: "94A3B8",
+                font: "Arial"
+              })
+            ]
+          })
+        ]
+      }
+    ]
+  });
+
+  const blob = await Packer.toBlob(doc);
+  const sanitizedSchool = (school || "School").replace(/[^a-zA-Z0-9]/g, "_");
+  const sanitizedSection = (section || "Section").replace(/[^a-zA-Z0-9]/g, "_");
+  const targetFileName = fileName || `E-Kodak_Masterlist_Template_${sanitizedSchool}_${sanitizedSection}.docx`;
+
+  return { blob, targetFileName };
+}
+
+/**
+ * Generates and downloads an Official, 100% Editable Microsoft Word (.docx) Masterlist Template.
+ */
+export async function generateMasterlistDocxTemplate(options = {}) {
+  const { blob, targetFileName } = await generateMasterlistDocxBlob(options);
+
+  if (typeof window !== "undefined" && typeof document !== "undefined") {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = targetFileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   return targetFileName;
 }
 

@@ -2,11 +2,12 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, Link, useNavigate, useOutletContext } from 'react-router-dom';
 import {
   ArrowLeft, Calendar, MapPin, CreditCard, Building, Store, Mail, Phone,
-  User, GraduationCap, QrCode, Maximize2, Loader2, AlertCircle, XCircle,
-  Printer, FileText, PenLine, Check, X, Quote, Truck
+  User, Users, GraduationCap, QrCode, Maximize2, Loader2, AlertCircle, XCircle,
+  Printer, FileText, PenLine, Check, X, Quote, Truck, Download
 } from 'lucide-react';
 
 import { useAuth } from '../../context/AuthContext';
+import { generateMasterlistPDFTemplate } from '../../services/masterlistTemplateService';
 import { BookingDetailsSkeleton, SmartLoadingContainer } from '../../components/dashboard/skeletons';
 import {
   getBookingById,
@@ -446,7 +447,7 @@ export default function BookingDetailsPage() {
   // Detect dynamic customer fields
   const effectiveBookingNumber = booking.booking_number || 'BK-2026-00002';
   const status = (booking.status || 'CONFIRMED').toUpperCase();
-  
+
   // Status badge display label (pure calculation, no hooks after early returns)
   let statusDisplay = 'APPROVED & RESERVED';
   if (status === 'CONFIRMED' || status === 'PHOTOGRAPHER_ASSIGNED') {
@@ -480,27 +481,47 @@ export default function BookingDetailsPage() {
   const accountOwnerEmail = booking.customer?.email || profile?.email || user?.email || '';
   const accountOwnerPhone = booking.customer?.phone || profile?.phone || '';
 
-  // Participant & Relationship resolution
+  // Participant & Relationship resolution (supports School Section under Class Adviser's name)
+  const isSchoolSectionRecord =
+    booking.booking_for === 'school_section' ||
+    participantDetails?.booking_for === 'school_section' ||
+    Boolean(booking.student_details?.adviser_name || booking.student_details?.masterlist_students?.length);
   const isSomeoneElse = participantDetails?.booking_for === 'someone_else';
+
+  const adviserFullName =
+    booking.student_details?.adviser_name ||
+    participantDetails?.full_name ||
+    booking.participant_name ||
+    '';
+
   const participantFullName = (
+    (isSchoolSectionRecord ? adviserFullName : '') ||
     participantDetails?.full_name ||
     studentDossier?.student_name ||
     (!isSomeoneElse ? accountOwnerFullName : '')
   );
 
-  const displayPrimaryName = isSomeoneElse
+  const displayPrimaryName = isSchoolSectionRecord
+    ? (adviserFullName || accountOwnerFullName || 'Class Adviser')
+    : isSomeoneElse
     ? (participantFullName || 'Participant')
     : accountOwnerFullName;
 
-  const displayPrimarySubtitle = isSomeoneElse
+  const displayPrimarySubtitle = isSchoolSectionRecord
+    ? `Class Adviser · ${booking.student_details?.masterlist_students?.length || 0} Enrolled Students`
+    : isSomeoneElse
     ? `Photoshoot participant · Booked by ${accountOwnerFullName}`
     : 'Primary contact & session participant';
 
-  const displayEyebrow = isSomeoneElse
+  const displayEyebrow = isSchoolSectionRecord
+    ? 'Class Adviser · School Section'
+    : isSomeoneElse
     ? 'Participant / Graduate'
     : 'Customer & Participant';
 
-  const relationshipText = isSomeoneElse
+  const relationshipText = isSchoolSectionRecord
+    ? 'Class Adviser (School Section)'
+    : isSomeoneElse
     ? (participantDetails?.relationship || 'Booking for someone else')
     : 'Self / account owner';
 
@@ -511,11 +532,15 @@ export default function BookingDetailsPage() {
   const lastName = nameParts.slice(1).join(' ') || '';
   const initials = `${firstName[0] || 'C'}${lastName[0] || ''}`.toUpperCase();
 
-  const customerEmail = isSomeoneElse
+  const customerEmail = isSchoolSectionRecord
+    ? (booking.student_details?.adviser_email || participantDetails?.email || accountOwnerEmail || 'Not provided')
+    : isSomeoneElse
     ? (participantDetails?.email || accountOwnerEmail || 'Not provided')
     : (accountOwnerEmail || 'Not provided');
 
-  const customerPhone = isSomeoneElse
+  const customerPhone = isSchoolSectionRecord
+    ? (booking.student_details?.adviser_phone || participantDetails?.phone || accountOwnerPhone || 'Not provided')
+    : isSomeoneElse
     ? (participantDetails?.phone || accountOwnerPhone || 'Not provided')
     : (accountOwnerPhone || 'Not provided');
 
@@ -539,15 +564,15 @@ export default function BookingDetailsPage() {
   const cleanSection = (studentDossier?.section && studentDossier.section !== 'N/A')
     ? studentDossier.section
     : (booking.student_details?.section && booking.student_details.section !== 'N/A')
-    ? booking.student_details.section
-    : '';
+      ? booking.student_details.section
+      : '';
   const sectionName = cleanSection || 'Not specified';
 
   const cleanStudentId = (studentDossier?.student_id && studentDossier.student_id !== 'N/A')
     ? studentDossier.student_id
     : (booking.student_details?.student_id && booking.student_details.student_id !== 'N/A')
-    ? booking.student_details.student_id
-    : '';
+      ? booking.student_details.student_id
+      : '';
   const studentId = cleanStudentId || 'Not provided';
 
   const { name: cleanLocationName, mapUrl: googleMapsUrl } = getCleanLocation(booking.location);
@@ -696,12 +721,12 @@ export default function BookingDetailsPage() {
     const finalComposedAddress =
       deliveryForm.fulfillment_mode === 'STUDIO_DELIVERY'
         ? composeDeliveryAddress({
-            street: deliveryForm.street,
-            barangay: deliveryForm.barangay,
-            city: deliveryForm.city,
-            province: deliveryForm.province,
-            region: deliveryForm.region,
-          }) || deliveryForm.delivery_address.trim()
+          street: deliveryForm.street,
+          barangay: deliveryForm.barangay,
+          city: deliveryForm.city,
+          province: deliveryForm.province,
+          region: deliveryForm.region,
+        }) || deliveryForm.delivery_address.trim()
         : 'Studio Counter (311 Rizal Street, City of Naga, Cebu)';
 
     if (deliveryForm.fulfillment_mode === 'STUDIO_DELIVERY' && (!deliveryForm.barangay && !deliveryForm.street.trim())) {
@@ -1376,6 +1401,120 @@ export default function BookingDetailsPage() {
                       <p className="font-serif italic text-sm sm:text-base text-neutral-200 leading-relaxed">
                         “{studentDossier.yearbook_motto}”
                       </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* School Section Masterlist Roster & Stored PDF (when booked for a School Section) */}
+                {Array.isArray(booking.student_details?.masterlist_students) && booking.student_details.masterlist_students.length > 0 && (
+                  <div className="mt-8 pt-6 border-t border-neutral-800/90 space-y-5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-[0.22em] text-amber-500 mb-1">
+                          Registered Under Class Adviser · {displayPrimaryName}
+                        </p>
+                        <h4 className="font-heading text-lg sm:text-xl font-bold text-white">
+                          School Section Masterlist ({booking.student_details.masterlist_students.length} Students)
+                        </h4>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {booking.student_details?.masterlist_pdf_url && (
+                          <a
+                            href={booking.student_details.masterlist_pdf_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-semibold transition-all cursor-pointer"
+                          >
+                            <FileText size={13} />
+                            <span>View Stored PDF</span>
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            generateMasterlistPDFTemplate({
+                              school: schoolName,
+                              section: sectionName,
+                              strand: trackName,
+                              batch: batchDisplay,
+                              adviserName: displayPrimaryName,
+                              adviserEmail: customerEmail,
+                              adviserPhone: customerPhone,
+                              packageName: headline,
+                              students: booking.student_details.masterlist_students,
+                            });
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-neutral-700 hover:border-amber-500/60 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold transition-all cursor-pointer"
+                        >
+                          <Download size={13} className="text-amber-400" />
+                          <span>Download Masterlist PDF</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Set Breakdown Cards */}
+                    {booking.student_details?.masterlist_summary?.setCounts && (
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                        {['Set A', 'Set B', 'Set C', 'Set D'].map((sKey) => {
+                          const cnt = booking.student_details.masterlist_summary.setCounts[sKey] || 0;
+                          const sub = booking.student_details.masterlist_summary.setSubtotals?.[sKey] || 0;
+                          return (
+                            <div key={sKey} className="p-3 rounded-2xl bg-neutral-900/90 border border-neutral-800">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block">
+                                {sKey} ({cnt})
+                              </span>
+                              <span className="text-sm font-extrabold text-white block mt-1">
+                                ₱{Number(sub).toLocaleString()}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        <div className="p-3 rounded-2xl bg-amber-500/15 border border-amber-500/40 col-span-2 sm:col-span-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block">
+                            Overall Total
+                          </span>
+                          <span className="text-sm font-extrabold text-amber-300 block mt-1">
+                            ₱{Number(booking.student_details.masterlist_summary.totalAmount || booking.total_amount || 0).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Student Roster Table */}
+                    <div className="rounded-2xl border border-neutral-800 overflow-hidden bg-neutral-900/60 max-h-[320px] overflow-y-auto">
+                      <table className="w-full text-left text-xs divide-y divide-neutral-800">
+                        <thead className="bg-neutral-900 sticky top-0 z-10">
+                          <tr className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold">
+                            <th className="py-2.5 px-3">#</th>
+                            <th className="py-2.5 px-3">Student ID</th>
+                            <th className="py-2.5 px-3">Complete Name</th>
+                            <th className="py-2.5 px-3">Set</th>
+                            <th className="py-2.5 px-3">Price</th>
+                            <th className="py-2.5 px-3">Yearbook Motto</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-800/70 text-neutral-200">
+                          {booking.student_details.masterlist_students.map((st, idx) => (
+                            <tr key={st.studentId || idx} className="hover:bg-neutral-800/40 transition-colors">
+                              <td className="py-2 px-3 font-mono text-neutral-500">{st.rowNo || idx + 1}</td>
+                              <td className="py-2 px-3 font-mono text-amber-400">{st.studentId}</td>
+                              <td className="py-2 px-3 font-semibold text-white">{st.fullName}</td>
+                              <td className="py-2 px-3">
+                                <span className="px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-[10px]">
+                                  {st.packageTier || 'Set A'}
+                                </span>
+                              </td>
+                              <td className="py-2 px-3 font-mono text-neutral-300">
+                                {st.unitPrice ? `₱${Number(st.unitPrice).toLocaleString()}` : '—'}
+                              </td>
+                              <td className="py-2 px-3 italic text-neutral-400 truncate max-w-[200px]" title={st.motto}>
+                                “{st.motto}”
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 )}
@@ -2305,7 +2444,8 @@ export default function BookingDetailsPage() {
       </div>
 
       {/* Dedicated Print Media Stylesheet to guarantee clean single-sheet PDF output */}
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @media print {
           body * {
             visibility: hidden !important;

@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronUp, Eye, Trash2, ShieldCheck, AlertCircle, FileText,
   Video, Edit3, Lock, Palette, UploadCloud, MessageSquare, Plus,
   Timer, BellRing, CreditCard, Copy, Printer, Receipt, Download, CheckCircle2, UserCheck, Wifi, WifiOff, Signal,
-  Sun, Sunset, Shield, Pencil
+  Sun, Sunset, Shield, Pencil, School
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
@@ -46,6 +46,7 @@ import LiveClock from "../../components/dashboard/LiveClock";
 import DashboardHero from "../../components/dashboard/DashboardHero";
 import ClientHeroBanner from "../../components/dashboard/ClientHeroBanner";
 import SchoolMasterlistUploader from "../../components/dashboard/SchoolMasterlistUploader";
+import { persistConfirmedMasterlistToDatabase } from "../../services/documentConverterService";
 import { motion, AnimatePresence } from "framer-motion";
 
 // ── Format Textual Date Helper (e.g. "November 4, 2026") ───────────────────
@@ -740,6 +741,7 @@ export default function BookingPage() {
   // Who is this booking for? ("myself" | "someone_else" | "school_section")
   const [bookingFor, setBookingFor] = useState("myself");
   const [masterlistData, setMasterlistData] = useState(null);
+  const [isSavingMasterlistToDb, setIsSavingMasterlistToDb] = useState(false);
   const [showBookingForModal, setShowBookingForModal] = useState(false);
   const [pendingTierToConfirm, setPendingTierToConfirm] = useState(null);
   const [submissionTimeElapsed, setSubmissionTimeElapsed] = useState(0);
@@ -1290,9 +1292,17 @@ export default function BookingPage() {
 
     const activeP = customerProfile || profile;
     const accountOwnerFullName = [activeP?.first_name || user?.user_metadata?.first_name || "", activeP?.last_name || user?.user_metadata?.last_name || ""].filter(Boolean).join(" ") || "Client";
-    const participantFullName = [participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") || (bookingFor === "myself" ? accountOwnerFullName : "Participant");
+    const participantFullName = bookingFor === "school_section"
+      ? (masterlistData?.adviserName || [participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") || accountOwnerFullName)
+      : ([participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") || (bookingFor === "myself" ? accountOwnerFullName : "Participant"));
 
     try {
+      const serializableMasterlist = masterlistData
+        ? {
+            ...masterlistData,
+            pdfFile: undefined,
+          }
+        : null;
       const pendingBooking = {
         selectedService,
         selectedTier,
@@ -1302,6 +1312,7 @@ export default function BookingPage() {
         tierName: selectedTier?.name,
         selectedAddOns,
         bookingFor,
+        masterlistData: serializableMasterlist,
         participantFullName,
         participantFirstName,
         participantMiddleName,
@@ -1929,17 +1940,24 @@ export default function BookingPage() {
     }
   }, [user, authLoading, navigate]);
 
-  // Calculations for Pricing
+  // Calculations for Pricing (for School Section, automatically sum all students' selected sets)
   const effectiveBaseTier = selectedTier || selectedService?.tiers?.[0] || null;
-  const basePrice = parsePrice(
-    selectedTier?.price ||
-    selectedService?.tiers?.[0]?.price ||
-    selectedService?.base_price ||
-    (isAcademicService ? 1750 : 0)
-  );
+  const isSchoolSectionWithMasterlistTotal =
+    bookingFor === "school_section" &&
+    Number(masterlistData?.summary?.totalAmount) > 0;
+  const basePrice = isSchoolSectionWithMasterlistTotal
+    ? Number(masterlistData.summary.totalAmount)
+    : parsePrice(
+        selectedTier?.price ||
+        selectedService?.tiers?.[0]?.price ||
+        selectedService?.base_price ||
+        (isAcademicService ? 1750 : 0)
+      );
   const addOnsTotal = selectedAddOns.reduce((sum, a) => sum + parsePrice(a.price), 0);
   const totalAmount = basePrice + addOnsTotal;
-  const downPaymentAmount = selectedTier?.down_payment ? parsePrice(selectedTier.down_payment) : Math.round(totalAmount * 0.5);
+  const downPaymentAmount = isSchoolSectionWithMasterlistTotal
+    ? Math.round(totalAmount * 0.5)
+    : (selectedTier?.down_payment ? parsePrice(selectedTier.down_payment) : Math.round(totalAmount * 0.5));
   const remainingBalance = Math.max(0, totalAmount - downPaymentAmount);
 
   const formattedTotal = `₱${totalAmount.toLocaleString()}`;
@@ -2039,6 +2057,9 @@ export default function BookingPage() {
 
   // Unified Review Summary Card Derived Values
   const reviewClientDisplayName = useMemo(() => {
+    if (bookingFor === "school_section") {
+      return masterlistData?.adviserName || [participantFirstName, participantLastName].filter(Boolean).join(" ") || "Class Adviser";
+    }
     if (bookingFor === "someone_else") {
       return [participantFirstName, participantLastName].filter(Boolean).join(" ") || "Participant";
     }
@@ -2049,9 +2070,13 @@ export default function BookingPage() {
       return `${brideName || 'Bride'} & ${groomName || 'Groom'}`;
     }
     return [editFirstName, editLastName].filter(Boolean).join(" ") || "Client Profile";
-  }, [bookingFor, participantFirstName, participantLastName, isAcademicService, studentFirstName, studentMiddleName, studentLastName, isWeddingService, brideName, groomName, editFirstName, editLastName]);
+  }, [bookingFor, masterlistData?.adviserName, participantFirstName, participantLastName, isAcademicService, studentFirstName, studentMiddleName, studentLastName, isWeddingService, brideName, groomName, editFirstName, editLastName]);
 
   const reviewClientSecondaryInfo = useMemo(() => {
+    if (bookingFor === "school_section") {
+      const count = masterlistData?.students?.length || 0;
+      return `${studentSchool || "School Campus"} · ${studentSection || "Section"} (${count} Students)`;
+    }
     if (bookingFor === "someone_else") {
       return `Ordered by ${activeProfile?.first_name || user?.user_metadata?.first_name || "Account Owner"}`;
     }
@@ -2062,7 +2087,7 @@ export default function BookingPage() {
       return weddingTheme || "Wedding Session";
     }
     return editPhone || activeProfile?.email || user?.email || "Verified Profile";
-  }, [bookingFor, activeProfile, user, isAcademicService, studentSchool, isWeddingService, weddingTheme, editPhone]);
+  }, [bookingFor, masterlistData?.students?.length, studentSection, activeProfile, user, isAcademicService, studentSchool, isWeddingService, weddingTheme, editPhone]);
 
   const reviewScheduleDisplay = useMemo(() => {
     if (isAcademicService && academicBookingMode === "SCHOOL_PARTNER") {
@@ -2355,38 +2380,51 @@ export default function BookingPage() {
 
       let fullNotes = notes || "";
       const isSchoolSectionBooking = effectiveBookingFor === "school_section";
+      const effectiveMasterlistData = pendingOverride?.masterlistData || masterlistData;
+      const adviserDisplayName =
+        effectiveMasterlistData?.adviserName ||
+        [effectiveParticipantFirst, effectiveParticipantLast].filter(Boolean).join(" ") ||
+        `${effectiveStudentSchool} - ${effectiveStudentSection}`;
+
       const beneficiaryBlock = [
         '[BOOKING BENEFICIARY & PARTICIPANT]',
-        `• Booking For: ${isSchoolSectionBooking ? "School Section" : (effectiveBookingFor === "someone_else" ? "Someone Else" : "Myself")}`,
-        `• Participant Name: ${isSchoolSectionBooking ? `${effectiveStudentSchool} - ${effectiveStudentSection}` : participantFullName}`,
-        `• Participant Phone: ${isSchoolSectionBooking ? (masterlistData?.adviserPhone || effectiveParticipantPhone || 'N/A') : (effectiveParticipantPhone || 'N/A')}`,
-        `• Participant Email: ${isSchoolSectionBooking ? (masterlistData?.adviserEmail || effectiveParticipantEmail || 'N/A') : (effectiveParticipantEmail || 'N/A')}`,
-        `• Relationship to Account Owner: ${isSchoolSectionBooking ? "School Section" : effectiveRelationship}`,
-        isSchoolSectionBooking && masterlistData?.adviserName ? `• Class Adviser: ${masterlistData.adviserName}` : null,
-        isSchoolSectionBooking && masterlistData?.strand ? `• Academic Strand: ${masterlistData.strand}` : null,
+        `• Booking For: ${isSchoolSectionBooking ? "School Section (Under Class Adviser)" : (effectiveBookingFor === "someone_else" ? "Someone Else" : "Myself")}`,
+        `• Participant / Adviser Name: ${isSchoolSectionBooking ? adviserDisplayName : participantFullName}`,
+        `• Participant Phone: ${isSchoolSectionBooking ? (effectiveMasterlistData?.adviserPhone || effectiveParticipantPhone || 'N/A') : (effectiveParticipantPhone || 'N/A')}`,
+        `• Participant Email: ${isSchoolSectionBooking ? (effectiveMasterlistData?.adviserEmail || effectiveParticipantEmail || 'N/A') : (effectiveParticipantEmail || 'N/A')}`,
+        `• Relationship to Account Owner: ${isSchoolSectionBooking ? "Class Adviser (School Section)" : effectiveRelationship}`,
+        isSchoolSectionBooking && effectiveMasterlistData?.adviserName ? `• Class Adviser: ${effectiveMasterlistData.adviserName}` : null,
+        isSchoolSectionBooking && effectiveMasterlistData?.strand ? `• Academic Strand: ${effectiveMasterlistData.strand}` : null,
+        isSchoolSectionBooking && effectiveMasterlistData?.pdfFileName ? `• Official Masterlist PDF: ${effectiveMasterlistData.pdfFileName}` : null,
         `• Account Owner: ${accountOwnerFullName} (${activeP?.email || user?.email || 'N/A'})`
       ].filter(Boolean).join('\n');
 
       fullNotes = fullNotes ? `${beneficiaryBlock}\n\n${paymentAuditNote}\n\n${fullNotes}` : `${beneficiaryBlock}\n\n${paymentAuditNote}`;
 
       if (isAcademic) {
+        const setBreakdownText = isSchoolSectionBooking && effectiveMasterlistData?.summary?.setCounts
+          ? Object.entries(effectiveMasterlistData.summary.setCounts)
+              .map(([setKey, cnt]) => `${setKey}: ${cnt} (₱${Number(effectiveMasterlistData.summary?.setSubtotals?.[setKey] || 0).toLocaleString()})`)
+              .join(' | ')
+          : null;
         const studentLines = [
           '[STUDENT & YEARBOOK DETAILS]',
           `• Type: ${effectiveStudentType === "COLLEGE" ? "College / University" : "Senior High School"}`,
           `• Booking Mode: ${isSchoolPartner ? "School Campus (Date set by school) [SCHOOL_PARTNER]" : "Individual Booking"}`,
-          `• Student Name: ${isSchoolSectionBooking ? `${effectiveStudentSchool} - ${effectiveStudentSection}` : (participantFullName || 'N/A')}`,
+          `• Registered Under (Adviser / Student): ${isSchoolSectionBooking ? adviserDisplayName : (participantFullName || 'N/A')}`,
           `• Middle Name: ${effectiveParticipantMiddle || 'N/A'}`,
           `• School: ${effectiveStudentSchool || 'N/A'}`,
           `• Campus / Address: ${effectiveStudentSchoolAddress || 'N/A'}`,
-          `• Track / Strand / Program: ${effectiveStudentCourse || masterlistData?.strand || 'N/A'}`,
+          `• Track / Strand / Program: ${effectiveStudentCourse || effectiveMasterlistData?.strand || 'N/A'}`,
           `• Batch: ${effectiveStudentBatch || 'N/A'}`,
           `• Section: ${effectiveStudentSection || 'N/A'}`,
           `• Student ID: ${isSchoolSectionBooking ? `SEC-${effectiveStudentSection}` : (effectiveStudentId || 'N/A')}`,
           `• Yearbook Motto: ${effectiveYearbookMotto || 'N/A'}`,
-          isSchoolSectionBooking && masterlistData?.adviserName ? `• Class Adviser: ${masterlistData.adviserName}` : null,
-          isSchoolSectionBooking && masterlistData?.adviserEmail ? `• Adviser Email: ${masterlistData.adviserEmail}` : null,
-          isSchoolSectionBooking && masterlistData?.adviserPhone ? `• Adviser Phone: ${masterlistData.adviserPhone}` : null,
-          isSchoolSectionBooking && masterlistData?.students?.length ? `• Total Enrolled Students: ${masterlistData.students.length}` : null,
+          isSchoolSectionBooking && effectiveMasterlistData?.adviserName ? `• Class Adviser: ${effectiveMasterlistData.adviserName}` : null,
+          isSchoolSectionBooking && effectiveMasterlistData?.adviserEmail ? `• Adviser Email: ${effectiveMasterlistData.adviserEmail}` : null,
+          isSchoolSectionBooking && effectiveMasterlistData?.adviserPhone ? `• Adviser Phone: ${effectiveMasterlistData.adviserPhone}` : null,
+          isSchoolSectionBooking && effectiveMasterlistData?.students?.length ? `• Total Enrolled Students: ${effectiveMasterlistData.students.length}` : null,
+          setBreakdownText ? `• Selected Sets Breakdown: ${setBreakdownText}` : null,
           effectiveScheduleNote ? `• Note: ${effectiveScheduleNote}` : null
         ].filter(Boolean);
 
@@ -2397,6 +2435,7 @@ export default function BookingPage() {
         if (pendingOverride.selectedService) setSelectedService(pendingOverride.selectedService);
         if (pendingOverride.selectedTier) setSelectedTier(pendingOverride.selectedTier);
         if (pendingOverride.bookingFor) setBookingFor(pendingOverride.bookingFor);
+        if (pendingOverride.masterlistData) setMasterlistData(pendingOverride.masterlistData);
         if (pendingOverride.totalAmount != null) setTotalAmount(pendingOverride.totalAmount);
         if (pendingOverride.downPaymentAmount != null) setDownPaymentAmount(pendingOverride.downPaymentAmount);
         if (pendingOverride.remainingBalance != null) setRemainingBalance(pendingOverride.remainingBalance);
@@ -2425,37 +2464,44 @@ export default function BookingPage() {
         customer_id: activeCustomerId,
         service_id: resolvedServiceId,
         service_slug: effectiveService?.slug || selectedService?.slug || null,
-        tier_name: effectiveTier?.name || selectedTier?.name || null,
+        tier_name: isSchoolSectionBooking
+          ? `Section Roster (${effectiveMasterlistData?.students?.length || 0} Students)`
+          : (effectiveTier?.name || selectedTier?.name || null),
         selected_add_ons: (effectiveAddOns || selectedAddOns).map(a => ({ name: a.name, price: parsePrice(a.price) })),
+        reference_images: effectiveMasterlistData?.pdfStoragePath ? [effectiveMasterlistData.pdfStoragePath] : undefined,
         participant_details: {
           booking_for: effectiveBookingFor,
-          full_name: isSchoolSectionBooking ? `${effectiveStudentSchool} - ${effectiveStudentSection}` : participantFullName,
-          first_name: isSchoolSectionBooking ? (masterlistData?.adviserName || "Class Adviser") : effectiveParticipantFirst,
+          full_name: isSchoolSectionBooking ? adviserDisplayName : participantFullName,
+          first_name: isSchoolSectionBooking ? (effectiveMasterlistData?.adviserName || "Class Adviser") : effectiveParticipantFirst,
           middle_name: isSchoolSectionBooking ? null : effectiveParticipantMiddle,
-          last_name: isSchoolSectionBooking ? "(Adviser)" : effectiveParticipantLast,
-          phone: isSchoolSectionBooking ? (masterlistData?.adviserPhone || effectiveParticipantPhone) : effectiveParticipantPhone,
-          email: isSchoolSectionBooking ? (masterlistData?.adviserEmail || effectiveParticipantEmail) : effectiveParticipantEmail,
-          relationship: isSchoolSectionBooking ? "School Section" : effectiveRelationship,
+          last_name: isSchoolSectionBooking ? `(${effectiveStudentSchool} - ${effectiveStudentSection})` : effectiveParticipantLast,
+          phone: isSchoolSectionBooking ? (effectiveMasterlistData?.adviserPhone || effectiveParticipantPhone) : effectiveParticipantPhone,
+          email: isSchoolSectionBooking ? (effectiveMasterlistData?.adviserEmail || effectiveParticipantEmail) : effectiveParticipantEmail,
+          relationship: isSchoolSectionBooking ? "Class Adviser (School Section)" : effectiveRelationship,
           account_owner_name: accountOwnerFullName,
           account_owner_email: activeP?.email || user?.email
         },
         student_details: isAcademic ? {
           type: effectiveStudentType,
           booking_mode: isSchoolPartner ? "SCHOOL_PARTNER" : (pendingOverride?.academicBookingMode || academicBookingMode),
-          student_name: isSchoolSectionBooking ? `${effectiveStudentSchool} - ${effectiveStudentSection}` : participantFullName,
+          student_name: isSchoolSectionBooking ? adviserDisplayName : participantFullName,
           middle_name: effectiveParticipantMiddle || null,
           school: effectiveStudentSchool || null,
           school_address: effectiveStudentSchoolAddress || null,
-          course: effectiveStudentCourse || masterlistData?.strand || null,
+          course: effectiveStudentCourse || effectiveMasterlistData?.strand || null,
           batch: effectiveStudentBatch || null,
           section: effectiveStudentSection || null,
           student_id: isSchoolSectionBooking ? `SEC-${effectiveStudentSection}` : (effectiveStudentId || null),
           yearbook_motto: effectiveYearbookMotto || null,
-          adviser_name: masterlistData?.adviserName || null,
-          adviser_email: masterlistData?.adviserEmail || null,
-          adviser_phone: masterlistData?.adviserPhone || null,
-          masterlist_summary: masterlistData?.summary || null,
-          masterlist_students: masterlistData?.students || null,
+          adviser_name: effectiveMasterlistData?.adviserName || null,
+          adviser_email: effectiveMasterlistData?.adviserEmail || null,
+          adviser_phone: effectiveMasterlistData?.adviserPhone || null,
+          selected_package: effectiveMasterlistData?.selectedPackage || effectiveService?.name || selectedService?.name || null,
+          masterlist_pdf_name: effectiveMasterlistData?.pdfFileName || null,
+          masterlist_pdf_path: effectiveMasterlistData?.pdfStoragePath || null,
+          masterlist_pdf_url: effectiveMasterlistData?.pdfPublicUrl || null,
+          masterlist_summary: effectiveMasterlistData?.summary || null,
+          masterlist_students: effectiveMasterlistData?.students || null,
           schedule_note: effectiveScheduleNote || null,
           schedule_agreement: isSchoolPartner ? "PENDING_STUDIO_SCHOOL_AGREEMENT" : "SELF_SCHEDULED"
         } : null,
@@ -2475,7 +2521,10 @@ export default function BookingPage() {
         notes: fullNotes || null
       };
 
-      const { data, error: submitError } = await createBooking(payload, referenceFiles);
+      const filesToUpload = (isSchoolSectionBooking && effectiveMasterlistData?.pdfFile && !effectiveMasterlistData?.pdfStoragePath)
+        ? [...referenceFiles, effectiveMasterlistData.pdfFile]
+        : referenceFiles;
+      const { data, error: submitError } = await createBooking(payload, filesToUpload);
 
       if (submitError) {
         console.error("Booking creation error:", submitError);
@@ -2974,7 +3023,15 @@ export default function BookingPage() {
         : 'Online Banking'
     );
 
+    const isConfirmedSchoolSection =
+      activeBooking?.booking_for === "school_section" ||
+      bookingFor === "school_section" ||
+      Boolean(activeBooking?.student_details?.adviser_name);
+
     const resolvedClientName = (
+      (isConfirmedSchoolSection
+        ? (activeBooking?.student_details?.adviser_name || masterlistData?.adviserName || activeBooking?.participant_details?.full_name)
+        : null) ||
       [participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") ||
       [editFirstName, editMiddleName, editLastName].filter(Boolean).join(" ") ||
       activeBooking?.participant_details?.full_name ||
@@ -3077,7 +3134,10 @@ export default function BookingPage() {
       ? dbRemaining
       : Math.max(0, effectiveTotal - effectiveDownpayment);
 
-    const formattedActualBasePrice = `₱${catalogTierPrice.toLocaleString()}`;
+    const resolvedBasePrice = isConfirmedSchoolSection
+      ? Math.max(0, effectiveTotal - (addOnsTotal || 0))
+      : catalogTierPrice;
+    const formattedActualBasePrice = `₱${resolvedBasePrice.toLocaleString()}`;
     const formattedActualTotal = `₱${effectiveTotal.toLocaleString()}`;
     const formattedActualDownpayment = `₱${effectiveDownpayment.toLocaleString()}`;
     const formattedActualRemaining = `₱${effectiveRemaining.toLocaleString()}`;
@@ -5713,7 +5773,9 @@ export default function BookingPage() {
                     {bookingFor === "school_section" && (
                       <SchoolMasterlistUploader
                         masterlistData={masterlistData}
-                        packageName={selectedService?.name || "Senior High Packages"}
+                        packageName={selectedService?.name || "Senior High Packages and Sets"}
+                        serviceTiers={selectedService?.tiers || []}
+                        isSavingToDatabase={isSavingMasterlistToDb}
                         onMasterlistChange={(data) => {
                           setMasterlistData(data);
                           if (data?.school) setStudentSchool(data.school);
@@ -5722,6 +5784,54 @@ export default function BookingPage() {
                           if (data?.strand) {
                             setSelectedShsStrand(data.strand);
                             setStudentCourse(data.strand);
+                          }
+                          if (data?.adviserName) setParticipantFirstName(data.adviserName);
+                          if (data?.adviserEmail) setParticipantEmail(data.adviserEmail);
+                          if (data?.adviserPhone) setParticipantPhone(data.adviserPhone);
+                        }}
+                        onBack={() => {
+                          setValidationError("");
+                          setStep(1);
+                        }}
+                        onNextStep={async (finalizedData) => {
+                          setValidationError("");
+                          setIsSavingMasterlistToDb(true);
+                          try {
+                            const persisted = await persistConfirmedMasterlistToDatabase(finalizedData, {
+                              supabaseClient: supabase,
+                              userId: user?.id || customerProfile?.id || profile?.id,
+                              packageName: selectedService?.name || "Senior High Packages and Sets",
+                            });
+                            const mergedData = {
+                              ...finalizedData,
+                              ...persisted,
+                            };
+                            setMasterlistData(mergedData);
+                            if (mergedData.school) setStudentSchool(mergedData.school);
+                            if (mergedData.section) setStudentSection(mergedData.section);
+                            if (mergedData.batch) setStudentBatch(mergedData.batch);
+                            if (mergedData.strand) {
+                              setSelectedShsStrand(mergedData.strand);
+                              setStudentCourse(mergedData.strand);
+                            }
+                            if (mergedData.adviserName) {
+                              setParticipantFirstName(mergedData.adviserName);
+                              setParticipantLastName("");
+                            }
+                            if (mergedData.adviserEmail) setParticipantEmail(mergedData.adviserEmail);
+                            if (mergedData.adviserPhone) setParticipantPhone(mergedData.adviserPhone);
+
+                            setStep(4);
+                            setTimeout(() => {
+                              document
+                                .getElementById("studio-photoshoot-scheduling-section")
+                                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                            }, 60);
+                          } catch (saveErr) {
+                            console.warn("[Masterlist NextStep Persistence]", saveErr);
+                            setStep(4);
+                          } finally {
+                            setIsSavingMasterlistToDb(false);
                           }
                         }}
                         availableTiers={(selectedService?.tiers || []).map((t) => t.name)}
@@ -7982,18 +8092,30 @@ export default function BookingPage() {
                           </div>
                           <div>
                             <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-neutral-400 font-heading block">
-                              {isAcademicService ? "STUDENT & ACADEMIC PROFILE" : "CLIENT & PROFILE INFORMATION"}
+                              {bookingFor === "school_section"
+                                ? "CLASS ADVISER & SCHOOL SECTION PROFILE"
+                                : isAcademicService
+                                ? "STUDENT & ACADEMIC PROFILE"
+                                : "CLIENT & PROFILE INFORMATION"}
                             </span>
                             <h3 className="font-heading text-2xl sm:text-3xl font-extrabold text-neutral-900 tracking-tight mt-0.5">
-                              {[studentFirstName, studentMiddleName, studentLastName].filter(Boolean).join(" ") || [participantFirstName, participantLastName].filter(Boolean).join(" ") || [editFirstName, editLastName].filter(Boolean).join(" ") || "Student Name"}
+                              {bookingFor === "school_section"
+                                ? (masterlistData?.adviserName || [participantFirstName, participantLastName].filter(Boolean).join(" ") || "Class Adviser")
+                                : ([studentFirstName, studentMiddleName, studentLastName].filter(Boolean).join(" ") || [participantFirstName, participantLastName].filter(Boolean).join(" ") || [editFirstName, editLastName].filter(Boolean).join(" ") || "Student Name")}
                             </h3>
-                            {studentIdNumber && (
+                            {bookingFor === "school_section" ? (
+                              <div className="mt-1">
+                                <span className="text-[11px] text-amber-800 font-bold font-heading">
+                                  {masterlistData?.students?.length || 0} Enrolled Students · {studentSection || "Section"}
+                                </span>
+                              </div>
+                            ) : studentIdNumber ? (
                               <div className="mt-1">
                                 <span className="text-[11px] text-neutral-400 font-heading">
                                   ID: {studentIdNumber}
                                 </span>
                               </div>
-                            )}
+                            ) : null}
                           </div>
                         </div>
 
@@ -8009,7 +8131,7 @@ export default function BookingPage() {
                       {/* Section 1: Personal & Contact Details */}
                       <div className="flex items-center gap-3 pt-6 pb-4">
                         <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-neutral-400 font-heading whitespace-nowrap">
-                          PERSONAL &amp; CONTACT DETAILS
+                          {bookingFor === "school_section" ? "CLASS ADVISER & CONTACT DETAILS" : "PERSONAL & CONTACT DETAILS"}
                         </span>
                         <div className="h-px bg-neutral-200/70 flex-1" />
                       </div>
@@ -8017,10 +8139,12 @@ export default function BookingPage() {
                       <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-neutral-200/70">
                         <div className="pb-3 md:pb-0 md:pr-6">
                           <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
-                            COMPLETE NAME
+                            {bookingFor === "school_section" ? "CLASS ADVISER NAME" : "COMPLETE NAME"}
                           </span>
                           <span className="font-bold text-neutral-900 text-sm sm:text-base block truncate">
-                            {[studentFirstName, studentMiddleName, studentLastName].filter(Boolean).join(" ") || [participantFirstName, participantLastName].filter(Boolean).join(" ") || [editFirstName, editLastName].filter(Boolean).join(" ") || "Student Name"}
+                            {bookingFor === "school_section"
+                              ? (masterlistData?.adviserName || [participantFirstName, participantLastName].filter(Boolean).join(" ") || "Class Adviser")
+                              : ([studentFirstName, studentMiddleName, studentLastName].filter(Boolean).join(" ") || [participantFirstName, participantLastName].filter(Boolean).join(" ") || [editFirstName, editLastName].filter(Boolean).join(" ") || "Student Name")}
                           </span>
                         </div>
                         <div className="py-3 md:py-0 md:px-6">
@@ -8028,11 +8152,11 @@ export default function BookingPage() {
                             PHONE NUMBER
                           </span>
                           <span className={`text-sm sm:text-base block truncate ${
-                            (editPhone || participantPhone || activeProfile?.phone || user?.user_metadata?.phone)
+                            (masterlistData?.adviserPhone || editPhone || participantPhone || activeProfile?.phone || user?.user_metadata?.phone)
                               ? "font-bold text-neutral-900"
                               : "italic text-neutral-400 font-normal"
                           }`}>
-                            {editPhone || participantPhone || activeProfile?.phone || user?.user_metadata?.phone || "Not provided"}
+                            {(bookingFor === "school_section" ? masterlistData?.adviserPhone : null) || editPhone || participantPhone || activeProfile?.phone || user?.user_metadata?.phone || "Not provided"}
                           </span>
                         </div>
                         <div className="pt-3 md:pt-0 md:pl-6">
@@ -8040,7 +8164,7 @@ export default function BookingPage() {
                             EMAIL ADDRESS
                           </span>
                           <span className="font-bold text-neutral-900 text-sm sm:text-base block truncate">
-                            {user?.email || activeProfile?.email || participantEmail || "Not provided"}
+                            {(bookingFor === "school_section" ? masterlistData?.adviserEmail : null) || user?.email || activeProfile?.email || participantEmail || "Not provided"}
                           </span>
                         </div>
                       </div>
@@ -8116,10 +8240,12 @@ export default function BookingPage() {
                             </div>
                             <div className="pl-4">
                               <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
-                                ID NUMBER
+                                {bookingFor === "school_section" ? "ENROLLED STUDENTS" : "ID NUMBER"}
                               </span>
                               <span className="font-bold text-neutral-900 text-sm sm:text-base block">
-                                {studentIdNumber || "N/A"}
+                                {bookingFor === "school_section"
+                                  ? `${masterlistData?.students?.length || 0} Students`
+                                  : (studentIdNumber || "N/A")}
                               </span>
                             </div>
                           </div>
@@ -8200,7 +8326,9 @@ export default function BookingPage() {
                               {selectedService?.name || "Photoshoot Service"}
                             </h3>
                             <p className="text-sm sm:text-base font-bold text-amber-900 font-heading mt-0.5">
-                              {selectedTier?.name || "Set A"}
+                              {bookingFor === "school_section"
+                                ? `School Section Roster · ${masterlistData?.students?.length || 0} Students`
+                                : (selectedTier?.name || "Set A")}
                             </p>
                           </div>
                         </div>
@@ -8215,10 +8343,10 @@ export default function BookingPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setStep(2)}
+                            onClick={() => setStep(bookingFor === "school_section" ? 3 : 2)}
                             className="px-4 py-2 rounded-full border border-neutral-300 bg-neutral-50 hover:bg-neutral-100 text-xs font-bold font-heading text-neutral-800 flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
                           >
-                            Change Set
+                            {bookingFor === "school_section" ? "Edit Sets / Roster" : "Change Set"}
                           </button>
                         </div>
                       </div>
@@ -8249,13 +8377,15 @@ export default function BookingPage() {
 
                         <div className="pt-3 md:pt-0 md:pl-6">
                           <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider mb-1 font-heading">
-                            PACKAGE PRICE
+                            {bookingFor === "school_section" ? "OVERALL SECTION PAYMENT" : "PACKAGE PRICE"}
                           </span>
                           <span className="font-heading font-extrabold text-2xl sm:text-3xl text-amber-900 block">
                             ₱{basePrice.toLocaleString()}
                           </span>
                           <span className="text-[11px] text-neutral-500 block mt-0.5 font-heading">
-                            {selectedTier?.name || "Set A"} Set Price
+                            {bookingFor === "school_section"
+                              ? `Combined Sets (${masterlistData?.students?.length || 0} Students)`
+                              : `${selectedTier?.name || "Set A"} Set Price`}
                           </span>
                         </div>
                       </div>
@@ -8375,7 +8505,9 @@ export default function BookingPage() {
                           <div className="flex justify-between items-center font-heading">
                             <div>
                               <span className="text-white text-base sm:text-lg font-bold block font-heading">
-                                Base Package ({selectedTier?.name || "Set A"})
+                                {bookingFor === "school_section"
+                                  ? `School Section Sets (${masterlistData?.students?.length || 0} Students)`
+                                  : `Base Package (${selectedTier?.name || "Set A"})`}
                               </span>
                               <span className="text-xs text-neutral-400 mt-0.5 block font-heading">
                                 {selectedService?.name || "Senior High Packages and Sets"}
@@ -8385,6 +8517,25 @@ export default function BookingPage() {
                               ₱{basePrice.toLocaleString()}
                             </span>
                           </div>
+
+                          {bookingFor === "school_section" && masterlistData?.summary?.setCounts && (
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-white/10">
+                              {["Set A", "Set B", "Set C", "Set D"].map((sKey) => {
+                                const cnt = masterlistData.summary.setCounts[sKey] || 0;
+                                const sub = masterlistData.summary.setSubtotals?.[sKey] || 0;
+                                return (
+                                  <div key={sKey} className="bg-white/5 rounded-xl px-2.5 py-2 border border-white/10">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 block">
+                                      {sKey} ({cnt})
+                                    </span>
+                                    <span className="text-xs font-extrabold text-white block mt-0.5">
+                                      ₱{Number(sub).toLocaleString()}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
 
                           {selectedAddOns.length > 0 && (
                             <div className="flex justify-between items-center font-heading pt-3 border-t border-white/10">
