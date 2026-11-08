@@ -90,19 +90,19 @@ function formatTime(timeStr) {
 }
 
 function getBookingSchool(b) {
-  return b?.student_details?.school || (b?.notes && b.notes.match(/•\s*(?:School|Institution):\s*([^\n\r]+)/i)?.[1]?.trim()) || '';
+  return b?.school || b?.student_details?.school || (b?.notes && b.notes.match(/•\s*(?:School|Institution):\s*([^\n\r]+)/i)?.[1]?.trim()) || '';
 }
 
 function getBookingSection(b) {
-  return b?.student_details?.section || (b?.notes && b.notes.match(/•\s*Section(?:\s*\/\s*Batch)?:\s*([^\n\r]+)/i)?.[1]?.trim()) || '';
+  return b?.section || b?.student_details?.section || (b?.notes && b.notes.match(/•\s*Section(?:\s*\/\s*Batch)?:\s*([^\n\r]+)/i)?.[1]?.trim()) || '';
 }
 
 function getBookingCampus(b) {
-  return b?.student_details?.campus || (b?.notes && b.notes.match(/•\s*Campus(?:\s*\/\s*Address)?:\s*([^\n\r]+)/i)?.[1]?.trim()) || '';
+  return b?.school_address || b?.student_details?.campus || b?.student_details?.school_address || (b?.notes && b.notes.match(/•\s*Campus(?:\s*\/\s*Address)?:\s*([^\n\r]+)/i)?.[1]?.trim()) || '';
 }
 
 function getBookingStudentName(b) {
-  return b?.student_details?.student_name || (b?.customer ? `${b.customer.first_name || ''} ${b.customer.last_name || ''}`.trim() : '—');
+  return b?.participant_name || b?.student_details?.student_name || (b?.customer ? `${b.customer.first_name || ''} ${b.customer.last_name || ''}`.trim() : '—');
 }
 
 function getCustomerSize(cust, booking) {
@@ -406,7 +406,7 @@ export default function AdminBookings({ initialSection }) {
 
   const adminStaffName = useMemo(() => profile?.first_name
     ? `${profile.first_name} ${profile.last_name || ''}`.trim()
-    : 'Admin Staff', [profile]);
+    : 'Studio Administrator', [profile]);
 
   const formattedBatchTimeRange = `${formatTime(batchStartTime)} – ${formatTime(batchEndTime)}`;
 

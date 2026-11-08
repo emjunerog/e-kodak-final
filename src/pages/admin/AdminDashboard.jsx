@@ -21,7 +21,6 @@ import {
   Eye,
   RefreshCw,
   GraduationCap,
-  Heart,
   Video,
   Clock,
   Sparkles,
@@ -357,6 +356,7 @@ export default function AdminDashboard() {
       // Status & Clearance filter (or smart preset)
       const effectiveFilter = statusFilter !== 'ALL' ? statusFilter : activePreset;
       const effPayStatus = getEffectivePaymentStatus(b);
+      const todayIso = new Date().toISOString().slice(0, 10);
       let matchesStatus = true;
       if (effectiveFilter === 'PAID' || effectiveFilter === 'CLEARED') {
         matchesStatus = effPayStatus === 'PAID';
@@ -364,6 +364,14 @@ export default function AdminDashboard() {
         matchesStatus = effPayStatus === 'DOWNPAYMENT';
       } else if (effectiveFilter === 'UNPAID') {
         matchesStatus = effPayStatus === 'UNPAID';
+      } else if (effectiveFilter === 'BALANCE_DUE') {
+        matchesStatus = ['DOWNPAYMENT', 'UNPAID'].includes(effPayStatus) && !['CANCELLED', 'REJECTED'].includes(b.status?.toUpperCase());
+      } else if (effectiveFilter === 'UNASSIGNED_PHOTOGRAPHER') {
+        matchesStatus = b.status?.toUpperCase() === 'CONFIRMED' && !b.photographer?.id && !b.photographer_id;
+      } else if (effectiveFilter === 'AWAITING_SOFT_COPIES') {
+        matchesStatus = ['CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING'].includes(b.status?.toUpperCase()) && (!b.photo_outputs || b.photo_outputs.length === 0);
+      } else if (effectiveFilter === 'TODAY_SHOOTS') {
+        matchesStatus = Boolean(b.event_date && String(b.event_date).slice(0, 10) === todayIso);
       } else if (effectiveFilter === 'PENDING') {
         matchesStatus = ['PENDING', 'RESERVED'].includes(b.status?.toUpperCase());
       } else if (effectiveFilter === 'CONFIRMED') {
@@ -384,7 +392,7 @@ export default function AdminDashboard() {
         matchesStatus = b.status?.toUpperCase() === effectiveFilter;
       }
 
-      // Category filter (College, Senior High, Wedding)
+      // Category filter (College, Senior High)
       let matchesCategory = true;
       if (categoryFilter !== 'ALL') {
         const cat = (b.service?.category || '').toLowerCase();
@@ -395,12 +403,6 @@ export default function AdminDashboard() {
           matchesCategory = cat === 'college' || servName.includes('college') || notes.includes('college');
         } else if (categoryFilter === 'senior-high') {
           matchesCategory = cat === 'senior-high' || servName.includes('senior high') || notes.includes('senior high') || notes.includes('shs');
-        } else if (categoryFilter === 'wedding') {
-          matchesCategory = cat.startsWith('wedding') || servName.includes('wedding') || notes.includes('wedding');
-        } else if (categoryFilter === 'wedding-photo') {
-          matchesCategory = cat === 'wedding-photo' || (servName.includes('wedding') && servName.includes('photo'));
-        } else if (categoryFilter === 'wedding-video') {
-          matchesCategory = cat === 'wedding-video' || (servName.includes('wedding') && servName.includes('video'));
         }
       }
 
@@ -427,6 +429,41 @@ export default function AdminDashboard() {
       return matchesSearch && matchesStatus && matchesCategory && matchesDate;
     });
   }, [recent, searchQuery, statusFilter, categoryFilter, dateFilter, activePreset]);
+
+  // Live Operational Triage Counts & Proactive Action Center Data
+  const { triageItems, actionCenterBuckets } = useMemo(() => {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const pendingList = recent.filter((b) => ['PENDING', 'RESERVED'].includes(b.status?.toUpperCase()));
+    const unassignedList = recent.filter((b) => b.status?.toUpperCase() === 'CONFIRMED' && !b.photographer?.id && !b.photographer_id);
+    const awaitingOutputsList = recent.filter(
+      (b) => ['CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING'].includes(b.status?.toUpperCase()) && (!b.photo_outputs || b.photo_outputs.length === 0)
+    );
+    const todayShootsList = recent.filter((b) => b.event_date && String(b.event_date).slice(0, 10) === todayIso);
+    const balanceDueList = recent.filter(
+      (b) => ['DOWNPAYMENT', 'UNPAID'].includes(getEffectivePaymentStatus(b)) && !['CANCELLED', 'REJECTED'].includes(b.status?.toUpperCase())
+    );
+    const readyList = recent.filter((b) => ['READY', 'UNDER_DELIVERY'].includes(b.status?.toUpperCase()));
+
+    return {
+      triageItems: [
+        { key: 'ALL', label: 'All Orders', count: recent.length },
+        { key: 'PENDING', label: 'Needs Approval', count: pendingList.length, highlight: pendingList.length > 0 },
+        { key: 'UNASSIGNED_PHOTOGRAPHER', label: 'Assign Photographer', count: unassignedList.length, highlight: unassignedList.length > 0 },
+        { key: 'AWAITING_SOFT_COPIES', label: 'Awaiting Soft Copies', count: awaitingOutputsList.length, highlight: awaitingOutputsList.length > 0 },
+        { key: 'TODAY_SHOOTS', label: "Today's Shoots", count: todayShootsList.length, highlight: todayShootsList.length > 0 },
+        { key: 'BALANCE_DUE', label: 'Balance Due', count: balanceDueList.length },
+        { key: 'READY', label: 'Ready for Pickup', count: readyList.length, highlight: readyList.length > 0 },
+      ],
+      actionCenterBuckets: {
+        pendingList,
+        unassignedList,
+        awaitingOutputsList,
+        todayShootsList,
+        balanceDueList,
+        readyList,
+      },
+    };
+  }, [recent]);
 
   // Calculate total pages and sliced records for pagination
   const totalPages = useMemo(() => {
@@ -519,30 +556,21 @@ export default function AdminDashboard() {
     { value: 'ALL', label: 'Categories' },
     { value: 'college', label: 'College Orders', icon: GraduationCap },
     { value: 'senior-high', label: 'Senior High School (SHS)', icon: Building2 },
-    { value: 'wedding', label: 'Wedding (Photo & Video)', icon: Heart },
-    { value: 'wedding-photo', label: 'Wedding — Photography', icon: Sparkles },
-    { value: 'wedding-video', label: 'Wedding — Videography', icon: Video },
   ];
 
-  // Status & Clearance Filter Options with 3-color palette
+  // Simple status filter options
   const statusOptions = [
-    { value: 'ALL', label: 'Status', dotColor: 'bg-neutral-400', badge: stats?.total },
-    { value: 'PENDING', label: '1. Booking Received', dotColor: 'bg-gold', badge: stats?.pending },
-    { value: 'CONFIRMED', label: '2. Approved & Reserved', dotColor: 'bg-primary', badge: stats?.confirmed },
-    { value: 'PHOTOGRAPHER_ASSIGNED', label: '3. Photographer Assigned', dotColor: 'bg-indigo-600' },
-    { value: 'CAPTURE', label: '4. Ongoing Pictorial', dotColor: 'bg-gold' },
-    { value: 'EDITING', label: '5. Editing', dotColor: 'bg-primary' },
-    { value: 'RETOUCHING', label: '6. Retouching', dotColor: 'bg-gold' },
-    { value: 'FINALIZED', label: '7. Booking Finalized', dotColor: 'bg-primary' },
-    { value: 'PRINTING', label: '8. Printing', dotColor: 'bg-gold' },
-    { value: 'READY', label: '9. Ready for Pickup (Studio)', dotColor: 'bg-gold', badge: stats?.ready },
-    { value: 'UNDER_DELIVERY', label: '10. Under Delivery', dotColor: 'bg-primary' },
-    { value: 'COMPLETED', label: '11. Completed', dotColor: 'bg-neutral-400', badge: stats?.completed },
-    { value: 'PAID', label: 'Cleared (Paid Only)', dotColor: 'bg-neutral-400', badge: stats?.cleared },
-    { value: 'DOWNPAYMENT', label: 'Downpayment Received', dotColor: 'bg-gold' },
-    { value: 'UNPAID', label: 'Pending Clearance (Unpaid)', dotColor: 'bg-gold', badge: stats?.unpaid_partial },
-    { value: 'CANCELLED', label: 'Cancelled / Void', dotColor: 'bg-neutral-300' },
-    { value: 'REJECTED', label: 'Rejected', dotColor: 'bg-rose-400' },
+    { value: 'ALL', label: 'All Statuses', dotColor: 'bg-neutral-400', badge: stats?.total },
+    { value: 'PENDING', label: 'Booking Received', dotColor: 'bg-gold', badge: stats?.pending },
+    { value: 'CONFIRMED', label: 'Approved & Scheduled', dotColor: 'bg-primary', badge: stats?.confirmed },
+    { value: 'CAPTURE', label: 'Ongoing Photoshoot', dotColor: 'bg-gold', badge: stats?.capture },
+    { value: 'EDITING', label: 'Editing', dotColor: 'bg-primary', badge: stats?.editing },
+    { value: 'RETOUCHING', label: 'Retouching', dotColor: 'bg-gold', badge: stats?.retouching },
+    { value: 'FINALIZED', label: 'Printing', dotColor: 'bg-primary', badge: (stats?.finalized || 0) + (stats?.printing || 0) },
+    { value: 'READY', label: 'Ready for Pickup', dotColor: 'bg-gold', badge: stats?.ready },
+    { value: 'COMPLETED', label: 'Completed', dotColor: 'bg-neutral-400', badge: stats?.completed },
+    { value: 'PAID', label: 'Fully Paid', dotColor: 'bg-emerald-500', badge: stats?.cleared },
+    { value: 'BALANCE_DUE', label: 'With Balance Due', dotColor: 'bg-amber-500', badge: stats?.unpaid_partial },
   ];
 
   // Date Filter Options
@@ -620,6 +648,119 @@ export default function AdminDashboard() {
           }}
         />
 
+        {/* ── Needs Your Attention Today ──────── */}
+        {!loadingTables && recent.length > 0 && (
+          <div className="rounded-3xl border border-[#c9a96e]/35 bg-[#faf8f5] p-4 sm:p-5 shadow-2xs ring-1 ring-[#c9a96e]/15">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3.5 border-b border-[#ece6da]">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-900 text-[#c9a96e] shadow-2xs">
+                  <Activity size={15} />
+                </span>
+                <div>
+                  <h3 className="font-heading text-sm sm:text-base font-bold text-neutral-900 leading-tight">
+                    Needs Your Attention Today
+                  </h3>
+                  <p className="text-[11.5px] text-neutral-500">
+                    Click any booking below to assign a photographer, add a Google Drive link, or record a payment
+                  </p>
+                </div>
+              </div>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-800 bg-amber-100/70 px-2.5 py-1 rounded-full border border-amber-300/50 self-start sm:self-auto">
+                {actionCenterBuckets.todayShootsList.length} Today
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 pt-3.5">
+              {[
+                {
+                  key: 'UNASSIGNED_PHOTOGRAPHER',
+                  title: 'No Photographer Yet',
+                  subtitle: 'Approved bookings needing a photographer',
+                  items: actionCenterBuckets.unassignedList,
+                  cta: 'Assign',
+                },
+                {
+                  key: 'AWAITING_SOFT_COPIES',
+                  title: 'Waiting for Soft Copies',
+                  subtitle: 'No Google Drive link added yet',
+                  items: actionCenterBuckets.awaitingOutputsList,
+                  cta: 'Add Link',
+                },
+                {
+                  key: 'BALANCE_DUE',
+                  title: 'Unpaid Balance',
+                  subtitle: 'Bookings with remaining balance',
+                  items: actionCenterBuckets.balanceDueList,
+                  cta: 'Pay Balance',
+                },
+                {
+                  key: 'TODAY_SHOOTS',
+                  title: "Today's Schedule",
+                  subtitle: 'Photoshoots booked for today',
+                  items: actionCenterBuckets.todayShootsList,
+                  cta: 'View',
+                },
+              ].map((bucket) => {
+                const topItem = bucket.items[0] || null;
+                return (
+                  <div
+                    key={bucket.key}
+                    className="rounded-2xl bg-white border border-[#ece6da] p-3.5 flex flex-col justify-between gap-2.5 shadow-2xs hover:border-[#c9a96e]/60 transition-all"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-bold text-neutral-900">{bucket.title}</p>
+                        <p className="text-[11px] text-neutral-400 mt-0.5">{bucket.subtitle}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStatusFilter('ALL');
+                          setActivePreset((prev) => (prev === bucket.key ? 'ALL' : bucket.key));
+                        }}
+                        className={`px-2 py-0.5 rounded-full text-xs font-bold tabular-nums cursor-pointer ${
+                          bucket.items.length > 0
+                            ? 'bg-amber-100 text-amber-900 border border-amber-300/60'
+                            : 'bg-neutral-100 text-neutral-400'
+                        }`}
+                        title="Filter queue by this bucket"
+                      >
+                        {bucket.items.length}
+                      </button>
+                    </div>
+
+                    {topItem ? (
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-neutral-100">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-neutral-800 truncate">
+                            {topItem.customer?.first_name} {topItem.customer?.last_name}
+                          </p>
+                          <p className="text-[11px] font-mono text-amber-800 truncate">
+                            #{topItem.booking_number}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setInspectingBooking(topItem)}
+                          className="h-7 px-2.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-[#c9a96e] text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+                        >
+                          <span>{bucket.cta}</span>
+                          <ArrowRight size={11} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="pt-2 border-t border-neutral-100 flex items-center gap-1.5 text-[11px] text-emerald-700 font-medium">
+                        <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
+                        <span>All clear</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* ── Master Studio Intelligence Hub (Unified One Big Box Section) ── */}
         <div className="relative rounded-3xl border border-[#c9a96e]/35 bg-white shadow-xs overflow-hidden font-body ring-1 ring-[#c9a96e]/15">
           {/* Studio Signature Gold Top Accent Line */}
@@ -676,7 +817,7 @@ export default function AdminDashboard() {
                   <Layers size={18} />
                 </div>
                 <h3 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 tracking-tight">
-                  Bookings & Production Queue
+                  All Bookings
                 </h3>
               </div>
 
@@ -733,6 +874,44 @@ export default function AdminDashboard() {
                   <span className="hidden sm:inline">Export CSV</span>
                 </button>
               </div>
+            </div>
+
+            {/* 1-Click Operational Triage Strip */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-none">
+              {triageItems.map((item) => {
+                const isSelected = (statusFilter === 'ALL' && activePreset === item.key) || (statusFilter === item.key && activePreset === 'ALL');
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => {
+                      setStatusFilter('ALL');
+                      setActivePreset((prev) => (prev === item.key && item.key !== 'ALL' ? 'ALL' : item.key));
+                      setPage(1);
+                    }}
+                    className={`h-8 px-3 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all cursor-pointer border ${
+                      isSelected
+                        ? 'bg-neutral-900 text-white border-neutral-900 shadow-xs'
+                        : item.highlight
+                        ? 'bg-[#faf7f2] text-amber-950 border-[#c9a96e]/50 hover:border-[#c9a96e]'
+                        : 'bg-neutral-50 text-neutral-600 border-neutral-200/80 hover:bg-neutral-100 hover:text-neutral-900'
+                    }`}
+                  >
+                    <span>{item.label}</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded-md text-[10.5px] font-bold tabular-nums leading-none ${
+                        isSelected
+                          ? 'bg-[#c9a96e] text-neutral-950'
+                          : item.highlight
+                          ? 'bg-[#c9a96e]/25 text-amber-900'
+                          : 'bg-neutral-200/70 text-neutral-600'
+                      }`}
+                    >
+                      {item.count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Filter Controls Row (Balanced 4-Column Grid) */}

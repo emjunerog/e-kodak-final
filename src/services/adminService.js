@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { getEffectivePaymentStatus } from '../lib/bookingUtils';
+import { ADD_ONS } from '../data/servicesData';
 
 // ── In-Memory Fast Cache with TTL ───────────────────────────────────────────
 const serviceCache = new Map();
@@ -77,8 +78,13 @@ export async function getDashboardStats({ forceFresh = false } = {}) {
       confirmed: 0,
       photographer_assigned: 0,
       capture: 0,
+      in_progress: 0,
       editing: 0,
+      retouching: 0,
+      finalized: 0,
+      printing: 0,
       ready: 0,
+      under_delivery: 0,
       completed: 0,
       cancelled: 0,
       rejected: 0,
@@ -94,7 +100,7 @@ export async function getDashboardStats({ forceFresh = false } = {}) {
       if (key && key in counts) counts[key]++;
       
       // Calculate active jobs (assigned -> ready)
-      if (['PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'EDITING', 'READY'].includes(status)) {
+      if (['PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING', 'FINALIZED', 'PRINTING', 'READY', 'UNDER_DELIVERY'].includes(status)) {
         counts.active_jobs++;
       }
 
@@ -158,6 +164,7 @@ export async function getRecentBookings(limit = 50) {
         down_payment_amount,
         remaining_balance,
         down_payment_confirmed,
+        photographer_id,
         is_deleted,
         created_at,
         service:services(id, name, base_price, category, tiers, inclusions),
@@ -166,7 +173,8 @@ export async function getRecentBookings(limit = 50) {
           id,
           specialization,
           profile:profiles(first_name, last_name)
-        )
+        ),
+        photo_outputs(id, file_type, status)
       `)
       .or('is_deleted.is.null,is_deleted.eq.false')
       .order('created_at', { ascending: false })
@@ -356,8 +364,8 @@ export async function getStaffMembers() {
     const { data, error } = await supabase
       .from('profiles')
       .select('id, first_name, last_name, phone, avatar_url, role, is_active, created_at')
-      .in('role', ['admin', 'staff', 'finance'])
-      .order('role', { ascending: true });
+      .eq('role', 'admin')
+      .order('created_at', { ascending: true });
     if (error) throw error;
     return { data, error: null };
   } catch (error) {
@@ -1052,17 +1060,18 @@ export async function deleteServiceCategory(id) {
 // ── Add-Ons ───────────────────────────────────────────────────────────────────
 
 export async function getAddOns() {
-  if (!isSupabaseConfigured) return { data: [], error: null };
+  if (!isSupabaseConfigured) return { data: ADD_ONS, error: null };
   try {
     const { data, error } = await supabase
       .from('add_ons')
       .select('*')
       .order('sort_order', { ascending: true });
     if (error) throw error;
+    const sourceList = data && data.length > 0 ? data : ADD_ONS;
     // Strictly deduplicate by normalized name to eliminate repetitive entries
     const seen = new Set();
     const unique = [];
-    for (const item of (data || [])) {
+    for (const item of sourceList) {
       const norm = (item.name || '').trim().toLowerCase();
       if (norm && !seen.has(norm)) {
         seen.add(norm);
@@ -1072,7 +1081,7 @@ export async function getAddOns() {
     return { data: unique, error: null };
   } catch (error) {
     console.error('getAddOns error:', error);
-    return { data: null, error };
+    return { data: ADD_ONS, error };
   }
 }
 
@@ -1314,6 +1323,53 @@ export async function uploadAdminPhotoOutput({
       .single();
 
     if (error) throw error;
+
+    // Auto-Handoff from Photo Upload to Print Queue (FINALIZED) & Workstation Transfer
+    if (bookingId) {
+      try {
+        const { data: currentBooking } = await supabase
+          .from('bookings')
+          .select('id, booking_number, status, customer_id')
+          .eq('id', bookingId)
+          .maybeSingle();
+
+        const preFinalStatuses = ['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING'];
+        if (currentBooking && preFinalStatuses.includes(String(currentBooking.status || '').toUpperCase())) {
+          await supabase
+            .from('bookings')
+            .update({
+              status: 'FINALIZED',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', bookingId);
+
+          await supabase.from('booking_status_history').insert({
+            booking_id: bookingId,
+            status: 'FINALIZED',
+            remarks: `Auto-Handoff: Digital soft copies (${fileName}) uploaded — advanced to Finalized / Print Queue.`,
+            changed_by: uploadedBy || null,
+          });
+        }
+
+        // Log departmental handoff to Print Lab / Front Desk in workstation_transfers
+        await supabase.from('workstation_transfers').insert({
+          booking_id: bookingId,
+          sender_id: uploadedBy || null,
+          sender_role: 'photographer',
+          target_role: 'admin',
+          transfer_type: 'OUTPUT_SUBMISSION',
+          priority: 'NORMAL',
+          title: `Soft Copies Released → Print Queue (#${currentBooking?.booking_number || 'Order'})`,
+          message: `${fileName} attached and released to client gallery. Ready for print assembly / final release.`,
+          payload: { output_id: data?.id, file_path: resolvedPath, file_type: fileType },
+          status: 'PENDING',
+        });
+      } catch (handoffErr) {
+        console.warn('Auto-handoff on photo output upload notice:', handoffErr);
+      }
+    }
+
+    invalidateAdminCache('admin:dashboard_stats');
     return { data, error: null };
   } catch (error) {
     console.error('uploadAdminPhotoOutput error:', error);
@@ -1364,7 +1420,7 @@ export async function getAllWorkers({ forceFresh = false } = {}) {
         id, first_name, last_name, email, phone, avatar_url, role, is_active, bio, created_at, updated_at,
         photographer_profile:photographer_profiles(specialization, bio, is_available)
       `)
-      .in('role', ['admin', 'staff', 'finance', 'photographer'])
+      .in('role', ['admin', 'photographer'])
       .not('email', 'is', null)
       .neq('email', '')
       .order('created_at', { ascending: false });
@@ -1375,7 +1431,7 @@ export async function getAllWorkers({ forceFresh = false } = {}) {
       const fallback = await supabase
         .from('profiles')
         .select('id, first_name, last_name, email, phone, avatar_url, role, is_active, bio, created_at, updated_at')
-        .in('role', ['admin', 'staff', 'finance', 'photographer'])
+        .in('role', ['admin', 'photographer'])
         .not('email', 'is', null)
         .neq('email', '')
         .order('created_at', { ascending: false });
@@ -1398,7 +1454,7 @@ export async function getAllWorkers({ forceFresh = false } = {}) {
         email: w.email || '',
         phone: w.phone || '',
         avatar_url: w.avatar_url || null,
-        role: w.role || 'staff',
+        role: w.role || 'photographer',
         is_active: w.is_active !== false,
         bio: w.bio || ph?.bio || '',
         specialization: ph?.specialization || null,
@@ -1419,14 +1475,14 @@ export async function getAllWorkers({ forceFresh = false } = {}) {
 /**
  * createWorkerProfile
  * -------------------
- * Inserts a new worker profile record (photographer, staff, finance) into public.profiles
+ * Inserts a new worker profile record (photographer, admin) into public.profiles
  * and creates a photographer_profiles row if role === 'photographer'.
  */
 export async function createWorkerProfile({
   firstName,
   lastName,
   email,
-  role = 'staff',
+  role = 'photographer',
   phone = '',
   specialization = '',
   bio = '',
@@ -1443,7 +1499,7 @@ export async function createWorkerProfile({
       last_name: lastName?.trim() || '',
       email: email?.trim().toLowerCase() || null,
       phone: phone?.trim() || null,
-      role: role || 'staff',
+      role: role || 'photographer',
       is_active: isActive,
       bio: bio?.trim() || null,
       created_at: now,

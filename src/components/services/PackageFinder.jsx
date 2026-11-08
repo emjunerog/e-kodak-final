@@ -17,7 +17,7 @@
  */
 
 import { useState } from "react";
-import { ChevronRight, RotateCcw, Sparkles, GraduationCap, Scroll, Video, Camera } from "lucide-react";
+import { ChevronRight, RotateCcw, Sparkles, GraduationCap, Scroll } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -42,20 +42,6 @@ const OCCASIONS = [
     label: "Senior High School",
     sub: "Toga, studio & student prints",
     match: (s) => s.category === "senior-high" || /senior/i.test(`${s.slug || ""} ${s.name || ""}`),
-  },
-  {
-    value: "wedding-video",
-    icon: Video,
-    label: "Wedding HD Videography",
-    sub: "Mirrorless video, Drone, SDE & MTV",
-    match: (s) => s.category === "wedding-video" || /video|videograph/i.test(`${s.slug || ""} ${s.name || ""}`),
-  },
-  {
-    value: "wedding-photo",
-    icon: Camera,
-    label: "Wedding Photography",
-    sub: "Full day coverage, USB, albums & frame",
-    match: (s) => s.category === "wedding-photo" || /photo|photograph/i.test(`${s.slug || ""} ${s.name || ""}`),
   },
 ];
 

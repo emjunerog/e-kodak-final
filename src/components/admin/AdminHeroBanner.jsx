@@ -66,24 +66,6 @@ export default function AdminHeroBanner({
         { label: 'Security',           href: '/admin/security',      icon: ShieldCheck,   iconColor: 'text-neutral-400' },
       ],
     },
-    staff: {
-      label: 'Front Desk Intake',
-      icon: CalendarDays,
-      defaultSummary: 'Front desk intake station active.',
-      links: [
-        { label: 'Activity Logs',      href: '/admin/activity-logs', icon: History,       iconColor: 'text-gold' },
-        { label: 'Bookings Intake',    href: '/admin/bookings',      icon: CalendarDays,  iconColor: 'text-neutral-400' },
-      ],
-    },
-    finance: {
-      label: 'Finance Desk',
-      icon: CreditCard,
-      defaultSummary: 'Payment verification active.',
-      links: [
-        { label: 'Record Payment',     href: '/admin/payments',      icon: CreditCard,    iconColor: 'text-gold' },
-        { label: 'Activity Logs',      href: '/admin/activity-logs', icon: History,       iconColor: 'text-gold' },
-      ],
-    },
     photographer: {
       label: 'Photographer Station',
       icon: Camera,
@@ -149,7 +131,7 @@ export default function AdminHeroBanner({
 }
 
 AdminHeroBanner.propTypes = {
-  station: PropTypes.oneOf(['admin', 'staff', 'finance', 'photographer']),
+  station: PropTypes.oneOf(['admin', 'photographer']),
   badgeLabel: PropTypes.string,
   badgeIcon: PropTypes.elementType,
   userName: PropTypes.string,

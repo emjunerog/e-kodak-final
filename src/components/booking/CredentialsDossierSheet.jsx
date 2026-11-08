@@ -127,7 +127,7 @@ export default function CredentialsDossierSheet({
                   Student ID / LRN:
                 </span>
                 <span className="font-mono font-bold text-xs text-neutral-900 bg-neutral-100 px-2 py-0.5 rounded border border-neutral-200">
-                  {studentId || '1350691'}
+                  {studentId || 'Not provided'}
                 </span>
               </div>
             </div>
@@ -161,7 +161,7 @@ export default function CredentialsDossierSheet({
             <p className="font-serif italic text-xs sm:text-sm text-neutral-800 leading-relaxed">
               {yearbookMotto && yearbookMotto !== 'N/A'
                 ? `“${yearbookMotto}”`
-                : '“Perseverance and dedication will illuminate every path forward.”'}
+                : 'No personal motto submitted.'}
             </p>
           </div>
         </div>

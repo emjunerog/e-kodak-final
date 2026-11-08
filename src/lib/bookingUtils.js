@@ -30,12 +30,12 @@ const STATUS_META = {
   EDITING:              { tier: 'primary', badge: 'bg-primary/10 text-primary border-primary/30',         label: 'Editing' },
   // Stage 5: Retouching
   RETOUCHING:           { tier: 'gold',   badge: 'bg-gold/10 text-gold-dark border-gold/30',            label: 'Retouching' },
-  // Stage 6: Booking Finalized
+  // Stage 6: Booking Finalized / Print Lab
   FINALIZED:            { tier: 'primary', badge: 'bg-primary/10 text-primary border-primary/30',         label: 'Booking Finalized' },
-  PRINTING:             { tier: 'primary', badge: 'bg-primary/10 text-primary border-primary/30',         label: 'Booking Finalized' },
+  PRINTING:             { tier: 'primary', badge: 'bg-primary/10 text-primary border-primary/30',         label: 'In Print Lab' },
   // Stage 7: Fulfillment (Pickup vs Delivery)
-  READY:                { tier: 'gold',   badge: 'bg-gold/10 text-gold-dark border-gold/30',            label: 'Booking ready to pick-up (studio)' },
-  UNDER_DELIVERY:       { tier: 'primary', badge: 'bg-primary/10 text-primary border-primary/30',        label: 'Booking under delivery' },
+  READY:                { tier: 'gold',   badge: 'bg-gold/10 text-gold-dark border-gold/30',            label: 'Ready for Pickup' },
+  UNDER_DELIVERY:       { tier: 'primary', badge: 'bg-primary/10 text-primary border-primary/30',        label: 'Under Delivery' },
   // Terminals
   COMPLETED:            { tier: 'neutral', badge: 'bg-neutral-100 text-neutral-700 border-neutral-200',  label: 'Completed' },
   REJECTED:             { tier: 'neutral', badge: 'bg-neutral-100 text-neutral-500 border-neutral-200',  label: 'Rejected' },

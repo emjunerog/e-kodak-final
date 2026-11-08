@@ -68,7 +68,7 @@ export const xenditPaymentService = {
           email: customerEmail || 'client@e-kodak.ph',
           mobile_number: customerPhone ? customerPhone.replace(/[^0-9+]/g, '') : '+639178880123'
         },
-        success_redirect_url: `${origin}${returnPath}?payment_status=success&invoice_id={invoice_id}&external_id=${externalId}&channel=${paymentChannel}&step=7`,
+        success_redirect_url: `${origin}${returnPath}?payment_status=success&invoice_id=${externalId}&external_id=${externalId}&channel=${paymentChannel}&step=7`,
         failure_redirect_url: `${origin}${returnPath}?payment_status=failed&step=6`,
         payment_methods: selectedMethods
       };

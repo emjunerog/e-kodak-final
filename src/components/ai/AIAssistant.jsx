@@ -56,8 +56,6 @@ async function copyText(text) {
 const CATEGORY_ICONS = {
   college: "bi-mortarboard",
   "senior-high": "bi-person-badge",
-  "wedding-video": "bi-camera-video",
-  "wedding-photo": "bi-camera",
 };
 
 const iconForService = (service) =>
@@ -578,11 +576,11 @@ function AdminDispatchGuideScreen({ onSendToChat }) {
       desc: "Requires high attention to toga hood, barong fold alignment, soft lighting, and formal posture.",
     },
     {
-      title: "Wedding & Prenup / Couple",
-      target: "Event / Cinematic Specialists",
-      icon: "bi bi-heart-fill",
-      color: "text-danger",
-      desc: "Fast action handling, outdoor ambient exposure mastery, and romantic narrative direction.",
+      title: "Senior High & Academic Milestones",
+      target: "Portrait Specialists",
+      icon: "bi bi-person-badge-fill",
+      color: "text-primary",
+      desc: "Fast-paced student posing, uniform gown alignment, rush ID standard framing, and friendly student coaching.",
     },
     {
       title: "Family & Maternity",
@@ -1019,7 +1017,7 @@ function buildSystemInstruction(portal, catalog) {
     return `You are Koda Admin Co-Pilot, the specialized AI operations assistant for E-Kodak Photography Studio staff and administrators.
 You assist with:
 1. Drafting polite, professional, and clear SMS or email templates for customers (down payment reminders, call times, venue directions, photos ready notices).
-2. Photographer Dispatch: Explaining photographer matching (Studio/Barong/Toga -> Portrait specialists; Events/Weddings -> Event documentary specialists; Commercial -> Lighting/Product specialists).
+2. Photographer Dispatch: Explaining photographer matching (Studio/Barong/Toga -> Portrait specialists; Campus Cohorts -> Batch pictorial specialists; Commercial -> Lighting/Product specialists).
 3. Lifecycle & Workflow Rules:
    - Status Flow: PENDING -> CONFIRMED -> PHOTOGRAPHER_ASSIGNED -> CAPTURE -> EDITING -> PRINTING -> READY -> COMPLETED.
    - Financial Policy: 50% non-refundable down payment required to confirm. Remaining balance due on shoot day.
@@ -1053,7 +1051,7 @@ ${context}`;
 
   return `You are Koda, E-Kodak Photography Studio's friendly AI concierge for prospective clients.
 You help clients choose packages, compare sets, explain pricing, and guide them to book.
-Core products: College graduation packages, Senior High packages, Wedding videography and wedding photography.
+Core products: College graduation packages and Senior High school packages.
 Always quote set prices from the live catalog in the context below — never invent amounts.
 Payment rule: 50% down payment required to confirm; remaining balance due on shoot day.
 Context:
@@ -1099,7 +1097,7 @@ function getStudioConciergeResponse(query, portal, catalog) {
       reply += `\n*A 50% downpayment confirms your session schedule. The remaining balance is settled on your shoot day.*`;
       return reply;
     }
-    return `Our signature offerings include **College Graduation Packages**, **Senior High Sets**, and **Wedding Photo & Video** packages starting from ₱850. A 50% reservation downpayment secures your date.`;
+    return `Our signature offerings include **College Graduation Packages** and **Senior High Sets** starting from ₱795. A 50% reservation downpayment secures your date.`;
   }
 
   // 3. Downpayment, payment methods, settlement

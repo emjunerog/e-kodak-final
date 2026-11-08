@@ -9,7 +9,6 @@ import {
   CreditCard,
   ImageIcon,
   Bell,
-  MessageSquare,
   ShoppingBag,
   Settings,
   ShieldCheck,
@@ -163,87 +162,34 @@ export default function AdminSidebar({ onClose, onOpenProfile, isCollapsed = fal
     navigate('/login');
   };
 
-  const role = profile?.role || 'staff';
-  
-  let roleLabel = 'Staff';
-  if (role === 'admin') {
-    roleLabel = 'Administrator';
-  } else if (role === 'finance') {
-    roleLabel = 'Finance Officer';
-  }
+  const roleLabel = 'Administrator';
 
   // ── Hierarchical Navigation Groups (Prioritizing Daily Core Operations) ───
-  let coreNav = [];
-  let teamNav = [];
-  let opsNav = [];
-  let mgmtNav = [];
+  const coreNav = [
+    { name: 'Dashboard',         path: '/admin',             icon: LayoutDashboard, exact: true },
+    { name: 'Active Bookings',   path: '/admin/bookings',    icon: CalendarDays     },
+    { name: 'Photo Outputs',     path: '/admin/photos',      icon: ImageIcon        },
+    { name: 'Payments & Ledger', path: '/admin/payments',    icon: CreditCard       },
+    { name: 'Customers',         path: '/admin/customers',   icon: Users            },
+  ];
 
-  if (role === 'admin') {
-    coreNav = [
-      { name: 'Dashboard',         path: '/admin',             icon: LayoutDashboard, exact: true },
-      { name: 'Active Bookings',   path: '/admin/bookings',    icon: CalendarDays     },
-      { name: 'Photo Outputs',     path: '/admin/photos',      icon: ImageIcon        },
-      { name: 'Payments & Ledger', path: '/admin/payments',    icon: CreditCard       },
-      { name: 'Customers',         path: '/admin/customers',   icon: Users            },
-    ];
+  const teamNav = [
+    { name: 'Studio Team',       path: '/admin/staff',         icon: UserCheck  },
+    { name: 'Photographers',     path: '/admin/photographers', icon: CameraIcon },
+  ];
 
-    teamNav = [
-      { name: 'Staff & Active Workers', path: '/admin/staff',         icon: UserCheck  },
-      { name: 'Photographers',          path: '/admin/photographers', icon: CameraIcon },
-    ];
+  const opsNav = [
+    { name: 'Notifications',     path: '/admin/notifications', icon: Bell          },
+    { name: 'Security & Audit',  path: '/admin/security',      icon: ShieldCheck   },
+  ];
 
-    opsNav = [
-      { name: 'Notifications',     path: '/admin/notifications', icon: Bell          },
-      { name: 'SMS Dispatch Logs', path: '/admin/sms',           icon: MessageSquare },
-      { name: 'Security & Audit',  path: '/admin/security',      icon: ShieldCheck   },
-    ];
-
-    mgmtNav = [
-      { name: 'Yearbook Studio',    path: '/admin/yearbook',      icon: BookOpen    },
-      { name: 'Activity Logs',      path: '/admin/activity-logs', icon: History     },
-      { name: 'Services & Pricing', path: '/admin/services',      icon: ShoppingBag },
-      { name: 'CMS & Content',      path: '/admin/cms',           icon: Layers      },
-      { name: 'Studio Settings',    path: '/admin/settings',      icon: Settings    },
-    ];
-  } else if (role === 'finance') {
-    coreNav = [
-      { name: 'Finance Overview',  path: '/admin',             icon: LayoutDashboard, exact: true },
-      { name: 'Payments & Ledger', path: '/admin/payments',    icon: CreditCard       },
-      { name: 'Active Bookings',   path: '/admin/bookings',    icon: CalendarDays     },
-      { name: 'Customer Accounts', path: '/admin/customers',   icon: Users            },
-    ];
-    teamNav = [
-      { name: 'Staff Roster',      path: '/admin/staff',         icon: UserCheck      },
-      { name: 'Photographers',     path: '/admin/photographers', icon: CameraIcon     },
-    ];
-    opsNav = [
-      { name: 'Notifications',     path: '/admin/notifications', icon: Bell           },
-      { name: 'SMS Dispatch Logs', path: '/admin/sms',           icon: MessageSquare  },
-    ];
-    mgmtNav = [
-      { name: 'Yearbook Studio',   path: '/admin/yearbook',      icon: BookOpen       },
-      { name: 'Activity Logs',     path: '/admin/activity-logs', icon: History        },
-    ];
-  } else {
-    coreNav = [
-      { name: 'Desk Overview',     path: '/admin',             icon: LayoutDashboard, exact: true },
-      { name: 'Active Bookings',   path: '/admin/bookings',    icon: CalendarDays     },
-      { name: 'Photo Outputs',     path: '/admin/photos',      icon: ImageIcon        },
-      { name: 'Payments & Ledger', path: '/admin/payments',    icon: CreditCard       },
-      { name: 'Customers',         path: '/admin/customers',   icon: Users            },
-    ];
-    teamNav = [
-      { name: 'Photographers',     path: '/admin/photographers', icon: CameraIcon },
-    ];
-    opsNav = [
-      { name: 'Notifications',     path: '/admin/notifications', icon: Bell          },
-      { name: 'SMS Dispatch Logs', path: '/admin/sms',           icon: MessageSquare },
-    ];
-    mgmtNav = [
-      { name: 'Yearbook Studio',   path: '/admin/yearbook',      icon: BookOpen      },
-      { name: 'Activity Logs',     path: '/admin/activity-logs', icon: History       },
-    ];
-  }
+  const mgmtNav = [
+    { name: 'Yearbook Studio',    path: '/admin/yearbook',      icon: BookOpen    },
+    { name: 'Activity Logs',      path: '/admin/activity-logs', icon: History     },
+    { name: 'Services & Pricing', path: '/admin/services',      icon: ShoppingBag },
+    { name: 'CMS & Content',      path: '/admin/cms',           icon: Layers      },
+    { name: 'Studio Settings',    path: '/admin/settings',      icon: Settings    },
+  ];
 
   const initial = profile?.first_name?.charAt(0) || 'A';
 

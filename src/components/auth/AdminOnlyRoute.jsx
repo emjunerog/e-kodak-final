@@ -7,8 +7,8 @@ import { ShieldAlert, ArrowLeft, Loader2 } from 'lucide-react';
  * AdminOnlyRoute
  * --------------
  * Restricts access strictly to users with role === 'admin'.
- * Staff and Finance users are blocked and presented with an access restriction notice
- * or redirected back to the operational desk (/admin).
+ * Non-admin users are blocked and presented with an access restriction notice
+ * or redirected back to their appropriate dashboard.
  */
 export default function AdminOnlyRoute({ children }) {
   const { user, profile, loading } = useAuth();
@@ -38,7 +38,7 @@ export default function AdminOnlyRoute({ children }) {
             Access Restricted: Administrator Only
           </h2>
           <p className="text-xs text-neutral-500 mt-1.5 leading-relaxed">
-            This management module is reserved for system administrators. Staff accounts handle daily booking intake, photographer assignments, payments, and photo outputs.
+            This management module is reserved for studio system administrators.
           </p>
         </div>
         <div className="pt-2 flex items-center justify-center gap-3">
@@ -47,13 +47,7 @@ export default function AdminOnlyRoute({ children }) {
             className="inline-flex items-center gap-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs"
           >
             <ArrowLeft size={14} />
-            <span>Return to Desk Overview</span>
-          </Link>
-          <Link
-            to="/admin/bookings"
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-neutral-100 hover:bg-neutral-200/80 text-neutral-700 rounded-xl text-xs font-semibold transition-all"
-          >
-            <span>Go to Bookings Queue</span>
+            <span>Return to Admin Dashboard</span>
           </Link>
         </div>
       </div>

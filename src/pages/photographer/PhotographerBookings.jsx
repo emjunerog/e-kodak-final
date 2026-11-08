@@ -397,14 +397,14 @@ export default function PhotographerBookings() {
         setSelectedBooking(prev => ({ ...prev, status: targetStatus }));
       }
 
-      // Emit synchronized transfer log to Front Desk Staff
+      // Emit synchronized transfer log to Studio Admin
       const targetBk = bookings.find(b => b.id === bookingId);
       if (targetBk) {
         await createTransferLog({
           bookingId: targetBk.id,
           senderId: user.id,
           senderRole: 'photographer',
-          targetRole: 'staff',
+          targetRole: 'admin',
           transferType: targetStatus === 'READY' ? 'OUTPUT_SUBMISSION' : 'ORDER_HANDOFF',
           priority: 'NORMAL',
           title: `Studio Bay Update: #${targetBk.booking_number} -> ${targetStatus}`,
@@ -435,7 +435,7 @@ export default function PhotographerBookings() {
       bookingId: selectedBooking.id,
       senderId: user.id,
       senderRole: 'photographer',
-      targetRole: 'staff',
+      targetRole: 'admin',
       transferType: 'ISSUE_ESCALATION',
       priority: issuePriority,
       title: issueTitle,
@@ -450,7 +450,7 @@ export default function PhotographerBookings() {
     if (err) {
       setToast({ type: 'error', message: 'Failed to escalate issue: ' + err.message });
     } else {
-      setToast({ type: 'success', message: 'Studio issue transmitted to Front Desk Staff!' });
+      setToast({ type: 'success', message: 'Studio issue transmitted to Studio Admin!' });
       setIssueModalOpen(false);
       setIssueTitle('');
       setIssueMessage('');

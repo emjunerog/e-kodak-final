@@ -1,3 +1,5 @@
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+
 const STORAGE_KEY_PREFIX = 'ekodak_customer_audit_';
 
 /**
@@ -94,9 +96,31 @@ export async function recordCustomerAction({
     const updated = [event, ...existing.filter(e => e.id !== event.id)].slice(0, 100);
     localStorage.setItem(`${STORAGE_KEY_PREFIX}${userId}`, JSON.stringify(updated));
 
-    // 2. Persist customer audit event (local activity trail + customer activity log)
-    // Note: Customer preference/action updates are stored into the customer's personal activity trail
-    // and intentionally DO NOT insert into notifications table to avoid toggling administrative alerts.
+    // 2. Persist customer audit event to central database admin_activity_logs so admins have full visibility
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('admin_activity_logs').insert([{
+          admin_id: userId,
+          admin_name: 'Client Portal',
+          admin_role: 'customer',
+          action_type: category || 'CUSTOMER_ACTION',
+          entity_type: bookingId ? 'booking' : 'customer',
+          entity_id: bookingId || userId,
+          entity_label: bookingNumber || title,
+          description: `${title}${description && description !== title ? ` — ${description}` : ''}`,
+          details: {
+            changes: event.changes,
+            booking_id: bookingId,
+            booking_number: bookingNumber,
+            ...metadata,
+          },
+          created_at: event.timestamp,
+        }]);
+      } catch (dbErr) {
+        // Non-blocking fallback if RLS or network restricts direct insert
+        console.warn('Customer audit DB sync notice:', dbErr?.message || dbErr);
+      }
+    }
 
     // 3. Dispatch real-time UI refresh event
     window.dispatchEvent(new CustomEvent('ekodak_audit_trail_updated', {

@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   X, Mail, MapPin, Calendar, Clock, CreditCard, ExternalLink,
   Check, Copy, GraduationCap, Camera, Package, ChevronRight, ArrowRight, User,
-  Loader2, Banknote, Wallet, Receipt, Building, CheckCircle2,
+  Loader2, Banknote, Wallet, Receipt, Building, CheckCircle2, FolderPlus, Sparkles, Send,
 } from 'lucide-react';
 import {
   parseStudentDetailsFromNotes,
@@ -15,7 +15,14 @@ import {
   recordPayment,
   createNotification,
   getBookingDetail,
+  updateBookingStatus,
+  NEXT_STATUS_MAP,
+  getPhotographersWithWorkloadAndAvailability,
+  assignPhotographerToBooking,
 } from '../../services/bookingAdminService';
+import { uploadAdminPhotoOutput } from '../../services/adminService';
+import { createTransferLog, getTransfersByBooking } from '../../services/workstationService';
+import { getStatusLabel } from '../../lib/bookingUtils';
 import { useAuth } from '../../context/AuthContext';
 
 const INVALID = ['n/a', 'na', 'none', 'null', '—', '-', '""', "''"];
@@ -153,24 +160,47 @@ export default function BookingQuickInspector({
     setDetailedBooking(null);
   }
 
-  // Fetch full live database details on modal open
-  useEffect(() => {
-    if (!booking?.id || !isOpen) return;
+  // Inline Quick-Operations State (Photographer, Stage Advance, Soft Copy Link)
+  const [advancingStage, setAdvancingStage] = useState(false);
+  const [showPhotographerPicker, setShowPhotographerPicker] = useState(false);
+  const [photographers, setPhotographers] = useState([]);
+  const [loadingPhotographers, setLoadingPhotographers] = useState(false);
+  const [selectedPhotographerId, setSelectedPhotographerId] = useState('');
+  const [assigningPhotographer, setAssigningPhotographer] = useState(false);
+  const [driveUrlInput, setDriveUrlInput] = useState('');
+  const [attachingDrive, setAttachingDrive] = useState(false);
+  const [handoffTarget, setHandoffTarget] = useState('photographer');
+  const [handoffNote, setHandoffNote] = useState('');
+  const [sendingHandoff, setSendingHandoff] = useState(false);
+  const [transfers, setTransfers] = useState([]);
 
-    let isCurrent = true;
+  // Fetch full live database details on modal open
+  const refreshDetail = () => {
+    if (!booking?.id) return;
     getBookingDetail(booking.id)
       .then(({ data, error }) => {
-        if (isCurrent && data && !error) {
+        if (data && !error) {
           setDetailedBooking(data);
+          if (data.photographer?.id || data.photographer_id) {
+            setSelectedPhotographerId(data.photographer?.id || data.photographer_id);
+          }
         }
       })
       .catch((err) => {
         console.warn('Failed to load full booking details:', err);
       });
+    getTransfersByBooking(booking.id)
+      .then(({ data }) => {
+        if (data) setTransfers(data);
+      })
+      .catch(() => {});
+  };
 
-    return () => {
-      isCurrent = false;
-    };
+  useEffect(() => {
+    if (!booking?.id || !isOpen) return;
+    setShowPhotographerPicker(false);
+    setDriveUrlInput('');
+    refreshDetail();
   }, [booking?.id, isOpen]);
 
   // Payment Recording Modal State
@@ -252,13 +282,14 @@ export default function BookingQuickInspector({
           title: 'Payment Recorded',
           message: `A payment of ${peso(amt, 2)} was recorded for booking #${active.booking_number}.`,
           notificationType: 'payment_recorded',
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       setPaymentToast(`${peso(amt)} recorded successfully`);
       setTimeout(() => setPaymentToast(''), 4000);
       setPaymentModalOpen(false);
-      if (onStatusUpdated) onStatusUpdated();
+      refreshDetail();
+      if (onStatusUpdated) onStatusUpdated(active.id, active.status);
     } catch (err) {
       console.error('Failed to record payment:', err);
       alert(err.message || 'Failed to record payment');
@@ -267,54 +298,226 @@ export default function BookingQuickInspector({
     }
   };
 
+  // ── 1-Click Stage Advance & Direct Stepper Jump Handlers ─────────────────
+  const currentStatusUpper = String(active.status || 'PENDING').toUpperCase();
+  const nextStatus = NEXT_STATUS_MAP[currentStatusUpper] || null;
+
+  const handleSetStage = async (targetStatus) => {
+    if (!targetStatus || targetStatus === currentStatusUpper || advancingStage) return;
+    setAdvancingStage(true);
+    try {
+      const { error } = await updateBookingStatus(
+        active.id,
+        targetStatus,
+        `Updated to ${getStatusLabel(targetStatus)}`,
+        profile?.id || null
+      );
+      if (error) throw error;
+      setDetailedBooking((prev) => ({ ...(prev || active), status: targetStatus, updated_at: new Date().toISOString() }));
+      setPaymentToast(`Moved to ${getStatusLabel(targetStatus)}`);
+      setTimeout(() => setPaymentToast(''), 4000);
+      if (onStatusUpdated) onStatusUpdated(active.id, targetStatus);
+    } catch (err) {
+      console.error('Stage update failed:', err);
+      alert(err.message || 'Could not update booking status');
+    } finally {
+      setAdvancingStage(false);
+    }
+  };
+
+  const handleAdvanceStage = () => handleSetStage(nextStatus);
+
+  // ── Send to Team Handler ─────────────────────────────────────────────────
+  const handleSendWorkstationHandoff = async (e) => {
+    e.preventDefault();
+    if (sendingHandoff) return;
+    setSendingHandoff(true);
+    const deptLabels = {
+      photographer: 'Photographer',
+      editing: 'Editor',
+      print_lab: 'Printing',
+    };
+    const targetRoleMap = {
+      photographer: 'photographer',
+      editing: 'admin',
+      print_lab: 'admin',
+    };
+    const statusForDept = {
+      photographer: 'PHOTOGRAPHER_ASSIGNED',
+      editing: 'EDITING',
+      print_lab: 'PRINTING',
+    };
+    try {
+      const label = deptLabels[handoffTarget] || 'Team';
+      await createTransferLog({
+        bookingId: active.id,
+        senderId: profile?.id || null,
+        senderRole: profile?.role || 'admin',
+        targetRole: targetRoleMap[handoffTarget] || 'admin',
+        transferType: 'ORDER_HANDOFF',
+        priority: 'NORMAL',
+        title: `Sent to ${label} (#${active.booking_number})`,
+        message: handoffNote.trim() || `Booking #${active.booking_number} sent to ${label}.`,
+        payload: { department: handoffTarget, booking_number: active.booking_number },
+      });
+
+      const mappedStatus = statusForDept[handoffTarget];
+      if (mappedStatus && mappedStatus !== currentStatusUpper) {
+        await updateBookingStatus(
+          active.id,
+          mappedStatus,
+          `Sent to ${label}${handoffNote.trim() ? `: ${handoffNote.trim()}` : ''}`,
+          profile?.id || null
+        );
+        setDetailedBooking((prev) => ({ ...(prev || active), status: mappedStatus, updated_at: new Date().toISOString() }));
+        if (onStatusUpdated) onStatusUpdated(active.id, mappedStatus);
+      }
+
+      setHandoffNote('');
+      setPaymentToast(`Sent to ${label}`);
+      setTimeout(() => setPaymentToast(''), 4000);
+      refreshDetail();
+    } catch (err) {
+      console.error('Workstation handoff error:', err);
+    } finally {
+      setSendingHandoff(false);
+    }
+  };
+
+  // ── Inline Photographer Assignment Handler ───────────────────────────────
+  const handleTogglePhotographerPicker = async () => {
+    const nextOpen = !showPhotographerPicker;
+    setShowPhotographerPicker(nextOpen);
+    if (nextOpen && photographers.length === 0) {
+      setLoadingPhotographers(true);
+      const { data } = await getPhotographersWithWorkloadAndAvailability(active.event_date, active.preferred_time);
+      setPhotographers(data || []);
+      if (!selectedPhotographerId && (active.photographer?.id || active.photographer_id)) {
+        setSelectedPhotographerId(active.photographer?.id || active.photographer_id);
+      } else if (!selectedPhotographerId && data?.length > 0) {
+        setSelectedPhotographerId(data[0].id);
+      }
+      setLoadingPhotographers(false);
+    }
+  };
+
+  const handleAssignPhotographerInline = async () => {
+    if (!selectedPhotographerId || assigningPhotographer) return;
+    const chosen = photographers.find((p) => p.id === selectedPhotographerId);
+    const chosenName = chosen ? `${chosen.first_name || ''} ${chosen.last_name || ''}`.trim() : 'Studio Photographer';
+    setAssigningPhotographer(true);
+    try {
+      const { error } = await assignPhotographerToBooking({
+        bookingId: active.id,
+        photographerId: selectedPhotographerId,
+        photographerName: chosenName,
+        changedById: profile?.id || null,
+        customerId: active.customer?.id || active.customer_id || null,
+        bookingNumber: active.booking_number,
+        eventDate: active.event_date,
+      });
+      if (error) throw error;
+      setShowPhotographerPicker(false);
+      setPaymentToast(`Assigned ${chosenName} to #${active.booking_number}`);
+      setTimeout(() => setPaymentToast(''), 4000);
+      refreshDetail();
+      if (onStatusUpdated) onStatusUpdated(active.id, 'PHOTOGRAPHER_ASSIGNED');
+    } catch (err) {
+      console.error('Photographer assign error:', err);
+      alert(err.message || 'Failed to assign photographer');
+    } finally {
+      setAssigningPhotographer(false);
+    }
+  };
+
+  // ── Inline Google Drive Soft-Copy Quick Attach ───────────────────────────
+  const handleAttachDriveLink = async (e) => {
+    e.preventDefault();
+    const cleanUrl = driveUrlInput.trim();
+    if (!cleanUrl || attachingDrive) return;
+    setAttachingDrive(true);
+    try {
+      const { error } = await uploadAdminPhotoOutput({
+        bookingId: active.id,
+        deliverableType: 'Soft Copies (Google Drive Folder)',
+        filePathOrUrl: cleanUrl,
+        isGoogleDrive: true,
+        uploadedBy: profile?.id || null,
+      });
+      if (error) throw error;
+
+      if (active.customer?.id || active.customer_id) {
+        createNotification({
+          userId: active.customer?.id || active.customer_id,
+          bookingId: active.id,
+          title: `Digital Soft Copies Released (#${active.booking_number})`,
+          message: `Your edited digital photos and Google Drive folder for #${active.booking_number} are now available in your Soft Copies gallery!`,
+          notificationType: 'photos_released',
+        }).catch(() => { });
+      }
+
+      setDriveUrlInput('');
+      setPaymentToast('Google Drive soft-copy folder linked & released to client');
+      setTimeout(() => setPaymentToast(''), 4000);
+      refreshDetail();
+      if (onStatusUpdated) onStatusUpdated(active.id, active.status);
+    } catch (err) {
+      console.error('Attach drive link error:', err);
+      alert(err.message || 'Failed to attach Google Drive link');
+    } finally {
+      setAttachingDrive(false);
+    }
+  };
+
   // ── Derived Data from Database & Notes ────────────────────────────────────
   const formattedDate = active.event_date
     ? new Date(active.event_date).toLocaleDateString('en-PH', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
     : 'Date pending';
   const timeSlot = formatTime(active.preferred_time);
 
   const specs = active.customer?.studio_specs || {};
   const student = active.student_details || parseStudentDetailsFromNotes(active.notes) || {};
   const participant = active.participant_details || parseParticipantDetailsFromNotes(active.notes) || {};
+  const isSomeoneElse = active.booking_for === 'someone_else' || participant.booking_for === 'someone_else' || /•\s*Booking\s*For:\s*Someone\s*Else/i.test(active.notes || '');
 
   const { school, campus, venueAddress, mapUrl } = cleanSchoolAndLocation(
-    student.school || specs.university,
-    student.school_address || specs.campus,
+    active.school || student.school || (!isSomeoneElse ? specs.university : ''),
+    active.school_address || student.school_address || (!isSomeoneElse ? specs.campus : ''),
     active.location
   );
 
-  const strand = student.course || specs.degree || specs.course || '—';
-  const studentId = student.student_id || specs.student_id || '—';
+  const strand = active.track || student.course || (!isSomeoneElse ? (specs.degree || specs.course) : '') || '—';
+  const studentId = active.student_id || student.student_id || (!isSomeoneElse ? specs.student_id : '') || '—';
 
   // Format section and batch cleanly without repeating "Batch"
-  const rawBatch = (student.batch || '').replace(/^Batch\s*/i, '').trim();
-  const rawSection = student.section || specs.section || '';
+  const rawBatch = (active.batch || student.batch || (!isSomeoneElse ? specs.gradYear : '') || '').replace(/^Batch\s*/i, '').trim();
+  const rawSection = active.section || student.section || (!isSomeoneElse ? specs.section : '') || '';
   const sectionGrade = rawSection
     ? (rawBatch ? `Batch ${rawBatch} · ${rawSection}` : rawSection)
     : (rawBatch ? `Batch ${rawBatch}` : '—');
 
-  const fullName =
-    `${active.customer?.first_name || ''} ${active.customer?.last_name || ''}`.trim() ||
-    participant.full_name ||
-    'Unspecified Client';
-  const email = (active.customer?.email || participant.email || '').trim();
+  const participantName = active.participant_name || participant.full_name || '';
+  const fullName = isSomeoneElse && participantName
+    ? participantName
+    : `${active.customer?.first_name || ''} ${active.customer?.last_name || ''}`.trim() ||
+      participantName ||
+      'Unspecified Client';
+  const email = (isSomeoneElse ? (active.participant_email || participant.email || active.customer?.email) : (active.customer?.email || participant.email || '') || '').trim();
   const hasEmail = isReal(email);
-  const phone = (active.customer?.phone || participant.phone || '').trim();
+  const phone = (isSomeoneElse ? (active.participant_phone || participant.phone || active.customer?.phone) : (active.customer?.phone || participant.phone || '') || '').trim();
   const hasPhone = isReal(phone);
-  const isSomeoneElse = participant.booking_for === 'someone_else' && isReal(participant.full_name);
 
   const initials =
     ((active.customer?.first_name?.[0] || '') + (active.customer?.last_name?.[0] || '')).toUpperCase() ||
     (fullName !== 'Unspecified Client' ? fullName.slice(0, 2).toUpperCase() : 'EK');
 
   const photographerName = active.photographer
-    ? `${active.photographer.first_name || active.photographer.profile?.first_name || ''} ${
-        active.photographer.last_name || active.photographer.profile?.last_name || ''
+    ? `${active.photographer.first_name || active.photographer.profile?.first_name || ''} ${active.photographer.last_name || active.photographer.profile?.last_name || ''
       }`.trim()
     : '';
 
@@ -347,12 +550,14 @@ export default function BookingQuickInspector({
       title: 'Received',
       sub: shortDate(active.created_at) || 'Recorded',
       state: 'done',
+      onClick: () => handleSetStage('PENDING'),
     },
     {
       id: 'approved',
       title: 'Approved',
-      sub: isApproved ? (shortDate(active.updated_at) || 'Approved') : 'Pending',
+      sub: isApproved ? (shortDate(active.updated_at) || 'Approved') : 'Click to approve',
       state: isApproved ? 'done' : 'pending',
+      onClick: () => handleSetStage('CONFIRMED'),
     },
     {
       id: 'schedule',
@@ -364,26 +569,30 @@ export default function BookingQuickInspector({
     {
       id: 'shoot',
       title: 'Shoot',
-      sub: shootDone ? 'Done' : shootActive ? 'In progress' : 'Pending',
+      sub: shootDone ? 'Done' : shootActive ? 'In progress' : 'Start shoot',
       state: shootDone ? 'done' : shootActive ? 'current' : 'pending',
+      onClick: () => handleSetStage('CAPTURE'),
     },
     {
       id: 'editing',
       title: 'Editing',
-      sub: editDone ? 'Done' : editActive ? 'In progress' : 'Pending',
+      sub: editDone ? 'Done' : editActive ? 'In progress' : 'Move to edit',
       state: editDone ? 'done' : editActive ? 'current' : 'pending',
+      onClick: () => handleSetStage('EDITING'),
     },
     {
       id: 'pickup',
       title: 'Pickup',
-      sub: completed ? 'Claimed' : ready ? 'Ready' : 'Pending',
+      sub: completed ? 'Claimed' : ready ? 'Ready' : 'Mark ready',
       state: completed ? 'done' : ready ? 'current' : 'pending',
+      onClick: () => handleSetStage('READY'),
     },
     {
       id: 'completed',
       title: 'Completed',
-      sub: completed ? 'Fulfilled' : 'Pending',
+      sub: completed ? 'Fulfilled' : 'Complete',
       state: completed ? 'done' : 'pending',
+      onClick: () => handleSetStage('COMPLETED'),
     },
   ];
 
@@ -504,16 +713,14 @@ export default function BookingQuickInspector({
                     key={s.id}
                     onClick={s.onClick}
                     title={`${s.title}: ${s.sub}`}
-                    className={`relative flex flex-col items-center text-center px-1 ${
-                      s.onClick ? 'cursor-pointer group' : ''
-                    }`}
+                    className={`relative flex flex-col items-center text-center px-1 ${s.onClick ? 'cursor-pointer group' : ''
+                      }`}
                   >
                     {/* Connecting Line */}
                     {i < stages.length - 1 && (
                       <span
-                        className={`absolute top-[8px] left-[calc(50%+10px)] right-[calc(-50%+10px)] h-[1px] ${
-                          isLineActive ? 'bg-teal-400' : 'bg-neutral-700/60'
-                        }`}
+                        className={`absolute top-[8px] left-[calc(50%+10px)] right-[calc(-50%+10px)] h-[1px] ${isLineActive ? 'bg-teal-400' : 'bg-neutral-700/60'
+                          }`}
                       />
                     )}
 
@@ -536,26 +743,24 @@ export default function BookingQuickInspector({
 
                     {/* Title */}
                     <span
-                      className={`mt-1.5 text-xs leading-tight ${
-                        isCurrent
+                      className={`mt-1.5 text-xs leading-tight ${isCurrent
                           ? 'font-bold text-[#c9a96e]'
                           : isDone
-                          ? 'font-bold text-white'
-                          : 'font-medium text-neutral-400'
-                      }`}
+                            ? 'font-bold text-white'
+                            : 'font-medium text-neutral-400'
+                        }`}
                     >
                       {s.title}
                     </span>
 
                     {/* Subtitle */}
                     <span
-                      className={`text-[11.5px] mt-0.5 leading-tight ${
-                        isCurrent
+                      className={`text-[11.5px] mt-0.5 leading-tight ${isCurrent
                           ? 'font-medium text-[#c9a96e]'
                           : isDone
-                          ? 'text-neutral-400'
-                          : 'text-neutral-500'
-                      }`}
+                            ? 'text-neutral-400'
+                            : 'text-neutral-500'
+                        }`}
                     >
                       {s.sub}
                     </span>
@@ -656,15 +861,71 @@ export default function BookingQuickInspector({
                   action={
                     <button
                       type="button"
-                      onClick={goBooking}
+                      onClick={handleTogglePhotographerPicker}
                       className="text-xs font-medium text-[#c9a96e] hover:text-[#b89555] flex items-center gap-1 cursor-pointer transition-colors"
                     >
-                      Assign photographer <ArrowRight size={12} />
+                      {photographerName ? 'Change photographer' : 'Assign photographer'} <ArrowRight size={12} />
                     </button>
                   }
                 >
                   SESSION LOGISTICS
                 </SectionTitle>
+
+                {showPhotographerPicker && (
+                  <div className="mb-4 p-3 rounded-xl bg-white border border-[#c9a96e]/40 shadow-xs space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-700">
+                        Select Studio Photographer
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowPhotographerPicker(false)}
+                        className="text-neutral-400 hover:text-neutral-700 text-xs cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {loadingPhotographers ? (
+                      <div className="flex items-center gap-2 text-xs text-neutral-500 py-1">
+                        <Loader2 size={13} className="animate-spin text-[#c9a96e]" /> Loading available roster…
+                      </div>
+                    ) : photographers.length === 0 ? (
+                      <div className="flex items-center justify-between text-xs text-neutral-500 py-1">
+                        <span>No registered photographers found in roster.</span>
+                        <button
+                          type="button"
+                          onClick={goBooking}
+                          className="text-[#a8843a] font-semibold underline cursor-pointer"
+                        >
+                          Manage in Full Order
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={selectedPhotographerId}
+                          onChange={(e) => setSelectedPhotographerId(e.target.value)}
+                          className="flex-1 h-9 px-3 rounded-lg border border-neutral-300 text-xs font-semibold text-neutral-900 bg-neutral-50 focus:bg-white focus:border-[#c9a96e] outline-none"
+                        >
+                          {photographers.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.first_name} {p.last_name} — {p.specialization || 'Photographer'} ({p.activeWorkloadCount || 0} active)
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={handleAssignPhotographerInline}
+                          disabled={assigningPhotographer || !selectedPhotographerId}
+                          className="h-9 px-3.5 rounded-lg bg-[#0b0f17] hover:bg-neutral-800 text-[#c9a96e] text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                        >
+                          {assigningPhotographer ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                          Assign
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
                   <Field label="EVENT DATE" muted={!active.event_date}>
@@ -757,7 +1018,8 @@ export default function BookingQuickInspector({
                     onClick={openRecordPayment}
                     className="flex-1 h-9 px-3 rounded-xl bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-[0.99]"
                   >
-                    <CreditCard size={13} className="shrink-0" /> Record Payment
+                    <CreditCard size={13} className="shrink-0" />
+                    {remainingBal > 0 ? `Settle Balance (${peso(remainingBal)})` : 'Record Payment'}
                   </button>
 
                   <button
@@ -769,6 +1031,118 @@ export default function BookingQuickInspector({
                     Ledger <ArrowRight size={12} />
                   </button>
                 </div>
+              </div>
+
+              {/* 1B. SOFT COPIES (GOOGLE DRIVE) CARD */}
+              <div className="rounded-[20px] bg-white border border-[#ece6da] p-4 shadow-sm space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <FolderPlus size={13} className="text-[#c9a96e]" />
+                    <h3 className="font-heading uppercase tracking-[0.16em] text-xs font-bold text-neutral-800">
+                      SOFT COPIES (GOOGLE DRIVE)
+                    </h3>
+                  </div>
+                  <span className="text-[11px] font-semibold text-neutral-500">
+                    {(active.photo_outputs || []).length} saved
+                  </span>
+                </div>
+
+                {(active.photo_outputs || []).length > 0 && (
+                  <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1">
+                    {(active.photo_outputs || []).slice(0, 3).map((out) => (
+                      <div
+                        key={out.id}
+                        className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-[#faf8f5] border border-[#ece6da] text-xs"
+                      >
+                        <span className="truncate font-medium text-neutral-700">{out.file_name}</span>
+                        {out.file_path?.startsWith('http') && (
+                          <a
+                            href={out.file_path}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#a8843a] hover:underline font-semibold flex items-center gap-1 shrink-0"
+                          >
+                            Open <ExternalLink size={10} />
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <form onSubmit={handleAttachDriveLink} className="flex items-center gap-1.5">
+                  <input
+                    type="url"
+                    value={driveUrlInput}
+                    onChange={(e) => setDriveUrlInput(e.target.value)}
+                    placeholder="Paste Google Drive link here…"
+                    className="flex-1 h-8 px-2.5 rounded-lg border border-neutral-200 bg-neutral-50 focus:bg-white focus:border-[#c9a96e] text-xs outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={attachingDrive || !driveUrlInput.trim()}
+                    className="h-8 px-3 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-40 shrink-0"
+                  >
+                    {attachingDrive ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} className="text-[#c9a96e]" />}
+                    Save Link
+                  </button>
+                </form>
+              </div>
+
+              {/* 1C. SEND TO TEAM CARD */}
+              <div className="rounded-[20px] bg-white border border-[#ece6da] p-4 shadow-sm space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Send size={12} className="text-[#c9a96e]" />
+                    <h3 className="font-heading uppercase tracking-[0.16em] text-xs font-bold text-neutral-800">
+                      SEND TO TEAM
+                    </h3>
+                  </div>
+                  {transfers.length > 0 && (
+                    <span className="text-[10.5px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/70">
+                      {transfers[transfers.length - 1]?.title?.replace(/\s*\(#.*\)/, '')}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'photographer', label: 'Photographer' },
+                    { id: 'editing', label: 'Editor' },
+                    { id: 'print_lab', label: 'Printing' },
+                  ].map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => setHandoffTarget(d.id)}
+                      className={`h-7 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer border ${
+                        handoffTarget === d.id
+                          ? 'bg-neutral-900 text-[#c9a96e] border-neutral-900'
+                          : 'bg-[#faf8f5] text-neutral-600 border-[#ece6da] hover:text-neutral-900'
+                      }`}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+
+                <form onSubmit={handleSendWorkstationHandoff} className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={handoffNote}
+                    onChange={(e) => setHandoffNote(e.target.value)}
+                    placeholder="Add a note for the team…"
+                    className="flex-1 h-8 px-2.5 rounded-lg border border-neutral-200 bg-neutral-50 focus:bg-white focus:border-[#c9a96e] text-xs outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={sendingHandoff}
+                    className="h-8 px-3 rounded-lg bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 text-xs font-bold flex items-center gap-1 cursor-pointer disabled:opacity-40 shrink-0"
+                  >
+                    {sendingHandoff ? <Loader2 size={11} className="animate-spin" /> : <ArrowRight size={11} />}
+                    Send
+                  </button>
+                </form>
               </div>
 
               {/* 2. PACKAGE INCLUSIONS CARD (Pure White) */}
@@ -799,10 +1173,27 @@ export default function BookingQuickInspector({
         </div>
 
         {/* ── 3. FIXED FOOTER (Pure White) ─────────────────────────────────── */}
-        <footer className="shrink-0 flex items-center justify-between gap-4 px-6 sm:px-8 py-3 bg-white border-t border-[#ece6da]">
+        <footer className="shrink-0 flex flex-wrap items-center justify-between gap-3 px-6 sm:px-8 py-3 bg-white border-t border-[#ece6da]">
           <span className="text-[11px] text-neutral-400">{lastUpdated}</span>
 
           <div className="flex items-center gap-2 shrink-0">
+            {nextStatus && (
+              <button
+                type="button"
+                onClick={handleAdvanceStage}
+                disabled={advancingStage}
+                className="h-9 px-4 rounded-lg bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                title={`Advance order from ${getStatusLabel(currentStatusUpper)} to ${getStatusLabel(nextStatus)}`}
+              >
+                {advancingStage ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Sparkles size={13} />
+                )}
+                <span>Move to {getStatusLabel(nextStatus)}</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={goBooking}
@@ -876,11 +1267,10 @@ export default function BookingQuickInspector({
                       key={m.id}
                       type="button"
                       onClick={() => setPaymentMethod(m.id)}
-                      className={`h-9 px-3 rounded-xl border text-xs font-medium flex items-center gap-2 cursor-pointer transition-colors ${
-                        on
+                      className={`h-9 px-3 rounded-xl border text-xs font-medium flex items-center gap-2 cursor-pointer transition-colors ${on
                           ? 'border-[#c9a96e] bg-[#faf5ec] text-neutral-900 font-semibold'
                           : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'
-                      }`}
+                        }`}
                     >
                       <Icon size={13} className={on ? 'text-[#a8843a]' : 'text-neutral-400'} /> {m.label}
                     </button>
@@ -902,11 +1292,10 @@ export default function BookingQuickInspector({
                     key={id}
                     type="button"
                     onClick={() => setPaymentType(id)}
-                    className={`h-9 rounded-xl border text-xs font-semibold cursor-pointer transition-colors ${
-                      paymentType === id
+                    className={`h-9 rounded-xl border text-xs font-semibold cursor-pointer transition-colors ${paymentType === id
                         ? 'bg-neutral-900 text-white border-neutral-900'
                         : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'
-                    }`}
+                      }`}
                   >
                     {label}
                   </button>

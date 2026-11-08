@@ -1092,7 +1092,7 @@ export async function uploadPhotoOutput(file, bookingId, setName = 'Main Set') {
 
     const resultData = data || fallback;
 
-    // Notify Staff / Print Lab via Workstation Hub
+    // Notify Admin / Print Lab via Workstation Hub
     if (resultData) {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -1101,7 +1101,7 @@ export async function uploadPhotoOutput(file, bookingId, setName = 'Main Set') {
             bookingId,
             senderId: user.id,
             senderRole: 'photographer',
-            targetRole: 'staff',
+            targetRole: 'admin',
             transferType: 'OUTPUT_SUBMISSION',
             priority: 'NORMAL',
             title: `Photo Output Uploaded: ${safeName}`,
@@ -1284,7 +1284,7 @@ export async function submitSamplesToAdmin({
       transferType: 'OUTPUT_SUBMISSION',
       priority: 'HIGH',
       title: `Sample Photos Submitted for Review: #${bNum}`,
-      message: `Photographer ${photographerName} uploaded ${photoCount} sample photo(s) (${setsSummary || 'Sets'}) for booking #${bNum}. Pending Admin review and confirmation before staff finalization.`,
+      message: `Photographer ${photographerName} uploaded ${photoCount} sample photo(s) (${setsSummary || 'Sets'}) for booking #${bNum}. Pending Admin review and confirmation.`,
       payload: {
         booking_number: bNum,
         photo_count: photoCount,
@@ -1315,7 +1315,7 @@ export async function submitSamplesToAdmin({
 /**
  * confirmSamplesAndForwardToStaff
  * -------------------------------
- * Admin reviews and confirms sample photos, forwarding order to Staff for finalizations.
+ * Admin reviews and confirms sample photos, forwarding order for final production.
  */
 export async function confirmSamplesAndForwardToStaff({
   bookingId,
@@ -1351,24 +1351,24 @@ export async function confirmSamplesAndForwardToStaff({
     await supabase.from('booking_status_history').insert({
       booking_id: bookingId,
       status: 'PRINTING',
-      remarks: `Admin ${adminName} confirmed sample photo sets. Forwarded to staff for finalization and print production.${notes ? ` Notes: ${notes}` : ''}`,
+      remarks: `Admin ${adminName} confirmed sample photo sets. Advanced to print production.${notes ? ` Notes: ${notes}` : ''}`,
       changed_by: adminId,
     });
 
-    // Create Workstation Transfer to Staff
+    // Create Workstation Transfer
     const { data: transfer, error: transferError } = await createTransferLog({
       bookingId,
       senderId: adminId,
       senderRole: 'admin',
-      targetRole: 'staff',
+      targetRole: 'admin',
       transferType: 'ORDER_HANDOFF',
       priority: 'HIGH',
-      title: `Approved Photo Sets for Finalization: #${bNum}`,
-      message: `Admin ${adminName} confirmed sample photo sets for booking #${bNum}. Forwarded to staff for final retouching, print production, and packaging.${notes ? ` Admin Notes: ${notes}` : ''}`,
+      title: `Approved Photo Sets for Production: #${bNum}`,
+      message: `Admin ${adminName} confirmed sample photo sets for booking #${bNum}. Ready for final retouching, print production, and packaging.${notes ? ` Admin Notes: ${notes}` : ''}`,
       payload: {
         booking_number: bNum,
         photo_count: photoCount,
-        stage: 'STAFF_FINALIZATION',
+        stage: 'PRINT_PRODUCTION',
         notes
       }
     });

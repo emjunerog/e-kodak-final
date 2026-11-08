@@ -624,8 +624,6 @@ export default function AdminActivityLogs() {
   const roleOptions = [
     { value: 'all', label: 'All Roles', icon: ShieldCheck },
     { value: 'admin', label: 'Administrator', icon: ShieldCheck },
-    { value: 'staff', label: 'Frontdesk Staff', icon: UserCheck },
-    { value: 'finance', label: 'Finance Officer', icon: CreditCard },
     { value: 'photographer', label: 'Photographer', icon: Camera },
   ];
 
@@ -696,7 +694,7 @@ export default function AdminActivityLogs() {
           </div>
           <div className="mt-2 pt-2 border-t border-neutral-100 flex items-center justify-between text-[11px] text-neutral-500">
             <span className="truncate">
-              <strong className="text-neutral-700 font-semibold">{stats.todayCount}</strong> past 24h • {stats.uniqueOperators} staff
+              <strong className="text-neutral-700 font-semibold">{stats.todayCount}</strong> past 24h • {stats.uniqueOperators} team members
             </span>
             <span className="text-gold-dark font-semibold shrink-0 group-hover:underline flex items-center gap-0.5">
               <span>All</span>

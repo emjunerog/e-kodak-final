@@ -190,8 +190,8 @@ export default function Login() {
   const from       = fromPath ? fromPath + fromSearch : null;
 
   const getDefaultRoute = (role) => {
-    if (role === 'admin' || role === 'staff' || role === 'finance') return '/admin';
-    if (role === 'photographer')                                   return '/photographer';
+    if (role === 'admin') return '/admin';
+    if (role === 'photographer') return '/photographer';
     return '/dashboard';
   };
 
@@ -282,9 +282,7 @@ export default function Login() {
 
     const isStaffOrAdminEmail = 
       cleanEmail === 'admine_kodak@gmail.com' ||
-      cleanEmail === 'photographerse_kodak@gmail.com' ||
-      cleanEmail === 'staffe_kodak@gmail.com' ||
-      cleanEmail === 'financee_kodak@gmail.co';
+      cleanEmail === 'photographerse_kodak@gmail.com';
 
     setIsSubmitting(true);
     try {

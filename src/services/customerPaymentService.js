@@ -404,14 +404,14 @@ export const customerPaymentService = {
         }
       }
 
-      // Notify Finance & Admin via Workstation Transfer
+      // Notify Admin via Workstation Transfer
       if (authUserId) {
         try {
           await createTransferLog({
             bookingId,
             senderId: authUserId,
             senderRole: 'system',
-            targetRole: 'finance',
+            targetRole: 'admin',
             transferType: 'PAYMENT_VERIFICATION',
             priority: isFullyPaid ? 'NORMAL' : 'LOW',
             title: `Payment Recorded: ₱${payAmount.toLocaleString()}`,

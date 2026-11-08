@@ -377,7 +377,7 @@ export async function recordAdminActivity({
       .from('admin_activity_logs')
       .insert([{
         admin_id: resolvedId || null,
-        admin_name: resolvedName || 'Studio Staff',
+        admin_name: resolvedName || 'Studio Administrator',
         admin_role: resolvedRole || 'admin',
         action_type: actionType,
         entity_type: entityType,
@@ -412,7 +412,7 @@ export async function fetchAdministratorsList() {
     const { data, error } = await supabase
       .from('profiles')
       .select('id, first_name, last_name, role, avatar_url, is_active, email')
-      .in('role', ['admin', 'staff', 'finance', 'photographer'])
+      .in('role', ['admin', 'photographer'])
       .eq('is_active', true)
       .not('first_name', 'is', null)
       .order('role', { ascending: true })

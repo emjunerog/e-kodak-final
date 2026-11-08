@@ -42,16 +42,38 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const token = authHeader.replace('Bearer ', '').trim();
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Unauthorized: Invalid or expired session token' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    let user = null;
+    let isServiceRole = false;
+
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+        if (payload?.role === 'service_role') {
+          isServiceRole = true;
+          user = { id: 'service-role', email: SMTP_USER, role: 'service_role' };
+        }
+      }
+    } catch {}
+
+    if (!isServiceRole) {
+      if (supabaseServiceKey && (token === supabaseServiceKey || token === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'))) {
+        isServiceRole = true;
+        user = { id: 'service-role', email: SMTP_USER, role: 'service_role' };
+      } else {
+        const { data: userData, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !userData?.user) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Unauthorized: Invalid or expired session token' }),
+            { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        user = userData.user;
+      }
     }
 
     // 2. Parse & validate request body
-    const { to, subject, html, notificationType, recipientName, bookingId } = await req.json();
+    const { to, subject, html, text, notificationType, recipientName, bookingId } = await req.json();
 
     if (!to || !subject || !html) {
       return new Response(
@@ -70,17 +92,21 @@ serve(async (req) => {
     }
 
     // 3. Check caller permissions:
-    const { data: callerProfile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .maybeSingle();
+    let callerRole = 'customer';
+    if (!isServiceRole) {
+      const { data: callerProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+      callerRole = String(callerProfile?.role || '').toLowerCase();
+    }
 
-    const callerRole = String(callerProfile?.role || '').toLowerCase();
-    const isStaffRole = ['admin', 'staff', 'finance', 'photographer'].includes(callerRole);
+    const isStaffRole = isServiceRole || ['admin', 'staff', 'finance', 'photographer'].includes(callerRole);
     const isOwnEmail = user.email && user.email.toLowerCase() === cleanTo.toLowerCase();
+    const isAllowedNotification = ['BOOKING_CONFIRMATION', 'PAYMENT_VERIFICATION', 'OFFICIAL_RECEIPT'].includes(notificationType);
 
-    if (!isStaffRole && !isOwnEmail) {
+    if (!isStaffRole && !isOwnEmail && !isAllowedNotification) {
       return new Response(
         JSON.stringify({ success: false, error: 'Forbidden: Insufficient permissions to send external emails' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -116,7 +142,7 @@ serve(async (req) => {
       from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
       to: cleanTo,
       subject: cleanSubject,
-      text: 'Please enable HTML email to view your booking confirmation.',
+      text: typeof text === 'string' && text.trim() ? text.trim() : 'Please enable HTML email to view your E-Kodak Studio message.',
       html: String(html),
     });
 

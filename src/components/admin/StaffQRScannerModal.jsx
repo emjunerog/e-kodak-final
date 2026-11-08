@@ -365,7 +365,7 @@ export default function StaffQRScannerModal({ isOpen, onClose }) {
                   Studio QR Pass Scanner
                 </h3>
                 <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  Staff Desk
+                  Studio Desk
                 </span>
               </div>
               <p className="text-xs text-neutral-500 font-body">

@@ -584,7 +584,7 @@ export default function AdminNotifications() {
       if (activeTab === 'PAYMENTS' && n.notification_type !== 'PAYMENT_RECEIVED') return false;
       if (activeTab === 'BOOKINGS' && !n.notification_type?.includes('BOOKING') && n.category !== 'BOOKINGS') return false;
       if (activeTab === 'BROADCASTS' && n.notification_type !== 'BROADCAST' && n.category !== 'BROADCASTS') return false;
-      if (activeTab === 'STAFF' && !['admin','staff','finance','photographer'].includes(n.recipient_role)) return false;
+      if (activeTab === 'STAFF' && !['admin', 'photographer'].includes(n.recipient_role)) return false;
 
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
@@ -789,7 +789,7 @@ export default function AdminNotifications() {
               { id: 'PAYMENTS',   label: `Payments (${stats.paymentsCount})`, icon: CreditCard },
               { id: 'BOOKINGS',   label: `Bookings (${stats.bookingsCount})`, icon: Calendar },
               { id: 'BROADCASTS', label: `Broadcasts (${stats.broadcastsCount})`, icon: Sparkles },
-              { id: 'STAFF',      label: `Staff (${stats.staffCount ?? 0})`, icon: ShieldCheck },
+              { id: 'STAFF',      label: `Team (${stats.staffCount ?? 0})`, icon: ShieldCheck },
             ].map(tab => {
               const isActive = activeTab === tab.id;
               return (
@@ -871,7 +871,7 @@ export default function AdminNotifications() {
               <Bell size={22} />
             </div>
             <h3 className="font-heading text-base font-bold text-primary">
-              {activeTab === 'STAFF' ? 'No Staff Notifications' :
+              {activeTab === 'STAFF' ? 'No Team Notifications' :
                activeTab === 'BROADCASTS' ? 'No Broadcasts Sent Yet' :
                'No notifications match your filter'}
             </h3>
@@ -982,12 +982,11 @@ export default function AdminNotifications() {
                     <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
                       Recipient Audience
                     </label>
-                    <div className="grid grid-cols-3 gap-1 bg-neutral-100 p-0.5 rounded-xl text-xs">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 bg-neutral-100 p-0.5 rounded-xl text-xs">
                       {[
                         { id: 'SPECIFIC_CUSTOMER', label: 'Client' },
                         { id: 'ALL_CUSTOMERS', label: 'Customers' },
-                        { id: 'ALL_STAFF', label: 'Staff & Ops' },
-                        { id: 'FINANCE_TEAM', label: 'Finance' },
+                        { id: 'ALL_STAFF', label: 'Admins' },
                         { id: 'ALL_PHOTOGRAPHERS', label: 'Photographers' },
                         { id: 'ALL_USERS', label: 'All Users' },
                       ].map(aud => (
@@ -1124,8 +1123,7 @@ export default function AdminNotifications() {
                       </div>
                       <p className="text-xs text-neutral-500 leading-snug">
                         {recipientGroup === 'ALL_CUSTOMERS' && 'Will dispatch to all customer accounts across chosen channels.'}
-                        {recipientGroup === 'ALL_STAFF' && 'Will broadcast to all active studio administrators, frontdesk staff, and operations crew.'}
-                        {recipientGroup === 'FINANCE_TEAM' && 'Will notify the studio finance and accounting officers regarding ledgers and payments.'}
+                        {recipientGroup === 'ALL_STAFF' && 'Will broadcast to all active studio administrators.'}
                         {recipientGroup === 'ALL_PHOTOGRAPHERS' && 'Will alert all studio photographers and lab specialists.'}
                         {recipientGroup === 'ALL_USERS' && 'Will broadcast an all-hands bulletin to everyone across the studio.'}
                       </p>

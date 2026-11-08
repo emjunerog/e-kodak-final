@@ -8,7 +8,7 @@
  *  - Mode B: Instant Quick-Detect Search (Type 'makeup', 'drone', 'Set A', 'crystal', etc.)
  *
  * Features:
- *  - Accurately detects all 11 studio sets across College, Senior High, Wedding Video, and Wedding Photo
+ *  - Accurately detects all graduation sets across College and Senior High
  *  - Zero emojis — clean luxury Lucide icons throughout
  *  - Real-time sibling set switcher on recommendation card
  *  - Direct booking preselection and anchor navigation to /services#sets-[slug]
@@ -21,12 +21,10 @@ import {
   ArrowRight,
   ChevronLeft,
   CheckCircle,
-  Camera,
   Sparkles,
   RotateCcw,
   GraduationCap,
   Scroll,
-  Video,
   Crown,
   Search,
   Check,
@@ -167,135 +165,6 @@ export const STUDIO_PACKAGES = [
     bestFor: "Cost-effective, essential graduation toga portraits without extraneous extras",
     keywords: ["senior high", "shs", "set d", "budget", "795", "toga", "wallet", "essential"],
   },
-
-  // ── Wedding HD Videography
-  {
-    id: "wed-vid-b",
-    slug: "wedding-video",
-    serviceName: "Video / Wedding Packages",
-    category: "wedding-video",
-    tier: "Set B",
-    price: "₱18,500.00",
-    tagline: "Core full-day HD video coverage with MTV movie highlights",
-    highlights: [
-      "2 units Mirrorless video cameras with professional videographers",
-      "Full event coverage: preparation, church ceremony, and reception",
-      "1 piece High-speed USB drive and Google Drive cloud delivery",
-      "Full-length wedding movie and cinematic highlight reel",
-    ],
-    freePerk: "USB flash drive & cloud archive delivery",
-    bestFor: "Couples looking for cinematic full-ceremony & reception wedding videography",
-    keywords: ["wedding video", "set b", "mirrorless", "mtv", "usb", "reception", "church", "hd video"],
-  },
-  {
-    id: "wed-vid-c",
-    slug: "wedding-video",
-    serviceName: "Video / Wedding Packages",
-    category: "wedding-video",
-    tier: "Set C",
-    price: "₱28,000.00",
-    tagline: "4K Aerial Drone coverage + high-energy Same Day Edit (SDE)",
-    highlights: [
-      "2 units Mirrorless video cameras with professional videographers",
-      "1 unit 4K aerial drone for scenic venue and procession coverage",
-      "Full event coverage: preparation, church ceremony, and reception",
-      "Same Day Edit (SDE) video highlight reel premiered during reception",
-      "1 piece High-speed USB drive and Google Drive cloud delivery",
-      "Full-length wedding movie and cinematic highlight reel",
-    ],
-    freePerk: "4K Drone aerial cinematic footage included",
-    bestFor: "Couples wanting grand aerial visuals and an SDE video shown during reception dinner",
-    keywords: ["wedding video", "set c", "drone", "sde", "same day edit", "aerial", "4k", "mtv"],
-  },
-  {
-    id: "wed-vid-d",
-    slug: "wedding-video",
-    serviceName: "Video / Wedding Packages",
-    category: "wedding-video",
-    tier: "Set D",
-    price: "₱39,000.00",
-    tagline: "Full 3-camera master suite with drone, prenup teaser, SDE & AVP",
-    highlights: [
-      "3 units Mirrorless video cameras with professional videographers",
-      "1 unit 4K aerial drone for scenic venue and procession coverage",
-      "Full event coverage: preparation, church ceremony, and reception",
-      "1 piece Pre-wedding outdoor teaser video shoot",
-      "Same Day Edit (SDE) video highlight reel premiered during reception",
-      "1 piece High-speed USB drive and Google Drive cloud delivery",
-      "1 piece Couple's Audio-Visual Presentation (AVP) for reception showcase",
-      "Full-length wedding movie and cinematic highlight reel",
-    ],
-    freePerk: "Outdoor pre-wedding teaser video shoot included",
-    bestFor: "Grand wedding celebrations requiring full multi-camera cinema crews and teaser films",
-    keywords: ["wedding video", "set d", "3 cameras", "drone", "teaser", "sde", "avp", "master suite"],
-  },
-
-  // ── Wedding Photography
-  {
-    id: "wed-pic-a",
-    slug: "wedding-photo",
-    serviceName: "Photo / Wedding Services",
-    category: "wedding-photo",
-    tier: "Set A",
-    price: "₱18,500.00",
-    tagline: "2 photographers with unlimited shots, 11×14 framed portrait & 150 prints",
-    highlights: [
-      "Full event coverage: preparation, church ceremony, and reception",
-      "Unlimited high-resolution shots with high-speed USB storage",
-      "1 piece 11×14\" formal framed portrait",
-      "150 pieces 4×6\" (4R) lab-quality color photo prints",
-      "2 professional photographers on site",
-    ],
-    freePerk: "Custom 150-print slip-in album & 11×14 frame",
-    bestFor: "Classic heirloom wedding photography with keepsake framed portrait and prints",
-    keywords: ["wedding photo", "set a", "11x14", "4r", "album", "2 photographers", "unlimited"],
-  },
-  {
-    id: "wed-pic-c",
-    slug: "wedding-photo",
-    serviceName: "Photo / Wedding Services",
-    category: "wedding-photo",
-    tier: "Set C",
-    price: "₱31,000.00",
-    tagline: "3 photographers, 16×20 frame, 10×10 collage photo book, prenup & SDE",
-    highlights: [
-      "Full event coverage: preparation, church ceremony, and reception",
-      "Unlimited high-resolution shots with high-speed USB storage",
-      "1 piece 30-page 10×10\" premium collage photo book",
-      "1 piece 16×20\" grand framed portrait",
-      "Pre-wedding (prenup) photoshoot session with digital photo teaser",
-      "Same Day Edit (SDE) photo slideshow premiered during reception",
-      "3 professional photographers on site",
-    ],
-    freePerk: "Complimentary outdoor prenup pictorial included",
-    bestFor: "Couples desiring a custom designer photo book, prenup shoot, and reception SDE photos",
-    keywords: ["wedding photo", "set c", "photo book", "16x20", "prenup", "sde", "3 photographers"],
-  },
-  {
-    id: "wed-pic-d",
-    slug: "wedding-photo",
-    serviceName: "Photo / Wedding Services",
-    category: "wedding-photo",
-    tier: "Set D",
-    price: "₱53,500.00",
-    tagline: "Master suite: 4 photographers, 24×30 canvas, 40-pg hardbound album & prenup",
-    highlights: [
-      "Full event coverage: preparation, church ceremony, and reception",
-      "Unlimited high-resolution shots with high-speed USB storage",
-      "200 pieces 4×6\" (4R) lab-quality color photo prints",
-      "1 piece 40-page 11×14\" luxury hardbound collage wedding album",
-      "1 piece 30-page 10×10\" premium collage photo book",
-      "1 piece 24×30\" premium canvas portrait with elegant frame",
-      "3 units Full HD video cameras for multi-angle video recording",
-      "Pre-wedding (prenup) photoshoot session with digital photo teaser",
-      "Same Day Edit (SDE) photo & video slideshow premiered during reception",
-      "1 piece Couple's Audio-Visual Presentation (AVP) video showcase",
-      "4 professional photographers on site",
-    ],
-    freePerk: "24×30 Gallery Canvas & signature guestbook",
-    bestFor: "Grand heirloom weddings demanding museum-grade canvas art and a 40-page storybook",
-    keywords: ["wedding photo", "set d", "canvas", "24x30", "hardbound", "storybook", "guestbook", "4 photographers"],
-  },
 ];
 
 // ── Step 1 Occasion Definitions ───────────────────────────────────────────────
@@ -311,18 +180,6 @@ const OCCASION_OPTIONS = [
     label: "Senior High School",
     subtitle: "Toga pictorials, crystal frames, rush TESDA IDs",
     icon: Scroll,
-  },
-  {
-    value: "wedding-video",
-    label: "Wedding HD Video",
-    subtitle: "Cinematic 4K, aerial drone, Same Day Edit & MTV",
-    icon: Video,
-  },
-  {
-    value: "wedding-photo",
-    label: "Wedding Photography",
-    subtitle: "Full day coverage, canvas frames & storybook albums",
-    icon: Camera,
   },
 ];
 
@@ -362,40 +219,6 @@ const PRIORITY_OPTIONS = {
       desc: "Essential Toga Portrait & 4 Wallet Prints (₱795.00)",
     },
   ],
-  "wedding-video": [
-    {
-      value: "wed-vid-d",
-      label: "Master Cinema Suite (Set D)",
-      desc: "3 Cameras + Drone + Pre-wedding Teaser + Same Day Edit (SDE) + AVP",
-    },
-    {
-      value: "wed-vid-c",
-      label: "Drone & SDE Highlights (Set C)",
-      desc: "2 Mirrorless Cameras + 4K Drone Aerials + Same Day Edit (SDE)",
-    },
-    {
-      value: "wed-vid-b",
-      label: "Core Full-Day Coverage (Set B)",
-      desc: "2 Mirrorless Cameras (Prep, Church, Reception) + MTV Highlights",
-    },
-  ],
-  "wedding-photo": [
-    {
-      value: "wed-pic-d",
-      label: "Luxury Canvas & Storybook (Set D)",
-      desc: "4 Photographers + 24x30 Canvas + 40-pg Hardbound Album + Prenup + SDE",
-    },
-    {
-      value: "wed-pic-c",
-      label: "Collage Book & Prenup (Set C)",
-      desc: "3 Photographers + 16x20 Frame + 30-pg Photo Book + Prenup & SDE",
-    },
-    {
-      value: "wed-pic-a",
-      label: "Core Photography (Set A)",
-      desc: "2 Photographers + 11x14 Frame + 150 4R Prints in Custom Album",
-    },
-  ],
 };
 
 // ── Step 3 Budget Tiers by Occasion ───────────────────────────────────────────
@@ -409,16 +232,6 @@ const BUDGET_OPTIONS = {
     { value: "shs-c", label: "₱1,100.00 (Set C)", desc: "8x10 print, TESDA passport & free studio makeup" },
     { value: "shs-b", label: "₱1,425.00 (Set B)", desc: "8x10 crystal wood & free studio makeup" },
     { value: "shs-a", label: "₱1,750.00 (Set A)", desc: "10x12 crystal wood frame & free studio makeup" },
-  ],
-  "wedding-video": [
-    { value: "wed-vid-b", label: "₱18,500.00 (Set B)", desc: "2 Cameras, full event coverage & MTV" },
-    { value: "wed-vid-c", label: "₱28,000.00 (Set C)", desc: "2 Cameras + 4K drone + Same Day Edit" },
-    { value: "wed-vid-d", label: "₱39,000.00 (Set D)", desc: "3 Cameras, drone, teaser shoot, SDE & AVP" },
-  ],
-  "wedding-photo": [
-    { value: "wed-pic-a", label: "₱18,500.00 (Set A)", desc: "2 Photographers, 11x14 frame & 150 prints" },
-    { value: "wed-pic-c", label: "₱31,000.00 (Set C)", desc: "3 Photographers, photo book, prenup & SDE" },
-    { value: "wed-pic-d", label: "₱53,500.00 (Set D)", desc: "4 Photographers, 24x30 canvas & 40-pg album" },
   ],
 };
 

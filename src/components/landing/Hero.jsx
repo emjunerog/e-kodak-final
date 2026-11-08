@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Hero.jsx — Notelyf-inspired cinematic entrance
  * ================================================
  * Techniques borrowed from Notelyf:
@@ -221,8 +221,8 @@ export default function Hero() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 1.1, ease: ease.smooth }}
         >
-          Cebu's premier photography studio for graduation milestones, weddings,
-          and creative portraits. Book online, track your session in real time,
+          Cebu's premier photography studio for graduation milestones
+          and academic portraits. Book online, track your session in real time,
           and download your high-resolution proofs instantly.
         </motion.p>
 

@@ -210,20 +210,17 @@ export default function StudioPackageShareChart({
       item.revenue += bookingAmount;
     });
 
-    // 2. Ensure ALL 4 official services from the studio catalog are represented as cards
+    // 2. Ensure official services from the studio catalog are represented as cards
     const catalog =
       services && services.length > 0
         ? services
         : [
             { id: '1', name: 'Senior High Packages and Sets' },
-            { id: '2', name: 'Photo / Wedding Services' },
-            { id: '3', name: 'Video / Wedding Packages' },
             { id: '4', name: 'College Packages and Sets' },
           ];
 
     // Map each service to bookings data, then sort descending by bookings count & revenue
     const rawCards = catalog
-      .slice(0, 4)
       .map((svc, index) => {
         const idKey = String(svc.id || '');
         const nameKey = String(svc.name || '').trim().toLowerCase();

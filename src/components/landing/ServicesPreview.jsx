@@ -18,8 +18,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, GraduationCap, Camera, Sparkles, Crown, X } from "lucide-react";
-import ServiceCard from "./ServiceCard";
+import { ArrowRight, GraduationCap, Sparkles, Crown, X } from "lucide-react";
 import { FinderCard } from "./PackageFinder";
 import { siteConfig } from "../../config/siteConfig";
 import { getServices } from "../../services/contentService";
@@ -40,7 +39,7 @@ function GradPackageSpotlight({ service, index = 0 }) {
   const categoryBadge = isCollege ? "COLLEGE-PACKAGE" : "SENIOR-HIGH";
   const targetLink = `${siteConfig.routes.services}#sets-${service.slug}`;
 
-  // Default clean description matching wedding cards (2-3 lines)
+  // Clean description for graduation cards (2-3 lines)
   const defaultDesc = isCollege
     ? "Comprehensive college graduation packages with premium crystal wood framed portraits, formal Filipiniana / Barong attire, family portraits, and complete passport/wallet prints."
     : "Complete senior high school graduation packages featuring formal toga pictorials, Pilipiñana attire, and complete rush passport and 2x2 IDs.";
@@ -65,7 +64,7 @@ function GradPackageSpotlight({ service, index = 0 }) {
         viewport={viewport}
         transition={{ duration: 0.75, delay: index * 0.12, ease: ease.spring }}
       >
-        {/* ── Base Layer: Identical layout to Wedding Cards ──────────────── */}
+        {/* ── Base Layer: Card cover image ──────────────── */}
         <div className="relative overflow-hidden aspect-[4/3]">
           <motion.img
             src={service.coverImage}
@@ -219,7 +218,7 @@ function GradPackageSpotlight({ service, index = 0 }) {
             )}
           </div>
 
-          {/* Stacked Footer matching wedding cards */}
+          {/* Stacked Footer */}
           <div className="flex items-center justify-between pt-4 border-t border-neutral-100 mt-2">
             <span className="font-body text-neutral-400 text-xs font-medium uppercase tracking-wider truncate mr-2">
               {deliverables}
@@ -287,7 +286,6 @@ export default function ServicesPreview() {
   }, []);
 
   const gradServices = services.filter(s => s.category === "college" || s.category === "senior-high" || s.slug === "college-packages" || s.slug === "senior-high-packages");
-  const weddingServices = services.filter(s => s.category === "wedding-video" || s.category === "wedding-photo" || s.slug?.startsWith("wedding"));
 
   return (
     <section
@@ -309,11 +307,11 @@ export default function ServicesPreview() {
             What We Offer
           </motion.p>
           <h2 id="services-heading" className="section-title">
-            <SplitReveal text="Photography & Video Packages" stagger={0.06} />
+            <SplitReveal text="Graduation Photography Packages" stagger={0.06} />
           </h2>
           <motion.p className="section-subtitle mx-auto text-center" variants={staggerChild}>
-            From premier graduation milestone packages to full-scale wedding photography and HD videography —
-            every package is crafted for an unforgettable experience.
+            Premier graduation milestone packages for College and Senior High graduates —
+            every package is crafted for an unforgettable portrait experience.
           </motion.p>
         </motion.div>
 
@@ -382,56 +380,12 @@ export default function ServicesPreview() {
               </motion.div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-14">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
               {gradServices.map((s, i) => (
                 <GradPackageSpotlight key={s.slug} service={s} index={i} />
               ))}
             </div>
           </motion.div>
-        )}
-
-        {/* ── Wedding Services Grid ──────────────────────────────────────────── */}
-        {!isLoading && weddingServices.length > 0 && (
-          <>
-            <div className="flex items-center gap-4 mb-6">
-              <motion.div
-                className="flex items-center gap-3"
-                initial={{ opacity: 0, x: -24 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={viewport}
-                transition={{ duration: 0.6, ease: ease.smooth }}
-              >
-                <div className="w-10 h-10 rounded-xl bg-gold/15 border border-gold/30 flex items-center justify-center text-gold shrink-0">
-                  <Camera size={20} />
-                </div>
-                <div>
-                  <p className="font-body text-[11px] uppercase tracking-widest text-neutral-400 font-semibold">Heirloom Coverage</p>
-                  <h3 className="font-heading text-primary text-xl font-semibold">Wedding Photography & HD Video</h3>
-                </div>
-              </motion.div>
-              <motion.div
-                className="flex-1 h-px bg-gradient-to-r from-neutral-200 to-transparent origin-left"
-                initial={{ scaleX: 0 }}
-                whileInView={{ scaleX: 1 }}
-                viewport={viewport}
-                transition={{ duration: 1, delay: 0.2, ease: ease.expo }}
-              />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {weddingServices.map((service, i) => (
-                <ServiceCard
-                  key={service.id || service.slug}
-                  index={i}
-                  image={service.coverImage}
-                  imageAlt={`${service.name} — photography service`}
-                  category={service.category}
-                  title={service.name}
-                  description={service.description}
-                  to={siteConfig.routes.services}
-                />
-              ))}
-            </div>
-          </>
         )}
 
         {/* ── View All CTA ────────────────────────────────────────────────── */}

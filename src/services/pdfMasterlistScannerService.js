@@ -6,24 +6,31 @@
  * Capabilities:
  *  1. Client-side PDF parsing using pdfjs-dist (reconstructing table rows via
  *     spatial Y-coordinate clustering).
- *  2. High-speed heuristic regex extractor detecting:
- *     - Student Names (Philippine & international formats: Last, First M. or First Last)
- *     - Student ID numbers
- *     - Package Set assignments (Set A, Set B, Set C, Set D, Package A, etc.)
- *     - School name, Section/Strand, and Batch year
+ *  2. High-speed heuristic regex extractor detecting all 10 studio requirements:
+ *     - Name of School
+ *     - Strand / Academic Track
+ *     - Section
+ *     - Class Adviser's Name
+ *     - Class Adviser's Email
+ *     - Phone Number of the Class Adviser
+ *     - Batch #
+ *     - Student ID Number
+ *     - Student Complete Name (Validating First, Middle, and Last name)
+ *     - Package Set (Set A, Set B, Set C, Set D)
+ *     - Yearbook Motto
  *  3. Seamless AI Fallback (Groq / Gemini via src/lib/ai.js) for unstructured,
  *     scanned OCR, or non-standard multi-column tables.
- *  4. Instant instant-mock masterlist generator for demo & preview testing.
+ *  4. Instant mock masterlist generator for demo & preview testing.
  * ============================================================================
  */
 
 import * as pdfjsLib from "pdfjs-dist";
 import universalClient, { isAiConfigured, chatWithGroq, isGroqConfigured } from "../lib/ai.js";
+import { validateStudentCompleteName } from "./masterlistTemplateService.js";
 
 // Configure PDF.js worker in browser environments
 if (typeof window !== "undefined") {
   try {
-    // Standard worker from CDN or local bundle
     if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
     }
@@ -33,7 +40,7 @@ if (typeof window !== "undefined") {
 }
 
 /**
- * Standardize text case (e.g. "SANTOS, MARIA CLARA" -> "Santos, Maria Clara")
+ * Standardize text case (e.g. "SANTOS, MARIA CLARA P." -> "Santos, Maria Clara P.")
  */
 function toTitleCase(str) {
   if (!str) return "";
@@ -153,64 +160,154 @@ export function parseMasterlistRoster(fullText, pages = [], validTiers = ["Set A
   const allLines = fullText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
   let school = "";
+  let strand = "";
   let section = "";
   let batch = "";
+  let adviserName = "";
+  let adviserEmail = "";
+  let adviserPhone = "";
+  let selectedPackage = "";
 
   // 1. Detect School Name from header lines
-  const schoolRegex = /(?:university|college|school|academy|institute|high school|national high)\b/i;
-  for (let i = 0; i < Math.min(15, allLines.length); i++) {
-    if (schoolRegex.test(allLines[i]) && !school) {
-      school = allLines[i].replace(/^[^a-zA-Z]+/, "").trim();
+  const schoolRegex = /(?:NAME\s*OF\s*SCHOOL|SCHOOL\s*NAME|INSTITUTION)[\s:\-–—]+([^\n\r,]+)|(?:university|college|school|academy|institute|high school|national high)\b/i;
+  for (let i = 0; i < Math.min(25, allLines.length); i++) {
+    const line = allLines[i];
+    const match = line.match(schoolRegex);
+    if (match && !school) {
+      if (match[1]) {
+        school = match[1].replace(/^[_\s\-:]+/, "").trim();
+      } else {
+        school = line.replace(/^[^a-zA-Z]+/, "").replace(/^[_\s\-:]+/, "").trim();
+      }
       break;
     }
   }
 
-  // 2. Detect Section / Strand / Program
-  const sectionRegex = /(?:section|strand|grade|class|year|batch|bsit|bsba|stem|humss|abm|gas|tvl)[\s:\-–—]+([^\n\r,]+)/i;
-  for (let i = 0; i < Math.min(15, allLines.length); i++) {
+  // 2. Detect Academic Strand
+  const strandRegex = /(?:ACADEMIC\s*STRAND|STRAND|TRACK|PROGRAM)[\s:\-–—]+([^\n\r,]+)|\b(STEM|ABM|HUMSS|GAS|TVL|ICT|HE|HOME\s*ECONOMICS)\b/i;
+  for (let i = 0; i < Math.min(25, allLines.length); i++) {
+    const match = allLines[i].match(strandRegex);
+    if (match && !strand) {
+      strand = (match[1] || match[2] || "").replace(/^[_\s\-:]+/, "").trim();
+      break;
+    }
+  }
+
+  // 3. Detect Section
+  const sectionRegex = /(?:CLASS\s*SECTION|SECTION)[\s:\-–—]+([^\n\r,]+)/i;
+  for (let i = 0; i < Math.min(25, allLines.length); i++) {
     const match = allLines[i].match(sectionRegex);
     if (match && !section) {
-      section = match[0].trim();
+      section = match[1].replace(/^[_\s\-:]+/, "").trim();
       break;
     }
   }
 
-  // 3. Detect Graduation Year / Batch
-  const batchRegex = /(?:batch\s*\d{4}|202[4-9]\s*[-–—]\s*202[5-9]|202[4-9])/i;
-  for (let i = 0; i < Math.min(15, allLines.length); i++) {
+  // Fallback section from generic combined line if not yet found
+  if (!section) {
+    const combinedRegex = /(?:section|strand|grade)[\s:\-–—]+([^\n\r,]+)/i;
+    for (let i = 0; i < Math.min(25, allLines.length); i++) {
+      const match = allLines[i].match(combinedRegex);
+      if (match) {
+        section = match[1].replace(/^[_\s\-:]+/, "").trim();
+        break;
+      }
+    }
+  }
+
+  // 4. Detect Graduation Year / Batch #
+  const batchRegex = /(?:BATCH\s*#?|CLASS\s*OF)[\s:\-–—]*(\d{4}|Batch\s*\d{4})|(?:batch\s*\d{4}|202[4-9]\s*[-–—]\s*202[5-9]|202[4-9])/i;
+  for (let i = 0; i < Math.min(25, allLines.length); i++) {
     const match = allLines[i].match(batchRegex);
     if (match && !batch) {
-      batch = match[0].trim();
+      batch = (match[1] || match[0]).trim();
+      if (!batch.toLowerCase().startsWith("batch")) {
+        batch = `Batch ${batch}`;
+      }
       break;
     }
   }
 
-  // 4. Scan student records and package orders
+  // 5. Detect Class Adviser Name
+  const adviserRegex = /(?:CLASS\s*ADVISER\s*NAME|ADVISER\s*NAME|ADVISER|INSTRUCTOR)[\s:\-–—]+([^\n\r,]+)/i;
+  for (let i = 0; i < Math.min(25, allLines.length); i++) {
+    const match = allLines[i].match(adviserRegex);
+    if (match && !adviserName) {
+      const candidate = match[1].replace(/^[_\s\-:]+/, "").trim();
+      if (candidate && !/^(email|phone|contact|batch)/i.test(candidate)) {
+        adviserName = candidate;
+        break;
+      }
+    }
+  }
+
+  // 6. Detect Class Adviser Email
+  const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i;
+  for (let i = 0; i < Math.min(25, allLines.length); i++) {
+    const match = allLines[i].match(emailRegex);
+    if (match && !adviserEmail) {
+      adviserEmail = match[1].trim();
+      break;
+    }
+  }
+
+  // 7. Detect Class Adviser Phone Number
+  const phoneRegex = /(?:ADVISER\s*PHONE|PHONE|CONTACT|TEL)[\s:\-–—]*((?:\+63|0)9\d{2}[-\s]?\d{3}[-\s]?\d{4}|09\d{9})/i;
+  for (let i = 0; i < Math.min(25, allLines.length); i++) {
+    const match = allLines[i].match(phoneRegex);
+    if (match && !adviserPhone) {
+      adviserPhone = match[1].trim();
+      break;
+    }
+  }
+
+  // 7.5. Detect Selected Package from header & metadata lines
+  const packageRegex = /(?:SELECTED\s*PACKAGE|SECTION\s*PACKAGE|PACKAGE\s*CATEGORY|PACKAGE)[\s:\-–—]+([^\n\r,]+)|(?:senior high|college|graduation|yearbook)\s*packages?\b/i;
+  for (let i = 0; i < Math.min(30, allLines.length); i++) {
+    const match = allLines[i].match(packageRegex);
+    if (match && !selectedPackage) {
+      if (match[1]) {
+        selectedPackage = match[1].replace(/^[_\s\-:]+/, "").trim();
+      } else {
+        selectedPackage = match[0].trim();
+      }
+      break;
+    }
+  }
+
+  // 8. Scan student records, package orders, and mottos
   const students = [];
-  const studentIndexRegex = /^\s*(?:(?:#|no\.?|id)?\s*(\d+)[\.\)]?\s+)?([A-Za-z\s,\.\-–—']+?)(?:\s+((?:20\d{2}[-\s]?\d{3,6}|\d{7,10})))?\s+(?:[-–—|:]\s*)?(Set\s*[A-D]|Package\s*[A-D]|Tier\s*[A-D]|\b[A-D]\b)(.*)$/i;
+  const studentIndexRegex = /^\s*(?:(?:#|no\.?|id)?\s*(\d+)[\.\)]?\s+)?((?:20\d{2}[-\s]?\d{3,6}|\d{7,10}|STU-\d{3,}))?\s*([A-Za-z\s,\.\-–—']+?)\s+(?:[-–—|:]\s*)?(Set\s*[A-D]|Package\s*[A-D]|Tier\s*[A-D]|\b[A-D]\b)(.*)$/i;
 
   let rowCounter = 1;
 
   for (const line of allLines) {
-    // Skip obvious table headers
+    // Skip obvious table headers or metadata callouts
     if (
-      /^\s*(?:#|no\.?|student\s*name|name\s*of\s*student|package|set|signature|remarks|contact)/i.test(line) &&
-      /(?:package|tier|set|signature|remarks)/i.test(line)
+      /^\s*(?:#|no\.?|student\s*name|name\s*of\s*student|package|set|signature|remarks|contact|motto|yearbook\s*motto)/i.test(line) &&
+      /(?:package|tier|set|signature|remarks|motto)/i.test(line)
     ) {
       continue;
     }
+    if (/CRITICAL\s*INTAKE|VALIDATION\s*RULES|Complete\s*Name\s*must\s*have/i.test(line)) {
+      continue;
+    }
 
-    // Try matching line with index, name, and package
+    // Try matching line with index, ID, name, package, and motto
     const match = line.match(studentIndexRegex);
     if (match) {
       const idx = match[1] ? parseInt(match[1], 10) : rowCounter++;
-      let rawName = match[2].trim();
-      const studentNo = match[3] ? match[3].trim() : "";
+      const studentNo = match[2] ? match[2].trim() : `2026-${String(idx + 100).padStart(4, "0")}`;
+      let rawName = match[3].trim();
       const rawPackage = match[4].trim();
+      let rawMotto = match[5] ? match[5].trim().replace(/^[-–—|:]\s*/, "") : "";
+
+      // Clean up extracted motto quotes if present
+      rawMotto = rawMotto.replace(/^[“"']+|[”"']+$/g, "").trim();
 
       // Skip lines where the "name" is actually a header word
       if (
-        /^(date|page|total|school|strand|teacher|adviser|instructor|signature|status)$/i.test(rawName) ||
+        /^(date|page|total|school|strand|teacher|adviser|instructor|signature|status|notice)$/i.test(rawName) ||
         rawName.length < 3
       ) {
         continue;
@@ -221,13 +318,20 @@ export function parseMasterlistRoster(fullText, pages = [], validTiers = ["Set A
       const formattedName = toTitleCase(rawName);
       const normalizedSet = normalizePackageSet(rawPackage, validTiers);
 
+      // Validate Complete Name (Must have First, Middle, and Last name)
+      const nameValidation = validateStudentCompleteName(formattedName);
+
       students.push({
         id: idx,
-        studentNo: studentNo || `STU-${String(idx).padStart(3, "0")}`,
+        studentNo: studentNo,
         name: formattedName,
         packageSet: normalizedSet,
+        motto: rawMotto,
         section: section || "School Section",
-        status: "verified"
+        strand: strand || "Academic Strand",
+        isValidName: nameValidation.isValid,
+        validationError: nameValidation.isValid ? null : nameValidation.reason,
+        status: nameValidation.isValid ? "verified" : "invalid_name"
       });
       continue;
     }
@@ -236,38 +340,65 @@ export function parseMasterlistRoster(fullText, pages = [], validTiers = ["Set A
     const packageKeywordMatch = line.match(/\b(Set\s*[A-D]|Package\s*[A-D])\b/i);
     if (packageKeywordMatch) {
       const pkg = packageKeywordMatch[1];
-      const namePart = line.replace(packageKeywordMatch[0], "").trim().replace(/^[-–—0-9\.\s]+/, "").trim();
+      const parts = line.split(packageKeywordMatch[0]);
+      const namePart = (parts[0] || "").trim().replace(/^[-–—0-9\.\s]+/, "").trim();
+      const mottoPart = (parts[1] || "").trim().replace(/^[-–—|:]\s*/, "").replace(/^[“"']+|[”"']+$/g, "").trim();
+
       if (namePart.length >= 3 && !/^(total|summary|package|inclusions|deliverables)/i.test(namePart)) {
+        const idx = rowCounter++;
+        const formattedName = toTitleCase(namePart);
+        const nameValidation = validateStudentCompleteName(formattedName);
+
         students.push({
-          id: rowCounter++,
-          studentNo: `STU-${String(rowCounter).padStart(3, "0")}`,
-          name: toTitleCase(namePart),
+          id: idx,
+          studentNo: `2026-${String(idx + 100).padStart(4, "0")}`,
+          name: formattedName,
           packageSet: normalizePackageSet(pkg, validTiers),
+          motto: mottoPart,
           section: section || "School Section",
-          status: "verified"
+          strand: strand || "Academic Strand",
+          isValidName: nameValidation.isValid,
+          validationError: nameValidation.isValid ? null : nameValidation.reason,
+          status: nameValidation.isValid ? "verified" : "invalid_name"
         });
       }
     }
   }
 
-  // Calculate summary counts
+  // Calculate summary counts & validation stats
   const setCounts = {};
   validTiers.forEach((t) => {
     setCounts[t] = 0;
   });
 
+  let validCount = 0;
+  let invalidCount = 0;
+
   students.forEach((s) => {
     setCounts[s.packageSet] = (setCounts[s.packageSet] || 0) + 1;
+    if (s.isValidName) {
+      validCount++;
+    } else {
+      invalidCount++;
+    }
   });
 
   return {
     success: students.length > 0,
     school: school || "High School / University Partner",
+    strand: strand || "Academic Strand",
     section: section || "Section Batch",
     batch: batch || "Batch 2026",
+    adviserName: adviserName || "",
+    adviserEmail: adviserEmail || "",
+    adviserPhone: adviserPhone || "",
+    selectedPackage: selectedPackage || "Senior High Packages",
+    packageName: selectedPackage || "Senior High Packages",
     students,
     summary: {
       total: students.length,
+      validStudents: validCount,
+      invalidStudents: invalidCount,
       setCounts
     }
   };
@@ -283,31 +414,45 @@ export async function parseMasterlistWithAI(fullText, validTiers = ["Set A", "Se
 
   const prompt = `You are a school graduation photoshoot data extraction expert for E-Kodak Studio.
 Analyze the following text extracted from a school section masterlist PDF document.
-Extract:
-1. School Name
-2. Section / Strand / Degree program
-3. Graduation Batch / School Year
-4. Student Roster list, where each student has their full name and chosen package set (${validTiers.join(", ")}).
+
+Extract the following 10 exact studio fields:
+1. Name of School
+2. Academic Strand
+3. Section
+4. Class Adviser's Name
+5. Class Adviser's Email
+6. Phone Number of the Class Adviser
+7. Batch # (e.g. Batch 2026)
+8. Student ID Number
+9. Student Complete Name (Note: In the Philippines, complete name includes Last Name, First Name, and Middle Name/Initial)
+10. Package & Set (${validTiers.join(", ")})
+11. Yearbook Motto (Each student's graduation quote or motto)
 
 Text from PDF:
 """
-${fullText.slice(0, 12000)}
+${fullText.slice(0, 14000)}
 """
 
 Return ONLY a valid JSON object matching this exact schema:
 {
   "school": "Name of the School",
-  "section": "Section name or Strand",
-  "batch": "Batch 2026 or School Year",
+  "strand": "Academic Strand",
+  "section": "Class Section",
+  "batch": "Batch 2026",
+  "adviserName": "Name of Adviser",
+  "adviserEmail": "Email of Adviser",
+  "adviserPhone": "Phone of Adviser",
   "students": [
     {
       "id": 1,
-      "studentNo": "Student ID or STU-001",
-      "name": "Lastname, Firstname Middlename",
-      "packageSet": "Set A"
+      "studentNo": "2026-00101",
+      "name": "Santos, Maria Clara P.",
+      "packageSet": "Set A",
+      "motto": "Perseverance and dedication will illuminate every path forward."
     }
   ]
 }
+
 Ensure packageSet is one of: ${validTiers.map((t) => `"${t}"`).join(", ")}.
 If any student has no package specified, default to "${validTiers[0]}".
 Return pure JSON only, no markdown wrapping, no explanation.`;
@@ -337,31 +482,57 @@ Return pure JSON only, no markdown wrapping, no explanation.`;
 
     const parsed = JSON.parse(cleaned);
 
-    const students = (parsed.students || []).map((s, idx) => ({
-      id: s.id || idx + 1,
-      studentNo: s.studentNo || `STU-${String(idx + 1).padStart(3, "0")}`,
-      name: toTitleCase(s.name || `Student ${idx + 1}`),
-      packageSet: normalizePackageSet(s.packageSet, validTiers),
-      section: parsed.section || "School Section",
-      status: "verified"
-    }));
+    const students = (parsed.students || []).map((s, idx) => {
+      const formattedName = toTitleCase(s.name || `Student ${idx + 1}`);
+      const nameValidation = validateStudentCompleteName(formattedName);
+
+      return {
+        id: s.id || idx + 1,
+        studentNo: s.studentNo || `2026-${String(idx + 101).padStart(4, "0")}`,
+        name: formattedName,
+        packageSet: normalizePackageSet(s.packageSet, validTiers),
+        motto: s.motto || "",
+        section: parsed.section || "School Section",
+        strand: parsed.strand || "Academic Strand",
+        isValidName: nameValidation.isValid,
+        validationError: nameValidation.isValid ? null : nameValidation.reason,
+        status: nameValidation.isValid ? "verified" : "invalid_name"
+      };
+    });
 
     const setCounts = {};
     validTiers.forEach((t) => {
       setCounts[t] = 0;
     });
+
+    let validCount = 0;
+    let invalidCount = 0;
+
     students.forEach((s) => {
       setCounts[s.packageSet] = (setCounts[s.packageSet] || 0) + 1;
+      if (s.isValidName) {
+        validCount++;
+      } else {
+        invalidCount++;
+      }
     });
 
     return {
       success: students.length > 0,
       school: parsed.school || "School Partner",
+      strand: parsed.strand || "Academic Strand",
       section: parsed.section || "School Section",
       batch: parsed.batch || "Batch 2026",
+      adviserName: parsed.adviserName || "",
+      adviserEmail: parsed.adviserEmail || "",
+      adviserPhone: parsed.adviserPhone || "",
+      selectedPackage: parsed.selectedPackage || parsed.packageName || "Senior High Packages",
+      packageName: parsed.selectedPackage || parsed.packageName || "Senior High Packages",
       students,
       summary: {
         total: students.length,
+        validStudents: validCount,
+        invalidStudents: invalidCount,
         setCounts
       }
     };
@@ -424,29 +595,71 @@ export async function scanSchoolMasterlistPDF(fileOrBuffer, validTiers = ["Set A
  * 5. Mock Masterlist Generator for instant demo testing
  */
 export function generateMockMasterlist(validTiers = ["Set A", "Set B", "Set C", "Set D"]) {
-  const sampleNames = [
-    "Santos, Maria Clara P.",
-    "Dela Cruz, Juan Pedro M.",
-    "Alimento, Mark June R.",
-    "Sinugbuhan, Jude Lawrence T.",
-    "Bautista, Kimberly Anne D.",
-    "Villanueva, Christian Jay S.",
-    "Torres, Angelica Mae B.",
-    "Reyes, Francis Angelo C.",
-    "Mendoza, Bea Patricia L.",
-    "Navarro, Ralph Michael G.",
-    "Aquino, Stephanie Nicole V.",
-    "Castillo, Joshua Daniel F."
+  const sampleRoster = [
+    {
+      name: "Santos, Maria Clara P.",
+      motto: "Perseverance and dedication will illuminate every path forward."
+    },
+    {
+      name: "Dela Cruz, Juan Pedro M.",
+      motto: "Honor, excellence, and integrity in every endeavor."
+    },
+    {
+      name: "Sinugbuhan, Jude Lawrence L.",
+      motto: "Akos's sayo ikaw ay akin."
+    },
+    {
+      name: "Alimento, Mark June R.",
+      motto: "Perseverance and dedication will illuminate every path forward."
+    },
+    {
+      name: "Bautista, Kimberly Anne D.",
+      motto: "Dream with ambition, lead with passion, and inspire with grace."
+    },
+    {
+      name: "Villanueva, Christian Jay S.",
+      motto: "Every small step taken in discipline leads to a giant leap in life."
+    },
+    {
+      name: "Torres, Angelica Mae B.",
+      motto: "Gratitude turns what we have into more than enough."
+    },
+    {
+      name: "Reyes, Francis Angelo C.",
+      motto: "Success is not final, failure is not fatal: it is the courage to continue."
+    },
+    {
+      name: "Mendoza, Bea Patricia L.",
+      motto: "Embrace uncertainty and let your vision outshine your fear."
+    },
+    {
+      name: "Navarro, Ralph Michael G.",
+      motto: "Hard work beats talent when talent fails to work hard."
+    },
+    {
+      name: "Aquino, Stephanie Nicole V.",
+      motto: "She believed she could, so she did with unwavering grace."
+    },
+    {
+      name: "Castillo, Joshua Daniel F.",
+      motto: "Character is what you do when nobody is watching."
+    }
   ];
 
-  const students = sampleNames.map((name, idx) => {
+  const students = sampleRoster.map((item, idx) => {
     const chosenTier = validTiers[idx % validTiers.length] || "Set A";
+    const nameValidation = validateStudentCompleteName(item.name);
+
     return {
       id: idx + 1,
       studentNo: `2026-${String(idx + 101).padStart(4, "0")}`,
-      name,
+      name: item.name,
       packageSet: chosenTier,
-      section: "Grade 12 - STEM Diamond",
+      motto: item.motto,
+      section: "Alcala",
+      strand: "ABM (Accountancy, Business & Management)",
+      isValidName: nameValidation.isValid,
+      validationError: nameValidation.isValid ? null : nameValidation.reason,
       status: "verified"
     };
   });
@@ -461,12 +674,20 @@ export function generateMockMasterlist(validTiers = ["Set A", "Set B", "Set C", 
 
   return {
     success: true,
-    school: "Naga National High School - Senior High Campus",
-    section: "Grade 12 - STEM Diamond",
+    school: "Lipata Senior High School",
+    strand: "ABM (Accountancy, Business & Management)",
+    section: "Alcala",
     batch: "Batch 2026",
+    adviserName: "Prof. Juanita Dela Cruz",
+    adviserEmail: "adviser.delacruz@school.edu.ph",
+    adviserPhone: "0917-890-1234",
+    selectedPackage: "Senior High Packages",
+    packageName: "Senior High Packages",
     students,
     summary: {
       total: students.length,
+      validStudents: students.length,
+      invalidStudents: 0,
       setCounts
     },
     numPages: 1,

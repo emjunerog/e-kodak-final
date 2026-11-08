@@ -109,8 +109,6 @@ export async function getServices() {
         const SERVICE_SLUG_TO_UUID = {
           "senior-high-packages": "1471388e-b74f-41ec-96c8-1d220d557a89",
           "studio-packages": "1471388e-b74f-41ec-96c8-1d220d557a89",
-          "wedding-photo": "cd4271d4-8dd3-472f-86e5-0b658af9b02b",
-          "wedding-video": "aab20afd-0e3c-41b2-8f70-0ab42167c50a",
           "college-packages": "e2415838-06be-4e80-aa7a-9f4d3b47a8a5",
         };
 

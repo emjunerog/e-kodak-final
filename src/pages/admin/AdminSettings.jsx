@@ -304,7 +304,7 @@ export default function AdminSettings() {
           {
             key: 'staff',
             label: 'ACCESS',
-            subtitle: 'STAFF ACCOUNTS',
+            subtitle: 'ADMIN ACCOUNTS',
             value: staff.length,
             onClick: () => {
               window.scrollTo({ top: 900, behavior: 'smooth' });
@@ -595,10 +595,10 @@ export default function AdminSettings() {
             </div>
             <div>
               <h2 className="font-heading text-lg sm:text-xl font-bold text-neutral-900 tracking-tight">
-                Authorized Personnel &amp; Staff Accounts
+                Authorized Administrator Accounts
               </h2>
               <p className="text-xs text-neutral-500">
-                Displaying <span className="font-bold text-neutral-800">{filteredStaff.length}</span> verified personnel accounts registered in the studio database.
+                Displaying <span className="font-bold text-neutral-800">{filteredStaff.length}</span> verified administrator accounts registered in the studio database.
               </p>
             </div>
           </div>
@@ -624,7 +624,7 @@ export default function AdminSettings() {
               type="text"
               value={staffSearch}
               onChange={(e) => setStaffSearch(e.target.value)}
-              placeholder="Search staff members by name, phone, or role..."
+              placeholder="Search administrators by name or phone..."
               className="w-full pl-10 pr-9 py-2 bg-white border border-neutral-200/90 rounded-xl text-xs text-neutral-700 placeholder-neutral-400 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20 transition-all shadow-2xs"
             />
             {staffSearch && (
@@ -648,7 +648,7 @@ export default function AdminSettings() {
           ) : filteredStaff.length === 0 ? (
             <div className="text-center py-10 text-neutral-400 text-xs">
               <Users size={28} className="text-neutral-300 mx-auto mb-2" />
-              No staff accounts found matching your search.
+              No administrator accounts found matching your search.
             </div>
           ) : (
             <div className="divide-y divide-neutral-100 border border-neutral-200/70 rounded-2xl overflow-hidden bg-white">

@@ -49,9 +49,9 @@ export default function AuthCallback() {
 
       const role = profileData?.role || 'customer';
 
-      if (role === 'admin' || role === 'staff') navigate('/admin', { replace: true });
-      else if (role === 'photographer')          navigate('/photographer', { replace: true });
-      else                                       navigate('/dashboard', { replace: true });
+      if (role === 'admin')             navigate('/admin', { replace: true });
+      else if (role === 'photographer') navigate('/photographer', { replace: true });
+      else                              navigate('/dashboard', { replace: true });
     };
 
     handle();

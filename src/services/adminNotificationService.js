@@ -72,27 +72,11 @@ async function resolveRecipients(recipientGroup, specificCustomerId = null) {
       return data || [];
     }
 
-    if (recipientGroup === 'ALL_STAFF') {
+    if (recipientGroup === 'ALL_STAFF' || recipientGroup === 'FINANCE_TEAM' || recipientGroup === 'STAFF_ONLY') {
       const { data } = await supabase
         .from('profiles')
         .select('id, first_name, last_name, email, phone, role')
-        .in('role', ['admin', 'staff', 'finance']);
-      return data || [];
-    }
-
-    if (recipientGroup === 'FINANCE_TEAM') {
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, first_name, last_name, email, phone, role')
-        .eq('role', 'finance');
-      return data || [];
-    }
-
-    if (recipientGroup === 'STAFF_ONLY') {
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, first_name, last_name, email, phone, role')
-        .eq('role', 'staff');
+        .eq('role', 'admin');
       return data || [];
     }
 
@@ -230,7 +214,7 @@ export function synthesizeSystematicAdminNotifications(bookings = [], payments =
         is_read:           readIds.includes(nId),
         category:          'BOOKINGS',
         priority:          'normal',
-        recipient_group:   'CUSTOMER & STAFF',
+        recipient_group:   'CUSTOMER & ADMIN',
         recipient_name:    clientName,
         recipient_email:   b.customer?.email || '',
         recipient_phone:   b.customer?.phone || '',
@@ -252,7 +236,7 @@ export function synthesizeSystematicAdminNotifications(bookings = [], payments =
         is_read:           readIds.includes(nId),
         category:          'BOOKINGS',
         priority:          'high',
-        recipient_group:   'ADMIN & STAFF',
+        recipient_group:   'ADMIN',
         recipient_name:    clientName,
         recipient_email:   b.customer?.email || '',
         recipient_phone:   b.customer?.phone || '',
@@ -281,7 +265,7 @@ export function synthesizeSystematicAdminNotifications(bookings = [], payments =
       is_read:           readIds.includes(nId),
       category:          'PAYMENTS',
       priority:          'normal',
-      recipient_group:   'CUSTOMER & FINANCE',
+      recipient_group:   'CUSTOMER & ADMIN',
       recipient_name:    clientName,
       recipient_email:   p.booking?.customer?.email || '',
       recipient_phone:   p.booking?.customer?.phone || '',
@@ -398,7 +382,7 @@ export async function getUnifiedAdminNotifications() {
     paymentsCount:   merged.filter(n => n.notification_type === 'PAYMENT_RECEIVED').length,
     bookingsCount:   merged.filter(n => n.category === 'BOOKINGS').length,
     broadcastsCount: localBroadcasts.filter(b => !deletedIds.includes(b.id)).length + merged.filter(n => n.category === 'BROADCASTS' && !n.id.startsWith('local_')).length,
-    staffCount:      merged.filter(n => n.recipient_role && ['admin','staff','finance','photographer'].includes(n.recipient_role)).length
+    staffCount:      merged.filter(n => n.recipient_role && ['admin','photographer'].includes(n.recipient_role)).length
   };
 }
 

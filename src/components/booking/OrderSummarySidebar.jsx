@@ -11,7 +11,6 @@ import {
   Clock,
   MapPin,
   GraduationCap,
-  Heart,
   Briefcase,
   HelpCircle,
   ExternalLink,
@@ -70,7 +69,6 @@ export default function OrderSummarySidebar({
   };
 
   const isStudent = selectedService?.category?.toUpperCase().includes("GRAD") || !!studentDetails?.school;
-  const isWedding = selectedService?.category?.toUpperCase().includes("WEDDING") || !!weddingDetails?.brideName;
   const isCorporate = selectedService?.category?.toUpperCase().includes("CORP") || !!corporateDetails?.company;
 
   return (
@@ -250,7 +248,7 @@ export default function OrderSummarySidebar({
           </div>
 
           {/* ── ACCORDION 3: Client & Verification Details ───────────────────────── */}
-          {(studentDetails?.school || weddingDetails?.brideName || corporateDetails?.company) && (
+          {(studentDetails?.school || corporateDetails?.company) && (
             <div className="border border-neutral-200/80 rounded-2xl overflow-hidden bg-neutral-50/50">
               <button
                 type="button"
@@ -260,20 +258,16 @@ export default function OrderSummarySidebar({
                 <div className="flex items-center gap-2">
                   {isStudent ? (
                     <GraduationCap size={16} className="text-gold shrink-0" />
-                  ) : isWedding ? (
-                    <Heart size={16} className="text-rose-500 shrink-0" />
                   ) : (
                     <Briefcase size={16} className="text-blue-500 shrink-0" />
                   )}
                   <div>
                     <p className="text-xs font-bold text-primary">
-                      {isStudent ? "Academic Batching Details" : isWedding ? "Wedding Information" : "Corporate Details"}
+                      {isStudent ? "Academic Batching Details" : "Corporate Details"}
                     </p>
                     <p className="text-[11px] text-neutral-500">
                       {isStudent
                         ? `${studentDetails.section || 'Class/Section'} • ${studentDetails.school || 'School'}`
-                        : isWedding
-                        ? `${weddingDetails.brideName || 'Bride'} & ${weddingDetails.groomName || 'Groom'}`
                         : corporateDetails.company || "Company info"}
                     </p>
                   </div>
@@ -327,27 +321,6 @@ export default function OrderSummarySidebar({
                         <div className="flex justify-between text-[11px] pt-0.5">
                           <span className="text-neutral-400">Yearbook Motto:</span>
                           <span className="font-medium italic text-neutral-700 text-right max-w-[170px] truncate" title={studentDetails.motto}>"{studentDetails.motto}"</span>
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {isWedding && (
-                    <>
-                      <div className="flex justify-between text-[11px]">
-                        <span className="text-neutral-400">Couple:</span>
-                        <span className="font-semibold text-primary">{weddingDetails.brideName} & {weddingDetails.groomName}</span>
-                      </div>
-                      {weddingDetails.theme && (
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-neutral-400">Theme / Palette:</span>
-                          <span className="font-medium text-neutral-700">{weddingDetails.theme}</span>
-                        </div>
-                      )}
-                      {weddingDetails.coordinatorName && (
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-neutral-400">Coordinator:</span>
-                          <span className="text-neutral-700">{weddingDetails.coordinatorName}</span>
                         </div>
                       )}
                     </>

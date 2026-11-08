@@ -5,10 +5,9 @@
  *
  * Capabilities:
  * • Visual month grid displaying live customer bookings across all packages.
- * • Strict 3-ordinate scheduling enforcement:
+ * • Strict scheduling enforcement:
  *    1. Hourly Camera Bay Slots: 8 discrete 1-hr sessions (8AM–5PM).
  *    2. School Section Pictorials: Locks entire date for cohort campus shoot.
- *    3. Wedding Photo & Video: Locks entire date for exclusive creative crew.
  * • Admin Multi-Day Extension Manager: Extend school graduation batches to 2+ days.
  * • Admin Blackout / Studio Maintenance Lockout: 1-click date blocking.
  * • Real-time bay occupancy indicators and 1-click inspection / walk-in creation.
@@ -148,9 +147,8 @@ export default function AdminLiveBookingCalendar({
       }
 
       const isSchoolBatch = !!activeMultiDay || (fullDayBooking && isFullDayBooking(fullDayBooking).reason?.toLowerCase().includes("school"));
-      const isWedding = fullDayBooking && isFullDayBooking(fullDayBooking).reason?.toLowerCase().includes("wedding");
       const isBlackout = !!adminBlock;
-      const isFullDay = isSchoolBatch || isWedding || isBlackout || bookedSlotKeys.size >= STUDIO_HOURLY_SLOTS.length;
+      const isFullDay = isSchoolBatch || isBlackout || bookedSlotKeys.size >= STUDIO_HOURLY_SLOTS.length;
 
       days.push({
         dateNumber: d,
@@ -162,7 +160,6 @@ export default function AdminLiveBookingCalendar({
         bookedSlotsCount: bookedSlotKeys.size,
         isFullDay,
         isSchoolBatch,
-        isWedding,
         isBlackout,
         fullDayReason: adminBlock?.reason || (activeMultiDay ? `School Batch: ${activeMultiDay.schoolName}` : fullDayBooking ? isFullDayBooking(fullDayBooking).reason : null),
       });
@@ -282,7 +279,7 @@ export default function AdminLiveBookingCalendar({
               </span>
             </div>
             <p className="text-xs text-neutral-500 font-body mt-1">
-              Real-time schedule coordinator across 8-hour studio bays, full-day school pictorial cohorts, and exclusive wedding productions.
+              Real-time schedule coordinator across 8-hour studio bays and full-day school pictorial cohorts.
             </p>
           </div>
         </div>
@@ -421,13 +418,7 @@ export default function AdminLiveBookingCalendar({
                       </span>
                     )}
 
-                    {day.isWedding && (
-                      <span className="block truncate text-[9px] font-bold uppercase tracking-tight px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-400/30">
-                        💍 Wedding
-                      </span>
-                    )}
-
-                    {!day.isSchoolBatch && !day.isWedding && !day.isBlackout && day.bookedSlotsCount > 0 && (
+                    {!day.isSchoolBatch && !day.isBlackout && day.bookedSlotsCount > 0 && (
                       <span
                         className={`block truncate text-[9px] font-semibold px-1 py-0.2 rounded ${isSelected
                             ? "bg-white/10 text-neutral-300"
@@ -453,10 +444,6 @@ export default function AdminLiveBookingCalendar({
               <span className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-indigo-500" />
                 <span>School Batch Lock</span>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-600" />
-                <span>Wedding Lock</span>
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-rose-500" />
@@ -532,7 +519,7 @@ export default function AdminLiveBookingCalendar({
                   ) : (
                     <>
                       <Sparkles size={15} className="text-amber-800" />
-                      <span>Full-Day Wedding Production</span>
+                      <span>Full-Day Studio Session</span>
                     </>
                   )}
                 </span>

@@ -91,7 +91,7 @@ export default function About() {
           title="About E-Kodak"
           subtitle="A photography studio built on passion, professionalism, and a genuine love for capturing moments that matter."
           image="https://images.unsplash.com/photo-1465495976277-4387d4b0b4c6?w=1920&q=85&auto=format&fit=crop"
-          imageAlt="Newlyweds holding hands with wedding rings and bouquet"
+          imageAlt="Graduate celebrating milestone portrait session"
         />
 
         {/* ── 2. Studio Story ───────────────────────────────────────────────── */}

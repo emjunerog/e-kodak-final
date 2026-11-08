@@ -10,7 +10,7 @@ import { Loader2 } from 'lucide-react';
  * Blocks customers (→ /dashboard)
  * Blocks unapproved photographers (→ /pending-approval)
  * Allows approved photographers (→ renders children)
- * Allows staff/admin to view it for testing (→ renders children)
+ * Allows admin to view it for testing (→ renders children)
  */
 export default function PhotographerProtectedRoute({ children }) {
   const { user, profile, loading } = useAuth();

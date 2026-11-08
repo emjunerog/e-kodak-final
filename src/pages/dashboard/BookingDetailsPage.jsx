@@ -17,7 +17,8 @@ import {
   parseParticipantDetailsFromNotes,
   parseDeliveryDetailsFromNotes,
   updateBookingYearbookMotto,
-  updateBookingDeliveryDetails
+  updateBookingDeliveryDetails,
+  updateBookingAcademicDetails
 } from '../../services/bookingService';
 import {
   DEFAULT_REGION,
@@ -41,7 +42,7 @@ import CredentialsDossierSheet from '../../components/booking/CredentialsDossier
 function getCleanLocation(locStr) {
   if (!locStr) {
     return {
-      name: 'Uling, City of Naga, Cebu',
+      name: 'E-Kodak Studio, City of Naga, Cebu',
       mapUrl: 'https://www.google.com/maps/search/?api=1&query=311+Rizal+Street,+City+of+Naga,+Cebu',
     };
   }
@@ -51,7 +52,7 @@ function getCleanLocation(locStr) {
     .replace(/(https?:\/\/[^\s,]+)/gi, '')
     .trim()
     .replace(/,\s*$/, '')
-    .trim() || 'Uling, City of Naga, Cebu';
+    .trim() || 'E-Kodak Studio, City of Naga, Cebu';
 
   return { name: cleanName, mapUrl };
 }
@@ -96,6 +97,17 @@ export default function BookingDetailsPage() {
   const [savingMotto, setSavingMotto] = useState(false);
   const [isEditingDelivery, setIsEditingDelivery] = useState(false);
   const [savingDelivery, setSavingDelivery] = useState(false);
+  const [isEditingAcademic, setIsEditingAcademic] = useState(false);
+  const [savingAcademic, setSavingAcademic] = useState(false);
+  const [academicForm, setAcademicForm] = useState({
+    school: '',
+    school_address: '',
+    course: '',
+    section: '',
+    batch: '',
+    student_id: '',
+    yearbook_motto: '',
+  });
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [deliveryForm, setDeliveryForm] = useState({
     fulfillment_mode: 'STUDIO_DELIVERY',
@@ -165,43 +177,44 @@ export default function BookingDetailsPage() {
 
     const nameMatch = booking.notes?.match(/•\s*Student\s*Name:\s*([^\n\r]+)/i);
     const middleMatch = booking.notes?.match(/•\s*Middle\s*Name:\s*([^\n\r]+)/i);
-    const mottoMatch = booking.notes?.match(/•\s*Yearbook\s*Motto:\s*([^\n\r]+)/i);
+    const mottoMatch = booking.notes?.match(/•\s*(?:Yearbook\s*)?Motto:\s*([^\n\r]+)/i);
     const typeMatch = booking.notes?.match(/•\s*Type:\s*([^\n\r]+)/i);
-    const strandMatch = booking.notes?.match(/•\s*(?:Degree|Program|Strand|Course)(?:\s*(?:\/|\&)\s*(?:Program|Strand|Course))?:\s*([^\n\r]+)/i);
-    const campusMatch = booking.notes?.match(/•\s*Campus\s*(?:\/\s*Address)?:\s*([^\n\r]+)/i);
-    const batchMatch = booking.notes?.match(/•\s*Batch:\s*([^\n\r]+)/i);
-    const schoolMatch = booking.notes?.match(/•\s*School:\s*([^\n\r]+)/i);
+    const strandMatch = booking.notes?.match(/•\s*(?:Track|Degree|Program|Strand|Course)(?:\s*(?:\/|\&)\s*(?:Track|Degree|Program|Strand|Course))*:\s*([^\n\r]+)/i);
+    const campusMatch = booking.notes?.match(/•\s*(?:Campus(?:\s*(?:\/|&)\s*(?:Address|Branch))?|School\s*Address):\s*([^\n\r]+)/i);
+    const batchMatch = booking.notes?.match(/•\s*(?:Batch|Graduation\s*Year|Graduating\s*Batch):\s*([^\n\r]+)/i);
+    const schoolMatch = booking.notes?.match(/•\s*(?:School|University|College|Institution):\s*([^\n\r]+)/i);
+    const sectionMatch = booking.notes?.match(/•\s*Section(?:\s*(?:\/|&)\s*Batch)?:\s*([^\n\r]+)/i);
+    const idMatch = booking.notes?.match(/•\s*Student\s*ID(?:\s*Number)?:\s*([^\n\r]+)/i);
 
-    const student_name = existing.student_name || parsed.student_name || nameMatch?.[1]?.trim() || '';
-    const middle_name = existing.middle_name || parsed.middle_name || middleMatch?.[1]?.trim() || '';
-    const yearbook_motto = existing.yearbook_motto || parsed.yearbook_motto || mottoMatch?.[1]?.trim() || '';
-    const rawSchool = existing.school || parsed.school || schoolMatch?.[1]?.trim() || '';
-    const batch = existing.batch || parsed.batch || batchMatch?.[1]?.trim() || '';
-    const section = existing.section || parsed.section || '';
-    const student_id = existing.student_id || parsed.student_id || '';
-    const course = existing.course || parsed.course || strandMatch?.[1]?.trim() || '';
-    const school_address = existing.school_address || parsed.school_address || campusMatch?.[1]?.trim() || '';
+    const specs = profile?.studio_specs || {};
+    const isSelfBooking = booking.booking_for === 'myself' || (!booking.booking_for && (!booking.notes || !/•\s*Booking\s*For:\s*Someone\s*Else/i.test(booking.notes)));
+
+    const student_name = booking.participant_name || existing.student_name || parsed.student_name || nameMatch?.[1]?.trim() || (isSelfBooking ? `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() : '');
+    const middle_name = existing.middle_name || parsed.middle_name || middleMatch?.[1]?.trim() || (isSelfBooking ? profile?.middle_name : '') || '';
+    const yearbook_motto = booking.yearbook_motto || existing.yearbook_motto || parsed.yearbook_motto || mottoMatch?.[1]?.trim() || '';
+    const rawSchool = booking.school || existing.school || parsed.school || schoolMatch?.[1]?.trim() || (isSelfBooking ? (specs.university || specs.school) : '') || '';
+    const batch = booking.batch || existing.batch || parsed.batch || batchMatch?.[1]?.trim() || (isSelfBooking ? specs.gradYear : '') || '';
+    const section = booking.section || existing.section || parsed.section || sectionMatch?.[1]?.trim() || (isSelfBooking ? specs.section : '') || '';
+    const student_id = booking.student_id || existing.student_id || parsed.student_id || idMatch?.[1]?.trim() || (isSelfBooking ? specs.student_id : '') || '';
+    const course = booking.track || existing.course || parsed.course || strandMatch?.[1]?.trim() || (isSelfBooking ? (specs.degree || specs.strand) : '') || '';
+    const school_address = booking.school_address || existing.school_address || parsed.school_address || campusMatch?.[1]?.trim() || (isSelfBooking ? specs.campus : '') || '';
     const education_type = existing.education_type || parsed.education_type || typeMatch?.[1]?.trim() || '';
 
-    // Smart school resolution: if school string is an address or missing "High School"
-    let school = rawSchool;
-    if (!school || (/uling/i.test(school) && !/high school/i.test(school))) {
-      school = 'Uling National High School';
-    }
+    const cleanSchool = rawSchool && rawSchool !== 'N/A' ? rawSchool : '';
 
     return {
       student_name,
       middle_name,
-      yearbook_motto,
-      school,
-      batch,
-      section,
-      student_id,
-      course,
-      school_address,
-      education_type,
+      yearbook_motto: yearbook_motto === 'N/A' ? '' : yearbook_motto,
+      school: cleanSchool,
+      batch: batch === 'N/A' ? '' : batch,
+      section: section === 'N/A' ? '' : section,
+      student_id: student_id === 'N/A' ? '' : student_id,
+      course: course === 'N/A' ? '' : course,
+      school_address: school_address === 'N/A' ? '' : school_address,
+      education_type: education_type === 'N/A' ? '' : education_type,
     };
-  }, [booking]);
+  }, [booking, profile]);
 
   // Delivery & Claiming details resolved from booking notes or profile studio_specs
   const deliveryDetails = useMemo(() => {
@@ -299,7 +312,15 @@ export default function BookingDetailsPage() {
   // Participant & Beneficiary details
   const participantDetails = useMemo(() => {
     if (!booking) return null;
-    return booking.participant_details || parseParticipantDetailsFromNotes(booking.notes);
+    const fromBooking = booking.participant_details || parseParticipantDetailsFromNotes(booking.notes) || {};
+    return {
+      booking_for: booking.booking_for || fromBooking.booking_for || (booking.notes?.includes('• Booking For: Someone Else') ? 'someone_else' : 'myself'),
+      full_name: booking.participant_name || fromBooking.full_name || '',
+      phone: booking.participant_phone || fromBooking.phone || '',
+      email: booking.participant_email || fromBooking.email || '',
+      relationship: booking.participant_relationship || fromBooking.relationship || '',
+      ...fromBooking
+    };
   }, [booking]);
 
   // Synchronize motto input with student dossier when not editing
@@ -447,65 +468,90 @@ export default function BookingDetailsPage() {
     ? `${rawCategory.toUpperCase()} STUDIO PORTFOLIO`
     : 'GRADUATION STUDIO PORTFOLIO';
   const packageEyebrow = `${portfolioDiscipline} · ${tierName}`;
-  const headline = 'Senior High Packages and Sets';
+  const headline = booking.service?.name || booking.service?.title || booking.service_title || 'Graduation Portrait Session';
 
-  // Customer Profile Information
-  const customerFullName = (
-    participantDetails?.full_name ||
-    booking.customer_name ||
-    `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() ||
-    'Abegail Alfante'
-  );
-  const nameParts = customerFullName.split(' ');
-  const firstName = nameParts[0] || 'Abegail';
-  const lastName = nameParts.slice(1).join(' ') || 'Alfante';
-  const initials = `${firstName[0] || 'A'}${lastName[0] || 'A'}`.toUpperCase();
+  // Account Owner resolution (the authenticated user / customer who holds the booking)
+  const accountOwnerFullName = (
+    booking.customer
+      ? `${booking.customer.first_name || ''} ${booking.customer.last_name || ''}`.trim()
+      : `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim()
+  ) || user?.email?.split('@')[0] || 'Account Owner';
 
-  const customerEmail =
-    booking.customer?.email ||
-    participantDetails?.email ||
-    booking.customer_email ||
-    profile?.email ||
-    user?.email ||
-    'abiigyl05@gmail.com';
-  const customerPhone =
-    booking.customer?.phone ||
-    participantDetails?.phone ||
-    booking.customer_phone ||
-    profile?.phone ||
-    'Not provided';
+  const accountOwnerEmail = booking.customer?.email || profile?.email || user?.email || '';
+  const accountOwnerPhone = booking.customer?.phone || profile?.phone || '';
+
+  // Participant & Relationship resolution
   const isSomeoneElse = participantDetails?.booking_for === 'someone_else';
+  const participantFullName = (
+    participantDetails?.full_name ||
+    studentDossier?.student_name ||
+    (!isSomeoneElse ? accountOwnerFullName : '')
+  );
+
+  const displayPrimaryName = isSomeoneElse
+    ? (participantFullName || 'Participant')
+    : accountOwnerFullName;
+
+  const displayPrimarySubtitle = isSomeoneElse
+    ? `Photoshoot participant · Booked by ${accountOwnerFullName}`
+    : 'Primary contact & session participant';
+
+  const displayEyebrow = isSomeoneElse
+    ? 'Participant / Graduate'
+    : 'Customer & Participant';
+
   const relationshipText = isSomeoneElse
-    ? (participantDetails?.relationship || 'Booking for family / beneficiary')
+    ? (participantDetails?.relationship || 'Booking for someone else')
     : 'Self / account owner';
 
-  // Customer Portrait Photo (Priority: booking.customer profile > user auth profile > static local avatar)
+  // Customer Profile Information variables for compatibility with downstream components
+  const customerFullName = displayPrimaryName;
+  const nameParts = customerFullName.split(' ').filter(Boolean);
+  const firstName = nameParts[0] || 'Customer';
+  const lastName = nameParts.slice(1).join(' ') || '';
+  const initials = `${firstName[0] || 'C'}${lastName[0] || ''}`.toUpperCase();
+
+  const customerEmail = isSomeoneElse
+    ? (participantDetails?.email || accountOwnerEmail || 'Not provided')
+    : (accountOwnerEmail || 'Not provided');
+
+  const customerPhone = isSomeoneElse
+    ? (participantDetails?.phone || accountOwnerPhone || 'Not provided')
+    : (accountOwnerPhone || 'Not provided');
+
+  // Customer Portrait Photo (Priority: booking.customer profile > user auth profile > null)
   const customerPhotoUrl =
     booking.customer?.avatar_url ||
     profile?.avatar_url ||
     user?.user_metadata?.avatar_url ||
     booking.customer_photo_url ||
     booking.reference_image_url ||
-    '/images/abegail-avatar.jpg';
+    null;
 
   // Academic Profile Information
-  const rawSchool = studentDossier?.school || booking.student_details?.school;
-  const schoolName = (
-    !rawSchool || (/uling/i.test(rawSchool) && !/high school/i.test(rawSchool))
-      ? 'Uling National High School'
-      : rawSchool
-  );
-  const rawBatch = studentDossier?.batch || booking.student_details?.batch || '2026';
-  // Strip any leading "Batch" so gradYear is purely the year e.g. "2026"
-  const gradYear = rawBatch.replace(/^Batch\s*/i, '').trim() || '2026';
-  const batchDisplay = `Batch ${gradYear}`;
-  const trackName = studentDossier?.course || booking.student_details?.course || booking.student_details?.strand || 'STEM';
-  const educationType = studentDossier?.education_type || booking.student_details?.education_type || 'Senior High School';
-  const sectionName = studentDossier?.section || booking.student_details?.section || 'Mayana';
-  const studentId = studentDossier?.student_id || booking.student_details?.student_id || '1350691';
+  const rawSchool = studentDossier?.school || booking.student_details?.school || '';
+  const schoolName = rawSchool || 'School not specified';
+  const rawBatch = studentDossier?.batch || booking.student_details?.batch || '';
+  const gradYear = rawBatch ? rawBatch.replace(/^Batch\s*/i, '').trim() : '';
+  const batchDisplay = gradYear ? `Batch ${gradYear}` : 'Graduation Session';
+  const trackName = studentDossier?.course || booking.student_details?.course || booking.student_details?.strand || 'Not specified';
+  const educationType = studentDossier?.education_type || booking.student_details?.education_type || (rawCategory ? `${rawCategory} Studio` : 'Academic Portrait');
+  const cleanSection = (studentDossier?.section && studentDossier.section !== 'N/A')
+    ? studentDossier.section
+    : (booking.student_details?.section && booking.student_details.section !== 'N/A')
+    ? booking.student_details.section
+    : '';
+  const sectionName = cleanSection || 'Not specified';
+
+  const cleanStudentId = (studentDossier?.student_id && studentDossier.student_id !== 'N/A')
+    ? studentDossier.student_id
+    : (booking.student_details?.student_id && booking.student_details.student_id !== 'N/A')
+    ? booking.student_details.student_id
+    : '';
+  const studentId = cleanStudentId || 'Not provided';
 
   const { name: cleanLocationName, mapUrl: googleMapsUrl } = getCleanLocation(booking.location);
-  const schoolLocation = studentDossier?.school_address || cleanLocationName || 'Uling, City of Naga, Cebu';
+  const schoolLocation = studentDossier?.school_address || (cleanLocationName !== 'E-Kodak Studio, City of Naga, Cebu' ? cleanLocationName : 'E-Kodak Studio, 311 Rizal Street, City of Naga, Cebu');
 
   // Quick Info Bar Metrics
   const scheduleValue = booking.event_date
@@ -515,7 +561,7 @@ export default function BookingDetailsPage() {
     ? (booking.preferred_time?.substring(0, 5) ? `${booking.preferred_time.substring(0, 5)} Studio Slot` : 'Studio slot scheduled')
     : "We'll notify you once scheduled";
 
-  const venueValue = cleanLocationName.replace(/^(?:School Campus|E-Kodak Studio):\s*/i, '').split(',').slice(0, 2).join(',').trim() || 'Uling, City of Naga';
+  const venueValue = cleanLocationName.replace(/^(?:School Campus|E-Kodak Studio):\s*/i, '').split(',').slice(0, 2).join(',').trim() || 'City of Naga, Cebu';
   const venueSub = 'Cebu · View location';
 
   const totalSub = financialInfo.downPaid > 0
@@ -568,6 +614,48 @@ export default function BookingDetailsPage() {
       });
     } finally {
       setSavingMotto(false);
+    }
+  };
+
+  const handleSaveAcademicProfile = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!booking?.id) return;
+    setSavingAcademic(true);
+    try {
+      const payload = {
+        ...academicForm,
+        student_name: studentDossier?.student_name || '',
+        education_type: studentDossier?.education_type || '',
+      };
+      const { updatedNotes, error: aErr } = await updateBookingAcademicDetails(
+        booking.id,
+        payload,
+        booking.notes || '',
+        user?.id
+      );
+      if (aErr) throw aErr;
+
+      setBooking((prev) => ({
+        ...prev,
+        notes: updatedNotes || prev.notes,
+        student_details: {
+          ...(prev.student_details || {}),
+          ...payload,
+        },
+      }));
+      setIsEditingAcademic(false);
+      setToast({
+        type: 'success',
+        message: 'Academic profile details updated successfully!',
+      });
+    } catch (err) {
+      console.error('Error saving academic details:', err);
+      setToast({
+        type: 'error',
+        message: err.message || 'Failed to update academic profile.',
+      });
+    } finally {
+      setSavingAcademic(false);
     }
   };
 
@@ -964,21 +1052,23 @@ export default function BookingDetailsPage() {
 
                 <div className="min-w-0 flex-1">
                   <p className="text-[10.5px] sm:text-xs font-bold uppercase tracking-[0.22em] text-[#c77826] dark:text-amber-500 mb-1.5">
-                    Customer & Participant
+                    {displayEyebrow}
                   </p>
-                  <h2 className="font-heading font-normal text-2xl sm:text-3xl lg:text-[38px] xl:text-[42px] text-neutral-900 dark:text-white leading-[1.12] tracking-tight truncate">
+                  <h2 className="font-heading font-normal text-2xl sm:text-3xl lg:text-[36px] xl:text-[40px] text-neutral-900 dark:text-white leading-[1.12] tracking-tight break-words">
                     {customerFullName}
                   </h2>
                   <p className="font-body text-xs sm:text-[13px] text-neutral-500 dark:text-neutral-400 mt-2 font-normal leading-relaxed">
-                    Primary contact & session participant
+                    {displayPrimarySubtitle}
                   </p>
                 </div>
               </div>
 
-              {/* Right: 3 Contact Rows */}
+              {/* Right: Contact Rows */}
               <div className="lg:col-span-5 w-full pt-1">
                 <p className="font-body text-xs sm:text-[13px] text-neutral-500 dark:text-neutral-400 font-normal mb-5 leading-relaxed">
-                  The participant and primary contact for this graduation portrait session.
+                  {isSomeoneElse
+                    ? `Photoshoot participant registered by account owner (${accountOwnerFullName}).`
+                    : 'The participant and primary contact for this graduation portrait session.'}
                 </p>
 
                 <div className="space-y-3.5 sm:space-y-4 font-body">
@@ -986,7 +1076,7 @@ export default function BookingDetailsPage() {
                   <div className="flex items-center justify-between text-xs sm:text-[13px] pb-3 border-b border-neutral-100 dark:border-neutral-800/80">
                     <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400">
                       <Mail size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
-                      <span>Email address</span>
+                      <span>{isSomeoneElse ? 'Participant email' : 'Email address'}</span>
                     </div>
                     <span className="font-bold text-neutral-900 dark:text-white truncate max-w-[210px]">
                       {customerEmail}
@@ -997,15 +1087,15 @@ export default function BookingDetailsPage() {
                   <div className="flex items-center justify-between text-xs sm:text-[13px] pb-3 border-b border-neutral-100 dark:border-neutral-800/80">
                     <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400">
                       <Phone size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
-                      <span>Phone number</span>
+                      <span>{isSomeoneElse ? 'Participant phone' : 'Phone number'}</span>
                     </div>
-                    <span className="font-medium text-neutral-500 dark:text-neutral-400">
+                    <span className="font-bold text-neutral-900 dark:text-white">
                       {customerPhone}
                     </span>
                   </div>
 
                   {/* Relationship */}
-                  <div className="flex items-center justify-between text-xs sm:text-[13px]">
+                  <div className={`flex items-center justify-between text-xs sm:text-[13px] ${isSomeoneElse ? 'pb-3 border-b border-neutral-100 dark:border-neutral-800/80' : ''}`}>
                     <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400">
                       <User size={15} className="text-[#c77826] dark:text-amber-500 shrink-0" />
                       <span>Booking relationship</span>
@@ -1014,6 +1104,19 @@ export default function BookingDetailsPage() {
                       {relationshipText}
                     </span>
                   </div>
+
+                  {/* Account Owner Row if someone else */}
+                  {isSomeoneElse && (
+                    <div className="flex items-center justify-between text-xs sm:text-[13px]">
+                      <div className="flex items-center gap-2.5 text-neutral-500 dark:text-neutral-400">
+                        <User size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span>Account owner</span>
+                      </div>
+                      <span className="font-bold text-neutral-900 dark:text-white truncate max-w-[210px]">
+                        {accountOwnerFullName}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1021,114 +1124,262 @@ export default function BookingDetailsPage() {
 
           {/* Card B: Academic Profile Card (Dark Charcoal) */}
           <section className="bg-[#18191c] text-white rounded-[32px] border border-neutral-800 p-8 sm:p-10 shadow-xs">
-            {/* Top Row: Eyebrow + Class of Year + Cap Icon */}
+            {/* Top Row: Eyebrow + Class of Year + Cap Icon & Edit Profile Action */}
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-[0.24em] text-neutral-400 mb-2">
                   Academic Profile
                 </p>
                 <h3 className="font-heading font-medium text-3xl sm:text-4xl text-white tracking-tight">
-                  Class of <span className="text-amber-500 font-serif">{gradYear}</span>
+                  {gradYear ? (
+                    <>Class of <span className="text-amber-500 font-serif">{gradYear}</span></>
+                  ) : (
+                    'Academic Profile'
+                  )}
                 </h3>
               </div>
-              <div className="text-amber-500/90 pt-1 shrink-0">
-                <GraduationCap size={28} strokeWidth={1.5} />
-              </div>
-            </div>
-
-            {/* Bottom Grid: Institution on left, Track/Section/ID on right */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-8 border-t border-neutral-800/90 pt-8 mt-7 items-start">
-              {/* Left: School Name & Location */}
-              <div className="md:col-span-6 lg:col-span-7 pr-2 sm:pr-4">
-                <p className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-[0.22em] text-[#c77826] dark:text-amber-500/90 mb-3">
-                  Institution
-                </p>
-                <h4 className="font-heading font-normal text-2xl sm:text-3xl lg:text-[34px] text-white leading-[1.18] max-w-sm">
-                  {schoolName}
-                </h4>
-                <div className="flex items-center gap-1.5 text-xs text-neutral-400 mt-4 font-light">
-                  <MapPin size={13} className="text-neutral-500 shrink-0" />
-                  <span>{schoolLocation}</span>
-                </div>
-              </div>
-
-              {/* Right: Track, Section, Student ID (Left-aligned column layout matching reference design) */}
-              <div className="md:col-span-6 lg:col-span-5 space-y-4">
-                {/* Track */}
-                <div className="flex items-start gap-6 sm:gap-10 pb-3.5 border-b border-neutral-800/80">
-                  <span className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-wider text-neutral-400 w-24 sm:w-28 shrink-0 pt-0.5">
-                    Track
-                  </span>
-                  <div>
-                    <p className="text-base sm:text-[17px] font-bold text-white leading-tight">
-                      {trackName}
-                    </p>
-                    <p className="text-xs text-neutral-400 font-light mt-0.5">
-                      {educationType}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Section */}
-                <div className="flex items-start gap-6 sm:gap-10 pb-3.5 border-b border-neutral-800/80">
-                  <span className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-wider text-neutral-400 w-24 sm:w-28 shrink-0 pt-0.5">
-                    Section
-                  </span>
-                  <div>
-                    <p className="text-base sm:text-[17px] font-bold text-white leading-tight">
-                      {sectionName}
-                    </p>
-                    <p className="text-xs text-neutral-400 font-light mt-0.5">
-                      {batchDisplay}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Student ID */}
-                <div className="flex items-start gap-6 sm:gap-10 pt-0.5">
-                  <span className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-wider text-neutral-400 w-24 sm:w-28 shrink-0 pt-0.5">
-                    Student ID
-                  </span>
-                  <div>
-                    <p className="text-base sm:text-[17px] font-bold text-white font-mono leading-tight">
-                      {studentId}
-                    </p>
-                    <p className="text-xs text-neutral-400 font-light mt-0.5">
-                      Verified record
-                    </p>
-                  </div>
+              <div className="flex items-center gap-3">
+                {!isEditingAcademic && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAcademicForm({
+                        school: studentDossier?.school || '',
+                        school_address: studentDossier?.school_address || '',
+                        course: studentDossier?.course || '',
+                        section: studentDossier?.section || '',
+                        batch: studentDossier?.batch || '',
+                        student_id: studentDossier?.student_id || '',
+                        yearbook_motto: studentDossier?.yearbook_motto || '',
+                      });
+                      setIsEditingAcademic(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-700 hover:border-amber-500/80 text-neutral-300 hover:text-amber-400 text-xs font-medium transition-all cursor-pointer"
+                  >
+                    <PenLine size={12} />
+                    <span>Edit Profile</span>
+                  </button>
+                )}
+                <div className="text-amber-500/90 pt-1 shrink-0">
+                  <GraduationCap size={28} strokeWidth={1.5} />
                 </div>
               </div>
             </div>
 
-            {/* Yearbook Motto Display (if available in academic profile) */}
-            {hasMotto && (
-              <div className="mt-8 pt-6 border-t border-neutral-800/80 flex items-start gap-3.5">
-                <Quote size={18} className="text-amber-500 shrink-0 mt-0.5" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <p className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
+            {isEditingAcademic ? (
+              <form onSubmit={handleSaveAcademicProfile} className="border-t border-neutral-800/90 pt-6 mt-7 space-y-5 animate-fade-in">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
+                      School / Institution Name
+                    </label>
+                    <input
+                      type="text"
+                      value={academicForm.school}
+                      onChange={(e) => setAcademicForm(prev => ({ ...prev, school: e.target.value }))}
+                      placeholder="e.g. Lipata Senior High School"
+                      className="w-full h-10 px-3.5 bg-neutral-900 border border-neutral-700 rounded-xl text-xs sm:text-sm text-white focus:border-amber-500 outline-none transition-all placeholder:text-neutral-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
+                      Campus / Address
+                    </label>
+                    <input
+                      type="text"
+                      value={academicForm.school_address}
+                      onChange={(e) => setAcademicForm(prev => ({ ...prev, school_address: e.target.value }))}
+                      placeholder="e.g. Lipata, Minglanilla, Cebu"
+                      className="w-full h-10 px-3.5 bg-neutral-900 border border-neutral-700 rounded-xl text-xs sm:text-sm text-white focus:border-amber-500 outline-none transition-all placeholder:text-neutral-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
+                      Track / Strand / Degree
+                    </label>
+                    <input
+                      type="text"
+                      value={academicForm.course}
+                      onChange={(e) => setAcademicForm(prev => ({ ...prev, course: e.target.value }))}
+                      placeholder="e.g. ABM, STEM, TVL, BSIT"
+                      className="w-full h-10 px-3.5 bg-neutral-900 border border-neutral-700 rounded-xl text-xs sm:text-sm text-white focus:border-amber-500 outline-none transition-all placeholder:text-neutral-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
+                      Section
+                    </label>
+                    <input
+                      type="text"
+                      value={academicForm.section}
+                      onChange={(e) => setAcademicForm(prev => ({ ...prev, section: e.target.value }))}
+                      placeholder="e.g. Section A, Mayana"
+                      className="w-full h-10 px-3.5 bg-neutral-900 border border-neutral-700 rounded-xl text-xs sm:text-sm text-white focus:border-amber-500 outline-none transition-all placeholder:text-neutral-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
+                      Batch / Graduating Year
+                    </label>
+                    <input
+                      type="text"
+                      value={academicForm.batch}
+                      onChange={(e) => setAcademicForm(prev => ({ ...prev, batch: e.target.value }))}
+                      placeholder="e.g. 2026"
+                      className="w-full h-10 px-3.5 bg-neutral-900 border border-neutral-700 rounded-xl text-xs sm:text-sm text-white focus:border-amber-500 outline-none transition-all placeholder:text-neutral-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
+                      Student ID Number
+                    </label>
+                    <input
+                      type="text"
+                      value={academicForm.student_id}
+                      onChange={(e) => setAcademicForm(prev => ({ ...prev, student_id: e.target.value }))}
+                      placeholder="e.g. 12-2026-00492"
+                      className="w-full h-10 px-3.5 bg-neutral-900 border border-neutral-700 rounded-xl text-xs sm:text-sm text-white font-mono focus:border-amber-500 outline-none transition-all placeholder:text-neutral-500"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
                       Yearbook Motto
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMottoInput(studentDossier?.yearbook_motto || '');
-                        setIsEditingMotto(true);
-                        const el = document.getElementById('motto-editor-section');
-                        if (el) el.scrollIntoView({ behavior: 'smooth' });
-                      }}
-                      className="text-[11px] text-amber-500 hover:text-amber-400 font-medium inline-flex items-center gap-1 cursor-pointer transition-colors"
-                    >
-                      <PenLine size={11} />
-                      <span>Edit</span>
-                    </button>
+                    </label>
+                    <input
+                      type="text"
+                      value={academicForm.yearbook_motto}
+                      onChange={(e) => setAcademicForm(prev => ({ ...prev, yearbook_motto: e.target.value }))}
+                      placeholder="Enter personal yearbook motto..."
+                      className="w-full h-10 px-3.5 bg-neutral-900 border border-neutral-700 rounded-xl text-xs sm:text-sm text-white italic focus:border-amber-500 outline-none transition-all placeholder:text-neutral-500"
+                    />
                   </div>
-                  <p className="font-serif italic text-sm sm:text-base text-neutral-200 leading-relaxed">
-                    “{studentDossier.yearbook_motto}”
-                  </p>
                 </div>
-              </div>
+
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-neutral-800">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingAcademic(false)}
+                    disabled={savingAcademic}
+                    className="px-4 py-2 rounded-full border border-neutral-700 hover:border-neutral-500 text-neutral-300 hover:text-white text-xs font-semibold cursor-pointer transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingAcademic}
+                    className="px-5 py-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5"
+                  >
+                    {savingAcademic ? (
+                      <><Loader2 size={13} className="animate-spin" /> Saving...</>
+                    ) : (
+                      <><Check size={13} /> Save Academic Profile</>
+                    )}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <>
+                {/* Bottom Grid: Institution on left, Track/Section/ID on right */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-8 border-t border-neutral-800/90 pt-8 mt-7 items-start">
+                  {/* Left: School Name & Location */}
+                  <div className="md:col-span-6 lg:col-span-7 pr-2 sm:pr-4">
+                    <p className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-[0.22em] text-[#c77826] dark:text-amber-500/90 mb-3">
+                      Institution
+                    </p>
+                    <h4 className="font-heading font-normal text-2xl sm:text-3xl lg:text-[34px] text-white leading-[1.18] max-w-sm">
+                      {schoolName}
+                    </h4>
+                    <div className="flex items-center gap-1.5 text-xs text-neutral-400 mt-4 font-light">
+                      <MapPin size={13} className="text-neutral-500 shrink-0" />
+                      <span>{schoolLocation}</span>
+                    </div>
+                  </div>
+
+                  {/* Right: Track, Section, Student ID (Left-aligned column layout matching reference design) */}
+                  <div className="md:col-span-6 lg:col-span-5 space-y-4">
+                    {/* Track */}
+                    <div className="flex items-start gap-6 sm:gap-10 pb-3.5 border-b border-neutral-800/80">
+                      <span className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-wider text-neutral-400 w-24 sm:w-28 shrink-0 pt-0.5">
+                        Track / Course
+                      </span>
+                      <div>
+                        <p className="text-base sm:text-[17px] font-bold text-white leading-tight">
+                          {trackName}
+                        </p>
+                        <p className="text-xs text-neutral-400 font-light mt-0.5">
+                          {educationType}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Section */}
+                    <div className="flex items-start gap-6 sm:gap-10 pb-3.5 border-b border-neutral-800/80">
+                      <span className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-wider text-neutral-400 w-24 sm:w-28 shrink-0 pt-0.5">
+                        Section
+                      </span>
+                      <div>
+                        <p className="text-base sm:text-[17px] font-bold text-white leading-tight">
+                          {sectionName}
+                        </p>
+                        <p className="text-xs text-neutral-400 font-light mt-0.5">
+                          {batchDisplay}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Student ID */}
+                    <div className="flex items-start gap-6 sm:gap-10 pt-0.5">
+                      <span className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-wider text-neutral-400 w-24 sm:w-28 shrink-0 pt-0.5">
+                        Student ID
+                      </span>
+                      <div>
+                        <p className="text-base sm:text-[17px] font-bold text-white font-mono leading-tight">
+                          {studentId}
+                        </p>
+                        <p className="text-xs text-neutral-400 font-light mt-0.5">
+                          {studentId && studentId !== 'Not provided' && studentId !== 'N/A' ? 'Verified student record' : 'Not submitted'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Yearbook Motto Display (if available in academic profile) */}
+                {hasMotto && (
+                  <div className="mt-8 pt-6 border-t border-neutral-800/80 flex items-start gap-3.5">
+                    <Quote size={18} className="text-amber-500 shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className="text-[10px] sm:text-[10.5px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
+                          Yearbook Motto
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMottoInput(studentDossier?.yearbook_motto || '');
+                            setIsEditingMotto(true);
+                            const el = document.getElementById('motto-editor-section');
+                            if (el) el.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          className="text-[11px] text-amber-500 hover:text-amber-400 font-medium inline-flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <PenLine size={11} />
+                          <span>Edit</span>
+                        </button>
+                      </div>
+                      <p className="font-serif italic text-sm sm:text-base text-neutral-200 leading-relaxed">
+                        “{studentDossier.yearbook_motto}”
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </section>
 

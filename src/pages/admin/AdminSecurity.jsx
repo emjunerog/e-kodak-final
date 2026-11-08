@@ -676,7 +676,7 @@ export default function AdminSecurity() {
                   Role-Based Access Control (RBAC) Permission Matrix
                 </h3>
                 <p className="text-xs text-neutral-500 mt-0.5">
-                  Granular permission allocation across Administrator, Studio Staff, Assigned Photographers, and Clients.
+                  Granular permission allocation across Administrator, Assigned Photographers, and Clients.
                 </p>
               </div>
             </div>
@@ -688,7 +688,6 @@ export default function AdminSecurity() {
                     <th className="py-3 px-3">Resource / Operation</th>
                     <th className="py-3 px-3">Level</th>
                     <th className="py-3 px-3 font-bold text-neutral-900">Administrator</th>
-                    <th className="py-3 px-3 text-amber-800 font-bold">Staff</th>
                     <th className="py-3 px-3 text-neutral-600">Photographer</th>
                     <th className="py-3 px-3 text-neutral-500">Customer</th>
                   </tr>
@@ -703,7 +702,6 @@ export default function AdminSecurity() {
                         </span>
                       </td>
                       <td className="py-2.5 px-3 font-semibold text-emerald-800">{row.admin}</td>
-                      <td className="py-2.5 px-3 font-medium text-neutral-700">{row.staff}</td>
                       <td className="py-2.5 px-3 text-neutral-600">{row.photographer}</td>
                       <td className="py-2.5 px-3 text-neutral-500">{row.customer}</td>
                     </tr>

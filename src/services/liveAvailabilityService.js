@@ -4,7 +4,7 @@
  * Real-Time Booking & Scheduling Availability Engine for E-Kodak Studio.
  *
  * Core Business Rules (Ordinates):
- * 1. Hourly Slot Sessions (Individual Academic College/SHS, Portraits, Corporate):
+ * 1. Hourly Slot Sessions (Individual Academic College/SHS, Portraits):
  *    - 8 discrete 1-hour camera bay slots (8:00 AM – 5:00 PM).
  *    - Live Slot Locking: If a slot (e.g., 10:00 AM – 11:00 AM) is booked for Date X,
  *      that slot becomes unavailable/disabled for all other customers booking on that day.
@@ -12,9 +12,6 @@
  *    - Graduation batch shoots take the entire day.
  *    - When booked, the ENTIRE DAY is blocked from all other customers.
  *    - Admin can edit and extend this if the pictorial takes 2 or more days.
- * 3. Wedding Photo & Video Orders:
- *    - Full-day shoot. Selecting the date locks the ENTIRE DAY from other bookings.
- *    - Admin retains override controls.
  */
 
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
@@ -138,12 +135,7 @@ export function isFullDayBooking(b) {
   const serviceName = (b.service?.name || "").toLowerCase();
   const tierName = (b.tier_name || "").toLowerCase();
 
-  // 1. Wedding service
-  if (serviceSlug.includes("wedding") || serviceName.includes("wedding") || notes.includes("[wedding details]")) {
-    return { isBlocked: true, reason: "Wedding Photo & Video Coverage" };
-  }
-
-  // 2. School Section booking
+  // 1. School Section booking
   if (
     notes.includes("school section representative") ||
     notes.includes("[school_partner]") ||
@@ -155,7 +147,7 @@ export function isFullDayBooking(b) {
     return { isBlocked: true, reason: "School Batch Pictorial Session" };
   }
 
-  // 3. Admin date blackout
+  // 2. Admin date blackout
   if (tierName === "admin_block" || notes.includes("[admin_block]")) {
     return { isBlocked: true, reason: b.notes || "Studio Maintenance / Reserved Date" };
   }
@@ -166,7 +158,7 @@ export function isFullDayBooking(b) {
 /**
  * Fetches live availability for a single date
  * @param {string} dateStr - 'YYYY-MM-DD'
- * @param {object} context - { isWedding, isSchoolSection, serviceSlug }
+ * @param {object} context - { isSchoolSection, serviceSlug }
  */
 export async function fetchDateAvailability(dateStr, context = {}) {
   if (!dateStr) {
@@ -333,7 +325,7 @@ export async function fetchDateAvailability(dateStr, context = {}) {
       totalAvailable: 0,
       totalSlots: STUDIO_HOURLY_SLOTS.length,
       isSchoolBatchDay: fullDayLock.toLowerCase().includes("school"),
-      isWeddingDay: fullDayLock.toLowerCase().includes("wedding"),
+      isWeddingDay: false,
     };
   }
 

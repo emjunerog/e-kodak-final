@@ -47,18 +47,12 @@ function fmtTimeOnly(d) {
 
 function RoleBadge({ role }) {
   const norm = (role || '').toLowerCase();
-  let label = 'Staff';
-  let Icon = Briefcase;
+  let label = 'Photographer';
+  let Icon = Camera;
 
   if (norm === 'admin') {
     label = 'Admin';
     Icon = Shield;
-  } else if (norm === 'finance') {
-    label = 'Finance';
-    Icon = CreditCard;
-  } else if (norm === 'photographer') {
-    label = 'Photographer';
-    Icon = Camera;
   }
 
   return (
@@ -96,7 +90,7 @@ export default function AdminStaff() {
     firstName: '',
     lastName: '',
     email: '',
-    role: 'staff',
+    role: 'photographer',
     phone: '',
     specialization: '',
     bio: '',
@@ -171,12 +165,10 @@ export default function AdminStaff() {
       if (w.is_active) active++;
       const r = (w.role || '').toLowerCase();
       if (r === 'photographer') photographers++;
-      else if (r === 'finance') finance++;
-      else if (r === 'staff') staff++;
       else if (r === 'admin') admin++;
     });
 
-    return { total, online, photographers, finance, staff, admin, active };
+    return { total, online, photographers, admin, active };
   }, [workers, liveOnlineMap]);
 
   // Filtered workers
@@ -203,7 +195,7 @@ export default function AdminStaff() {
       firstName: '',
       lastName: '',
       email: '',
-      role: 'staff',
+      role: 'photographer',
       phone: '',
       specialization: '',
       bio: '',
@@ -220,7 +212,7 @@ export default function AdminStaff() {
       firstName: worker.first_name || '',
       lastName: worker.last_name || '',
       email: worker.email || '',
-      role: worker.role || 'staff',
+      role: worker.role || 'photographer',
       phone: worker.phone || '',
       specialization: worker.specialization || '',
       bio: worker.bio || '',
@@ -323,15 +315,15 @@ export default function AdminStaff() {
       <AdminHeroBanner
         station="admin"
         userName={profile?.full_name || user?.email?.split('@')[0] || 'Administrator'}
-        title="Studio Staff & Worker Management"
-        subtitle="Provision team accounts, configure authorizations, and manage operational privileges."
+        title="Studio Team Management"
+        subtitle="Manage studio administrators and official photographers."
         primaryAction={{
-          label: 'Add Worker',
+          label: 'Add Team Member',
           icon: Plus,
           onClick: openAdd
         }}
         secondaryAction={{
-          label: 'Export Roster CSV',
+          label: 'Export Team CSV',
           icon: Download,
           onClick: handleExportCsv
         }}
@@ -367,12 +359,12 @@ export default function AdminStaff() {
       {/* ── 2. Unified Luxury Studio KPI Overview Metric Strip ─────────────── */}
       <CategorizedMetricStrip
         loading={loading}
-        columns="grid-cols-2 sm:grid-cols-3 lg:grid-cols-5"
+        columns="grid-cols-1 sm:grid-cols-3"
         cards={[
           {
             key: 'ALL',
             label: 'PERSONNEL',
-            subtitle: 'Registered workforce',
+            subtitle: 'Registered team members',
             value: stats.total,
             isActive: roleFilter === 'ALL',
             onClick: () => setRoleFilter('ALL'),
@@ -392,22 +384,6 @@ export default function AdminStaff() {
             value: stats.photographers,
             isActive: roleFilter === 'photographer',
             onClick: () => setRoleFilter(roleFilter === 'photographer' ? 'ALL' : 'photographer'),
-          },
-          {
-            key: 'FINANCE',
-            label: 'FINANCE',
-            subtitle: 'Cashiers & ledger staff',
-            value: stats.finance,
-            isActive: roleFilter === 'finance',
-            onClick: () => setRoleFilter(roleFilter === 'finance' ? 'ALL' : 'finance'),
-          },
-          {
-            key: 'STAFF',
-            label: 'FRONT DESK',
-            subtitle: 'Operations & intake desk',
-            value: stats.staff,
-            isActive: roleFilter === 'staff',
-            onClick: () => setRoleFilter(roleFilter === 'staff' ? 'ALL' : 'staff'),
           },
         ]}
       />
@@ -495,10 +471,8 @@ export default function AdminStaff() {
                 onChange={setRoleFilter}
                 options={[
                   { value: 'ALL', label: `All Personnel (${stats.total})`, icon: Users },
+                  { value: 'admin', label: `Administrators (${stats.admin})`, icon: Shield },
                   { value: 'photographer', label: `Photographers (${stats.photographers})`, icon: Camera },
-                  { value: 'finance', label: `Finance (${stats.finance})`, icon: CreditCard },
-                  { value: 'staff', label: `Front Desk Staff (${stats.staff})`, icon: Briefcase },
-                  { value: 'admin', label: `Administrators (${stats.admin})`, icon: Shield }
                 ]}
                 placeholder="Filter by Role"
                 icon={Briefcase}
@@ -739,8 +713,6 @@ export default function AdminStaff() {
                 className="w-full px-3 py-2 bg-neutral-50/60 border border-neutral-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-gold/30 focus:bg-white"
               >
                 <option value="photographer">Photographer</option>
-                <option value="finance">Finance Officer</option>
-                <option value="staff">Frontdesk / Staff</option>
                 <option value="admin">Administrator</option>
               </select>
             </div>

@@ -16,26 +16,32 @@ import { recordAdminActivity } from './workstationService';
 
 export const ALL_BOOKING_STATUSES = [
   'PENDING', 'CONFIRMED', 'PHOTOGRAPHER_ASSIGNED',
-  'CAPTURE', 'EDITING', 'PRINTING', 'READY', 'COMPLETED',
+  'CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING',
+  'FINALIZED', 'PRINTING', 'READY', 'UNDER_DELIVERY', 'COMPLETED',
   'REJECTED', 'CANCELLED',
 ];
 
 export const ALL_PAYMENT_STATUSES = ['UNPAID', 'PARTIAL', 'PAID', 'REFUNDED'];
 
 export const PENDING_ACTIONS = ['CONFIRMED', 'REJECTED'];
-export const CONFIRMED_ACTIONS = []; // Photographer assignment is a future module
+export const CONFIRMED_ACTIONS = ['PHOTOGRAPHER_ASSIGNED'];
 
 // Statuses that a staff member can advance to from a given status.
 // Only linear transitions through the backend lifecycle are allowed.
 // The DB constraint (bookings_status_check) guards the values, but ordering
 // is an application-level rule — not a DB-enforced trigger in the current schema.
 export const NEXT_STATUS_MAP = {
+  PENDING:               'CONFIRMED',
   CONFIRMED:             'PHOTOGRAPHER_ASSIGNED',
   PHOTOGRAPHER_ASSIGNED: 'CAPTURE',
   CAPTURE:               'EDITING',
-  EDITING:               'PRINTING',
+  IN_PROGRESS:           'EDITING',
+  EDITING:               'RETOUCHING',
+  RETOUCHING:            'FINALIZED',
+  FINALIZED:             'PRINTING',
   PRINTING:              'READY',
   READY:                 'COMPLETED',
+  UNDER_DELIVERY:        'COMPLETED',
 };
 
 // ── List Queries ───────────────────────────────────────────────────────────────
@@ -288,6 +294,18 @@ export async function getBookingDetail(id) {
       booking.booking_status_history = history || [];
     } catch {
       booking.booking_status_history = [];
+    }
+
+    // 4. Fetch photo_outputs deliverables separately
+    try {
+      const { data: outputs } = await supabase
+        .from('photo_outputs')
+        .select('id, file_name, file_path, file_type, status, created_at')
+        .eq('booking_id', id)
+        .order('created_at', { ascending: false });
+      booking.photo_outputs = outputs || [];
+    } catch {
+      booking.photo_outputs = [];
     }
 
     // Parse add-ons, student details & participant details from notes
@@ -1118,7 +1136,7 @@ export async function unassignPhotographer({
 export async function softDeleteBooking({
   bookingId,
   deletedById = null,
-  deletedByName = 'Staff/Admin',
+  deletedByName = 'Admin',
   reason = 'Archived by Admin',
 }) {
   if (!isSupabaseConfigured) return { success: true, error: null };
@@ -1247,7 +1265,7 @@ export async function softDeleteBooking({
 export async function restoreBooking({
   bookingId,
   restoredById = null,
-  restoredByName = 'Staff/Admin',
+  restoredByName = 'Admin',
 }) {
   if (!isSupabaseConfigured) return { success: true, error: null };
 
@@ -1356,7 +1374,7 @@ export async function restoreBooking({
 export async function deleteBookingPermanently({
   bookingId,
   deletedById = null,
-  deletedByName = 'Staff/Admin',
+  deletedByName = 'Admin',
   reason = 'Admin deletion request'
 }) {
   if (!isSupabaseConfigured) return { success: true, error: null };
@@ -1481,7 +1499,7 @@ export async function deleteBookingPermanently({
  * Permanently removes all soft-deleted bookings from the database in bulk,
  * cascading child dependencies and recording a single bulk purge audit log.
  */
-export async function emptyTrash({ deletedById = null, deletedByName = 'Staff/Admin' } = {}) {
+export async function emptyTrash({ deletedById = null, deletedByName = 'Admin' } = {}) {
   if (!isSupabaseConfigured) return { success: true, count: 0, error: null };
 
   try {

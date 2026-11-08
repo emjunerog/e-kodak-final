@@ -115,7 +115,7 @@ export default function ServiceCard({
         {/* Deliverables / Feature Tag + CTA (No price) */}
         <div className="flex items-center justify-between mt-auto pt-4 border-t border-neutral-100">
           <span className="font-body text-neutral-400 text-xs font-medium uppercase tracking-wider">
-            {category === "wedding-video" ? "Cinematic 4K · Drone · MTV" : "Full Ceremony & Reception"}
+            {category?.includes("video") ? "Cinematic 4K · Drone" : "Studio Portrait Session"}
           </span>
           <Link
             to={to}

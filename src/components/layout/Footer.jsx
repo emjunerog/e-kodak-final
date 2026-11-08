@@ -66,8 +66,6 @@ const currentYear = new Date().getFullYear();
 const footerServices = [
   { label: "College Packages and sets",     to: "/services" },
   { label: "Senior High Packages and sets", to: "/services" },
-  { label: "Video / Wedding Packages",      to: "/services" },
-  { label: "Photo / Wedding Services",      to: "/services" },
 ];
 
 export default function Footer() {

@@ -1872,12 +1872,10 @@ function CategoriesView({ categories = [], services = [], onRefresh }) {
     const knownKeys = new Set(list.map(c => (c.name || '').trim().toLowerCase()));
 
     // Active canonical database services categories:
-    // Senior High, College, Video / Wedding, Photo / Wedding
+    // Senior High, College
     const canonicalMap = {
       'senior-high': { name: 'Senior High Packages', desc: 'Senior High School graduation portraits & studio inclusions' },
       'college': { name: 'College Packages', desc: 'Tertiary academic milestones, commencement regalia & sets' },
-      'wedding-video': { name: 'Video / Wedding Packages', desc: 'Cinematic wedding films, highlights & audio coverage' },
-      'wedding-photo': { name: 'Photo / Wedding Services', desc: 'Full-day wedding photography, prenup sessions & albums' },
     };
 
     services.forEach(s => {
@@ -1952,7 +1950,7 @@ function CategoriesView({ categories = [], services = [], onRefresh }) {
         <div>
           <h3 className="font-heading text-sm font-bold text-primary">Service Categories in Database</h3>
           <p className="text-xs text-neutral-500">
-            Currently active catalog offerings: <strong>Senior High</strong>, <strong>College</strong>, <strong>Video / Wedding</strong>, and <strong>Photo / Wedding</strong> services.
+            Currently active catalog offerings: <strong>Senior High</strong> and <strong>College</strong> graduation packages.
           </p>
         </div>
         <div className="flex items-center gap-2">

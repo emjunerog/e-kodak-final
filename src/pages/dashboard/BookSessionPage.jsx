@@ -9,14 +9,14 @@ import {
   ChevronDown, ChevronUp, Eye, Trash2, ShieldCheck, AlertCircle, FileText,
   Video, Edit3, Lock, Palette, UploadCloud, MessageSquare, Plus,
   Timer, BellRing, CreditCard, Copy, Printer, Receipt, Download, CheckCircle2, UserCheck, Wifi, WifiOff, Signal,
-  Sun, Sunset
+  Sun, Sunset, Shield, Pencil
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { createBooking, SERVICE_SLUG_TO_UUID, toDatabaseTime } from "../../services/bookingService";
 import { customerPaymentService } from "../../services/customerPaymentService";
 import { xenditPaymentService } from "../../services/xenditPaymentService";
-import { sendBookingConfirmationEmail } from "../../services/emailService";
+import { sendBookingConfirmationEmail, sendPaymentVerificationOtpEmail } from "../../services/emailService";
 import { getServices, getAddOns } from "../../services/contentService";
 import { SERVICES } from "../../data/servicesData";
 import { assignPhotographer } from "../../services/aiAssignmentService";
@@ -69,7 +69,7 @@ function formatSessionTime(timeStr) {
   if (!timeStr) return "8:00 AM – 9:00 AM";
   if (typeof timeStr === "string") {
     const trimmed = timeStr.trim();
-    if (trimmed.toLowerCase().includes("school batch") || trimmed.toLowerCase().includes("wedding")) {
+    if (trimmed.toLowerCase().includes("school batch")) {
       return trimmed;
     }
     // If it's already an hourly range like "8:00 AM – 9:00 AM" or "3:00 PM – 4:00 PM"
@@ -128,12 +128,6 @@ const SPECIAL_REQUEST_TEMPLATES = {
     { label: "Charcoal Dark Backdrop", text: "Preference for rich dark charcoal / black backdrop." },
     { label: "Crisp White Backdrop", text: "Preference for clean high-key white backdrop." },
   ],
-  wedding: [
-    { label: "Veil Portraits", text: "Backlit sweeping veil portraits." },
-    { label: "Candid Couple", text: "Unposed candid moments between couple." },
-    { label: "Family Formals", text: "Immediate family and entourage group shots." },
-    { label: "Black & White", text: "Include high-contrast monochrome edits." }
-  ],
   corporate: [
     { label: "Gray Backdrop", text: "Neutral executive gray gradient backdrop." },
     { label: "Clean White", text: "Crisp white studio portrait." },
@@ -151,16 +145,12 @@ const getServiceDisplayName = (svc) => {
   const s = (svc?.slug || svc?.name || "").toLowerCase();
   if (s.includes("college")) return "College";
   if (s.includes("senior") || s.includes("shs")) return "Senior High";
-  if (s.includes("video")) return "Wedding Video";
-  if (s.includes("wedding") || s.includes("photo")) return "Wedding Photo";
   return svc?.category || svc?.name || "Service";
 };
 
 const getServiceIcon = (svc) => {
   const s = (svc?.slug || svc?.name || "").toLowerCase();
   if (s.includes("college") || s.includes("senior")) return <GraduationCap size={15} className="text-gold shrink-0" />;
-  if (s.includes("video")) return <Sparkles size={15} className="text-gold shrink-0" />;
-  if (s.includes("wedding") || s.includes("photo")) return <Camera size={15} className="text-gold shrink-0" />;
   return <Package size={15} className="text-gold shrink-0" />;
 };
 
@@ -612,8 +602,6 @@ const getInclusionConfig = (text = "") => {
 const SERVICE_COVER_MAP = {
   "college-packages": "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=900&q=80&auto=format&fit=crop",
   "senior-high-packages": "https://images.unsplash.com/photo-1627556592933-ffe99c1cd9eb?w=900&q=80&auto=format&fit=crop",
-  "wedding-video": "https://images.unsplash.com/photo-1519741497674-611481863552?w=900&q=80&auto=format&fit=crop",
-  "wedding-photo": "https://images.unsplash.com/photo-1519225421980-715cb0215aed?w=900&q=80&auto=format&fit=crop",
 };
 
 // ── Currency Parser ───────────────────────────────────────────────────────────
@@ -728,7 +716,7 @@ function ReviewAccordionItem({
 }
 
 export default function BookingPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const initialServiceSlug = searchParams.get("service");
   const initialTierName = searchParams.get("tier");
   
@@ -1006,7 +994,14 @@ export default function BookingPage() {
   const [error, setError] = useState("");
 
   // Form Step State (1-7)
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(() => {
+    try {
+      const stepParam = searchParams.get("step");
+      if (stepParam && !isNaN(Number(stepParam))) return Number(stepParam);
+      if (searchParams.get("payment_status") === "success") return 7;
+    } catch {}
+    return 1;
+  });
   const [selectedService, setSelectedService] = useState(null);
   const [hoveredServiceId, setHoveredServiceId] = useState(null);
   const [selectedTier, setSelectedTier] = useState(null);
@@ -1026,13 +1021,52 @@ export default function BookingPage() {
   const [gatewayError, setGatewayError] = useState("");
   const [gatewayTxnRef, setGatewayTxnRef] = useState("");
   const [gatewayOrNumber, setGatewayOrNumber] = useState("");
-  const [paymentReceiptData, setPaymentReceiptData] = useState(null);
+  const [paymentReceiptData, setPaymentReceiptData] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('ekodak_active_receipt_data');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return null;
+  });
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [gatewayClearingStage, setGatewayClearingStage] = useState(0);
   const [showManualRefInput, setShowManualRefInput] = useState(false);
   const [isRedirectingToXendit, setIsRedirectingToXendit] = useState(false);
   const [xenditPermissionNotice, setXenditPermissionNotice] = useState(null);
   const [emailStatus, setEmailStatus] = useState({ state: "idle", message: "" });
+
+  // ── Step 6: Payment Security Verification Code (OTP) State ───────────────
+  const [showPaymentOtpModal, setShowPaymentOtpModal] = useState(false);
+  const [paymentOtpCode, setPaymentOtpCode] = useState("");
+  const [enteredPaymentOtp, setEnteredPaymentOtp] = useState("");
+  const [paymentOtpExpiry, setPaymentOtpExpiry] = useState(null);
+  const [isSendingPaymentOtp, setIsSendingPaymentOtp] = useState(false);
+  const [paymentOtpError, setPaymentOtpError] = useState("");
+  const [paymentOtpCountdown, setPaymentOtpCountdown] = useState(0);
+  const [pendingPaymentChannel, setPendingPaymentChannel] = useState(null);
+  const [targetOtpEmail, setTargetOtpEmail] = useState("");
+  const [isEditingTargetOtpEmail, setIsEditingTargetOtpEmail] = useState(false);
+  const [editTargetOtpEmailInput, setEditTargetOtpEmailInput] = useState("");
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [otpVerifyStage, setOtpVerifyStage] = useState("idle"); // "idle" | "checking" | "verified"
+  const otpInputRef = useRef(null);
+
+  useEffect(() => {
+    if (paymentOtpCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setPaymentOtpCountdown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [paymentOtpCountdown]);
+
+  useEffect(() => {
+    if (showPaymentOtpModal) {
+      const timer = setTimeout(() => {
+        otpInputRef.current?.focus();
+      }, 120);
+      return () => clearTimeout(timer);
+    }
+  }, [showPaymentOtpModal]);
 
   const handleResendConfirmationEmail = async (overrideTarget = null, activeBookingOverride = null) => {
     const activeBooking = activeBookingOverride || bookingResult;
@@ -1058,6 +1092,7 @@ export default function BookingPage() {
         recipientName: participantFullName || accountOwnerFullName || "Valued Client",
         bookingNumber: activeBooking?.booking_number || "BK-2026-00001",
         bookingId: activeBooking?.id,
+        receiptNumber: gatewayOrNumber || `OR-2026-${Math.floor(10000 + Math.random() * 90000)}`,
         packageName: selectedService?.name || "Photoshoot Session",
         tierName: selectedTier?.name || "Standard",
         eventDate: formatTextualDate(eventDate),
@@ -1065,8 +1100,10 @@ export default function BookingPage() {
         location: resolvedLocation,
         downpaymentAmount: downPaymentAmount,
         remainingBalance: remainingBalance,
+        totalAmount: totalAmount,
         paymentMethod: (selectedPaymentGateway || "gcash").toUpperCase(),
-        paymentReference: paymentReferenceNumber || gatewayTxnRef || `REF-${Date.now()}`
+        paymentReference: paymentReferenceNumber || gatewayTxnRef || `REF-${Date.now()}`,
+        bookingUrl: typeof window !== "undefined" ? `${window.location.origin}/dashboard/bookings` : "https://e-kodak.ph/dashboard/bookings"
       });
       if (res?.success) {
         setEmailStatus({ state: "sent", message: `Confirmation email sent to ${targetEmail}!` });
@@ -1078,7 +1115,175 @@ export default function BookingPage() {
     }
   };
 
+  const handleInitiatePaymentWithSecurityOtp = async (targetChannel = null) => {
+    const activeChannel = targetChannel || selectedPaymentGateway || "gcash";
+    setPendingPaymentChannel(activeChannel);
+
+    const activeP = customerProfile || profile;
+    const accountOwnerFullName = [activeP?.first_name || user?.user_metadata?.first_name || "", activeP?.last_name || user?.user_metadata?.last_name || ""].filter(Boolean).join(" ") || "Client";
+    const participantFullName = [participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") || (bookingFor === "myself" ? accountOwnerFullName : "Participant");
+
+    const targetEmail = (
+      targetOtpEmail ||
+      participantEmail ||
+      customerProfile?.email ||
+      profile?.email ||
+      user?.email ||
+      ""
+    );
+
+    if (!targetEmail) {
+      setValidationError("A valid client email address is required to receive the payment authorization verification code.");
+      return;
+    }
+
+    setTargetOtpEmail(targetEmail);
+    setIsEditingTargetOtpEmail(false);
+    setValidationError("");
+    setPaymentOtpError("");
+    setEnteredPaymentOtp("");
+    setShowPaymentOtpModal(true);
+    setIsSendingPaymentOtp(true);
+
+    const generatedCode = String(Math.floor(100000 + Math.random() * 900000));
+    setPaymentOtpCode(generatedCode);
+    setPaymentOtpExpiry(Date.now() + 10 * 60 * 1000); // 10 minutes
+    setPaymentOtpCountdown(60);
+
+    console.info(`%c[E-Kodak Security Code]: ${generatedCode}`, 'background: #0d2a1c; color: #f59e0b; font-size: 16px; font-weight: bold; padding: 4px 8px; border-radius: 4px;');
+
+    try {
+      const res = await sendPaymentVerificationOtpEmail({
+        recipientEmail: targetEmail,
+        recipientName: participantFullName || accountOwnerFullName,
+        otpCode: generatedCode,
+        packageName: selectedService?.name || "Photoshoot Session",
+        downpaymentAmount: downPaymentAmount,
+        eventDate: formatTextualDate(eventDate),
+        preferredTime: formatSessionTime(preferredTime),
+        expiryMinutes: 10
+      });
+
+      setIsSendingPaymentOtp(false);
+      if (!res?.success) {
+        setPaymentOtpError(res?.error || "Unable to send verification code. Please check your email configuration.");
+      }
+    } catch (err) {
+      setIsSendingPaymentOtp(false);
+      setPaymentOtpError(err.message || "Failed to dispatch email verification code.");
+    }
+  };
+
+  const handleUpdateOtpEmailAndResend = async () => {
+    if (!editTargetOtpEmailInput || !editTargetOtpEmailInput.includes("@")) {
+      setPaymentOtpError("Please enter a valid email address.");
+      return;
+    }
+    const cleanEmail = editTargetOtpEmailInput.trim();
+    setTargetOtpEmail(cleanEmail);
+    setIsEditingTargetOtpEmail(false);
+    await handleResendPaymentOtp(cleanEmail);
+  };
+
+  const handleResendPaymentOtp = async (customEmailOverride = null) => {
+    if ((paymentOtpCountdown > 0 && !customEmailOverride) || isSendingPaymentOtp) return;
+    const activeP = customerProfile || profile;
+    const accountOwnerFullName = [activeP?.first_name || user?.user_metadata?.first_name || "", activeP?.last_name || user?.user_metadata?.last_name || ""].filter(Boolean).join(" ") || "Client";
+    const participantFullName = [participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") || (bookingFor === "myself" ? accountOwnerFullName : "Participant");
+
+    const effectiveEmail = (
+      customEmailOverride ||
+      targetOtpEmail ||
+      participantEmail ||
+      customerProfile?.email ||
+      profile?.email ||
+      user?.email ||
+      ""
+    );
+
+    if (!effectiveEmail) {
+      setPaymentOtpError("No valid email address found.");
+      return;
+    }
+
+    setIsSendingPaymentOtp(true);
+    setPaymentOtpError("");
+    const generatedCode = String(Math.floor(100000 + Math.random() * 900000));
+    setPaymentOtpCode(generatedCode);
+    setPaymentOtpExpiry(Date.now() + 10 * 60 * 1000);
+    setPaymentOtpCountdown(60);
+
+    console.info(`%c[E-Kodak Security Code]: ${generatedCode}`, 'background: #0d2a1c; color: #f59e0b; font-size: 16px; font-weight: bold; padding: 4px 8px; border-radius: 4px;');
+
+    try {
+      const res = await sendPaymentVerificationOtpEmail({
+        recipientEmail: effectiveEmail,
+        recipientName: participantFullName || accountOwnerFullName,
+        otpCode: generatedCode,
+        packageName: selectedService?.name || "Photoshoot Session",
+        downpaymentAmount: downPaymentAmount,
+        eventDate: formatTextualDate(eventDate),
+        preferredTime: formatSessionTime(preferredTime),
+        expiryMinutes: 10
+      });
+      setIsSendingPaymentOtp(false);
+      if (!res?.success) {
+        setPaymentOtpError(res?.error || "Failed to resend code.");
+      }
+    } catch (err) {
+      setIsSendingPaymentOtp(false);
+      setPaymentOtpError(err.message || "Failed to resend code.");
+    }
+  };
+
+  const handleVerifyOtpAndProceedToPayment = async (codeToVerify = null) => {
+    if (isVerifyingOtp) return;
+    const code = (codeToVerify != null ? codeToVerify : enteredPaymentOtp).trim();
+    if (!code) {
+      setPaymentOtpError("Please enter the 6-digit verification code sent to your email.");
+      return;
+    }
+
+    // Smart network check
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setPaymentOtpError("No internet connection detected. Please check your network and try again.");
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    setOtpVerifyStage("checking");
+    setPaymentOtpError("");
+
+    // Step 1: Natural processing time (450ms) to inspect security token
+    await new Promise((resolve) => setTimeout(resolve, 450));
+
+    if (paymentOtpExpiry && Date.now() > paymentOtpExpiry) {
+      setIsVerifyingOtp(false);
+      setOtpVerifyStage("idle");
+      setPaymentOtpError("This verification code has expired. Please click 'Resend Code'.");
+      return;
+    }
+
+    if (code !== paymentOtpCode) {
+      setIsVerifyingOtp(false);
+      setOtpVerifyStage("idle");
+      setPaymentOtpError("Incorrect verification code. Please check your email inbox and try again.");
+      return;
+    }
+
+    // Step 2: Code matched! Show verified confirmation state (550ms)
+    setOtpVerifyStage("verified");
+    await new Promise((resolve) => setTimeout(resolve, 550));
+
+    setShowPaymentOtpModal(false);
+    setIsVerifyingOtp(false);
+    setOtpVerifyStage("idle");
+    setPaymentOtpError("");
+    handleProceedToXenditCheckout(pendingPaymentChannel || selectedPaymentGateway);
+  };
+
   const handleProceedToXenditCheckout = async (targetChannel = null) => {
+    if (isRedirectingToXendit) return;
     const activeChannel = targetChannel || selectedPaymentGateway || "gcash";
     setIsRedirectingToXendit(true);
     setXenditPermissionNotice(null);
@@ -1108,6 +1313,8 @@ export default function BookingPage() {
         studentSchool,
         studentSchoolAddress,
         studentCourse,
+        selectedShsStrand,
+        customShsStrand,
         effectiveShsStrand,
         studentBatch,
         studentSection: normalizedStudentSection || studentSection,
@@ -1191,11 +1398,7 @@ export default function BookingPage() {
     return isCollegeService || isSeniorHighService;
   }, [isCollegeService, isSeniorHighService]);
 
-  const isWeddingService = useMemo(() => {
-    if (!selectedService) return false;
-    const s = (selectedService.slug + " " + selectedService.name + " " + selectedService.category).toLowerCase();
-    return s.includes("wedding") || s.includes("nuptial") || s.includes("bridal") || s.includes("prenup");
-  }, [selectedService]);
+  const isWeddingService = false;
 
   const isCorporateService = useMemo(() => {
     if (!selectedService) return false;
@@ -1649,7 +1852,13 @@ export default function BookingPage() {
     setLocationType("CAMPUS");
     setStep(5); // Jump straight to Review & Confirm!
   };
-  const [bookingResult, setBookingResult] = useState(null);
+  const [bookingResult, setBookingResult] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('ekodak_active_confirmed_booking');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return null;
+  });
 
   // Fetch Services & Add-ons
   useEffect(() => {
@@ -1924,19 +2133,19 @@ export default function BookingPage() {
       // Validate dynamic fields based on service
       if (isCollegeService || isSeniorHighService) {
         if (!studentSchool.trim()) {
-          setValidationError(`Please select or enter your ${isCollegeService ? "University / College" : "High School"}.`);
+          setValidationError(`Please select or enter ${bookingFor === "someone_else" ? "the participant's" : "your"} ${isCollegeService ? "University / College" : "High School"}.`);
           return;
         }
         if (isSeniorHighService && !selectedShsStrand) {
-          setValidationError("Please select your Senior High Academic Strand.");
+          setValidationError(`Please select ${bookingFor === "someone_else" ? "the participant's" : "your"} Senior High Academic Strand.`);
           return;
         }
         if (isSeniorHighService && selectedShsStrand === "OTHERS" && !customShsStrand.trim()) {
-          setValidationError("Please enter your custom Academic Strand.");
+          setValidationError("Please specify the custom Academic Strand.");
           return;
         }
         if (!studentBatch.trim()) {
-          setValidationError("Please enter your Graduating Batch.");
+          setValidationError(`Please enter ${bookingFor === "someone_else" ? "the participant's" : "your"} Graduating Batch.`);
           return;
         }
         if (!studentSection.trim()) {
@@ -1944,12 +2153,7 @@ export default function BookingPage() {
           return;
         }
         if (!studentIdNumber.trim()) {
-          setValidationError("Please provide your Student ID Number.");
-          return;
-        }
-      } else if (isWeddingService) {
-        if (!brideName.trim() || !groomName.trim()) {
-          setValidationError("Please enter both the Bride and Groom names.");
+          setValidationError(`Please provide ${bookingFor === "someone_else" ? "the participant's" : "your"} Student ID Number.`);
           return;
         }
       }
@@ -2000,14 +2204,13 @@ export default function BookingPage() {
       // Step 5: Review & Confirm -> open simple yes/no modal
       setShowOrderConfirmModal(true);
     } else if (step === 6) {
-      // Step 6: Settle 50% downpayment & finalize reservation via Xendit / Gateway
-      handleProceedToXenditCheckout();
+      // Step 6: Settle 50% downpayment & finalize reservation via Xendit / Gateway (protected by Security OTP)
+      handleInitiatePaymentWithSecurityOtp();
     }
   };
 
-  // Direct package selection and immediate progression to Step 2 with smooth transition
+  // Direct package selection: immediately prompts for booking beneficiary (Who is this booking for?)
   const handleSelectPackage = (svc) => {
-    setProceedingSvcSlug(svc.slug);
     setSelectedService(svc);
     const defaultTier = svc?.tiers?.find(t => t.popular) || svc?.tiers?.[0] || null;
     setSelectedTier(defaultTier);
@@ -2019,317 +2222,419 @@ export default function BookingPage() {
     } else if (svc.slug === "college-packages") {
       setStudentType("COLLEGE");
     }
-    setTimeout(() => {
-      setStep(2);
-      setProceedingSvcSlug(null);
-    }, 40);
+    setProceedingSvcSlug(null);
+    setShowBookingForModal(true);
   };
 
   // ── Step 6: Complete Booking & Settle 50% Downpayment ───────────────────────
+  const isCompletingBookingRef = useRef(false);
   const handleCompleteBookingAndPayment = async (customTxnRef = null, customOrNumber = null, pendingOverride = null) => {
+    // If already in-flight, immediately abort duplicate invocation
+    if (isCompletingBookingRef.current) {
+      console.warn("[Booking] Duplicate handleCompleteBookingAndPayment call rejected (in-flight).");
+      return;
+    }
+    // If already completed in this session, don't re-create
+    if (bookingResult?.id) {
+      console.warn("[Booking] Session already has a confirmed booking (#" + (bookingResult.booking_number || bookingResult.id) + "). Skipping creation.");
+      setStep(7);
+      return;
+    }
+
+    isCompletingBookingRef.current = true;
+    setIsSubmitting(true);
     setValidationError("");
 
-    // Resolve or generate authentic gateway transaction reference & OR number
-    const refNum = (typeof customTxnRef === "string" && customTxnRef.trim())
-      ? customTxnRef.trim()
-      : paymentReferenceNumber.trim()
-      ? paymentReferenceNumber.trim()
-      : `PAY-MAYA-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-
-    const orNum = (typeof customOrNumber === "string" && customOrNumber.trim())
-      ? customOrNumber.trim()
-      : gatewayOrNumber.trim()
-      ? gatewayOrNumber.trim()
-      : `OR-2026-${Math.floor(10000 + Math.random() * 90000)}`;
-
-    setPaymentReferenceNumber(refNum);
-    setGatewayTxnRef(refNum);
-    setGatewayOrNumber(orNum);
-
-    setIsSubmitting(true);
-
-    const effectiveService = pendingOverride?.selectedService || selectedService || services?.[0] || SERVICES[1];
-    const effectiveTier = pendingOverride?.selectedTier || selectedTier || effectiveService?.tiers?.[0];
-    const resolvedTierPrice = parsePrice(effectiveTier?.price || 1750);
-    const effectiveTotal = (pendingOverride?.totalAmount && pendingOverride.totalAmount > 0)
-      ? pendingOverride.totalAmount
-      : (totalAmount && totalAmount > 0)
-      ? totalAmount
-      : (resolvedTierPrice + (addOnsTotal || 0));
-    const effectiveDownPayment = (pendingOverride?.downPaymentAmount && pendingOverride.downPaymentAmount > 0)
-      ? pendingOverride.downPaymentAmount
-      : (downPaymentAmount && downPaymentAmount > 0)
-      ? downPaymentAmount
-      : Math.round(effectiveTotal * 0.5);
-    const effectiveRemaining = (pendingOverride?.remainingBalance && pendingOverride.remainingBalance > 0)
-      ? pendingOverride.remainingBalance
-      : Math.max(0, effectiveTotal - effectiveDownPayment);
-    const effectiveDate = pendingOverride?.eventDate || eventDate;
-    const effectiveTime = pendingOverride?.preferredTime || preferredTime;
-    const effectiveLocation = pendingOverride?.location || resolvedLocation;
-    const effectiveBookingFor = pendingOverride?.bookingFor || bookingFor;
-    const effectiveParticipantFirst = pendingOverride?.participantFirstName || participantFirstName;
-    const effectiveParticipantMiddle = pendingOverride?.participantMiddleName || participantMiddleName;
-    const effectiveParticipantLast = pendingOverride?.participantLastName || participantLastName;
-    const effectiveParticipantPhone = pendingOverride?.participantPhone || participantPhone;
-    const effectiveParticipantEmail = pendingOverride?.participantEmail || participantEmail;
-    const effectiveAddOns = pendingOverride?.selectedAddOns || selectedAddOns;
-
-    const isSchoolPartner = (effectiveService?.category === "ACADEMIC" || isAcademicService) && (pendingOverride?.academicBookingMode === "SCHOOL_PARTNER" || academicBookingMode === "SCHOOL_PARTNER");
-    const activeP = customerProfile || profile;
-    const accountOwnerFullName = [activeP?.first_name || user?.user_metadata?.first_name || "", activeP?.last_name || user?.user_metadata?.last_name || ""].filter(Boolean).join(" ") || "Client";
-    const participantFullName = [effectiveParticipantFirst, effectiveParticipantMiddle, effectiveParticipantLast].filter(Boolean).join(" ") || (effectiveBookingFor === "myself" ? accountOwnerFullName : "Participant");
-
-    let activeCustomerId = user?.id || activeP?.id;
-    if (!activeCustomerId && isSupabaseConfigured && supabase) {
-      try {
-        const { data: sessData } = await supabase.auth.getSession();
-        if (sessData?.session?.user?.id) {
-          activeCustomerId = sessData.session.user.id;
-        } else {
-          const { data: authData } = await supabase.auth.getUser();
-          if (authData?.user?.id) activeCustomerId = authData.user.id;
-        }
-      } catch (authErr) {
-        console.warn("[Auth Check]", authErr);
-      }
-    }
-
-    if (!activeCustomerId) {
-      try {
-        const cached = sessionStorage.getItem('ekodak_user_profile');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (parsed?.id) activeCustomerId = parsed.id;
-        }
-      } catch {}
-    }
-
-    if (!activeCustomerId) {
-      setIsSubmitting(false);
-      setValidationError("You must be logged in to reserve a photoshoot slot. Please sign in or refresh your session.");
-      return;
-    }
-
-    let resolvedServiceId = effectiveService?.id;
-    if (!resolvedServiceId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedServiceId)) {
-      resolvedServiceId = SERVICE_SLUG_TO_UUID[effectiveService?.slug] || "1471388e-b74f-41ec-96c8-1d220d557a89";
-    }
-
-    // refNum resolved dynamically above
-    const paymentAuditNote = `[50% RESERVATION DOWNPAYMENT]\n• Gateway: ${selectedPaymentGateway.toUpperCase()}\n• Amount Paid: ₱${downPaymentAmount.toLocaleString()}\n• Reference No: ${refNum}\n• Payment Date: ${new Date().toLocaleString()}\n• Remaining Balance: ₱${remainingBalance.toLocaleString()} (Due at studio/carrier)`;
-
-    let fullNotes = notes || "";
-    const beneficiaryBlock = `[BOOKING BENEFICIARY & PARTICIPANT]\n• Booking For: ${bookingFor === "someone_else" ? "Someone Else" : "Myself"}\n• Participant Name: ${participantFullName}\n• Participant Phone: ${participantPhone || 'N/A'}\n• Participant Email: ${participantEmail || 'N/A'}\n• Relationship to Account Owner: ${bookingFor === "someone_else" ? (participantRelationship || 'Beneficiary') : 'Self (Account Owner)'}\n• Account Owner: ${accountOwnerFullName} (${activeP?.email || user?.email || 'N/A'})`;
-    fullNotes = fullNotes ? `${beneficiaryBlock}\n\n${paymentAuditNote}\n\n${fullNotes}` : `${beneficiaryBlock}\n\n${paymentAuditNote}`;
-
-    if (isAcademicService) {
-      const studentBlock = `[STUDENT DETAILS]\n• Type: ${studentType === "COLLEGE" ? "College / University" : "Senior High School"}\n• Booking Mode: ${isSchoolPartner ? "School Campus (Date set by school) [SCHOOL_PARTNER]" : "Individual Booking"}\n• Student Name: ${participantFullName || 'N/A'}\n• Middle Name: ${participantMiddleName || 'N/A'}\n• School: ${studentSchool}\n• Campus / Address: ${studentSchoolAddress || 'N/A'}\n• Degree / Strand: ${studentType === "COLLEGE" ? (studentCourse || 'N/A') : (effectiveShsStrand || 'N/A')}\n• Batch: ${studentBatch || 'N/A'}\n• Section: ${normalizedStudentSection || studentSection}\n• Student ID: ${studentIdNumber}\n• Yearbook Motto: ${yearbookMotto || 'N/A'}${schoolScheduleNote ? `\n• Note: ${schoolScheduleNote}` : ''}`;
-      fullNotes = `${fullNotes}\n\n${studentBlock}`;
-    }
-
-    if (pendingOverride) {
-      if (pendingOverride.selectedService) setSelectedService(pendingOverride.selectedService);
-      if (pendingOverride.selectedTier) setSelectedTier(pendingOverride.selectedTier);
-      if (pendingOverride.totalAmount != null) setTotalAmount(pendingOverride.totalAmount);
-      if (pendingOverride.downPaymentAmount != null) setDownPaymentAmount(pendingOverride.downPaymentAmount);
-      if (pendingOverride.remainingBalance != null) setRemainingBalance(pendingOverride.remainingBalance);
-      if (pendingOverride.eventDate) setEventDate(pendingOverride.eventDate);
-      if (pendingOverride.preferredTime) setPreferredTime(pendingOverride.preferredTime);
-      if (pendingOverride.selectedPaymentGateway) setSelectedPaymentGateway(pendingOverride.selectedPaymentGateway);
-      if (pendingOverride.participantFirstName) setParticipantFirstName(pendingOverride.participantFirstName);
-      if (pendingOverride.participantLastName) setParticipantLastName(pendingOverride.participantLastName);
-      if (pendingOverride.participantEmail) setParticipantEmail(pendingOverride.participantEmail);
-      if (pendingOverride.participantPhone) setParticipantPhone(pendingOverride.participantPhone);
-    }
-
-    const payload = {
-      customer_id: activeCustomerId,
-      service_id: resolvedServiceId,
-      service_slug: effectiveService?.slug || selectedService?.slug || null,
-      tier_name: effectiveTier?.name || selectedTier?.name || null,
-      selected_add_ons: (effectiveAddOns || selectedAddOns).map(a => ({ name: a.name, price: parsePrice(a.price) })),
-      participant_details: {
-        booking_for: effectiveBookingFor,
-        full_name: participantFullName,
-        first_name: effectiveParticipantFirst,
-        middle_name: effectiveParticipantMiddle,
-        last_name: effectiveParticipantLast,
-        phone: effectiveParticipantPhone,
-        email: effectiveParticipantEmail,
-        relationship: effectiveBookingFor === "someone_else" ? (pendingOverride?.participantRelationship || participantRelationship || "Beneficiary") : "Self",
-        account_owner_name: accountOwnerFullName,
-        account_owner_email: activeP?.email || user?.email
-      },
-      student_details: isAcademicService ? {
-        type: pendingOverride?.studentType || studentType,
-        booking_mode: isSchoolPartner ? "SCHOOL_PARTNER" : (pendingOverride?.academicBookingMode || academicBookingMode),
-        student_name: participantFullName,
-        middle_name: effectiveParticipantMiddle || null,
-        school: pendingOverride?.studentSchool || studentSchool,
-        school_address: pendingOverride?.studentSchoolAddress || studentSchoolAddress,
-        course: (pendingOverride?.studentType || studentType) === "COLLEGE" ? (pendingOverride?.studentCourse || studentCourse) : (pendingOverride?.effectiveShsStrand || effectiveShsStrand),
-        batch: pendingOverride?.studentBatch || studentBatch,
-        section: pendingOverride?.studentSection || normalizedStudentSection || studentSection,
-        student_id: pendingOverride?.studentIdNumber || studentIdNumber,
-        yearbook_motto: pendingOverride?.yearbookMotto || yearbookMotto || null,
-        schedule_note: pendingOverride?.schoolScheduleNote || schoolScheduleNote || null,
-        schedule_agreement: isSchoolPartner ? "PENDING_STUDIO_SCHOOL_AGREEMENT" : "SELF_SCHEDULED"
-      } : null,
-      total_amount: effectiveTotal,
-      down_payment_amount: effectiveDownPayment,
-      down_payment_confirmed: true,
-      remaining_balance: effectiveRemaining,
-      status: 'CONFIRMED',
-      payment_status: 'DOWNPAYMENT_PAID',
-      event_date: effectiveDate || null,
-      preferred_time: toDatabaseTime(
-        isSchoolPartner ? (effectiveTime || "08:00:00") : (effectiveTime || null)
-      ),
-      location: isSchoolPartner && (pendingOverride?.locationType === "CUSTOM" || locationType === "CUSTOM")
-        ? `On-Campus Pictorial Venue (${pendingOverride?.studentSchool || studentSchool || 'School Grounds'})`
-        : effectiveLocation,
-      notes: fullNotes || null
-    };
-
-    const { data, error: submitError } = await createBooking(payload, referenceFiles);
-
-    if (submitError) {
-      setIsSubmitting(false);
-      console.error("Booking creation error:", submitError);
-      setValidationError("Failed to reserve slot: " + submitError.message);
-      return;
-    }
-
-    // Record payment directly to payments table and notify admin
     try {
-      await customerPaymentService.submitPayment({
-        bookingId: data.id,
-        amount: effectiveDownPayment,
-        paymentType: 'downpayment',
-        paymentMethod: selectedPaymentGateway,
-        referenceNumber: refNum,
-        notes: `Initial 50% reservation deposit settled via ${selectedPaymentGateway.toUpperCase()} during checkout.`,
-        recordedBy: activeCustomerId
-      });
-    } catch (payErr) {
-      console.warn("[Payment Service Submission Warning]", payErr);
-      try {
-        let dbMethod = 'E_WALLET';
-        if (selectedPaymentGateway === 'bank_transfer') dbMethod = 'BANK_TRANSFER';
-        else if (selectedPaymentGateway === 'maya') dbMethod = 'E_WALLET';
-        else dbMethod = 'E_WALLET';
+      // Resolve or generate authentic gateway transaction reference & OR number
+      const refNum = (typeof customTxnRef === "string" && customTxnRef.trim())
+        ? customTxnRef.trim()
+        : paymentReferenceNumber.trim()
+        ? paymentReferenceNumber.trim()
+        : `PAY-MAYA-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 
-        await supabase.from('payments').insert({
-          booking_id: data.id,
-          amount: effectiveDownPayment,
-          payment_type: 'DOWN_PAYMENT',
-          payment_method: dbMethod,
-          reference_number: refNum,
-          payment_date: new Date().toISOString(),
-          recorded_by: activeCustomerId,
-          notes: `50% downpayment via ${selectedPaymentGateway.toUpperCase()} (Ref: ${refNum})`
-        });
-      } catch (dbErr) {
-        console.warn("[Direct Payment Insert Warning]", dbErr);
-      }
-    }
+      const orNum = (typeof customOrNumber === "string" && customOrNumber.trim())
+        ? customOrNumber.trim()
+        : gatewayOrNumber.trim()
+        ? gatewayOrNumber.trim()
+        : `OR-2026-${Math.floor(10000 + Math.random() * 90000)}`;
 
-    // Construct high-fidelity official receipt data for instant viewing & printing
-    const activeReceiptData = {
-      receiptNumber: orNum,
-      issuedAt: new Date().toISOString(),
-      bookingNumber: data.booking_number || "BK-2026-00001",
-      clientName: participantFullName || accountOwnerFullName,
-      location: isSchoolPartner && (pendingOverride?.locationType === "CUSTOM" || locationType === "CUSTOM")
-        ? `On-Campus Pictorial Venue (${pendingOverride?.studentSchool || studentSchool || 'School Grounds'})`
-        : effectiveLocation,
-      eventDate: `${formatTextualDate(effectiveDate)} • ${formatSessionTime(effectiveTime)}`,
-      packageName: effectiveService?.name || selectedService?.name || "Senior High Packages and Sets",
-      tierName: effectiveTier?.name || selectedTier?.name || "Set A",
-      total: effectiveTotal,
-      downpaymentPrice: effectiveDownPayment,
-      downPaid: effectiveDownPayment,
-      remaining: effectiveRemaining,
-      payments: [
-        {
-          id: 1,
-          payment_method: selectedPaymentGateway.toUpperCase(),
-          reference_number: refNum,
-          amount: effectiveDownPayment,
-          created_at: new Date().toISOString()
+      setPaymentReferenceNumber(refNum);
+      setGatewayTxnRef(refNum);
+      setGatewayOrNumber(orNum);
+
+      const effectiveService = pendingOverride?.selectedService || selectedService || services?.[0] || SERVICES[1];
+      const effectiveTier = pendingOverride?.selectedTier || selectedTier || effectiveService?.tiers?.[0];
+      const resolvedTierPrice = parsePrice(effectiveTier?.price || 1750);
+      const effectiveTotal = (pendingOverride?.totalAmount && pendingOverride.totalAmount > 0)
+        ? pendingOverride.totalAmount
+        : (totalAmount && totalAmount > 0)
+        ? totalAmount
+        : (resolvedTierPrice + (addOnsTotal || 0));
+      const effectiveDownPayment = (pendingOverride?.downPaymentAmount && pendingOverride.downPaymentAmount > 0)
+        ? pendingOverride.downPaymentAmount
+        : (downPaymentAmount && downPaymentAmount > 0)
+        ? downPaymentAmount
+        : Math.round(effectiveTotal * 0.5);
+      const effectiveRemaining = (pendingOverride?.remainingBalance && pendingOverride.remainingBalance > 0)
+        ? pendingOverride.remainingBalance
+        : Math.max(0, effectiveTotal - effectiveDownPayment);
+      const effectiveDate = pendingOverride?.eventDate || eventDate;
+      const effectiveTime = pendingOverride?.preferredTime || preferredTime;
+      const effectiveLocation = pendingOverride?.location || resolvedLocation;
+      const effectiveBookingFor = pendingOverride?.bookingFor || bookingFor || "myself";
+      const isAcademic = effectiveService?.category === "ACADEMIC" ||
+                         effectiveService?.slug === "college-packages" ||
+                         effectiveService?.slug === "senior-high-packages" ||
+                         isAcademicService;
+
+      const effectiveParticipantFirst = (pendingOverride?.participantFirstName !== undefined ? pendingOverride.participantFirstName : participantFirstName) || "";
+      const effectiveParticipantMiddle = (pendingOverride?.participantMiddleName !== undefined ? pendingOverride.participantMiddleName : participantMiddleName) || "";
+      const effectiveParticipantLast = (pendingOverride?.participantLastName !== undefined ? pendingOverride.participantLastName : participantLastName) || "";
+      const effectiveParticipantPhone = (pendingOverride?.participantPhone !== undefined ? pendingOverride.participantPhone : participantPhone) || "";
+      const effectiveParticipantEmail = (pendingOverride?.participantEmail !== undefined ? pendingOverride.participantEmail : participantEmail) || "";
+      const effectiveRelationship = effectiveBookingFor === "someone_else"
+        ? (pendingOverride?.participantRelationship || participantRelationship || "Beneficiary")
+        : "Self (Account Owner)";
+
+      const effectiveStudentType = pendingOverride?.studentType || studentType || (effectiveService?.slug === "college-packages" ? "COLLEGE" : "SENIOR_HIGH");
+      const isSchoolPartner = isAcademic && (pendingOverride?.academicBookingMode === "SCHOOL_PARTNER" || academicBookingMode === "SCHOOL_PARTNER");
+      const effectiveStudentSchool = pendingOverride?.studentSchool || studentSchool || "";
+      const effectiveStudentSchoolAddress = pendingOverride?.studentSchoolAddress || studentSchoolAddress || "";
+      const effectiveStudentCourse = (effectiveStudentType === "COLLEGE"
+        ? (pendingOverride?.studentCourse || studentCourse || "")
+        : (pendingOverride?.effectiveShsStrand || pendingOverride?.selectedShsStrand || pendingOverride?.studentCourse || effectiveShsStrand || selectedShsStrand || studentCourse || "")
+      ) || pendingOverride?.effectiveShsStrand || pendingOverride?.selectedShsStrand || effectiveShsStrand || selectedShsStrand || "";
+      const effectiveStudentBatch = pendingOverride?.studentBatch || studentBatch || "";
+      const effectiveStudentSection = pendingOverride?.studentSection || normalizedStudentSection || studentSection || "";
+      const effectiveStudentId = pendingOverride?.studentIdNumber || studentIdNumber || "";
+      const effectiveYearbookMotto = pendingOverride?.yearbookMotto || yearbookMotto || "";
+      const effectiveScheduleNote = pendingOverride?.schoolScheduleNote || schoolScheduleNote || "";
+
+      const activeP = customerProfile || profile;
+      const accountOwnerFullName = [activeP?.first_name || user?.user_metadata?.first_name || "", activeP?.last_name || user?.user_metadata?.last_name || ""].filter(Boolean).join(" ") || "Client";
+      const participantFullName = [effectiveParticipantFirst, effectiveParticipantMiddle, effectiveParticipantLast].filter(Boolean).join(" ") || (effectiveBookingFor === "myself" ? accountOwnerFullName : "Participant");
+
+      let activeCustomerId = user?.id || activeP?.id;
+      if (!activeCustomerId && isSupabaseConfigured && supabase) {
+        try {
+          const { data: sessData } = await supabase.auth.getSession();
+          if (sessData?.session?.user?.id) {
+            activeCustomerId = sessData.session.user.id;
+          } else {
+            const { data: authData } = await supabase.auth.getUser();
+            if (authData?.user?.id) activeCustomerId = authData.user.id;
+          }
+        } catch (authErr) {
+          console.warn("[Auth Check]", authErr);
         }
-      ],
-      merchantName: "E-KODAK STUDIOS PH",
-      merchantPhone: "0928-888-5632"
-    };
-    setPaymentReceiptData(activeReceiptData);
+      }
 
-    setIsSubmitting(false);
-    setBookingResult({
-      ...data,
-      down_payment_confirmed: true,
-      down_payment_amount: effectiveDownPayment,
-      remaining_balance: effectiveRemaining,
-      payment_status: 'DOWNPAYMENT_PAID',
-      status: 'CONFIRMED'
-    });
-    setStep(7);
-    document.body.style.overflow = "";
-    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      if (!activeCustomerId) {
+        try {
+          const cached = sessionStorage.getItem('ekodak_user_profile');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed?.id) activeCustomerId = parsed.id;
+          }
+        } catch {}
+      }
 
-    // Automatically dispatch booking confirmation notice via SMTP (no manual tagging)
-    const detectedEmail = (
-      effectiveParticipantEmail ||
-      participantEmail ||
-      customerProfile?.email ||
-      profile?.email ||
-      user?.email ||
-      ""
-    );
-    if (detectedEmail) {
-      setEmailStatus({ state: "sending", message: "Dispatching email notice..." });
-      sendBookingConfirmationEmail({
-        recipientEmail: detectedEmail,
-        recipientName: participantFullName || accountOwnerFullName,
-        bookingNumber: data.booking_number || "BK-2026-00001",
-        bookingId: data.id,
-        packageName: effectiveService?.name || selectedService?.name || "Photoshoot Session",
-        tierName: effectiveTier?.name || selectedTier?.name || "Standard",
-        eventDate: formatTextualDate(effectiveDate),
-        preferredTime: formatSessionTime(effectiveTime),
+      if (!activeCustomerId) {
+        setValidationError("You must be logged in to reserve a photoshoot slot. Please sign in or refresh your session.");
+        return;
+      }
+
+      let resolvedServiceId = effectiveService?.id;
+      if (!resolvedServiceId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedServiceId)) {
+        resolvedServiceId = SERVICE_SLUG_TO_UUID[effectiveService?.slug] || "1471388e-b74f-41ec-96c8-1d220d557a89";
+      }
+
+      // refNum resolved dynamically above
+      const paymentAuditNote = `[50% RESERVATION DOWNPAYMENT]\n• Gateway: ${selectedPaymentGateway.toUpperCase()}\n• Amount Paid: ₱${effectiveDownPayment.toLocaleString()}\n• Reference No: ${refNum}\n• Payment Date: ${new Date().toLocaleString()}\n• Remaining Balance: ₱${effectiveRemaining.toLocaleString()} (Due at studio/carrier)`;
+
+      let fullNotes = notes || "";
+      const isSchoolSectionBooking = effectiveBookingFor === "school_section";
+      const beneficiaryBlock = [
+        '[BOOKING BENEFICIARY & PARTICIPANT]',
+        `• Booking For: ${isSchoolSectionBooking ? "School Section" : (effectiveBookingFor === "someone_else" ? "Someone Else" : "Myself")}`,
+        `• Participant Name: ${isSchoolSectionBooking ? `${effectiveStudentSchool} - ${effectiveStudentSection}` : participantFullName}`,
+        `• Participant Phone: ${isSchoolSectionBooking ? (masterlistData?.adviserPhone || effectiveParticipantPhone || 'N/A') : (effectiveParticipantPhone || 'N/A')}`,
+        `• Participant Email: ${isSchoolSectionBooking ? (masterlistData?.adviserEmail || effectiveParticipantEmail || 'N/A') : (effectiveParticipantEmail || 'N/A')}`,
+        `• Relationship to Account Owner: ${isSchoolSectionBooking ? "School Section" : effectiveRelationship}`,
+        isSchoolSectionBooking && masterlistData?.adviserName ? `• Class Adviser: ${masterlistData.adviserName}` : null,
+        isSchoolSectionBooking && masterlistData?.strand ? `• Academic Strand: ${masterlistData.strand}` : null,
+        `• Account Owner: ${accountOwnerFullName} (${activeP?.email || user?.email || 'N/A'})`
+      ].filter(Boolean).join('\n');
+
+      fullNotes = fullNotes ? `${beneficiaryBlock}\n\n${paymentAuditNote}\n\n${fullNotes}` : `${beneficiaryBlock}\n\n${paymentAuditNote}`;
+
+      if (isAcademic) {
+        const studentLines = [
+          '[STUDENT & YEARBOOK DETAILS]',
+          `• Type: ${effectiveStudentType === "COLLEGE" ? "College / University" : "Senior High School"}`,
+          `• Booking Mode: ${isSchoolPartner ? "School Campus (Date set by school) [SCHOOL_PARTNER]" : "Individual Booking"}`,
+          `• Student Name: ${isSchoolSectionBooking ? `${effectiveStudentSchool} - ${effectiveStudentSection}` : (participantFullName || 'N/A')}`,
+          `• Middle Name: ${effectiveParticipantMiddle || 'N/A'}`,
+          `• School: ${effectiveStudentSchool || 'N/A'}`,
+          `• Campus / Address: ${effectiveStudentSchoolAddress || 'N/A'}`,
+          `• Track / Strand / Program: ${effectiveStudentCourse || masterlistData?.strand || 'N/A'}`,
+          `• Batch: ${effectiveStudentBatch || 'N/A'}`,
+          `• Section: ${effectiveStudentSection || 'N/A'}`,
+          `• Student ID: ${isSchoolSectionBooking ? `SEC-${effectiveStudentSection}` : (effectiveStudentId || 'N/A')}`,
+          `• Yearbook Motto: ${effectiveYearbookMotto || 'N/A'}`,
+          isSchoolSectionBooking && masterlistData?.adviserName ? `• Class Adviser: ${masterlistData.adviserName}` : null,
+          isSchoolSectionBooking && masterlistData?.adviserEmail ? `• Adviser Email: ${masterlistData.adviserEmail}` : null,
+          isSchoolSectionBooking && masterlistData?.adviserPhone ? `• Adviser Phone: ${masterlistData.adviserPhone}` : null,
+          isSchoolSectionBooking && masterlistData?.students?.length ? `• Total Enrolled Students: ${masterlistData.students.length}` : null,
+          effectiveScheduleNote ? `• Note: ${effectiveScheduleNote}` : null
+        ].filter(Boolean);
+
+        fullNotes = `${fullNotes}\n\n${studentLines.join('\n')}`;
+      }
+
+      if (pendingOverride) {
+        if (pendingOverride.selectedService) setSelectedService(pendingOverride.selectedService);
+        if (pendingOverride.selectedTier) setSelectedTier(pendingOverride.selectedTier);
+        if (pendingOverride.bookingFor) setBookingFor(pendingOverride.bookingFor);
+        if (pendingOverride.totalAmount != null) setTotalAmount(pendingOverride.totalAmount);
+        if (pendingOverride.downPaymentAmount != null) setDownPaymentAmount(pendingOverride.downPaymentAmount);
+        if (pendingOverride.remainingBalance != null) setRemainingBalance(pendingOverride.remainingBalance);
+        if (pendingOverride.eventDate) setEventDate(pendingOverride.eventDate);
+        if (pendingOverride.preferredTime) setPreferredTime(pendingOverride.preferredTime);
+        if (pendingOverride.selectedPaymentGateway) setSelectedPaymentGateway(pendingOverride.selectedPaymentGateway);
+        if (pendingOverride.participantFirstName) setParticipantFirstName(pendingOverride.participantFirstName);
+        if (pendingOverride.participantMiddleName) setParticipantMiddleName(pendingOverride.participantMiddleName);
+        if (pendingOverride.participantLastName) setParticipantLastName(pendingOverride.participantLastName);
+        if (pendingOverride.participantEmail) setParticipantEmail(pendingOverride.participantEmail);
+        if (pendingOverride.participantPhone) setParticipantPhone(pendingOverride.participantPhone);
+        if (pendingOverride.participantRelationship) setParticipantRelationship(pendingOverride.participantRelationship);
+        if (pendingOverride.studentSchool) setStudentSchool(pendingOverride.studentSchool);
+        if (pendingOverride.studentSchoolAddress) setStudentSchoolAddress(pendingOverride.studentSchoolAddress);
+        if (pendingOverride.studentCourse) setStudentCourse(pendingOverride.studentCourse);
+        if (pendingOverride.selectedShsStrand) setSelectedShsStrand(pendingOverride.selectedShsStrand);
+        if (pendingOverride.customShsStrand) setCustomShsStrand(pendingOverride.customShsStrand);
+        if (pendingOverride.effectiveShsStrand && !pendingOverride.selectedShsStrand) setSelectedShsStrand(pendingOverride.effectiveShsStrand);
+        if (pendingOverride.studentBatch) setStudentBatch(pendingOverride.studentBatch);
+        if (pendingOverride.studentSection) setStudentSection(pendingOverride.studentSection);
+        if (pendingOverride.studentIdNumber) setStudentIdNumber(pendingOverride.studentIdNumber);
+        if (pendingOverride.yearbookMotto) setYearbookMotto(pendingOverride.yearbookMotto);
+      }
+
+      const payload = {
+        customer_id: activeCustomerId,
+        service_id: resolvedServiceId,
+        service_slug: effectiveService?.slug || selectedService?.slug || null,
+        tier_name: effectiveTier?.name || selectedTier?.name || null,
+        selected_add_ons: (effectiveAddOns || selectedAddOns).map(a => ({ name: a.name, price: parsePrice(a.price) })),
+        participant_details: {
+          booking_for: effectiveBookingFor,
+          full_name: isSchoolSectionBooking ? `${effectiveStudentSchool} - ${effectiveStudentSection}` : participantFullName,
+          first_name: isSchoolSectionBooking ? (masterlistData?.adviserName || "Class Adviser") : effectiveParticipantFirst,
+          middle_name: isSchoolSectionBooking ? null : effectiveParticipantMiddle,
+          last_name: isSchoolSectionBooking ? "(Adviser)" : effectiveParticipantLast,
+          phone: isSchoolSectionBooking ? (masterlistData?.adviserPhone || effectiveParticipantPhone) : effectiveParticipantPhone,
+          email: isSchoolSectionBooking ? (masterlistData?.adviserEmail || effectiveParticipantEmail) : effectiveParticipantEmail,
+          relationship: isSchoolSectionBooking ? "School Section" : effectiveRelationship,
+          account_owner_name: accountOwnerFullName,
+          account_owner_email: activeP?.email || user?.email
+        },
+        student_details: isAcademic ? {
+          type: effectiveStudentType,
+          booking_mode: isSchoolPartner ? "SCHOOL_PARTNER" : (pendingOverride?.academicBookingMode || academicBookingMode),
+          student_name: isSchoolSectionBooking ? `${effectiveStudentSchool} - ${effectiveStudentSection}` : participantFullName,
+          middle_name: effectiveParticipantMiddle || null,
+          school: effectiveStudentSchool || null,
+          school_address: effectiveStudentSchoolAddress || null,
+          course: effectiveStudentCourse || masterlistData?.strand || null,
+          batch: effectiveStudentBatch || null,
+          section: effectiveStudentSection || null,
+          student_id: isSchoolSectionBooking ? `SEC-${effectiveStudentSection}` : (effectiveStudentId || null),
+          yearbook_motto: effectiveYearbookMotto || null,
+          adviser_name: masterlistData?.adviserName || null,
+          adviser_email: masterlistData?.adviserEmail || null,
+          adviser_phone: masterlistData?.adviserPhone || null,
+          masterlist_summary: masterlistData?.summary || null,
+          masterlist_students: masterlistData?.students || null,
+          schedule_note: effectiveScheduleNote || null,
+          schedule_agreement: isSchoolPartner ? "PENDING_STUDIO_SCHOOL_AGREEMENT" : "SELF_SCHEDULED"
+        } : null,
+        total_amount: effectiveTotal,
+        down_payment_amount: effectiveDownPayment,
+        down_payment_confirmed: true,
+        remaining_balance: effectiveRemaining,
+        status: 'CONFIRMED',
+        payment_status: 'DOWNPAYMENT_PAID',
+        event_date: effectiveDate || null,
+        preferred_time: toDatabaseTime(
+          isSchoolPartner ? (effectiveTime || "08:00:00") : (effectiveTime || null)
+        ),
         location: isSchoolPartner && (pendingOverride?.locationType === "CUSTOM" || locationType === "CUSTOM")
-          ? ("On-Campus Pictorial Venue (" + (pendingOverride?.studentSchool || studentSchool || "School Grounds") + ")")
+          ? `On-Campus Pictorial Venue (${effectiveStudentSchool || 'School Grounds'})`
           : effectiveLocation,
-        downpaymentAmount: effectiveDownPayment,
-        remainingBalance: effectiveRemaining,
-        paymentMethod: selectedPaymentGateway.toUpperCase(),
-        paymentReference: refNum
-      }).then(res => {
-        if (res?.success) {
-          setEmailStatus({ state: "sent", message: `Sent to ${detectedEmail}` });
-        } else {
-          setEmailStatus({ state: "error", message: res?.error || "SMTP not configured" });
-        }
-      }).catch(emailErr => {
-        console.warn("[SMTP Dispatch Warning]", emailErr);
-        setEmailStatus({ state: "error", message: emailErr.message || "SMTP Dispatch Failed" });
-      });
-    }
+        notes: fullNotes || null
+      };
 
-    if (activeCustomerId) {
-      try {
-        recordCustomerAction({
-          userId: activeCustomerId,
-          category: 'BOOKING',
-          title: `Slot Reserved & 50% Deposit Paid (#${data.booking_number || 'New'})`,
-          description: `Customer settled 50% deposit (₱${downPaymentAmount.toLocaleString()}) via ${selectedPaymentGateway.toUpperCase()} (Ref: ${refNum}). Dedicated bay locked.`,
-          bookingId: data.id,
-          bookingNumber: data.booking_number
-        });
-      } catch (auditErr) {
-        console.warn("[Audit warning]", auditErr);
+      const { data, error: submitError } = await createBooking(payload, referenceFiles);
+
+      if (submitError) {
+        console.error("Booking creation error:", submitError);
+        setValidationError("Failed to reserve slot: " + submitError.message);
+        return;
       }
+
+      // Record payment directly to payments table and notify admin
+      try {
+        await customerPaymentService.submitPayment({
+          bookingId: data.id,
+          amount: effectiveDownPayment,
+          paymentType: 'downpayment',
+          paymentMethod: selectedPaymentGateway,
+          referenceNumber: refNum,
+          notes: `Initial 50% reservation deposit settled via ${selectedPaymentGateway.toUpperCase()} during checkout.`,
+          recordedBy: activeCustomerId
+        });
+      } catch (payErr) {
+        console.warn("[Payment Service Submission Warning]", payErr);
+        try {
+          let dbMethod = 'E_WALLET';
+          if (selectedPaymentGateway === 'bank_transfer') dbMethod = 'BANK_TRANSFER';
+          else if (selectedPaymentGateway === 'maya') dbMethod = 'E_WALLET';
+          else dbMethod = 'E_WALLET';
+
+          await supabase.from('payments').insert({
+            booking_id: data.id,
+            amount: effectiveDownPayment,
+            payment_type: 'DOWN_PAYMENT',
+            payment_method: dbMethod,
+            reference_number: refNum,
+            payment_date: new Date().toISOString(),
+            recorded_by: activeCustomerId,
+            notes: `50% downpayment via ${selectedPaymentGateway.toUpperCase()} (Ref: ${refNum})`
+          });
+        } catch (dbErr) {
+          console.warn("[Direct Payment Insert Warning]", dbErr);
+        }
+      }
+
+      // Construct high-fidelity official receipt data for instant viewing & printing
+      const activeReceiptData = {
+        receiptNumber: orNum,
+        issuedAt: new Date().toISOString(),
+        bookingNumber: data.booking_number || "BK-2026-00001",
+        clientName: participantFullName || accountOwnerFullName,
+        location: isSchoolPartner && (pendingOverride?.locationType === "CUSTOM" || locationType === "CUSTOM")
+          ? `On-Campus Pictorial Venue (${pendingOverride?.studentSchool || studentSchool || 'School Grounds'})`
+          : effectiveLocation,
+        eventDate: `${formatTextualDate(effectiveDate)} • ${formatSessionTime(effectiveTime)}`,
+        packageName: effectiveService?.name || selectedService?.name || "Senior High Packages and Sets",
+        tierName: effectiveTier?.name || selectedTier?.name || "Set A",
+        total: effectiveTotal,
+        downpaymentPrice: effectiveDownPayment,
+        downPaid: effectiveDownPayment,
+        remaining: effectiveRemaining,
+        payments: [
+          {
+            id: 1,
+            payment_method: selectedPaymentGateway.toUpperCase(),
+            reference_number: refNum,
+            amount: effectiveDownPayment,
+            created_at: new Date().toISOString()
+          }
+        ],
+        merchantName: "E-KODAK STUDIOS PH",
+        merchantPhone: "0928-888-5632"
+      };
+      setPaymentReceiptData(activeReceiptData);
+
+      setBookingResult({
+        ...data,
+        down_payment_confirmed: true,
+        down_payment_amount: effectiveDownPayment,
+        remaining_balance: effectiveRemaining,
+        payment_status: 'DOWNPAYMENT_PAID',
+        status: 'CONFIRMED'
+      });
+      setStep(7);
+      document.body.style.overflow = "";
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+
+      // Persist completed booking & receipt to sessionStorage so page refresh won't duplicate or lose pass
+      try {
+        sessionStorage.setItem('ekodak_active_confirmed_booking', JSON.stringify({
+          ...data,
+          down_payment_confirmed: true,
+          down_payment_amount: effectiveDownPayment,
+          remaining_balance: effectiveRemaining,
+          payment_status: 'DOWNPAYMENT_PAID',
+          status: 'CONFIRMED'
+        }));
+        sessionStorage.setItem('ekodak_active_receipt_data', JSON.stringify(activeReceiptData));
+        sessionStorage.setItem(`ekodak_fulfilled_ref_${refNum}`, 'true');
+      } catch {}
+
+      // Automatically dispatch booking confirmation notice via SMTP (no manual tagging)
+      const detectedEmail = (
+        effectiveParticipantEmail ||
+        participantEmail ||
+        customerProfile?.email ||
+        profile?.email ||
+        user?.email ||
+        ""
+      );
+      if (detectedEmail) {
+        setEmailStatus({ state: "sending", message: "Dispatching email notice..." });
+        sendBookingConfirmationEmail({
+          recipientEmail: detectedEmail,
+          recipientName: participantFullName || accountOwnerFullName,
+          bookingNumber: data.booking_number || "BK-2026-00001",
+          bookingId: data.id,
+          receiptNumber: customOrNumber || gatewayOrNumber || `OR-2026-${Math.floor(10000 + Math.random() * 90000)}`,
+          packageName: effectiveService?.name || selectedService?.name || "Photoshoot Session",
+          tierName: effectiveTier?.name || selectedTier?.name || "Standard",
+          eventDate: formatTextualDate(effectiveDate),
+          preferredTime: formatSessionTime(effectiveTime),
+          location: isSchoolPartner && (pendingOverride?.locationType === "CUSTOM" || locationType === "CUSTOM")
+            ? ("On-Campus Pictorial Venue (" + (pendingOverride?.studentSchool || studentSchool || "School Grounds") + ")")
+            : effectiveLocation,
+          downpaymentAmount: effectiveDownPayment,
+          remainingBalance: effectiveRemaining,
+          totalAmount: (effectiveDownPayment || 0) + (effectiveRemaining || 0),
+          paymentMethod: selectedPaymentGateway.toUpperCase(),
+          paymentReference: refNum,
+          bookingUrl: typeof window !== "undefined" ? `${window.location.origin}/dashboard/bookings` : "https://e-kodak.ph/dashboard/bookings"
+        }).then(res => {
+          if (res?.success) {
+            setEmailStatus({ state: "sent", message: `Sent to ${detectedEmail}` });
+          } else {
+            setEmailStatus({ state: "error", message: res?.error || "SMTP not configured" });
+          }
+        }).catch(emailErr => {
+          console.warn("[SMTP Dispatch Warning]", emailErr);
+          setEmailStatus({ state: "error", message: emailErr.message || "SMTP Dispatch Failed" });
+        });
+      }
+
+      if (activeCustomerId) {
+        try {
+          recordCustomerAction({
+            userId: activeCustomerId,
+            category: 'BOOKING',
+            title: `Slot Reserved & 50% Deposit Paid (#${data.booking_number || 'New'})`,
+            description: `Customer settled 50% deposit (₱${effectiveDownPayment.toLocaleString()}) via ${selectedPaymentGateway.toUpperCase()} (Ref: ${refNum}). Dedicated bay locked.`,
+            bookingId: data.id,
+            bookingNumber: data.booking_number
+          });
+        } catch (auditErr) {
+          console.warn("[Audit warning]", auditErr);
+        }
+      }
+    } catch (err) {
+      console.error("[Booking Completion Error]", err);
+      setValidationError("Failed to complete booking: " + (err.message || "An unexpected error occurred."));
+    } finally {
+      setIsSubmitting(false);
+      isCompletingBookingRef.current = false;
     }
   };
 
@@ -2338,9 +2643,32 @@ export default function BookingPage() {
   useEffect(() => {
     const paymentStatusParam = searchParams.get("payment_status");
     const invoiceIdParam = searchParams.get("invoice_id");
+    const externalIdParam = searchParams.get("external_id");
 
-    if (paymentStatusParam === "success" && !hasProcessedPaymentReturnRef.current) {
+    if (paymentStatusParam === "success") {
+      // 1. Immediately clean up URL search parameters to prevent duplicate triggers on F5 / reload
+      try {
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+        setSearchParams({}, { replace: true });
+      } catch (e) {
+        console.warn("[URL Cleanup Warning]", e);
+      }
+
+      // 2. Persistent idempotency check using invoice / external ID
+      const txKey = (invoiceIdParam && invoiceIdParam !== '{invoice_id}')
+        ? invoiceIdParam
+        : (externalIdParam || 'xendit_last_return');
+      const dedupeKey = `ekodak_processed_xendit_tx_${txKey}`;
+
+      if (hasProcessedPaymentReturnRef.current || sessionStorage.getItem(dedupeKey)) {
+        console.warn(`[Xendit Return] Transaction ${txKey} has already been processed. Skipping duplicate booking.`);
+        setStep(7);
+        return;
+      }
       hasProcessedPaymentReturnRef.current = true;
+      try { sessionStorage.setItem(dedupeKey, 'true'); } catch {}
+
       try {
         const rawPending = sessionStorage.getItem('ekodak_pending_xendit_booking') || localStorage.getItem('ekodak_pending_xendit_booking');
         let parsedPending = null;
@@ -2349,11 +2677,20 @@ export default function BookingPage() {
           sessionStorage.removeItem('ekodak_pending_xendit_booking');
           try { localStorage.removeItem('ekodak_pending_xendit_booking'); } catch {}
         }
+
+        // If no pending booking was found and we already have a confirmed booking, just jump to Step 7
+        if (!parsedPending && bookingResult?.id) {
+          setStep(7);
+          return;
+        }
+
         const channelParam = searchParams.get("channel") || parsedPending?.selectedPaymentGateway || selectedPaymentGateway || "gcash";
         setSelectedPaymentGateway(channelParam);
 
-        const ref = invoiceIdParam
-          ? `XND-${invoiceIdParam.slice(-8).toUpperCase()}`
+        const ref = (invoiceIdParam && invoiceIdParam !== '{invoice_id}')
+          ? `XND-${invoiceIdParam.replace(/[^a-zA-Z0-9]/g, '').slice(-8).toUpperCase()}`
+          : (externalIdParam && externalIdParam.startsWith('EK-INV-'))
+          ? `XND-${externalIdParam.slice(-8).toUpperCase()}`
           : `XND-${Date.now().toString().slice(-8).toUpperCase()}`;
         const orNo = `OR-2026-${Math.floor(10000 + Math.random() * 90000)}`;
 
@@ -2362,178 +2699,7 @@ export default function BookingPage() {
         console.warn("[Xendit Return Handling Warning]", err);
       }
     }
-  }, [searchParams]);
-
-  // Submit Booking (fallback legacy)
-  const handleSubmitBooking = async () => {
-    setIsSubmitting(true);
-    setValidationError("");
-
-    const isSchoolPartner = isAcademicService && academicBookingMode === "SCHOOL_PARTNER";
-
-    const activeP = customerProfile || profile;
-    const accountOwnerFullName = [activeP?.first_name || user?.user_metadata?.first_name || "", activeP?.last_name || user?.user_metadata?.last_name || ""].filter(Boolean).join(" ") || "Client";
-    const participantFullName = [participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") || (bookingFor === "myself" ? accountOwnerFullName : "Participant");
-
-    let activeCustomerId = user?.id || activeP?.id;
-    if (!activeCustomerId && isSupabaseConfigured && supabase) {
-      try {
-        const { data: sessData } = await supabase.auth.getSession();
-        if (sessData?.session?.user?.id) {
-          activeCustomerId = sessData.session.user.id;
-        } else {
-          const { data: authData } = await supabase.auth.getUser();
-          if (authData?.user?.id) {
-            activeCustomerId = authData.user.id;
-          }
-        }
-      } catch (authErr) {
-        console.warn("[Auth Check]", authErr);
-      }
-    }
-
-    if (!activeCustomerId) {
-      try {
-        const cached = sessionStorage.getItem('ekodak_user_profile');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (parsed?.id) activeCustomerId = parsed.id;
-        }
-      } catch {}
-    }
-
-    if (!activeCustomerId) {
-      setIsSubmitting(false);
-      setValidationError("You must be logged in to reserve a photoshoot slot. Please sign in or refresh your session.");
-      return;
-    }
-
-    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const resolvedServiceId = (
-      (selectedService?.id && UUID_REGEX.test(selectedService.id))
-        ? selectedService.id
-        : (SERVICE_SLUG_TO_UUID?.[selectedService?.slug] || SERVICE_SLUG_TO_UUID?.[selectedService?.id] || "1471388e-b74f-41ec-96c8-1d220d557a89")
-    );
-
-    // Build consolidated notes with metadata
-    let consolidatedNotes = notes || "";
-    
-    // 1. Participant / Beneficiary Block (Clearly defines who the session is for vs account owner)
-    const beneficiaryBlock = `[BOOKING BENEFICIARY & PARTICIPANT]\n• Booking For: ${bookingFor === "someone_else" ? "Someone Else" : "Myself"}\n• Participant Name: ${participantFullName}\n• Participant Phone: ${participantPhone || 'N/A'}\n• Participant Email: ${participantEmail || 'N/A'}\n• Relationship to Account Owner: ${bookingFor === "someone_else" ? (participantRelationship || 'Beneficiary') : 'Self (Account Owner)'}\n• Account Owner: ${accountOwnerFullName} (${activeP?.email || user?.email || 'N/A'})`;
-    consolidatedNotes = consolidatedNotes ? `${beneficiaryBlock}\n\n${consolidatedNotes}` : beneficiaryBlock;
-
-    if (isAcademicService) {
-      const studentBlock = `[STUDENT DETAILS]\n• Type: ${studentType === "COLLEGE" ? "College / University" : "Senior High School"}\n• Booking Mode: ${isSchoolPartner ? "School Campus (Date set by school) [SCHOOL_PARTNER]" : "Individual Booking"}\n• Student Name: ${participantFullName || 'N/A'}\n• Middle Name: ${participantMiddleName || 'N/A'}\n• School: ${studentSchool}\n• Campus / Address: ${studentSchoolAddress || 'N/A'}\n• Degree / Strand: ${studentType === "COLLEGE" ? (studentCourse || 'N/A') : (effectiveShsStrand || 'N/A')}\n• Batch: ${studentBatch || 'N/A'}\n• Section: ${normalizedStudentSection || studentSection}\n• Student ID: ${studentIdNumber}\n• Yearbook Motto: ${yearbookMotto || 'N/A'}${schoolScheduleNote ? `\n• Note: ${schoolScheduleNote}` : ''}`;
-      consolidatedNotes = `${consolidatedNotes}\n\n${studentBlock}`;
-    } else if (isWeddingService) {
-      const weddingBlock = `[WEDDING DETAILS]\n• Couple: ${brideName} & ${groomName}\n• Theme / Palette: ${weddingTheme || 'N/A'}\n• Ceremony Venue: ${ceremonyVenue || 'N/A'}\n• Coordinator: ${coordinatorName || 'N/A'} (${coordinatorContact || 'N/A'})`;
-      consolidatedNotes = `${consolidatedNotes}\n\n${weddingBlock}`;
-    } else if (isCorporateService) {
-      const corpBlock = `[CORPORATE DETAILS]\n• Company: ${companyName || 'N/A'}\n• Role: ${clientRole || 'N/A'}\n• Intended Photo Usage: ${photoUsage || 'N/A'}`;
-      consolidatedNotes = `${consolidatedNotes}\n\n${corpBlock}`;
-    }
-
-    const payload = {
-      customer_id: activeCustomerId,
-      service_id: resolvedServiceId,
-      service_slug: selectedService?.slug || null,
-      tier_name: selectedTier?.name || null,
-      selected_add_ons: selectedAddOns.map(a => ({ name: a.name, price: parsePrice(a.price) })),
-      participant_details: {
-        booking_for: bookingFor,
-        full_name: participantFullName,
-        first_name: participantFirstName,
-        middle_name: participantMiddleName,
-        last_name: participantLastName,
-        phone: participantPhone,
-        email: participantEmail,
-        relationship: bookingFor === "someone_else" ? participantRelationship : "Self",
-        account_owner_name: accountOwnerFullName,
-        account_owner_email: activeP?.email || user?.email
-      },
-      student_details: isAcademicService ? {
-        type: studentType,
-        booking_mode: academicBookingMode,
-        student_name: participantFullName,
-        middle_name: participantMiddleName || null,
-        school: studentSchool,
-        school_address: studentSchoolAddress,
-        course: studentType === "COLLEGE" ? studentCourse : effectiveShsStrand,
-        batch: studentBatch,
-        section: normalizedStudentSection || studentSection,
-        student_id: studentIdNumber,
-        yearbook_motto: yearbookMotto || null,
-        schedule_note: schoolScheduleNote || null,
-        schedule_agreement: isSchoolPartner ? "PENDING_STUDIO_SCHOOL_AGREEMENT" : "SELF_SCHEDULED"
-      } : null,
-      total_amount: totalAmount > 0 ? totalAmount : (parsePrice(selectedTier?.price || selectedService?.tiers?.[0]?.price || 1750) + addOnsTotal),
-      down_payment_amount: downPaymentAmount > 0 ? downPaymentAmount : Math.round((totalAmount > 0 ? totalAmount : (parsePrice(selectedTier?.price || selectedService?.tiers?.[0]?.price || 1750) + addOnsTotal)) * 0.5),
-      event_date: eventDate || null,
-      preferred_time: toDatabaseTime(
-        isSchoolPartner
-          ? (preferredTime || "08:00:00")
-          : (preferredTime || null)
-      ),
-      location: isSchoolPartner && locationType === "CUSTOM"
-        ? `On-Campus Pictorial Venue (${studentSchool || 'School Grounds'})`
-        : resolvedLocation,
-      notes: consolidatedNotes || null
-    };
-
-    const { data, error: submitError } = await createBooking(payload, referenceFiles);
-    
-    setIsSubmitting(false);
-
-    if (submitError) {
-      console.error("Booking creation error:", submitError);
-      setValidationError("Failed to create booking: " + submitError.message);
-    } else {
-      setShowOrderConfirmModal(false);
-      setShowReservationSuccessModal(false);
-      setBookingResult(data);
-      setStep(7);
-      document.body.style.overflow = "";
-      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-      
-      // Record customer booking creation in audit trail safely
-      if (activeCustomerId) {
-        try {
-          recordCustomerAction({
-            userId: activeCustomerId,
-            category: 'BOOKING',
-            title: `Session Reserved (#${data.booking_number || 'New'})`,
-            description: `Customer submitted photoshoot reservation for ${selectedService?.name || 'Studio Session'}${selectedTier ? ` (${selectedTier.name})` : ''}.`,
-            changes: [
-              `Service: ${selectedService?.name}`,
-              selectedTier ? `Tier: ${selectedTier.name}` : null,
-              eventDate ? `Date: ${eventDate}` : null,
-              preferredTime ? `Time: ${preferredTime}` : null,
-              resolvedLocation ? `Location: ${resolvedLocation}` : null,
-              selectedAddOns.length > 0 ? `Add-ons: ${selectedAddOns.map(a => a.name).join(', ')}` : null
-            ].filter(Boolean),
-            bookingId: data.id,
-            bookingNumber: data.booking_number
-          });
-        } catch (auditErr) {
-          console.warn("[Customer Action Audit Warning]", auditErr);
-        }
-      }
-
-      // Background studio photographer allocation attempt
-      try {
-        assignPhotographer({
-          id: data.id,
-          service_name: selectedService?.name || 'Studio Session',
-          booking_date: isSchoolPartner ? null : eventDate,
-          booking_time: isSchoolPartner ? null : preferredTime,
-        }).catch(err => {
-          console.warn("[Photographer Allocation]", err);
-        });
-      } catch (allocErr) {
-        console.warn("[Photographer Allocation Sync Warning]", allocErr);
-      }
-    }
-  };
+  }, [searchParams, setSearchParams]);
 
   // Helper actions for Step 7 QR Pass & Receipt
   const handleDownloadPassSVG = (overrideBookingNumber = null) => {
@@ -2797,7 +2963,7 @@ export default function BookingPage() {
       customerProfile?.email ||
       profile?.email ||
       user?.email ||
-      "abiigylo5@gmail.com"
+      "client@e-kodak.ph"
     );
 
     const channelName = (
@@ -2813,8 +2979,9 @@ export default function BookingPage() {
       [editFirstName, editMiddleName, editLastName].filter(Boolean).join(" ") ||
       activeBooking?.participant_details?.full_name ||
       [customerProfile?.first_name || profile?.first_name, customerProfile?.last_name || profile?.last_name].filter(Boolean).join(" ") ||
+      [user?.user_metadata?.first_name, user?.user_metadata?.last_name].filter(Boolean).join(" ") ||
       user?.user_metadata?.full_name ||
-      "Abegail Alfante"
+      "Client"
     );
 
     const candidatePackageName = (
@@ -2975,41 +3142,34 @@ export default function BookingPage() {
                 </span>
               </div>
 
-              <div className="flex flex-col items-start sm:items-end gap-1.5">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleResendConfirmationEmail(detectedClientEmail, activeBooking)}
-                    disabled={emailStatus.state === "sending"}
-                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 sm:py-3 rounded-full border border-white/20 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold cursor-pointer transition-all"
-                    title="Send or resend confirmation email"
-                  >
-                    <Mail size={13} className={emailStatus.state === "sending" ? "animate-spin" : "text-amber-400"} />
-                    <span>{emailStatus.state === "sending" ? "Sending..." : "Resend Email"}</span>
-                  </button>
+              <div className="flex flex-col items-center gap-2 w-full sm:w-auto">
+                <a
+                  href={detectedClientEmail.includes("@gmail.com") 
+                    ? `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(detectedClientEmail)}`
+                    : "https://mail.google.com"
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-full bg-gradient-to-r from-amber-400 via-gold to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 text-xs sm:text-sm font-bold shadow-lg shadow-gold/25 hover:scale-[1.02] active:scale-95 transition-all shrink-0 font-heading cursor-pointer w-full sm:w-48 whitespace-nowrap text-center"
+                >
+                  <Mail size={15} className="text-neutral-950 shrink-0" />
+                  <span className="whitespace-nowrap">Open Gmail</span>
+                </a>
 
-                  <a
-                    href={detectedClientEmail.includes("@gmail.com") 
-                      ? `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(detectedClientEmail)}`
-                      : "https://mail.google.com"
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5 sm:py-3 rounded-full bg-gradient-to-r from-amber-400 via-gold to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 text-xs sm:text-sm font-bold shadow-lg shadow-gold/25 hover:scale-105 active:scale-95 transition-all shrink-0 font-heading cursor-pointer"
-                  >
-                    <Mail size={15} className="text-neutral-950" />
-                    <span>Open Gmail</span>
-                  </a>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => handleResendConfirmationEmail(detectedClientEmail, activeBooking)}
+                  disabled={emailStatus.state === "sending"}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full border border-white/20 bg-white/10 hover:bg-white/15 hover:border-white/35 text-white/90 hover:text-white text-xs font-semibold cursor-pointer transition-all w-full sm:w-48 font-heading whitespace-nowrap text-center"
+                  title="Resend confirmation email"
+                >
+                  <Mail size={12} className={`shrink-0 ${emailStatus.state === "sending" ? "animate-spin" : "text-amber-400"}`} />
+                  <span className="whitespace-nowrap">{emailStatus.state === "sending" ? "Sending..." : "Resend Email"}</span>
+                </button>
 
                 {emailStatus.state === "error" && (
-                  <span className="text-[10px] text-amber-300 font-heading bg-amber-950/70 border border-amber-500/40 px-2.5 py-0.5 rounded-md text-right max-w-[280px]">
-                    ⚠️ {emailStatus.message}
-                  </span>
-                )}
-                {emailStatus.state === "sent" && (
-                  <span className="text-[10px] text-emerald-300 font-heading bg-emerald-950/70 border border-emerald-500/40 px-2.5 py-0.5 rounded-md text-right">
-                    ✓ {emailStatus.message}
+                  <span className="text-[10px] text-amber-300 font-heading bg-amber-950/70 border border-amber-500/40 px-2.5 py-1 rounded-md text-center max-w-[220px]">
+                    {emailStatus.message}
                   </span>
                 )}
               </div>
@@ -3239,14 +3399,12 @@ export default function BookingPage() {
 
                 {/* Actions */}
                 <div className="pt-2 space-y-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setShowReceiptModal(true)}
+                  <Link
+                    to="/dashboard/bookings"
                     className="w-full h-11 bg-neutral-950 hover:bg-neutral-800 text-white rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer font-heading shadow-xs"
                   >
-                    <Receipt size={14} className="text-gold" />
-                    <span>View Official Payment Receipt (OR)</span>
-                  </button>
+                    <span>View My Bookings →</span>
+                  </Link>
 
                   <div className="flex flex-col sm:flex-row items-center gap-2.5">
                     <button
@@ -3258,12 +3416,14 @@ export default function BookingPage() {
                       <span>Print Receipt</span>
                     </button>
 
-                    <Link
-                      to="/dashboard/bookings"
-                      className="w-full sm:flex-1 h-10 px-4 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-neutral-700 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors font-heading"
+                    <button
+                      type="button"
+                      onClick={() => setShowReceiptModal(true)}
+                      className="w-full sm:flex-1 h-10 px-4 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-neutral-700 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer font-heading"
                     >
-                      <span>My Bookings →</span>
-                    </Link>
+                      <Receipt size={14} className="text-gold" />
+                      <span>View Official Payment Receipt (OR)</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -3631,6 +3791,262 @@ export default function BookingPage() {
               >
                 <CheckCircle size={16} className="stroke-[2.5]" /> Yes, Proceed to Payment
               </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Payment Security Verification (OTP) Modal ── */}
+      {showPaymentOtpModal && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in font-heading"
+          onClick={() => !isSendingPaymentOtp && setShowPaymentOtpModal(false)}
+        >
+          <div
+            className="relative w-full max-w-[440px] sm:max-w-[460px] rounded-[32px] bg-[#fffdfa] border border-[#eee7dc] shadow-2xl overflow-hidden font-heading text-[#1a1714] my-auto animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top Right Close Button */}
+            <button
+              type="button"
+              onClick={() => setShowPaymentOtpModal(false)}
+              disabled={isSendingPaymentOtp}
+              className="absolute top-4 right-4 sm:top-5 sm:right-5 w-8 h-8 rounded-full border border-[#e8dfd3] bg-[#fbf9f5] hover:bg-[#f2ece2] text-[#8c8275] hover:text-[#1a1714] flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40 z-10"
+              title="Close"
+            >
+              <X size={15} />
+            </button>
+
+            {/* Modal Content */}
+            <div className="p-6 sm:p-7 pt-7 sm:pt-8 space-y-4 text-center">
+              {/* Golden Center Lock Squircle */}
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-b from-[#f2dfbe] via-[#e2be82] to-[#caa061] flex items-center justify-center mx-auto shadow-md shadow-[#caa061]/25">
+                <Lock size={22} className="text-[#1a1714]" strokeWidth={2.4} />
+              </div>
+
+              {/* Title & Subtitle */}
+              <div>
+                <h2 className="font-serif text-2xl sm:text-[28px] font-bold text-[#1a1714] tracking-tight">
+                  Payment Authorization
+                </h2>
+                <p className="text-xs text-[#78716c] mt-1">
+                  Enter the 6-digit security code sent to
+                </p>
+
+                <div className="flex items-center justify-center mt-1.5">
+                  {isEditingTargetOtpEmail ? (
+                    <div className="flex items-center gap-1.5 max-w-full">
+                      <input
+                        type="email"
+                        value={editTargetOtpEmailInput}
+                        onChange={(e) => setEditTargetOtpEmailInput(e.target.value)}
+                        className="px-3 py-1 rounded-full bg-white border border-[#c69a53] text-xs text-[#1a1714] outline-none font-sans"
+                        placeholder="Enter your email"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={handleUpdateOtpEmailAndResend}
+                        className="px-2.5 py-1 rounded-full bg-[#c69a53] hover:bg-[#b58842] text-white text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                      >
+                        Resend
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingTargetOtpEmail(false)}
+                        className="text-xs text-[#8c8275] hover:text-[#1a1714] px-1 cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => {
+                        setIsEditingTargetOtpEmail(true);
+                        setEditTargetOtpEmailInput(targetOtpEmail || participantEmail || customerProfile?.email || profile?.email || user?.email || "");
+                      }}
+                      title="Click to edit recipient email"
+                      className="inline-flex items-center gap-1.5 px-4 py-1 rounded-full bg-[#fbf8f2] hover:bg-[#f5ede0] border border-[#e8dfd3] hover:border-[#c69a53]/50 text-xs font-semibold text-[#1a1714] shadow-2xs transition-all cursor-pointer group"
+                    >
+                      <span className="truncate max-w-[280px]">
+                        {targetOtpEmail || participantEmail || customerProfile?.email || profile?.email || user?.email || "your email"}
+                      </span>
+                      <Pencil size={10} className="text-[#a89e90] group-hover:text-[#c69a53] shrink-0" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Photoshoot Package & Set Details Card */}
+              <div className="p-4 sm:p-4.5 rounded-2xl bg-[#faf7f2] border border-[#ece4d6] flex items-center justify-between text-left mt-3 gap-3">
+                <div className="min-w-0 flex-1">
+                  <span className="font-serif font-bold text-base sm:text-lg text-[#1a1714] block leading-snug">
+                    {selectedService?.name || "Photoshoot Session"}
+                  </span>
+                  {selectedTier?.name && (
+                    <span className="inline-block mt-1 px-2.5 py-0.5 rounded-md bg-[#f0e8dc] text-[#78613d] text-xs font-semibold font-heading">
+                      {selectedTier.name}
+                    </span>
+                  )}
+                </div>
+
+                <div className="h-10 w-px bg-[#e4dcce] shrink-0" />
+
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#8c8275] block text-right">
+                    DOWNPAYMENT
+                  </span>
+                  <span
+                    className="font-serif font-black text-xl sm:text-2xl text-[#b89560] block text-right mt-0.5"
+                    style={{ fontVariantNumeric: "lining-nums tabular-nums" }}
+                  >
+                    ₱{downPaymentAmount.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              {/* 6-Digit Individual OTP Input Boxes */}
+              <div className="relative mt-5 px-1">
+                <input
+                  ref={otpInputRef}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  disabled={isVerifyingOtp}
+                  value={enteredPaymentOtp}
+                  onChange={(e) => {
+                    if (isVerifyingOtp) return;
+                    const val = e.target.value.replace(/\D/g, "").slice(0, 6);
+                    setEnteredPaymentOtp(val);
+                    setPaymentOtpError("");
+
+                    // Automatically detect 6-digit code, verify authentically, and transition to gateway
+                    if (val.length === 6) {
+                      handleVerifyOtpAndProceedToPayment(val);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && enteredPaymentOtp.length === 6 && !isVerifyingOtp) {
+                      handleVerifyOtpAndProceedToPayment(enteredPaymentOtp);
+                    }
+                  }}
+                  className="absolute inset-0 w-full h-full opacity-0 z-20 cursor-pointer disabled:cursor-not-allowed"
+                  autoFocus
+                />
+
+                <div className="grid grid-cols-6 gap-2 sm:gap-2.5">
+                  {[0, 1, 2, 3, 4, 5].map((idx) => {
+                    const digit = enteredPaymentOtp[idx] || "";
+                    const isActive = (enteredPaymentOtp.length === idx || (idx === 5 && enteredPaymentOtp.length === 6)) && !isVerifyingOtp;
+                    return (
+                      <div
+                        key={idx}
+                        className={`aspect-square h-12 sm:h-14 rounded-2xl border flex items-center justify-center text-xl sm:text-2xl font-bold font-mono transition-all select-none ${
+                          otpVerifyStage === "verified"
+                            ? "border-emerald-500 bg-emerald-50/60 text-emerald-950 shadow-xs ring-2 ring-emerald-500/20"
+                            : otpVerifyStage === "checking"
+                            ? "border-[#c69a53] bg-amber-50/40 text-[#1a1714] ring-2 ring-[#c69a53]/25 animate-pulse"
+                            : digit
+                            ? "border-[#c69a53] bg-white text-[#1a1714] shadow-xs"
+                            : isActive
+                            ? "border-[#c69a53] ring-2 ring-[#c69a53]/20 bg-white"
+                            : "border-[#e7ded0] bg-[#faf8f5] text-[#b0a79a]"
+                        }`}
+                      >
+                        {digit ? (
+                          digit
+                        ) : (
+                          <span className="text-[#b8af9f] text-sm leading-none">•</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Secure Entry Divider */}
+              <div className="flex items-center justify-center gap-3 my-3">
+                <div className="h-px bg-[#e8dfd3] flex-1 max-w-[70px]" />
+                <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#a89e90]">
+                  SECURE ENTRY
+                </span>
+                <div className="h-px bg-[#e8dfd3] flex-1 max-w-[70px]" />
+              </div>
+
+              {/* Resend Code Text */}
+              <div className="text-xs text-[#78716c] text-center">
+                <span>Didn&apos;t receive the email? </span>
+                {paymentOtpCountdown > 0 ? (
+                  <span className="text-[#a89e90] font-medium font-mono">
+                    Resend in {paymentOtpCountdown}s
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleResendPaymentOtp()}
+                    disabled={isSendingPaymentOtp || isVerifyingOtp}
+                    className="text-[#9e763b] hover:text-[#7d5c2a] font-semibold underline cursor-pointer disabled:opacity-40"
+                  >
+                    {isSendingPaymentOtp ? "Sending..." : "Resend code"}
+                  </button>
+                )}
+              </div>
+
+              {/* Error Message */}
+              {paymentOtpError && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-center gap-2 text-left animate-shake">
+                  <AlertCircle size={15} className="shrink-0 text-amber-600" />
+                  <span className="leading-tight">{paymentOtpError}</span>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="pt-2 pb-2 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => handleVerifyOtpAndProceedToPayment(enteredPaymentOtp)}
+                  disabled={enteredPaymentOtp.length < 6 || isSendingPaymentOtp || isVerifyingOtp}
+                  className={`w-full h-12 rounded-full font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all ${
+                    otpVerifyStage === "verified"
+                      ? "bg-gradient-to-r from-emerald-400 via-emerald-300 to-teal-400 text-emerald-950 font-bold shadow-md shadow-emerald-500/25 cursor-wait"
+                      : otpVerifyStage === "checking"
+                      ? "bg-gradient-to-r from-[#d8b06e] via-[#c69a53] to-[#b3863f] text-neutral-950 font-bold opacity-90 cursor-wait"
+                      : enteredPaymentOtp.length === 6 && !isSendingPaymentOtp
+                      ? "bg-gradient-to-r from-[#d8b06e] via-[#c69a53] to-[#b3863f] hover:from-[#cb9f5a] hover:to-[#a27732] text-neutral-950 font-bold shadow-md shadow-[#c69a53]/25 cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+                      : "bg-[#f2ece2] text-[#9c9489] border border-[#e8dfd3] cursor-not-allowed"
+                  }`}
+                >
+                  {otpVerifyStage === "verified" ? (
+                    <>
+                      <CheckCircle2 size={16} className="text-emerald-950 stroke-[2.5]" />
+                      <span>Code verified! Initializing gateway...</span>
+                    </>
+                  ) : otpVerifyStage === "checking" ? (
+                    <>
+                      <Loader2 size={15} className="animate-spin text-neutral-950" />
+                      <span>Verifying security code...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lock size={14} className="shrink-0" />
+                      <span>Proceed to payment</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPaymentOtpModal(false)}
+                  disabled={isVerifyingOtp || isSendingPaymentOtp}
+                  className={`w-full h-11 rounded-full border border-[#ded5c7] bg-white hover:bg-[#faf7f2] text-xs font-semibold text-[#544e46] hover:text-[#1a1714] flex items-center justify-center transition-colors ${
+                    isVerifyingOtp ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
+                  }`}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>,
@@ -4203,179 +4619,162 @@ export default function BookingPage() {
       )}
 
       
-      {/* ── Set Selection Beneficiary Confirmation Modal (Step 2) ── */}
-      <AnimatePresence>
-        {showBookingForModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[150] bg-neutral-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
-            onClick={() => setShowBookingForModal(false)}
+      {/* ── Package Beneficiary / Recipient Selection Modal (Triggered After Selecting Package) ── */}
+      {showBookingForModal && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] bg-neutral-950/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-fade-in"
+          onClick={() => setShowBookingForModal(false)}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl border border-gold/30 p-5 sm:p-6 max-w-lg w-full relative overflow-hidden my-auto"
+            onClick={(e) => e.stopPropagation()}
           >
-            <motion.div
-              initial={{ scale: 0.94, opacity: 0, y: 16 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.96, opacity: 0, y: 10 }}
-              transition={{ type: "spring", damping: 28, stiffness: 350 }}
-              className="bg-white rounded-3xl shadow-2xl border border-gold/30 p-5 sm:p-6 max-w-lg w-full relative overflow-hidden my-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Golden luxury top bar */}
-              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-400 via-gold to-amber-500" />
+            {/* Golden luxury top bar */}
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-400 via-gold to-amber-500" />
 
-              {/* Header */}
-              <div className="flex items-center justify-between gap-3 border-b border-neutral-100 pb-3 mb-3.5 pt-0.5">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-900 flex items-center justify-center font-bold text-sm border border-amber-500/30">
-                    <UserCheck size={20} />
-                  </div>
-                  <div>
-                    <span className="text-xs font-mono uppercase font-bold tracking-widest text-gold block">
-                      Booking Confirmation
-                    </span>
-                    <h3 className="font-heading font-extrabold text-lg sm:text-xl text-neutral-950 leading-tight">
-                      Who is this booking for?
-                    </h3>
-                  </div>
+            {/* Header */}
+            <div className="flex items-center justify-between gap-3 border-b border-neutral-100 pb-3 mb-3.5 pt-0.5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-900 flex items-center justify-center font-bold text-sm border border-amber-500/30">
+                  <UserCheck size={20} />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowBookingForModal(false)}
-                  className="w-8 h-8 rounded-full bg-neutral-100 text-neutral-500 hover:text-neutral-950 flex items-center justify-center transition-colors cursor-pointer"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-
-              <div className="px-3.5 py-2.5 rounded-2xl bg-amber-50/70 border border-amber-200/80 mb-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <Package size={16} className="text-gold shrink-0" />
-                  <span className="text-xs font-bold text-neutral-900">
-                    Selected: {(pendingTierToConfirm || selectedTier)?.name || "Session Package"}
+                <div>
+                  <span className="text-xs font-mono uppercase font-bold tracking-widest text-gold block">
+                    Booking Beneficiary
                   </span>
+                  <h3 className="font-heading font-extrabold text-lg sm:text-xl text-neutral-950 leading-tight">
+                    Who is this booking for?
+                  </h3>
                 </div>
-                <span className="font-heading font-black text-gold text-sm">
-                  {(pendingTierToConfirm || selectedTier)?.price || ""}
-                </span>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowBookingForModal(false)}
+                className="w-8 h-8 rounded-full bg-neutral-100 text-neutral-500 hover:text-neutral-950 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
 
-              <p className="text-xs text-neutral-600 font-body mb-3 leading-snug">
-                Please confirm whether this photography session is for yourself or another participant before proceeding:
-              </p>
-
-              {/* Interactive Choice Cards */}
-              <div className="space-y-2.5 mb-5">
-                {/* Option A: For Myself */}
-                <div
-                  onClick={() => handleSelectBookingFor("myself")}
-                  className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
-                    bookingFor === "myself"
-                      ? "border-gold bg-gradient-to-br from-amber-500/10 via-amber-50/50 to-white shadow-md shadow-gold/5 ring-1 ring-gold/40"
-                      : "border-neutral-200/80 bg-neutral-50/50 hover:bg-white hover:border-neutral-300"
-                  }`}
-                >
-                  <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
-                    bookingFor === "myself" ? "border-gold bg-gold text-neutral-950" : "border-neutral-300 bg-white"
-                  }`}>
-                    {bookingFor === "myself" && <div className="w-2 h-2 rounded-full bg-neutral-950" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-heading font-bold text-sm text-neutral-950">
-                        For Myself
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-neutral-500 font-body mt-1 leading-snug">
-                      Photoshoot session, graduation regalia sizing, and official studio outputs will be issued in your own name.
-                    </p>
-                  </div>
+            {/* Interactive Choice Cards */}
+            <div className="space-y-2.5 mb-5">
+              {/* Option A: For Myself */}
+              <div
+                onClick={() => handleSelectBookingFor("myself")}
+                className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
+                  bookingFor === "myself"
+                    ? "border-gold bg-gradient-to-br from-amber-500/10 via-amber-50/50 to-white shadow-md shadow-gold/5 ring-1 ring-gold/40"
+                    : "border-neutral-200/80 bg-neutral-50/50 hover:bg-white hover:border-neutral-300"
+                }`}
+              >
+                <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
+                  bookingFor === "myself" ? "border-gold bg-gold text-neutral-950" : "border-neutral-300 bg-white"
+                }`}>
+                  {bookingFor === "myself" && <div className="w-2 h-2 rounded-full bg-neutral-950" />}
                 </div>
-
-                {/* Option B: For Someone Else */}
-                <div
-                  onClick={() => handleSelectBookingFor("someone_else")}
-                  className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
-                    bookingFor === "someone_else"
-                      ? "border-gold bg-gradient-to-br from-amber-500/10 via-amber-50/50 to-white shadow-md shadow-gold/5 ring-1 ring-gold/40"
-                      : "border-neutral-200/80 bg-neutral-50/50 hover:bg-white hover:border-neutral-300"
-                  }`}
-                >
-                  <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
-                    bookingFor === "someone_else" ? "border-gold bg-gold text-neutral-950" : "border-neutral-300 bg-white"
-                  }`}>
-                    {bookingFor === "someone_else" && <div className="w-2 h-2 rounded-full bg-neutral-950" />}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-heading font-bold text-sm text-neutral-950">
+                      For Myself
+                    </span>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-heading font-bold text-sm text-neutral-950">
-                        For Someone Else / Others
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-neutral-500 font-body mt-1 leading-snug">
-                      Booking for your son, daughter, friend, relative, or client. You will enter their name and details in Step 4.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Option C: School Section */}
-                <div
-                  onClick={() => handleSelectBookingFor("school_section")}
-                  className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
-                    bookingFor === "school_section"
-                      ? "border-gold bg-gradient-to-br from-amber-500/10 via-amber-50/50 to-white shadow-md shadow-gold/5 ring-1 ring-gold/40"
-                      : "border-neutral-200/80 bg-neutral-50/50 hover:bg-white hover:border-neutral-300"
-                  }`}
-                >
-                  <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
-                    bookingFor === "school_section" ? "border-gold bg-gold text-neutral-950" : "border-neutral-300 bg-white"
-                  }`}>
-                    {bookingFor === "school_section" && <div className="w-2 h-2 rounded-full bg-neutral-950" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-heading font-bold text-sm text-neutral-950">
-                        School Section
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-neutral-500 font-body mt-1 leading-snug">
-                      Every student's order will be listed into a PDF file and then scanned to detect their orders.
-                    </p>
-                  </div>
+                  <p className="text-[11px] text-neutral-500 font-body mt-1 leading-snug">
+                    Photoshoot session, graduation regalia sizing, and official studio outputs will be issued in your own name.
+                  </p>
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-100">
-                <button
-                  type="button"
-                  onClick={() => setShowBookingForModal(false)}
-                  className="px-4 py-2.5 rounded-xl border border-neutral-200 text-xs font-bold text-neutral-600 hover:bg-neutral-100 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
+              {/* Option B: For Someone Else */}
+              <div
+                onClick={() => handleSelectBookingFor("someone_else")}
+                className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
+                  bookingFor === "someone_else"
+                    ? "border-gold bg-gradient-to-br from-amber-500/10 via-amber-50/50 to-white shadow-md shadow-gold/5 ring-1 ring-gold/40"
+                    : "border-neutral-200/80 bg-neutral-50/50 hover:bg-white hover:border-neutral-300"
+                }`}
+              >
+                <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
+                  bookingFor === "someone_else" ? "border-gold bg-gold text-neutral-950" : "border-neutral-300 bg-white"
+                }`}>
+                  {bookingFor === "someone_else" && <div className="w-2 h-2 rounded-full bg-neutral-950" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-heading font-bold text-sm text-neutral-950">
+                      For Someone Else / Others
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500 font-body mt-1 leading-snug">
+                    Booking for your son, daughter, friend, relative, or client. You will choose their package set in Step 2 and enter their details in Step 3.
+                  </p>
+                </div>
+              </div>
+
+              {/* Option C: School Section */}
+              <div
+                onClick={() => handleSelectBookingFor("school_section")}
+                className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3 ${
+                  bookingFor === "school_section"
+                    ? "border-gold bg-gradient-to-br from-amber-500/10 via-amber-50/50 to-white shadow-md shadow-gold/5 ring-1 ring-gold/40"
+                    : "border-neutral-200/80 bg-neutral-50/50 hover:bg-white hover:border-neutral-300"
+                }`}
+              >
+                <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
+                  bookingFor === "school_section" ? "border-gold bg-gold text-neutral-950" : "border-neutral-300 bg-white"
+                }`}>
+                  {bookingFor === "school_section" && <div className="w-2 h-2 rounded-full bg-neutral-950" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-heading font-bold text-sm text-neutral-950">
+                      School Section (Class Adviser)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500 font-body mt-1 leading-snug">
+                    As the class adviser, you only select the package. Students will order their own individual package sets (Set A–D) via your uploaded section masterlist.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-100">
+              <button
+                type="button"
+                onClick={() => setShowBookingForModal(false)}
+                className="px-4 py-2.5 rounded-xl border border-neutral-200 text-xs font-bold text-neutral-600 hover:bg-neutral-100 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBookingForModal(false);
+                  setValidationError("");
+                  if (bookingFor === "school_section") {
+                    // Adviser only chooses package. Multiple students order their own sets in masterlist.
+                    setStep(3);
+                  } else {
+                    // For myself or someone else: proceed to Step 2 to choose their set
                     if (pendingTierToConfirm) {
                       setSelectedTier(pendingTierToConfirm);
                       setPendingTierToConfirm(null);
                       setStep(3);
+                    } else {
+                      setStep(2);
                     }
-                    setShowBookingForModal(false);
-                    setValidationError(""); // smoothly advance to Step 3
-                  }}
-                  className="btn-primary !bg-gradient-to-r !from-amber-400 !via-gold !to-amber-500 !text-neutral-950 px-6 py-2.5 text-xs font-bold tracking-wider shadow-md shadow-gold/20 flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95 transition-all"
-                >
-                  <span>Confirm &amp; Proceed</span>
-                  <ArrowRight size={14} />
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                  }
+                }}
+                className="btn-primary !bg-gradient-to-r !from-amber-400 !via-gold !to-amber-500 !text-neutral-950 px-6 py-2.5 text-xs font-bold tracking-wider shadow-md shadow-gold/20 flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95 transition-all"
+              >
+                <span>Confirm &amp; Proceed</span>
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* ── Low Network Signal Safeguard & Safe Transaction Processing Overlay ── */}
       <AnimatePresence>
@@ -4768,10 +5167,16 @@ export default function BookingPage() {
                         </p>
                       </div>
 
-                      {/* Curated Package Cards: Close & Compact, Perfectly Upright (No Text Clipping, No Shape Distortion) */}
+                      {/* Curated Package Cards: Centered & Compact, Perfectly Upright */}
                       <div 
                         onMouseLeave={() => setHoveredServiceId(null)}
-                        className="relative z-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 lg:gap-4 w-full max-w-[1140px] mx-auto pt-2 pb-2 px-2"
+                        className={`relative z-10 w-full mx-auto pt-2 pb-2 px-2 ${
+                          services.length <= 2
+                            ? "grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8 max-w-[420px] sm:max-w-[840px] lg:max-w-[900px] justify-center"
+                            : services.length === 3
+                            ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-[960px] justify-center"
+                            : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 lg:gap-4 max-w-[1140px]"
+                        }`}
                       >
                         {services.map((svc) => {
                           const isSelected = selectedService?.id === svc.id;
@@ -4809,7 +5214,7 @@ export default function BookingPage() {
 
                               {/* Inner Card (clipped for imagery and gradients) */}
                               <div 
-                                className={`relative w-full h-[515px] sm:h-[535px] lg:h-[555px] rounded-3xl overflow-hidden flex flex-col justify-between shadow-xl transition-all duration-300 border-2 ${
+                                className={`relative w-full h-[400px] sm:h-[430px] lg:h-[460px] rounded-3xl overflow-hidden flex flex-col justify-between shadow-xl transition-all duration-300 border-2 ${
                                   isSelected 
                                     ? 'border-gold ring-4 ring-gold/40' 
                                     : isHovered 
@@ -4846,20 +5251,20 @@ export default function BookingPage() {
                                  </div>
 
                                 {/* Card Bottom Details (Description removed) */}
-                                <div className="relative z-20 p-6 flex flex-col justify-end">
+                                <div className="relative z-20 p-5 sm:p-6 flex flex-col justify-end">
                                   <div>
-                                    <h3 className="font-heading text-2xl font-bold text-white tracking-wide leading-tight drop-shadow-md">
+                                    <h3 className="font-heading text-xl sm:text-2xl font-bold text-white tracking-wide leading-snug drop-shadow-md">
                                       {svc.name}
                                     </h3>
                                   </div>
 
-                                  {/* Starting Price & Proceed Action (Icon-only by default, expands on hover) */}
-                                  <div className="mt-4 pt-3.5 border-t border-white/20 flex items-center justify-between gap-3">
-                                    <div>
-                                      <span className="text-xs uppercase font-bold tracking-widest text-neutral-400 block">
+                                  {/* Starting Price & Proceed Action */}
+                                  <div className="mt-3.5 pt-3.5 border-t border-white/20 flex items-center justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <span className="text-[11px] sm:text-xs uppercase font-bold tracking-wider text-neutral-300 block whitespace-nowrap">
                                         Starting at
                                       </span>
-                                      <span className="text-xl sm:text-2xl font-heading font-extrabold text-gold drop-shadow-sm">
+                                      <span className="text-xl sm:text-2xl font-heading font-extrabold text-gold drop-shadow-sm whitespace-nowrap">
                                         ₱{minPrice.toLocaleString()}
                                       </span>
                                     </div>
@@ -4870,32 +5275,19 @@ export default function BookingPage() {
                                         e.stopPropagation();
                                         handleSelectPackage(svc);
                                       }}
-                                      whileHover={{ scale: 1.06 }}
+                                      whileHover={{ scale: 1.05 }}
                                       whileTap={{ scale: 0.95 }}
-                                      layout
-                                      className="flex items-center gap-2 bg-gradient-to-r from-amber-400 via-gold to-amber-500 hover:from-amber-300 hover:to-gold text-neutral-950 font-bold p-2 hover:px-4 rounded-full text-xs uppercase tracking-wider transition-all duration-300 cursor-pointer border border-white/40 shrink-0 shadow-md group"
-                                      title="Proceed to Sets Selection"
+                                      className="flex items-center gap-2 bg-gradient-to-r from-amber-400 via-gold to-amber-500 hover:from-amber-300 hover:to-gold text-neutral-950 font-bold px-3.5 sm:px-4 py-2 rounded-full text-xs uppercase tracking-wider transition-all duration-200 cursor-pointer border border-white/40 shrink-0 shadow-md group"
+                                      title="Select Package"
                                     >
-                                      <AnimatePresence>
-                                        {(isHovered || proceedingSvcSlug === svc.slug) && (
-                                          <motion.span
-                                            initial={{ opacity: 0, width: 0 }}
-                                            animate={{ opacity: 1, width: "auto" }}
-                                            exit={{ opacity: 0, width: 0 }}
-                                            transition={{ duration: 0.2 }}
-                                            className="whitespace-nowrap overflow-hidden pl-1 font-bold text-[11px]"
-                                          >
-                                            {proceedingSvcSlug === svc.slug ? "Opening Sets..." : "Proceed"}
-                                          </motion.span>
-                                        )}
-                                      </AnimatePresence>
-                                      <div className="w-6 h-6 rounded-full bg-neutral-950 text-white flex items-center justify-center shadow-xs shrink-0">
-                                        {proceedingSvcSlug === svc.slug ? (
-                                          <Loader2 size={12} className="animate-spin text-gold" />
-                                        ) : isSelected ? (
-                                          <Check size={12} className="stroke-[3] text-gold" />
+                                      <span className="font-bold text-[11px] whitespace-nowrap">
+                                        {isSelected ? "Selected" : "Select"}
+                                      </span>
+                                      <div className="w-5 h-5 rounded-full bg-neutral-950 text-white flex items-center justify-center shadow-xs shrink-0">
+                                        {isSelected ? (
+                                          <Check size={11} className="stroke-[3] text-gold" />
                                         ) : (
-                                          <ArrowRight size={12} className="stroke-[2.5]" />
+                                          <ArrowRight size={11} className="stroke-[2.5]" />
                                         )}
                                       </div>
                                     </motion.button>
@@ -4930,7 +5322,38 @@ export default function BookingPage() {
                     </p>
                   </div>
 
-                  {!selectedService?.tiers || selectedService.tiers.length === 0 ? (
+                  {bookingFor === "school_section" ? (
+                    <div className="max-w-lg mx-auto text-center p-8 sm:p-10 rounded-3xl bg-amber-50/70 border border-gold/40 shadow-sm space-y-4 my-auto">
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-400 via-gold to-amber-500 text-neutral-950 flex items-center justify-center mx-auto shadow-md ring-4 ring-gold/20">
+                        <School size={28} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <h3 className="font-heading font-extrabold text-xl text-neutral-950">
+                          School Section Masterlist Active
+                        </h3>
+                        <p className="text-xs sm:text-sm text-neutral-600 leading-relaxed max-w-md mx-auto">
+                          As the class adviser, you only select the school package. Individual package sets (Set A, Set B, Set C, or Set D) are chosen per-student via your uploaded section masterlist.
+                        </p>
+                      </div>
+                      <div className="pt-2 flex items-center justify-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setStep(1)}
+                          className="px-4 py-2.5 rounded-xl border border-neutral-300 hover:border-gold bg-white text-xs font-bold text-neutral-800 transition-colors cursor-pointer"
+                        >
+                          Change Package
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStep(3)}
+                          className="btn-primary !bg-gradient-to-r !from-amber-400 !via-gold !to-amber-500 !text-neutral-950 px-6 py-2.5 text-xs font-bold tracking-wider shadow-md shadow-gold/20 flex items-center gap-2 cursor-pointer"
+                        >
+                          <span>Proceed to Section Masterlist (Step 3)</span>
+                          <ArrowRight size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ) : !selectedService?.tiers || selectedService.tiers.length === 0 ? (
                     <div className="p-8 bg-neutral-50 rounded-2xl text-center border border-neutral-100">
                       <Package size={32} className="mx-auto text-gold mb-2" />
                       <h3 className="font-heading text-lg text-primary">Standard Package</h3>
@@ -4943,11 +5366,17 @@ export default function BookingPage() {
                     </div>
                   ) : (
                     <div className="relative overflow-visible">
-                      {/* Curated Set Cards: Same Size & Grid as Step 1 (No Inner Card Enclosure) */}
+                      {/* Curated Set Cards: Centered & Balanced Grid */}
                       <div
                         ref={tierScrollRef}
                         onMouseLeave={() => setHoveredTierName(null)}
-                        className="relative z-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 lg:gap-4 w-full max-w-[1140px] mx-auto pt-2 pb-2 px-2"
+                        className={`relative z-10 w-full mx-auto pt-2 pb-2 px-2 ${
+                          selectedService.tiers.length <= 2
+                            ? "grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8 max-w-[420px] sm:max-w-[840px] lg:max-w-[900px] justify-center"
+                            : selectedService.tiers.length === 3
+                            ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-[960px] justify-center"
+                            : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 lg:gap-4 max-w-[1140px]"
+                        }`}
                       >
                         {selectedService.tiers.map((tier, idx) => {
                           const isTierSelected = selectedTier?._idx !== undefined
@@ -4977,9 +5406,9 @@ export default function BookingPage() {
                                 }, 90);
                               }}
                               onClick={() => {
-                                setPendingTierToConfirm({ ...tier, _idx: idx });
-                                setShowBookingForModal(true);
+                                setSelectedTier({ ...tier, _idx: idx });
                                 setValidationError("");
+                                setStep(3);
                               }}
                               whileHover={{ y: -8 }}
                               transition={{ type: "spring", stiffness: 400, damping: 28 }}
@@ -4999,7 +5428,7 @@ export default function BookingPage() {
 
                               {/* ── CARD SHELL (Same Size as Step 1 Package Cards) ── */}
                               <div
-                                className={`relative w-full h-[515px] sm:h-[535px] lg:h-[555px] rounded-3xl overflow-hidden flex flex-col justify-between shadow-xl transition-all duration-300 border-2 ${
+                                className={`relative w-full h-[400px] sm:h-[430px] lg:h-[460px] rounded-3xl overflow-hidden flex flex-col justify-between shadow-xl transition-all duration-300 border-2 ${
                                   isTierSelected
                                     ? "border-gold ring-4 ring-gold/40 shadow-[0_0_40px_rgba(201,169,110,0.55),0_20px_45px_rgba(0,0,0,0.75)]"
                                     : isHovered
@@ -5060,9 +5489,9 @@ export default function BookingPage() {
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setPendingTierToConfirm({ ...tier, _idx: idx });
-                                        setShowBookingForModal(true);
+                                        setSelectedTier({ ...tier, _idx: idx });
                                         setValidationError("");
+                                        setStep(3);
                                       }}
                                       whileHover={{ scale: 1.08 }}
                                       whileTap={{ scale: 0.95 }}
@@ -5284,11 +5713,16 @@ export default function BookingPage() {
                     {bookingFor === "school_section" && (
                       <SchoolMasterlistUploader
                         masterlistData={masterlistData}
+                        packageName={selectedService?.name || "Senior High Packages"}
                         onMasterlistChange={(data) => {
                           setMasterlistData(data);
                           if (data?.school) setStudentSchool(data.school);
                           if (data?.section) setStudentSection(data.section);
                           if (data?.batch) setStudentBatch(data.batch);
+                          if (data?.strand) {
+                            setSelectedShsStrand(data.strand);
+                            setStudentCourse(data.strand);
+                          }
                         }}
                         availableTiers={(selectedService?.tiers || []).map((t) => t.name)}
                         schoolName={studentSchool}
@@ -5476,21 +5910,29 @@ export default function BookingPage() {
                     </div>
                   )}
 
-                    {/* ── CASE 3: FOR SOMEONE ELSE (PARTICIPANT FORM DIRECTLY) ── */}
-                    {bookingFor === "someone_else" && (
+                    {/* ── CASE 3: FOR SOMEONE ELSE (NON-ACADEMIC STANDALONE FALLBACK) ── */}
+                    {!isAcademicService && bookingFor === "someone_else" && (
                       <div className="p-5 sm:p-7 rounded-3xl bg-white border border-amber-300/80 shadow-2xs space-y-4 animate-fade-in font-heading">
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/60 pb-3">
-                          <div>
-                            <h5 className="font-heading font-bold text-base text-amber-950">
-                              Participant Personal Information
-                            </h5>
-                            <p className="text-xs text-neutral-600 font-heading mt-0.5">
-                              Enter the information of the person who will be attending this photoshoot.
-                            </p>
+                        {/* Form Header: Booking for Someone Else */}
+                        <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/80 border border-amber-300/80 shadow-2xs flex items-start sm:items-center gap-3.5 sm:gap-4 font-heading">
+                          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-emerald-100/90 border border-emerald-300/80 flex items-center justify-center shrink-0 text-emerald-700 shadow-2xs">
+                            <ShieldCheck size={22} className="stroke-[2.2]" />
                           </div>
-                          <span className="text-xs font-heading font-medium uppercase tracking-wider text-amber-900 bg-amber-100 px-3 py-1 rounded-full border border-amber-300/80">
-                            Participant Record
-                          </span>
+                          <div className="min-w-0 flex-1 leading-relaxed text-xs sm:text-sm text-neutral-700 font-heading">
+                            <span className="font-bold text-primary text-sm sm:text-base mr-1.5">
+                              Booking for Someone Else:
+                            </span>{" "}
+                            You are signed in as <strong className="text-primary font-bold">{[activeProfile?.first_name || user?.user_metadata?.first_name, activeProfile?.last_name || user?.user_metadata?.last_name].filter(Boolean).join(" ") || "Account Owner"}</strong>. You will manage the booking and payments, while all photoshoot details and records will be prepared for <strong className="text-gold font-bold">{[participantFirstName, participantLastName].filter(Boolean).join(" ") || "the participant"}</strong>.
+                          </div>
+                        </div>
+
+                        <div className="border-b border-amber-200/60 pb-3">
+                          <h5 className="font-heading font-bold text-base text-amber-950">
+                            Participant Personal Information
+                          </h5>
+                          <p className="text-xs text-neutral-600 font-heading mt-0.5">
+                            Enter the information of the person who will be attending this photoshoot.
+                          </p>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
@@ -5592,14 +6034,6 @@ export default function BookingPage() {
                               placeholder="participant@gmail.com"
                               className="w-full h-10 px-3 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs font-medium text-primary outline-none transition-all shadow-2xs"
                             />
-                          </div>
-                        </div>
-
-                        {/* Distinction Context Bar */}
-                        <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-200 text-[11px] text-neutral-600 flex items-start gap-2.5">
-                          <ShieldCheck size={16} className="text-emerald-600 shrink-0 mt-0.5" />
-                          <div className="leading-relaxed">
-                            <span className="font-bold text-primary">Account Owner Protection:</span> You are currently logged in as <strong className="text-primary font-semibold">{[activeProfile?.first_name || user?.user_metadata?.first_name, activeProfile?.last_name || user?.user_metadata?.last_name].filter(Boolean).join(" ") || "Account Owner"}</strong>. You will hold ownership of the billing and order tracking, but this session will be recorded and personalized for <strong className="text-gold font-bold">{participantFirstName || "the participant"} {participantLastName || ""}</strong>.
                           </div>
                         </div>
                       </div>
@@ -5862,93 +6296,243 @@ export default function BookingPage() {
                   {isAcademicService && (
                     <div className="p-6 sm:p-8 lg:p-9 rounded-3xl bg-white border border-neutral-200/90 shadow-xs space-y-8 font-heading">
                       {/* Form Header */}
-                      <div className="border-b border-neutral-100 pb-4">
-                        <h4 className="font-heading font-bold text-primary text-base sm:text-lg leading-tight">
-                          {isSeniorHighService ? "Senior High Academic Registration" : "College & University Registration"}
-                        </h4>
-                      </div>
-
-                      {/* ── 1. STUDENT / GRADUATE DETAILS ─────────────────────────────────── */}
-                      <div className="space-y-4">
-                        <div>
-                          <h5 className="font-heading text-base sm:text-lg font-bold text-primary tracking-tight">
-                            1. Student / Graduate Information
-                          </h5>
-                        </div>
-
-
-                        {/* Name Fields (Row 1): Student First Name, Middle Name, Last Name */}
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <div>
-                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
-                              Student First Name <span className="text-red-500">*</span>
-                            </label>
-                            <input
-                              type="text"
-                              value={studentFirstName}
-                              onChange={(e) => setStudentFirstName(e.target.value)}
-                              placeholder="First Name"
-                              className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-heading font-normal outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
-                            />
+                      {bookingFor === "someone_else" ? (
+                        <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/80 border border-amber-300/80 shadow-2xs flex items-start sm:items-center gap-3.5 sm:gap-4 font-heading">
+                          <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-emerald-100/90 border border-emerald-300/80 flex items-center justify-center shrink-0 text-emerald-700 shadow-2xs">
+                            <ShieldCheck size={22} className="stroke-[2.2]" />
                           </div>
-
-                          <div>
-                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
-                              Middle Name
-                            </label>
-                            <input
-                              type="text"
-                              value={studentMiddleName}
-                              onChange={(e) => setStudentMiddleName(e.target.value)}
-                              placeholder="Middle Name / Initial"
-                              className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-heading font-normal outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
-                              Student Last Name
-                            </label>
-                            <input
-                              type="text"
-                              value={studentLastName}
-                              onChange={(e) => setStudentLastName(e.target.value)}
-                              placeholder="Last Name"
-                              className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-heading font-normal outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
-                            />
+                          <div className="min-w-0 flex-1 leading-relaxed text-xs sm:text-sm text-neutral-700 font-heading">
+                            <span className="font-bold text-primary text-sm sm:text-base mr-1.5">
+                              Booking for Someone Else:
+                            </span>{" "}
+                            You are signed in as <strong className="text-primary font-bold">{[activeProfile?.first_name || user?.user_metadata?.first_name, activeProfile?.last_name || user?.user_metadata?.last_name].filter(Boolean).join(" ") || "Account Owner"}</strong>. You will manage the booking and payments, while all photoshoot details and academic records will be prepared for <strong className="text-gold font-bold">{[participantFirstName, participantLastName].filter(Boolean).join(" ") || "the participant"}</strong>.
                           </div>
                         </div>
+                      ) : (
+                        <div className="border-b border-neutral-100 pb-4">
+                          <h4 className="font-heading font-bold text-primary text-base sm:text-lg leading-tight">
+                            {isSeniorHighService ? "Senior High Academic Registration" : "College & University Registration"}
+                          </h4>
+                        </div>
+                      )}
 
-                        {/* Contact Fields (Row 2): Phone Number & Verified Account Email */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 mt-4">
-                          <div>
-                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
-                              Phone Number
-                            </label>
-                            <input
-                              type="tel"
-                              value={editPhone}
-                              onChange={(e) => setEditPhone(e.target.value)}
-                              placeholder=""
-                              className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-heading font-normal outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
-                            />
+                      {/* ── 1. PARTICIPANT OR STUDENT DETAILS ── */}
+                      {bookingFor === "someone_else" ? (
+                        /* ── 1. PARTICIPANT PERSONAL INFORMATION (FOR SOMEONE ELSE) ── */
+                        <div className="space-y-4">
+                          <div className="border-b border-amber-200/60 pb-3">
+                            <h5 className="font-heading font-bold text-base text-amber-950">
+                              1. Participant Personal Information
+                            </h5>
+                            <p className="text-xs text-neutral-600 font-heading mt-0.5">
+                              Enter the information of the person who will be attending this photoshoot.
+                            </p>
                           </div>
 
-                          <div>
-                            <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2 flex items-center justify-between">
-                              <span>Email Address</span>
-                              <span className="text-xs text-emerald-600 font-heading font-medium">Verified</span>
-                            </label>
-                            <input
-                              type="email"
-                              value={activeProfile?.email || user?.email || ""}
-                              readOnly
-                              disabled
-                              className="w-full h-11 px-3.5 rounded-xl bg-neutral-50 border border-neutral-200 text-xs sm:text-sm font-heading text-neutral-600 outline-none shadow-2xs cursor-not-allowed"
-                            />
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
+                            <div>
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
+                                Participant First Name <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={participantFirstName}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setParticipantFirstName(val);
+                                  setStudentFirstName(val);
+                                }}
+                                placeholder="Jude Lawrence"
+                                required
+                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm font-heading text-neutral-900 font-normal placeholder:font-heading outline-none transition-all shadow-2xs"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
+                                Middle Name
+                              </label>
+                              <input
+                                type="text"
+                                value={participantMiddleName}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setParticipantMiddleName(val);
+                                  setStudentMiddleName(val);
+                                }}
+                                placeholder="Marie"
+                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm font-medium text-primary outline-none transition-all shadow-2xs"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
+                                Participant Last Name <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={participantLastName}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setParticipantLastName(val);
+                                  setStudentLastName(val);
+                                }}
+                                placeholder="Sinugbuhan"
+                                required
+                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm font-heading text-neutral-900 font-normal placeholder:font-heading outline-none transition-all shadow-2xs"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
+                                Relationship to You
+                              </label>
+                              <select
+                                value={participantRelationship}
+                                onChange={(e) => setParticipantRelationship(e.target.value)}
+                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm font-medium text-primary outline-none transition-all shadow-2xs cursor-pointer"
+                              >
+                                <option value="Friend">Friend</option>
+                                <option value="Classmate">Classmate</option>
+                                <option value="Sibling">Sibling (Brother / Sister)</option>
+                                <option value="Child">Child (Son / Daughter)</option>
+                                <option value="Spouse / Partner">Spouse / Partner</option>
+                                <option value="Parent">Parent (Mother / Father)</option>
+                                <option value="Colleague">Colleague / Workmate</option>
+                                <option value="Client">Client</option>
+                                <option value="Other">Other</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
+                                Participant Phone
+                              </label>
+                              <input
+                                type="tel"
+                                value={participantPhone}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setParticipantPhone(val);
+                                  setEditPhone(val);
+                                }}
+                                placeholder="09123456789"
+                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm font-medium text-primary outline-none transition-all shadow-2xs"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
+                                Participant Email
+                              </label>
+                              <input
+                                type="email"
+                                value={participantEmail}
+                                onChange={(e) => setParticipantEmail(e.target.value)}
+                                placeholder="participant@gmail.com"
+                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm font-medium text-primary outline-none transition-all shadow-2xs"
+                              />
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      ) : (
+                        /* ── 1. STUDENT / GRADUATE DETAILS (FOR MYSELF) ── */
+                        <div className="space-y-4">
+                          <div>
+                            <h5 className="font-heading text-base sm:text-lg font-bold text-primary tracking-tight">
+                              1. Student / Graduate Information
+                            </h5>
+                          </div>
+
+                          {/* Name Fields (Row 1): Student First Name, Middle Name, Last Name */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
+                                Student First Name <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={studentFirstName}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setStudentFirstName(val);
+                                  setParticipantFirstName(val);
+                                }}
+                                placeholder="First Name"
+                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-heading font-normal outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
+                                Middle Name
+                              </label>
+                              <input
+                                type="text"
+                                value={studentMiddleName}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setStudentMiddleName(val);
+                                  setParticipantMiddleName(val);
+                                }}
+                                placeholder="Middle Name / Initial"
+                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-heading font-normal outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
+                                Student Last Name
+                              </label>
+                              <input
+                                type="text"
+                                value={studentLastName}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setStudentLastName(val);
+                                  setParticipantLastName(val);
+                                }}
+                                placeholder="Last Name"
+                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-heading font-normal outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Contact Fields (Row 2): Phone Number & Verified Account Email */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 mt-4">
+                            <div>
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2">
+                                Phone Number
+                              </label>
+                              <input
+                                type="tel"
+                                value={editPhone}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setEditPhone(val);
+                                  setParticipantPhone(val);
+                                }}
+                                placeholder=""
+                                className="w-full h-11 px-3.5 rounded-xl bg-white border border-neutral-300 focus:border-gold focus:ring-2 focus:ring-gold/25 text-xs sm:text-sm text-neutral-900 font-heading font-normal outline-none transition-all shadow-2xs placeholder:font-heading placeholder:text-neutral-400 placeholder:font-heading"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs sm:text-sm font-heading font-bold text-neutral-900 mb-2 flex items-center justify-between">
+                                <span>Email Address</span>
+                                <span className="text-xs text-emerald-600 font-heading font-medium">Verified</span>
+                              </label>
+                              <input
+                                type="email"
+                                value={activeProfile?.email || user?.email || ""}
+                                readOnly
+                                disabled
+                                className="w-full h-11 px-3.5 rounded-xl bg-neutral-50 border border-neutral-200 text-xs sm:text-sm font-heading text-neutral-600 outline-none shadow-2xs cursor-not-allowed"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Section Divider */}
                       <div className="border-t border-neutral-100/90 my-7 sm:my-8" />
@@ -6353,7 +6937,11 @@ export default function BookingPage() {
                           type="button" 
                           onClick={() => {
                             setValidationError("");
-                            setStep(step - 1);
+                            if (step === 3 && bookingFor === "school_section") {
+                              setStep(1);
+                            } else {
+                              setStep(step - 1);
+                            }
                           }}
                           className="btn-outline px-6 py-2.5 text-xs font-bold flex items-center gap-2 cursor-pointer hover:border-gold hover:text-gold transition-colors"
                           disabled={isSubmitting}
@@ -8060,8 +8648,8 @@ export default function BookingPage() {
 
                         <button
                           type="button"
-                          disabled={isRedirectingToXendit}
-                          onClick={() => handleProceedToXenditCheckout(selectedPaymentGateway)}
+                          disabled={isRedirectingToXendit || isSendingPaymentOtp}
+                          onClick={() => handleInitiatePaymentWithSecurityOtp(selectedPaymentGateway)}
                           className={`w-full sm:w-auto px-7 py-3.5 rounded-xl font-heading font-black text-xs sm:text-sm text-white shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0 ${
                             selectedPaymentGateway === "gcash"
                               ? "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-blue-600/25"
@@ -8070,7 +8658,9 @@ export default function BookingPage() {
                               : "bg-gradient-to-r from-amber-700 to-amber-900 hover:from-amber-800 hover:to-amber-950 shadow-amber-800/25"
                           }`}
                         >
-                          {isRedirectingToXendit ? (
+                          {isSendingPaymentOtp ? (
+                            <><Loader2 size={16} className="animate-spin" /> Sending Security Code...</>
+                          ) : isRedirectingToXendit ? (
                             <><Loader2 size={16} className="animate-spin" /> Connecting to Xendit...</>
                           ) : (
                             <><Lock size={15} /> Pay ₱{downPaymentAmount.toLocaleString()} via {selectedPaymentGateway === "gcash" ? "GCash" : selectedPaymentGateway === "maya" ? "Maya" : "Bank"} →</>

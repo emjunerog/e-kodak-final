@@ -12,8 +12,6 @@ import {
 export const SERVICE_SLUG_TO_UUID = {
   "senior-high-packages": "1471388e-b74f-41ec-96c8-1d220d557a89",
   "studio-packages": "1471388e-b74f-41ec-96c8-1d220d557a89",
-  "wedding-photo": "cd4271d4-8dd3-472f-86e5-0b658af9b02b",
-  "wedding-video": "aab20afd-0e3c-41b2-8f70-0ab42167c50a",
   "college-packages": "e2415838-06be-4e80-aa7a-9f4d3b47a8a5",
   "college": "e2415838-06be-4e80-aa7a-9f4d3b47a8a5",
   "senior-high": "1471388e-b74f-41ec-96c8-1d220d557a89",
@@ -199,6 +197,20 @@ export async function createBooking(bookingData, referenceFiles = []) {
       payment_status: 'UNPAID',
       reference_images: uploadedPaths,
       booking_token: generatedToken,
+      booking_for: bookingData.participant_details?.booking_for || (bookingData.notes?.includes('• Booking For: Someone Else') ? 'someone_else' : 'myself'),
+      participant_name: bookingData.participant_details?.full_name || null,
+      participant_phone: bookingData.participant_details?.phone || null,
+      participant_email: bookingData.participant_details?.email || null,
+      participant_relationship: bookingData.participant_details?.relationship || null,
+      participant_details: bookingData.participant_details || null,
+      student_details: bookingData.student_details || null,
+      school: bookingData.student_details?.school || null,
+      school_address: bookingData.student_details?.school_address || null,
+      track: bookingData.student_details?.course || null,
+      batch: bookingData.student_details?.batch || null,
+      section: bookingData.student_details?.section || null,
+      student_id: bookingData.student_details?.student_id || null,
+      yearbook_motto: bookingData.student_details?.yearbook_motto || null,
     };
 
     // 5. Insert into existing bookings table with automatic retry on rare constraint race
@@ -254,7 +266,7 @@ export async function createBooking(bookingData, referenceFiles = []) {
           const { data: adminUsers } = await supabase
             .from('profiles')
             .select('id')
-            .in('role', ['admin', 'staff']);
+            .eq('role', 'admin');
 
           if (adminUsers && adminUsers.length > 0) {
             const notifs = adminUsers.map(adm => ({
@@ -286,19 +298,26 @@ export async function createBooking(bookingData, referenceFiles = []) {
 export function parseStudentDetailsFromNotes(notes) {
   if (!notes || typeof notes !== 'string') return null;
 
-  const student_name = notes.match(/•\s*Student\s*Name:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
-  const middle_name = notes.match(/•\s*Middle\s*Name:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
-  const education_type = notes.match(/•\s*Type:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
-  const booking_mode = notes.match(/•\s*(?:Booking\s*Mode|Agreement(?:\s*Status)?):\s*([^\n\r]+)/i)?.[1]?.trim() || '';
-  const school = notes.match(/•\s*School:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
-  const school_address = notes.match(/•\s*(?:Campus(?:\s*(?:\/|&)\s*(?:Address|Branch))?|School\s*Address):\s*([^\n\r]+)/i)?.[1]?.trim() || '';
-  const course = notes.match(/•\s*(?:Track|Degree|Program|Strand|Course)(?:\s*(?:\/|&)\s*(?:Track|Degree|Program|Strand|Course))?:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
-  const grade_year = notes.match(/•\s*Grade(?:\s*\/\s*Year)?:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
-  const batch = notes.match(/•\s*Batch:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
-  const section = notes.match(/•\s*Section(?:\s*\/\s*Batch)?:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
-  const student_id = notes.match(/•\s*Student\s*ID:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
-  const yearbook_motto = notes.match(/•\s*Yearbook\s*Motto:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
-  const schedule_note = notes.match(/•\s*(?:Schedule\s*)?Note:\s*([^\n\r]+)/i)?.[1]?.trim() || '';
+  const cleanVal = (v) => {
+    if (!v) return '';
+    const trimmed = v.trim();
+    if (/^(?:n\/?a|none|null|—|-)$/i.test(trimmed)) return '';
+    return trimmed;
+  };
+
+  const student_name = cleanVal(notes.match(/•\s*Student\s*Name:\s*([^\n\r]+)/i)?.[1]);
+  const middle_name = cleanVal(notes.match(/•\s*Middle\s*Name:\s*([^\n\r]+)/i)?.[1]);
+  const education_type = cleanVal(notes.match(/•\s*Type:\s*([^\n\r]+)/i)?.[1]);
+  const booking_mode = cleanVal(notes.match(/•\s*(?:Booking\s*Mode|Agreement(?:\s*Status)?):\s*([^\n\r]+)/i)?.[1]);
+  const school = cleanVal(notes.match(/•\s*(?:School|University|College|Institution):\s*([^\n\r]+)/i)?.[1]);
+  const school_address = cleanVal(notes.match(/•\s*(?:Campus(?:\s*(?:\/|&)\s*(?:Address|Branch))?|School\s*Address):\s*([^\n\r]+)/i)?.[1]);
+  const course = cleanVal(notes.match(/•\s*(?:Track|Degree|Program|Strand|Course)(?:\s*(?:\/|&)\s*(?:Track|Degree|Program|Strand|Course))*:\s*([^\n\r]+)/i)?.[1]);
+  const grade_year = cleanVal(notes.match(/•\s*Grade(?:\s*\/\s*Year)?:\s*([^\n\r]+)/i)?.[1]);
+  const batch = cleanVal(notes.match(/•\s*(?:Batch|Graduation\s*Year|Graduating\s*Batch):\s*([^\n\r]+)/i)?.[1]);
+  const section = cleanVal(notes.match(/•\s*Section(?:\s*(?:\/|&)\s*Batch)?:\s*([^\n\r]+)/i)?.[1]);
+  const student_id = cleanVal(notes.match(/•\s*Student\s*ID(?:\s*Number)?:\s*([^\n\r]+)/i)?.[1]);
+  const yearbook_motto = cleanVal(notes.match(/•\s*(?:Yearbook\s*)?Motto:\s*([^\n\r]+)/i)?.[1]);
+  const schedule_note = cleanVal(notes.match(/•\s*(?:Schedule\s*)?Note:\s*([^\n\r]+)/i)?.[1]);
 
   if (!school && !section && !student_id && !batch && !student_name && !course) return null;
   return { 
@@ -532,12 +551,26 @@ export async function getCustomerBookings(customerId, { forceRefresh = false } =
         if (!b.selected_add_ons || b.selected_add_ons.length === 0) {
           b.selected_add_ons = parseAddOnsFromNotes(b.notes);
         }
-        if (!b.student_details) {
-          b.student_details = parseStudentDetailsFromNotes(b.notes);
+        if (!b.student_details || typeof b.student_details !== 'object') {
+          b.student_details = parseStudentDetailsFromNotes(b.notes) || {};
         }
-        if (!b.participant_details) {
-          b.participant_details = parseParticipantDetailsFromNotes(b.notes);
+        if (b.school) b.student_details.school = b.school;
+        if (b.school_address) b.student_details.school_address = b.school_address;
+        if (b.track) b.student_details.course = b.track;
+        if (b.batch) b.student_details.batch = b.batch;
+        if (b.section) b.student_details.section = b.section;
+        if (b.student_id) b.student_details.student_id = b.student_id;
+        if (b.yearbook_motto) b.student_details.yearbook_motto = b.yearbook_motto;
+
+        if (!b.participant_details || typeof b.participant_details !== 'object') {
+          b.participant_details = parseParticipantDetailsFromNotes(b.notes) || {};
         }
+        if (b.participant_name) b.participant_details.full_name = b.participant_name;
+        if (b.participant_phone) b.participant_details.phone = b.participant_phone;
+        if (b.participant_email) b.participant_details.email = b.participant_email;
+        if (b.participant_relationship) b.participant_details.relationship = b.participant_relationship;
+        if (b.booking_for) b.participant_details.booking_for = b.booking_for;
+
         if (!b.delivery_details) {
           b.delivery_details = parseDeliveryDetailsFromNotes(b.notes);
         }
@@ -670,12 +703,26 @@ export async function getBookingById(bookingId) {
     if (!booking.selected_add_ons || booking.selected_add_ons.length === 0) {
       booking.selected_add_ons = parseAddOnsFromNotes(booking.notes);
     }
-    if (!booking.student_details) {
-      booking.student_details = parseStudentDetailsFromNotes(booking.notes);
+    if (!booking.student_details || typeof booking.student_details !== 'object') {
+      booking.student_details = parseStudentDetailsFromNotes(booking.notes) || {};
     }
-    if (!booking.participant_details) {
-      booking.participant_details = parseParticipantDetailsFromNotes(booking.notes);
+    if (booking.school) booking.student_details.school = booking.school;
+    if (booking.school_address) booking.student_details.school_address = booking.school_address;
+    if (booking.track) booking.student_details.course = booking.track;
+    if (booking.batch) booking.student_details.batch = booking.batch;
+    if (booking.section) booking.student_details.section = booking.section;
+    if (booking.student_id) booking.student_details.student_id = booking.student_id;
+    if (booking.yearbook_motto) booking.student_details.yearbook_motto = booking.yearbook_motto;
+
+    if (!booking.participant_details || typeof booking.participant_details !== 'object') {
+      booking.participant_details = parseParticipantDetailsFromNotes(booking.notes) || {};
     }
+    if (booking.participant_name) booking.participant_details.full_name = booking.participant_name;
+    if (booking.participant_phone) booking.participant_details.phone = booking.participant_phone;
+    if (booking.participant_email) booking.participant_details.email = booking.participant_email;
+    if (booking.participant_relationship) booking.participant_details.relationship = booking.participant_relationship;
+    if (booking.booking_for) booking.participant_details.booking_for = booking.booking_for;
+
     if (!booking.delivery_details) {
       booking.delivery_details = parseDeliveryDetailsFromNotes(booking.notes);
     }
@@ -924,6 +971,7 @@ export async function updateBookingYearbookMotto(bookingId, newMotto, currentNot
       .from('bookings')
       .update({
         notes: updatedNotes,
+        yearbook_motto: cleanMotto || null,
         updated_at: new Date().toISOString()
       })
       .eq('id', bookingId)
@@ -954,6 +1002,97 @@ export async function updateBookingYearbookMotto(bookingId, newMotto, currentNot
     return { data, updatedNotes, error: null };
   } catch (error) {
     console.error("Failed to update yearbook motto:", error);
+    return { data: null, updatedNotes: null, error };
+  }
+}
+
+// ── updateBookingAcademicDetails ──────────────────────────────────────────────
+
+/**
+ * Updates academic profile details (School, Course/Strand, Section, Batch, Student ID, Motto)
+ * directly in the booking's notes column in Supabase with atomic consistency.
+ *
+ * @param {string} bookingId - Booking UUID
+ * @param {Object} academicData - { school, school_address, course, batch, section, student_id, yearbook_motto, student_name, education_type }
+ * @param {string} currentNotes - Existing booking notes string
+ * @param {string} [userId] - Optional auth user ID for cache invalidation
+ * @returns {Promise<{ data: Object|null, updatedNotes: string|null, error: Error|null }>}
+ */
+export async function updateBookingAcademicDetails(bookingId, academicData = {}, currentNotes = '', userId = null) {
+  if (!isSupabaseConfigured) {
+    return { data: null, updatedNotes: null, error: new Error("Database connection is not configured.") };
+  }
+
+  const school = sanitizeText(academicData.school || '', 150);
+  const schoolAddress = sanitizeText(academicData.school_address || '', 200);
+  const course = sanitizeText(academicData.course || '', 150);
+  const batch = sanitizeText(academicData.batch || '', 50);
+  const section = sanitizeText(academicData.section || '', 100);
+  const studentId = sanitizeText(academicData.student_id || '', 100);
+  const motto = sanitizeText(academicData.yearbook_motto || '', 300);
+  const studentName = sanitizeText(academicData.student_name || '', 150);
+  const educationType = sanitizeText(academicData.education_type || '', 100);
+
+  const lines = [
+    '[STUDENT & YEARBOOK DETAILS]',
+    studentName ? `• Student Name: ${studentName}` : null,
+    educationType ? `• Type: ${educationType}` : null,
+    `• School: ${school || 'N/A'}`,
+    schoolAddress ? `• Campus / Address: ${schoolAddress}` : null,
+    `• Track / Strand / Program: ${course || 'N/A'}`,
+    `• Batch: ${batch || 'N/A'}`,
+    `• Section: ${section || 'N/A'}`,
+    `• Student ID: ${studentId || 'N/A'}`,
+    motto ? `• Yearbook Motto: ${motto}` : null,
+  ].filter(Boolean);
+
+  const newBlock = lines.join('\n');
+  let updatedNotes = currentNotes || '';
+
+  const blockRegex = /\[(?:STUDENT & YEARBOOK DETAILS|STUDENT DETAILS)\][\s\S]*?(?=\n\n\[|$)/i;
+  if (blockRegex.test(updatedNotes)) {
+    updatedNotes = updatedNotes.replace(blockRegex, newBlock);
+  } else {
+    updatedNotes = updatedNotes ? `${newBlock}\n\n${updatedNotes}` : newBlock;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({
+        notes: updatedNotes,
+        school: school || null,
+        school_address: schoolAddress || null,
+        track: course || null,
+        batch: batch || null,
+        section: section || null,
+        student_id: studentId || null,
+        yearbook_motto: motto || null,
+        student_details: {
+          student_name: studentName,
+          education_type: educationType,
+          school,
+          school_address: schoolAddress,
+          course,
+          batch,
+          section,
+          student_id: studentId,
+          yearbook_motto: motto
+        },
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bookingId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    if (userId) {
+      invalidateCustomerBookingsCache(userId);
+    }
+    return { data, updatedNotes, error: null };
+  } catch (error) {
+    console.error("Failed to update academic details:", error);
     return { data: null, updatedNotes: null, error };
   }
 }

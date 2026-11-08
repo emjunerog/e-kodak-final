@@ -195,7 +195,7 @@ export default function AdminProfileModal({ isOpen, onClose }) {
       className="fixed inset-0 z-[90] flex items-center justify-center p-3 sm:p-6 overflow-y-auto font-body"
       role="dialog"
       aria-modal="true"
-      aria-label="Staff and executive profile"
+      aria-label="Administrator profile"
     >
       {/* Backdrop */}
       <div
@@ -219,7 +219,7 @@ export default function AdminProfileModal({ isOpen, onClose }) {
             </div>
             <div className="min-w-0">
               <h2 className="text-sm sm:text-base font-heading font-bold text-white tracking-wide truncate">
-                Staff &amp; Executive Profile
+                Administrator Profile
               </h2>
               <p className="text-xs text-neutral-400 font-body truncate">
                 Update your administrative information and identity
@@ -268,7 +268,7 @@ export default function AdminProfileModal({ isOpen, onClose }) {
                   {avatarPreview ? (
                     <img
                       src={avatarPreview}
-                      alt="Staff avatar preview"
+                      alt="Administrator avatar preview"
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -380,7 +380,7 @@ export default function AdminProfileModal({ isOpen, onClose }) {
                 <label htmlFor="admin-email" className="block text-xs font-semibold text-neutral-600 mb-1.5 flex items-center justify-between gap-2">
                   <span className="flex items-center gap-1.5">
                     <Mail size={13} className="text-neutral-400" aria-hidden="true" />
-                    Staff Email
+                    Administrator Email
                   </span>
                   <span className="text-[11px] text-neutral-400 flex items-center gap-1 shrink-0">
                     <Lock size={10} aria-hidden="true" /> Locked

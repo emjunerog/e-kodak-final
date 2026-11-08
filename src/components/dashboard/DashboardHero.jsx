@@ -17,21 +17,13 @@ const DEFAULT_ROLE_CONFIG = {
     badgeLabel: 'Photographer Production Station',
     badgeIcon: Camera,
   },
-  staff: {
-    badgeLabel: 'Front Desk Intake Station',
-    badgeIcon: CalendarDays,
-  },
-  finance: {
-    badgeLabel: 'Finance & Payments Desk',
-    badgeIcon: CreditCard,
-  },
 };
 
 /**
  * DashboardHero
  * -------------
  * Unified, compact, high-impact hero banner for all E-KODAK Studio dashboards
- * (Admin, Client, Photographer, Staff).
+ * (Admin, Client, Photographer).
  *
  * Preserves the premium photography-studio identity:
  * - Obsidian/dark slate gradient background with subtle gold ambient glows
@@ -236,7 +228,7 @@ export default function DashboardHero({
 }
 
 DashboardHero.propTypes = {
-  role: PropTypes.oneOf(['client', 'admin', 'photographer', 'staff', 'finance']),
+  role: PropTypes.oneOf(['client', 'admin', 'photographer']),
   userName: PropTypes.string,
   greeting: PropTypes.string,
   title: PropTypes.node,

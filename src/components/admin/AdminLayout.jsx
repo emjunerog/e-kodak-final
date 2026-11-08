@@ -34,7 +34,7 @@ export default function AdminLayout() {
     }
   }, [sidebarCollapsed]);
 
-  // Broadcast staff/admin active presence while in admin portal
+  // Broadcast admin active presence while in admin portal
   useEffect(() => {
     if (user && profile) {
       const cleanup = trackCustomerPresence(user, profile);
@@ -66,7 +66,7 @@ export default function AdminLayout() {
 
   // Fallback guard (AdminProtectedRoute handles primary check)
   if (!user) return <Navigate to="/login" replace />;
-  if (profile && !['admin', 'staff', 'finance'].includes(profile.role)) {
+  if (profile && profile.role !== 'admin') {
     return <Navigate to="/dashboard" replace />;
   }
 

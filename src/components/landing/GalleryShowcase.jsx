@@ -65,9 +65,9 @@ const galleryImages = [
   {
     id: 4,
     src: "https://images.unsplash.com/photo-1606216794074-735e91aa2c92?w=800&q=80&auto=format&fit=crop",
-    alt: "Wedding couple — bride and groom outdoors",
-    caption: "Heirloom Ceremony",
-    category: "Wedding",
+    alt: "Outdoor photography — celebratory milestone portrait",
+    caption: "Milestone Celebration",
+    category: "Milestone",
   },
   {
     id: 5,
@@ -93,7 +93,7 @@ const galleryImages = [
   {
     id: 8,
     src: "https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80&auto=format&fit=crop",
-    alt: "Event photography — wedding ceremony celebration",
+    alt: "Event photography — graduation ceremony celebration",
     caption: "Special Celebration",
     category: "Event",
   },

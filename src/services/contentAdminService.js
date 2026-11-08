@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { TEAM } from '../data/aboutData';
 
 // ── Announcements ─────────────────────────────────────────────────────────────
 export async function getAnnouncements() {
@@ -164,9 +165,9 @@ export async function createStudioSettings(payload) {
 
 // ── Team Members ──────────────────────────────────────────────────────────────
 export async function getTeamMembers() {
-  if (!isSupabaseConfigured) return { data: [], error: null };
+  if (!isSupabaseConfigured) return { data: TEAM, error: null };
   const { data, error } = await supabase.from('team_members').select('*').order('sort_order', { ascending: true });
-  return { data, error };
+  return { data: data && data.length > 0 ? data : TEAM, error };
 }
 
 export async function createTeamMember(payload) {

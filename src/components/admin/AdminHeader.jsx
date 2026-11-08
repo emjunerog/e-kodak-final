@@ -33,7 +33,7 @@ const LABELS = {
   'activity-logs': 'Activity Logs',
   security:      'Security & Access',
   cms:           'CMS & Content',
-  staff:         'Worker Active Status',
+  staff:         'Studio Team',
   yearbook:      'Yearbook Studio',
 };
 
@@ -87,9 +87,7 @@ export default function AdminHeader({ onMenuClick, onOpenProfile }) {
   };
 
   const initial = (profile?.first_name?.charAt(0) || user?.email?.charAt(0) || 'A').toUpperCase();
-  const roleLabel = profile?.role === 'admin'
-    ? 'Admin'
-    : (profile?.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : 'Staff');
+  const roleLabel = 'Admin';
 
   return (
     <header className="relative h-16 bg-gradient-to-r from-[#14100c] via-[#21180f] via-[#16151a] to-[#0f1726] border-none px-4 sm:px-6 sticky top-0 z-30 flex-shrink-0 font-body before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-gold/50 before:to-transparent">
@@ -275,7 +273,7 @@ export default function AdminHeader({ onMenuClick, onOpenProfile }) {
                         className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-neutral-700 hover:text-neutral-900 hover:bg-neutral-100/80 rounded-xl transition-colors text-left"
                       >
                         <UserCheck size={14} className="text-neutral-400" />
-                        <span>Staff &amp; Personnel</span>
+                        <span>Studio Team</span>
                       </Link>
 
                       <Link

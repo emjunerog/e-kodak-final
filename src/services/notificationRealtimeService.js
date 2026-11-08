@@ -207,7 +207,7 @@ export function subscribeCustomerRealtimeNotifications(userId, onNewNotification
   };
 }
 
-// ─── 5. Realtime Subscription for Admin / Staff / Finance / Photographer ────
+// ─── 5. Realtime Subscription for Admin / Photographer ────
 export function subscribeAdminRealtimeNotifications(onNewNotification) {
   if (!isSupabaseConfigured) return () => {};
 

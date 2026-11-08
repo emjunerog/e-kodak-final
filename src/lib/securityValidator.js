@@ -265,7 +265,6 @@ export const SECURITY_RBAC_MATRIX = [
   {
     resource: 'View Customer Bookings',
     admin: 'Full Access',
-    staff: 'Full Access',
     photographer: 'Assigned Sessions Only',
     customer: 'Own Bookings Only',
     level: 'Read',
@@ -273,7 +272,6 @@ export const SECURITY_RBAC_MATRIX = [
   {
     resource: 'Edit Booking Schedule & Inclusions',
     admin: 'Full Access',
-    staff: 'Permitted with Audit Log',
     photographer: 'Restricted',
     customer: 'Reschedule Window Only',
     level: 'Write',
@@ -281,7 +279,6 @@ export const SECURITY_RBAC_MATRIX = [
   {
     resource: 'Permanently Delete Bookings',
     admin: 'Full Access (Audited & Cascaded)',
-    staff: 'Strictly Prohibited',
     photographer: 'Strictly Prohibited',
     customer: 'Strictly Prohibited',
     level: 'Delete',
@@ -289,15 +286,13 @@ export const SECURITY_RBAC_MATRIX = [
   {
     resource: 'Unmasked Client Contact Info (PII)',
     admin: 'Full Access',
-    staff: 'Controlled / Masked by Default',
     photographer: 'Session Contact Only',
     customer: 'Self Only',
     level: 'Privacy',
   },
   {
-    resource: 'Assign Staff / Photographers',
+    resource: 'Assign Photographers',
     admin: 'Full Access',
-    staff: 'Permitted',
     photographer: 'Strictly Prohibited',
     customer: 'Strictly Prohibited',
     level: 'Write',
@@ -305,7 +300,6 @@ export const SECURITY_RBAC_MATRIX = [
   {
     resource: 'Record Payments & Settle Balances',
     admin: 'Full Access',
-    staff: 'Permitted (Immutable Receipts)',
     photographer: 'Strictly Prohibited',
     customer: 'Own Invoices Only',
     level: 'Financial',
@@ -313,7 +307,6 @@ export const SECURITY_RBAC_MATRIX = [
   {
     resource: 'Upload Final Photo Outputs & Yearbooks',
     admin: 'Full Access',
-    staff: 'Full Access',
     photographer: 'Assigned Sessions Only',
     customer: 'Strictly Prohibited',
     level: 'Storage',
@@ -321,7 +314,6 @@ export const SECURITY_RBAC_MATRIX = [
   {
     resource: 'Download High-Res Photos without Watermark',
     admin: 'Full Access',
-    staff: 'Full Access',
     photographer: 'Restricted to Raw Upload',
     customer: 'Paid Balance Required',
     level: 'Media',
@@ -329,7 +321,6 @@ export const SECURITY_RBAC_MATRIX = [
   {
     resource: 'View Security Audit & Activity Logs',
     admin: 'Full Access',
-    staff: 'Read-Only (Own Actions)',
     photographer: 'Strictly Prohibited',
     customer: 'Strictly Prohibited',
     level: 'Audit',
@@ -337,7 +328,6 @@ export const SECURITY_RBAC_MATRIX = [
   {
     resource: 'Manage CMS, Services & Pricing Tiers',
     admin: 'Full Access',
-    staff: 'Strictly Prohibited',
     photographer: 'Strictly Prohibited',
     customer: 'Strictly Prohibited',
     level: 'Config',
@@ -351,15 +341,15 @@ export const DATABASE_RLS_POLICIES = [
   {
     table: 'bookings',
     rls: 'ENFORCED',
-    select: 'Customers (own), Photographers (assigned), Admin/Staff (all)',
-    insert: 'Authenticated clients & staff validation check',
-    update: 'Staff/Admin with audit log triggers, Customer within 24h grace period',
+    select: 'Customers (own), Photographers (assigned), Admin (all)',
+    insert: 'Authenticated clients & admin check',
+    update: 'Admin with audit log triggers, Customer within 24h grace period',
     delete: 'Admin role only with cascading trigger & activity archiving',
   },
   {
     table: 'profiles',
     rls: 'ENFORCED',
-    select: 'Authenticated users (own), Public photographer cards, Admin/Staff (all)',
+    select: 'Authenticated users (own), Public photographer cards, Admin (all)',
     insert: 'Auth trigger upon signup only',
     update: 'User (own non-role fields), Admin (role & status updates)',
     delete: 'Admin only',
@@ -367,8 +357,8 @@ export const DATABASE_RLS_POLICIES = [
   {
     table: 'payments',
     rls: 'ENFORCED',
-    select: 'Customer (own booking payments), Admin/Staff (all)',
-    insert: 'Verified checkout webhook & authenticated staff cashier',
+    select: 'Customer (own booking payments), Admin (all)',
+    insert: 'Verified checkout webhook & authenticated admin cashier',
     update: 'Immutable transaction logs — updates strictly restricted to status confirmation',
     delete: 'Prohibited — financial records are immutable',
   },
@@ -376,14 +366,14 @@ export const DATABASE_RLS_POLICIES = [
     table: 'admin_activity_logs',
     rls: 'ENFORCED',
     select: 'Admin role only',
-    insert: 'System triggers & authenticated staff actions',
+    insert: 'System triggers & authenticated admin actions',
     update: 'Strictly Prohibited (Append-only immutable audit trail)',
     delete: 'Strictly Prohibited (Retention policy: 1 year)',
   },
   {
     table: 'qr_scan_logs',
     rls: 'ENFORCED',
-    select: 'Staff / Admin only',
+    select: 'Admin only',
     insert: 'Station scanner with anti-replay cryptographic debounce verification',
     update: 'Strictly Prohibited',
     delete: 'Cascade with booking deletion only',

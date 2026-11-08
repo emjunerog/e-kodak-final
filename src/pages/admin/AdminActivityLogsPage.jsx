@@ -27,7 +27,7 @@ export default function AdminActivityLogsPage() {
         isRefreshing={false}
         extraTools={[
           { label: 'Studio Settings', href: '/admin/settings', icon: Layers, iconColor: 'text-gold' },
-          { label: 'Staff Roster', href: '/admin/staff', icon: UserCheck, iconColor: 'text-gold' },
+          { label: 'Studio Team', href: '/admin/staff', icon: UserCheck, iconColor: 'text-gold' },
           { label: 'Security & Access', href: '/admin/security', icon: ShieldCheck, iconColor: 'text-neutral-400' },
         ]}
       />

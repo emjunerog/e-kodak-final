@@ -314,7 +314,7 @@ export default function AdminBookingDetail() {
     if (error) {
       showToast('error', 'Failed to confirm samples: ' + error.message);
     } else {
-      showToast('success', 'Samples confirmed! Forwarded to staff for finalization.');
+      showToast('success', 'Samples confirmed! Order moved to print production.');
       setConfirmForwardModalOpen(false);
       setForwardNotes('');
       await load();
@@ -362,7 +362,7 @@ export default function AdminBookingDetail() {
     const { error } = await createTransferLog({
       bookingId: id,
       senderId: user?.id || profile?.id,
-      senderRole: profile?.role || 'staff',
+      senderRole: profile?.role || 'admin',
       targetRole: tfTargetRole,
       transferType: tfType,
       priority: tfPriority,
@@ -436,7 +436,7 @@ export default function AdminBookingDetail() {
     const { success, error } = await softDeleteBooking({
       bookingId: booking.id,
       deletedById: profile?.id,
-      deletedByName: `${profile?.first_name || ''} ${profile?.last_name || 'Staff'}`.trim(),
+      deletedByName: `${profile?.first_name || ''} ${profile?.last_name || 'Admin'}`.trim(),
       reason: deleteReason || 'Moved to Trash by Admin'
     });
     setDeleting(false);
@@ -455,7 +455,7 @@ export default function AdminBookingDetail() {
     const { success, error } = await restoreBooking({
       bookingId: booking.id,
       restoredById: profile?.id,
-      restoredByName: `${profile?.first_name || ''} ${profile?.last_name || 'Staff'}`.trim(),
+      restoredByName: `${profile?.first_name || ''} ${profile?.last_name || 'Admin'}`.trim(),
     });
     setIsRestoring(false);
     if (!success || error) {
@@ -472,7 +472,7 @@ export default function AdminBookingDetail() {
     const { success, error } = await deleteBookingPermanently({
       bookingId: booking.id,
       deletedById: profile?.id,
-      deletedByName: `${profile?.first_name || ''} ${profile?.last_name || 'Staff'}`.trim(),
+      deletedByName: `${profile?.first_name || ''} ${profile?.last_name || 'Admin'}`.trim(),
       reason: deleteReason || 'Admin deletion request'
     });
     setDeleting(false);
@@ -1540,7 +1540,7 @@ export default function AdminBookingDetail() {
           <SectionCard
             icon={Camera}
             title="Photo Samples & Set Review"
-            subtitle="Review deliverable photo samples per set uploaded by photographer before staff finalization"
+            subtitle="Review deliverable photo samples per set uploaded by photographer before print finalization"
             action={
               photoOutputs.length > 0 ? (
                 <div className="flex items-center gap-2 flex-wrap">
@@ -1550,9 +1550,9 @@ export default function AdminBookingDetail() {
                         type="button"
                         onClick={() => setConfirmForwardModalOpen(true)}
                         className="text-xs font-bold text-neutral-950 bg-gold hover:bg-gold-dark px-3 py-1.5 rounded-xl transition-all shadow-xs inline-flex items-center gap-1.5 cursor-pointer"
-                        title="Confirm sample photos and forward to staff for printing and finalization"
+                        title="Confirm sample photos and advance to print production"
                       >
-                        <CheckCircle2 size={13} /> Confirm & Send to Staff
+                        <CheckCircle2 size={13} /> Confirm Samples
                       </button>
                       <button
                         type="button"
@@ -1566,7 +1566,7 @@ export default function AdminBookingDetail() {
                   )}
                   {['PRINTING', 'READY', 'COMPLETED'].includes(status) && (
                     <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
-                      <CheckCircle2 size={13} /> Samples Confirmed for Staff Finalization
+                      <CheckCircle2 size={13} /> Samples Confirmed for Production
                     </span>
                   )}
                 </div>
@@ -1582,7 +1582,7 @@ export default function AdminBookingDetail() {
                     <div>
                       <h4 className="font-bold text-amber-950">Awaiting Admin Confirmation</h4>
                       <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">
-                        Photographer uploaded {photoOutputs.length} sample photo(s) across sets. Review the samples below. Once verified, confirm the sets to forward to staff for final retouching, print lab production, and packaging.
+                        Photographer uploaded {photoOutputs.length} sample photo(s) across sets. Review the samples below. Once verified, confirm the sets to advance order to final retouching, print lab production, and packaging.
                       </p>
                     </div>
                   </div>
@@ -1590,9 +1590,9 @@ export default function AdminBookingDetail() {
                   <div className="p-4 rounded-xl bg-emerald-50/90 border border-emerald-200 text-emerald-900 text-xs sm:text-sm flex items-start gap-3">
                     <CheckCircle2 size={18} className="text-emerald-700 shrink-0 mt-0.5" />
                     <div>
-                      <h4 className="font-bold text-emerald-950">Confirmed & Dispatched to Staff</h4>
+                      <h4 className="font-bold text-emerald-950">Confirmed & In Production</h4>
                       <p className="text-xs text-emerald-800 mt-0.5 leading-relaxed">
-                        Admin confirmed sample photos. Order is currently in staff custody for final printing, framing, and client pickup/courier release.
+                        Admin confirmed sample photos. Order is currently in progress for final printing, framing, and client pickup/courier release.
                       </p>
                     </div>
                   </div>
@@ -1754,10 +1754,10 @@ export default function AdminBookingDetail() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleOpenTransferModal('finance', 'PAYMENT_VERIFICATION', `Verify Balance: #${booking.booking_number}`, 'Please verify customer downpayment/remaining balance before print release.')}
+                  onClick={() => handleOpenTransferModal('admin', 'PAYMENT_VERIFICATION', `Verify Balance: #${booking.booking_number}`, 'Please verify customer downpayment/remaining balance before print release.')}
                   className="text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl transition-colors inline-flex items-center gap-1.5 cursor-pointer"
                 >
-                  <CreditCard size={13} /> Ask Finance
+                  <CreditCard size={13} /> Check Payment
                 </button>
                 <button
                   type="button"
@@ -1784,7 +1784,7 @@ export default function AdminBookingDetail() {
                   : 'bg-neutral-50 border-neutral-200 text-neutral-400'
                   }`}>
                   <span className="block text-xs uppercase font-bold text-emerald-600 mb-0.5">Stage 2</span>
-                  Finance Cleared
+                  Payment Cleared
                 </div>
                 <div className={`p-3.5 rounded-xl border text-sm font-body ${['CAPTURE', 'EDITING', 'PRINTING', 'READY', 'COMPLETED'].includes(status)
                   ? 'bg-purple-50 border-purple-200 text-purple-900 font-bold'
@@ -2744,10 +2744,8 @@ export default function AdminBookingDetail() {
               required
             >
               <option value="photographer">Studio Bay (Photographer)</option>
-              <option value="staff">Front Desk & Reception (Staff)</option>
-              <option value="finance">Treasury & Payments (Finance)</option>
-              <option value="admin">Command Hub (Admin Escalation)</option>
-              <option value="all">Broadcast to All Stations</option>
+              <option value="admin">Studio Production (Admin)</option>
+              <option value="all">Broadcast to All</option>
             </select>
           </div>
 
@@ -2836,16 +2834,16 @@ export default function AdminBookingDetail() {
         </form>
       </Modal>
 
-      {/* ── CONFIRM SAMPLES & FORWARD TO STAFF MODAL ───────────────────────── */}
+      {/* ── CONFIRM SAMPLES & ADVANCE TO PRODUCTION MODAL ───────────────────────── */}
       <Modal
         isOpen={confirmForwardModalOpen}
         onClose={() => !forwardSubmitting && setConfirmForwardModalOpen(false)}
-        title={`Confirm Photo Samples & Forward to Staff — #${booking.booking_number}`}
+        title={`Confirm Photo Samples — #${booking.booking_number}`}
       >
         <div className="space-y-4 font-body">
           <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs sm:text-sm">
             <p className="font-semibold">
-              Confirming will verify that all sample photo sets meet studio standards and forward the booking directly to Staff for final retouching, print production, and packaging.
+              Confirming will verify that all sample photo sets meet studio standards and advance the booking directly to final retouching, print production, and packaging.
             </p>
             <p className="text-xs text-emerald-700 mt-1">
               Deliverables: <strong>{photoOutputs.length} sample photo(s)</strong> across sets.
@@ -2854,7 +2852,7 @@ export default function AdminBookingDetail() {
 
           <div>
             <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1.5">
-              Production Notes for Staff (Optional)
+              Production Notes (Optional)
             </label>
             <textarea
               rows={3}
@@ -2881,7 +2879,7 @@ export default function AdminBookingDetail() {
               className="btn-primary text-xs font-bold px-5 py-2.5 flex items-center gap-2 disabled:opacity-50"
             >
               {forwardSubmitting ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-              Confirm & Forward to Staff
+              Confirm & Advance to Production
             </button>
           </div>
         </div>

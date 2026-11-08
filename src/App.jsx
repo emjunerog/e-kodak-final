@@ -43,7 +43,7 @@ const BookingProgressPage = lazy(() => import("./pages/dashboard/BookingProgress
 const PaymentsPage = lazy(() => import("./pages/dashboard/PaymentsPage"));
 const SettingsPage = lazy(() => import("./pages/dashboard/SettingsPage"));
 
-// ── Admin / Staff Pages (Lazy-loaded route chunks) ────────────────────────────
+// ── Admin Pages (Lazy-loaded route chunks) ────────────────────────────────────
 const AdminLayout = lazy(() => import("./components/admin/AdminLayout"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminBookings = lazy(() => import("./pages/admin/AdminBookings"));
@@ -188,7 +188,7 @@ export default function App() {
               <Route path="settings" element={<SettingsPage />} />
             </Route>
 
-            {/* ADMIN / STAFF DASHBOARD (Phase 4.1 + 4.2) */}
+            {/* ADMIN DASHBOARD */}
             <Route path="/admin" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
               <Route index element={<AdminDashboard />} />
               <Route path="bookings" element={<AdminBookings />} />

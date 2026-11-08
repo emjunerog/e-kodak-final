@@ -236,9 +236,7 @@ export default function AdminCustomers() {
       let icon = Layers;
       if (nameLower.includes('senior') || nameLower.includes('college') || s.category === 'senior-high' || s.category === 'college') {
         icon = GraduationCap;
-      } else if (nameLower.includes('photo') || s.category === 'wedding-photo') {
-        icon = Camera;
-      } else if (nameLower.includes('video') || s.category === 'wedding-video') {
+      } else if (nameLower.includes('photo') || nameLower.includes('video')) {
         icon = Camera;
       }
 
