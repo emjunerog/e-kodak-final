@@ -85,8 +85,8 @@ const GATE_SLIDES = [
     id: 'what_is_ekodak',
     type: 'logo',
     badge: 'E-KODAK STUDIO',
-    headline: 'Your Studio\nCompanion.',
-    body: 'Connect directly to E-Kodak Photography Studio for live shoot tracking and verified photographer access.',
+    headline: 'Your Studio\nCompanion',
+    body: 'Track your studio shoots in real time or sign in with your verified photographer pass.',
   },
   {
     id: 'qr_gate',
@@ -94,7 +94,7 @@ const GATE_SLIDES = [
     icon: ScanQrCode,
     badge: 'QR VERIFICATION',
     headline: 'Scan QR Code',
-    body: 'Align your Customer Booking QR or Photographer Pass QR inside the frame.',
+    body: 'Center your Customer Booking QR or Photographer Pass QR inside the frame.',
   },
 ];
 
@@ -103,35 +103,35 @@ const CUSTOMER_SPLASH_SLIDES = [
     id: 'cust_track',
     type: 'timeline',
     icon: Activity,
-    badge: 'CUSTOMER PORTAL · LIVE UPDATES',
-    headline: 'Follow Your Shoot\nStep by Step.',
-    body: 'Track every stage from pictorial capture and editing to printing and print pickup in real time.',
+    badge: 'LIVE TRACKING',
+    headline: 'Follow Your Shoot\nin Real Time',
+    body: 'See every update from studio capture and editing to printing and pickup.',
     stages: ['Booked', 'Shoot', 'Editing', 'Ready'],
   },
   {
     id: 'cust_passes',
     type: 'features',
     icon: Tags,
-    badge: 'PASSES & STUDIO RATES',
-    headline: 'All Passes & Package\nRates in One Place.',
-    body: 'Keep your booking QR passes saved offline and preview transparent package rates whenever you need.',
+    badge: 'PASSES & PACKAGES',
+    headline: 'Booking Passes &\nStudio Rates',
+    body: 'Access your saved QR receipts offline and browse studio package rates anytime.',
     items: [
-      'Saved QR receipts & balances',
-      'Package inclusions & pricing',
-      'Instant stage notifications',
+      'Saved QR passes & balances',
+      'Studio packages & inclusions',
+      'Live status notifications',
     ],
   },
   {
     id: 'cust_pickup',
     type: 'features',
     icon: MapPin,
-    badge: 'DELIVERY & STUDIO BAY',
-    headline: 'Live Studio Bay &\nDelivery Tracking.',
-    body: 'Manage your delivery address or view directions straight to the E-Kodak Studio pickup bay.',
+    badge: 'PICKUP & DELIVERY',
+    headline: 'Studio Pickup &\nOrder Delivery',
+    body: 'Get directions to the E-Kodak pickup bay or manage your home delivery details.',
     items: [
-      'Live Studio Bay pickup map',
-      'Courier dispatch tracking',
-      'Profile photo & theme controls',
+      'Studio pickup directions',
+      'Delivery address & courier tracking',
+      'Profile & appearance settings',
     ],
   },
 ];
@@ -141,35 +141,35 @@ const PHOTOGRAPHER_SPLASH_SLIDES = [
     id: 'ph_creds',
     type: 'features',
     icon: ShieldCheck,
-    badge: 'PHOTOGRAPHER PORTAL · VERIFIED',
-    headline: 'Credentials &\nLive Duty Control.',
-    body: 'Your verified staff credentials, specialization, pass ID, and general duty availability sync automatically.',
+    badge: 'PHOTOGRAPHER PORTAL',
+    headline: 'Verified Profile &\nDuty Status',
+    body: 'Your staff profile, specialization, and duty availability stay synced with the studio.',
     items: [
       'Verified staff profile & Pass ID',
-      '1-tap Available / Off-Duty switch',
-      'Workstation handoff alerts',
+      'One-tap duty status toggle',
+      'Instant workstation alerts',
     ],
   },
   {
     id: 'ph_shoots',
     type: 'timeline',
     icon: ClipboardList,
-    badge: 'ASSIGNED SHOOT QUEUE',
-    headline: 'Manage Pictorials &\nAdvance Stages Live.',
-    body: 'Accept assigned bookings, kick off studio captures, move orders to editing, or request reschedules.',
-    stages: ['Assigned', 'Capture', 'Editing', 'Finalized'],
+    badge: 'ASSIGNED SHOOTS',
+    headline: 'Manage Sessions\nStep by Step',
+    body: 'Accept assigned bookings, start studio captures, and move sessions to editing.',
+    stages: ['Assigned', 'Capture', 'Editing', 'Done'],
   },
   {
     id: 'ph_schedule',
     type: 'features',
     icon: CalendarDays,
-    badge: 'SCHEDULE & SHIFTS',
-    headline: 'Control Your Working\nHours & Calendar.',
-    body: 'Review upcoming shoots on your monthly calendar and customize shift hours or off-duty dates anytime.',
+    badge: 'WORK SCHEDULE',
+    headline: 'Your Calendar &\nShift Hours',
+    body: 'View upcoming bookings by date and update your working hours or off-duty days.',
     items: [
-      'Monthly shoot calendar view',
-      'Custom hours & off-duty blocking',
-      'Real-time admin roster sync',
+      'Monthly shoot calendar',
+      'Custom shift hours & days off',
+      'Live studio roster sync',
     ],
   },
 ];
@@ -946,13 +946,14 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
               {currentIndex > 0 && (
                 <TouchableOpacity
                   onPress={() => goToSlide(currentIndex - 1)}
-                  style={isScannerSlide ? styles.backBtnFull : styles.backBtn}
+                  style={isScannerSlide ? styles.backBtnFull : styles.backIconBtn}
                   activeOpacity={0.78}
+                  accessibilityLabel="Go back"
                 >
-                  <ChevronLeft size={17} color={colors.text.primary} strokeWidth={2.1} />
-                  <Text style={styles.backText}>
-                    {isScannerSlide ? 'Back to E-Kodak Info' : 'Back'}
-                  </Text>
+                  <ChevronLeft size={20} color={colors.text.primary} strokeWidth={2.2} />
+                  {isScannerSlide && (
+                    <Text style={styles.backText}>Back to Welcome</Text>
+                  )}
                 </TouchableOpacity>
               )}
 
@@ -975,7 +976,7 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
                   style={styles.nextBtn}
                   size="md"
                 >
-                  {currentIndex < activeSlides.length - 1 ? 'Next' : 'Start Interactive Tour'}
+                  {currentIndex < activeSlides.length - 1 ? 'Next' : 'Start Tour'}
                 </GoldButton>
               )}
             </View>
@@ -986,7 +987,7 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
                 style={styles.skipBtn}
                 activeOpacity={0.7}
               >
-                <Text style={styles.skipText}>Skip to App Tour</Text>
+                <Text style={styles.skipText}>Skip Tour</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -1134,18 +1135,19 @@ const getStyles = (colors, isDark) =>
     },
     headline: {
       fontFamily: Typography.fontHeading,
-      fontSize: 26,
+      fontSize: 25,
       color: colors.text.primary,
       textAlign: 'center',
-      lineHeight: 33,
-      marginBottom: Spacing[3],
+      lineHeight: 32,
+      marginBottom: Spacing[2],
     },
     body: {
       fontFamily: Typography.fontBodyMedium,
-      fontSize: 14,
+      fontSize: 13.5,
       color: colors.text.secondary,
       textAlign: 'center',
-      lineHeight: 21,
+      lineHeight: 20,
+      maxWidth: 310,
     },
     controls: {
       width: '100%',
@@ -1178,26 +1180,23 @@ const getStyles = (colors, isDark) =>
       alignItems: 'center',
       gap: 12,
     },
-    backBtn: {
-      minHeight: 52,
-      minWidth: 112,
-      paddingHorizontal: 20,
-      borderRadius: Radius.full,
+    backIconBtn: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
       borderWidth: 1,
       borderColor: isDark ? 'rgba(180, 198, 224, 0.24)' : '#D5D8E2',
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(255, 255, 255, 0.86)',
-      flexDirection: 'row',
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(255, 255, 255, 0.88)',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 6,
     },
     backBtnFull: {
       flex: 1,
-      minHeight: 52,
+      height: 52,
       borderRadius: Radius.full,
       borderWidth: 1,
       borderColor: isDark ? 'rgba(180, 198, 224, 0.24)' : '#D5D8E2',
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(255, 255, 255, 0.86)',
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(255, 255, 255, 0.88)',
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',

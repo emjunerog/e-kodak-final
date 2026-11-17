@@ -71,7 +71,7 @@ export default function AppInstallReminder({ className = '', featured = false })
         </div>
       ) : featured ? (
         /* ── Sidebar Featured App Card (Light & Dark Frosted Glassmorphism matching reference) ── */
-        <div className="relative h-full rounded-[32px] overflow-hidden bg-white/90 dark:bg-[#111215]/90 backdrop-blur-xl text-neutral-900 dark:text-white pt-8 pb-8 sm:pt-9 sm:pb-9 lg:pt-11 lg:pb-11 px-6 sm:px-7 lg:px-8 border border-neutral-200/80 dark:border-white/[0.08] shadow-xs dark:shadow-xl select-none transition-colors flex flex-col justify-between">
+        <div className="relative h-full rounded-[32px] overflow-hidden bg-white/90 dark:bg-[#111215]/90 backdrop-blur-xl text-neutral-900 dark:text-white pt-7 pb-7 sm:pt-8 sm:pb-8 lg:pt-9 lg:pb-9 px-5 sm:px-6 border border-neutral-200/80 dark:border-white/[0.08] shadow-xs dark:shadow-xl select-none transition-colors flex flex-col justify-between">
           {/* Ambient Warm Amber Glow */}
           <div
             className="absolute -top-12 -right-12 w-64 h-64 pointer-events-none blur-3xl opacity-25 dark:opacity-35"
@@ -89,7 +89,7 @@ export default function AppInstallReminder({ className = '', featured = false })
               </p>
 
               {/* Light Playfair Serif Headline */}
-              <h3 className="relative z-10 font-heading font-light text-2xl sm:text-3xl lg:text-[34px] text-neutral-900 dark:text-white leading-[1.08] tracking-tight mt-1 mb-2">
+              <h3 className="relative z-10 font-heading font-light text-2xl sm:text-[28px] lg:text-[31px] text-neutral-900 dark:text-white leading-[1.1] tracking-tight mt-1 mb-2">
                 Take the studio with you
               </h3>
 
@@ -100,67 +100,67 @@ export default function AppInstallReminder({ className = '', featured = false })
             </div>
 
             {/* ── Center Warm Showcase Box (Expands to occupy middle space) ── */}
-            <div className="relative z-10 flex-1 my-2 sm:my-3 rounded-[26px] sm:rounded-[30px] border border-neutral-200/70 dark:border-white/[0.06] bg-[#f8f6f0] dark:bg-[#16181d] p-5 sm:p-6 lg:p-7 overflow-hidden shadow-2xs flex items-center">
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 sm:gap-6 items-center w-full">
-                {/* Left: Phone Preview Mockup (Enlarged) */}
-                <div className="sm:col-span-5 flex items-center justify-center">
+            <div className="relative z-10 flex-1 my-2 sm:my-3 rounded-[24px] sm:rounded-[28px] border border-neutral-200/70 dark:border-white/[0.06] bg-[#f8f6f0] dark:bg-[#16181d] px-3.5 py-5 sm:px-4 sm:py-5 overflow-hidden shadow-2xs flex items-center">
+              <div className="grid grid-cols-1 sm:grid-cols-[124px_minmax(0,1fr)] gap-4 sm:gap-3.5 items-center w-full min-w-0">
+                {/* Left: Phone Preview Mockup */}
+                <div className="flex items-center justify-center min-w-0">
                   <motion.div
                     initial={{ y: 0 }}
                     animate={{ y: [0, -4, 0] }}
                     transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-                    className="relative flex items-center justify-center"
+                    className="relative w-[124px] flex items-center justify-center"
                   >
                     <img
                       src="/images/app-preview/phone-sienna-transparent.png"
                       alt="E-Kodak app preview showing gallery and session photos"
-                      className="max-h-[225px] xs:max-h-[245px] sm:max-h-[265px] lg:max-h-[285px] w-auto object-contain drop-shadow-2xl select-none"
+                      className="h-[220px] sm:h-[238px] lg:h-[248px] w-auto max-w-none object-contain drop-shadow-2xl select-none"
                       loading="eager"
                     />
                   </motion.div>
                 </div>
 
-                {/* Right: 3 Feature Items (Enlarged & Generously Spaced) */}
-                <div className="sm:col-span-7 flex flex-col justify-center space-y-4 sm:space-y-5 lg:space-y-6">
+                {/* Right: 3 Feature Items */}
+                <div className="min-w-0 flex flex-col justify-center space-y-4 sm:space-y-4.5">
                   {/* Feature 1 */}
-                  <div className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full border border-amber-500/80 flex items-center justify-center shrink-0 mt-0.5">
-                      <Check size={11} className="text-[#d97706] dark:text-amber-400 stroke-[3]" />
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <div className="w-4.5 h-4.5 rounded-full border border-amber-500/80 flex items-center justify-center shrink-0 mt-0.5">
+                      <Check size={10} className="text-[#d97706] dark:text-amber-400 stroke-[3]" />
                     </div>
-                    <div>
-                      <h4 className="text-xs sm:text-[14px] font-normal text-neutral-900 dark:text-white leading-tight">
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-xs sm:text-[13.5px] font-normal text-neutral-900 dark:text-white leading-tight">
                         One-tap access
                       </h4>
-                      <p className="text-[11px] sm:text-xs text-neutral-500 dark:text-neutral-400 font-light mt-1 leading-snug">
+                      <p className="text-[11px] sm:text-[11.5px] text-neutral-500 dark:text-neutral-400 font-light mt-0.5 leading-snug break-words">
                         Your bookings in one place
                       </p>
                     </div>
                   </div>
 
                   {/* Feature 2 */}
-                  <div className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full border border-amber-500/80 flex items-center justify-center shrink-0 mt-0.5">
-                      <Check size={11} className="text-[#d97706] dark:text-amber-400 stroke-[3]" />
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <div className="w-4.5 h-4.5 rounded-full border border-amber-500/80 flex items-center justify-center shrink-0 mt-0.5">
+                      <Check size={10} className="text-[#d97706] dark:text-amber-400 stroke-[3]" />
                     </div>
-                    <div>
-                      <h4 className="text-xs sm:text-[14px] font-normal text-neutral-900 dark:text-white leading-tight">
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-xs sm:text-[13.5px] font-normal text-neutral-900 dark:text-white leading-tight">
                         Instant updates
                       </h4>
-                      <p className="text-[11px] sm:text-xs text-neutral-500 dark:text-neutral-400 font-light mt-1 leading-snug">
+                      <p className="text-[11px] sm:text-[11.5px] text-neutral-500 dark:text-neutral-400 font-light mt-0.5 leading-snug break-words">
                         Never miss a status change
                       </p>
                     </div>
                   </div>
 
                   {/* Feature 3 */}
-                  <div className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full border border-amber-500/80 flex items-center justify-center shrink-0 mt-0.5">
-                      <Check size={11} className="text-[#d97706] dark:text-amber-400 stroke-[3]" />
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <div className="w-4.5 h-4.5 rounded-full border border-amber-500/80 flex items-center justify-center shrink-0 mt-0.5">
+                      <Check size={10} className="text-[#d97706] dark:text-amber-400 stroke-[3]" />
                     </div>
-                    <div>
-                      <h4 className="text-xs sm:text-[14px] font-normal text-neutral-900 dark:text-white leading-tight">
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-xs sm:text-[13.5px] font-normal text-neutral-900 dark:text-white leading-tight">
                         Private galleries
                       </h4>
-                      <p className="text-[11px] sm:text-xs text-neutral-500 dark:text-neutral-400 font-light mt-1 leading-snug">
+                      <p className="text-[11px] sm:text-[11.5px] text-neutral-500 dark:text-neutral-400 font-light mt-0.5 leading-snug break-words">
                         View, select, and download
                       </p>
                     </div>

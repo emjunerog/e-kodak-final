@@ -213,6 +213,7 @@ export default function GoldButton({
               />
             )}
             <Text
+              numberOfLines={1}
               style={[
                 styles.text,
                 styles[`textSize_${size}`],
