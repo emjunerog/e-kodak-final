@@ -11,60 +11,110 @@
  */
 
 import { supabase, isSupabaseConfigured } from './supabase';
+import {
+  getPhotographerQRToken,
+  savePhotographerSessionData,
+  clearPhotographerSessionData,
+  getCachedPhotographerProfile,
+  setUserRole,
+} from './storageService';
 
 // ── QR Payload Parser ────────────────────────────────────────────────────────
 
 /**
- * Parse the QR payload from a web-generated E-Kodak booking QR code.
- * Supported formats (priority order):
- *  1. URL:  https://e-kodak.com/pass?token=<token>   ← current web format
- *  2. JSON: {"v":1,"bid":"<token>","typ":"booking"…} ← legacy format
- *  3. Raw:  <booking_token>                           ← direct token string
+ * Parse the QR payload from either an E-Kodak booking QR pass or a
+ * Photographer Login QR pass.
+ *
+ * Supported formats:
+ *  Photographer Login QR:
+ *   1. URL with ?ph_token=<uuid> / ?photographer_token=<uuid> / ?ptoken=<uuid>
+ *   2. URL path /photographer-pass?token=<uuid>
+ *   3. JSON {"typ":"photographer_login","token":"<uuid>"}
+ *  Booking Pass QR:
+ *   1. URL:  https://e-kodak.com/pass?token=<token>
+ *   2. JSON: {"v":1,"bid":"<token>","typ":"booking"…}
+ *   3. Raw:  <token>
  */
 export function parseQRPayload(rawString) {
   if (!rawString || typeof rawString !== 'string') {
-    return { valid: false, token: null, error: 'Empty QR code.' };
+    return { valid: false, token: null, kind: null, error: 'Empty QR code.' };
   }
 
   const raw = rawString.trim();
 
   // 1. URL format
-  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+  if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('/')) {
     try {
-      const url = new URL(raw);
-      const token =
+      const url = raw.startsWith('/')
+        ? new URL(`https://ekodak.local${raw}`)
+        : new URL(raw);
+
+      const phToken =
+        url.searchParams.get('ph_token') ||
+        url.searchParams.get('photographer_token') ||
+        url.searchParams.get('ptoken');
+      if (phToken && phToken.length >= 4) {
+        return {
+          valid: true,
+          kind: 'photographer',
+          token: decodeURIComponent(phToken),
+          error: null,
+        };
+      }
+
+      const pathLower = (url.pathname || '').toLowerCase();
+      const genericToken =
         url.searchParams.get('token') ||
         url.searchParams.get('id') ||
         url.searchParams.get('bid');
-      if (token && token.length >= 4) {
-        return { valid: true, token: decodeURIComponent(token), error: null };
+      if (genericToken && genericToken.length >= 4) {
+        const kind = pathLower.includes('photographer') ? 'photographer' : 'booking';
+        return {
+          valid: true,
+          kind,
+          token: decodeURIComponent(genericToken),
+          error: null,
+        };
       }
     } catch {}
     return {
       valid: false,
+      kind: null,
       token: null,
       error: 'This QR code link does not contain a valid studio pass token.',
     };
   }
 
-  // 2. Legacy JSON format
+  // 2. JSON format
   try {
     const payload = JSON.parse(raw);
+    if (
+      (payload?.typ === 'photographer_login' || payload?.typ === 'photographer') &&
+      typeof (payload?.token || payload?.ph_token || payload?.pid) === 'string'
+    ) {
+      return {
+        valid: true,
+        kind: 'photographer',
+        token: payload.token || payload.ph_token || payload.pid,
+        error: null,
+      };
+    }
+
     if (payload?.v === 1 && payload?.typ === 'booking' && typeof payload?.bid === 'string') {
       const now = Math.floor(Date.now() / 1000);
       if (payload.exp && payload.exp < now) {
-        return { valid: false, token: null, error: 'This studio pass has expired. Please request a new QR code.' };
+        return { valid: false, kind: null, token: null, error: 'This studio pass has expired. Please request a new QR code.' };
       }
-      return { valid: true, token: payload.bid, error: null };
+      return { valid: true, kind: 'booking', token: payload.bid, error: null };
     }
   } catch {}
 
   // 3. Raw token fallback
   if (raw.length >= 4 && raw.length <= 200 && !raw.includes('\n')) {
-    return { valid: true, token: raw, error: null };
+    return { valid: true, kind: 'unknown', token: raw, error: null };
   }
 
-  return { valid: false, token: null, error: 'Invalid QR code. Please scan your E-Kodak studio pass.' };
+  return { valid: false, kind: null, token: null, error: 'Invalid QR code. Please scan your E-Kodak studio pass.' };
 }
 
 // ── Select Fields ─────────────────────────────────────────────────────────────
@@ -101,11 +151,12 @@ const BOOKING_SELECT = `
     id, name, category, base_price, tiers, inclusions
   ),
   customer:profiles!bookings_customer_id_fkey (
-    id, first_name, last_name, email, phone, avatar_url
+    id, first_name, last_name, email, phone, address, avatar_url, studio_specs
   ),
   booking_deliveries (
-    id, delivery_type, status, tracking_number, carrier,
-    dispatched_at, delivered_at, digital_access_expires_at
+    id, delivery_type, status, tracking_number, carrier, dispatch_address,
+    notes, dispatched_at, delivered_at, confirmed_by_customer_at,
+    digital_access_expires_at, created_at, updated_at
   )
 `;
 
@@ -131,6 +182,91 @@ function parseBookingNotes(notes) {
 }
 
 /**
+ * Parses the [DELIVERY & CLAIMING DETAILS] block from bookings.notes if present.
+ */
+function parseDeliveryDetailsFromNotes(notes) {
+  if (!notes || typeof notes !== 'string') return {};
+  const marker = '[DELIVERY & CLAIMING DETAILS]';
+  const startIdx = notes.indexOf(marker);
+  if (startIdx === -1) return {};
+
+  const section = notes.slice(startIdx + marker.length);
+  const extract = (label) => {
+    const regex = new RegExp(`^\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:\\s*(.+)$`, 'im');
+    const match = section.match(regex);
+    return match ? match[1].trim() : '';
+  };
+
+  return {
+    fulfillmentMode: extract('Fulfillment Mode'),
+    preferredCourier: extract('Preferred Courier'),
+    recipientName: extract('Recipient Name'),
+    recipientPhone: extract('Recipient Phone'),
+    region: extract('Region'),
+    province: extract('Province'),
+    city: extract('City / Municipality'),
+    barangay: extract('Barangay'),
+    street: extract('Street / House No.'),
+    address: extract('Delivery Address'),
+    instructions: extract('Delivery Instructions'),
+    savedAt: extract('Saved At'),
+  };
+}
+
+/**
+ * Resolves customer delivery choice & studio dispatch records from DB sources.
+ */
+function resolveDeliveryInfo(raw) {
+  const c = raw?.customer || {};
+  const specs = (c.studio_specs && typeof c.studio_specs === 'object') ? c.studio_specs : {};
+  const fromNotes = parseDeliveryDetailsFromNotes(raw?.notes);
+  const deliveries = Array.isArray(raw?.booking_deliveries) ? raw.booking_deliveries : [];
+  const latestDelivery = deliveries[0] || null;
+
+  const streetParts = [
+    fromNotes.street || specs.delivery_street,
+    fromNotes.barangay || specs.delivery_barangay,
+    fromNotes.city || specs.delivery_city,
+    fromNotes.province || specs.delivery_province,
+    fromNotes.region || specs.delivery_region,
+  ].filter(Boolean);
+
+  const resolvedAddress =
+    fromNotes.address ||
+    latestDelivery?.dispatch_address ||
+    specs.shipping_address ||
+    (streetParts.length > 0 ? streetParts.join(', ') : '') ||
+    c.address ||
+    '';
+
+  const rawMode =
+    fromNotes.fulfillmentMode ||
+    specs.fulfillment_mode ||
+    latestDelivery?.delivery_type ||
+    '';
+
+  return {
+    fulfillmentMode: rawMode,
+    preferredCourier: fromNotes.preferredCourier || specs.preferred_courier || latestDelivery?.carrier || '',
+    recipientName:
+      fromNotes.recipientName ||
+      specs.courier_recipient_name ||
+      `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+    recipientPhone: fromNotes.recipientPhone || specs.courier_phone || c.phone || '',
+    address: resolvedAddress,
+    instructions: fromNotes.instructions || specs.delivery_instructions || latestDelivery?.notes || '',
+    savedAt: fromNotes.savedAt || specs.delivery_saved_at || latestDelivery?.updated_at || latestDelivery?.created_at || '',
+    deliveryStatus: latestDelivery?.status || '',
+    trackingNumber: latestDelivery?.tracking_number || '',
+    carrier: latestDelivery?.carrier || specs.preferred_courier || fromNotes.preferredCourier || '',
+    dispatchedAt: latestDelivery?.dispatched_at || '',
+    deliveredAt: latestDelivery?.delivered_at || '',
+    confirmedByCustomerAt: latestDelivery?.confirmed_by_customer_at || '',
+    digitalAccessExpiresAt: latestDelivery?.digital_access_expires_at || '',
+  };
+}
+
+/**
  * Normalize a raw DB booking row to the shape expected by the mobile UI.
  * Aliases web column names to the old mobile field names so screens don't break.
  */
@@ -140,10 +276,15 @@ function normalizeBooking(raw) {
   const c = raw.customer;
   const fullName = c ? `${c.first_name || ''} ${c.last_name || ''}`.trim() : '';
   const loc = (raw.location || '').toLowerCase();
-  const isStudio = loc.includes('e-kodak') || loc.includes('studio') || loc.includes('311 rizal');
+  const isStudio =
+    loc.includes('e-kodak') ||
+    loc.includes('studio') ||
+    loc.includes('331 rizal') ||
+    loc.includes('311 rizal');
 
   // Parse structured notes
   const parsedNotes = parseBookingNotes(raw.notes);
+  const deliveryDetails = resolveDeliveryInfo(raw);
 
   // Match selected tier from services.tiers
   const serviceTiers = Array.isArray(raw.service?.tiers) ? raw.service.tiers : [];
@@ -169,11 +310,13 @@ function normalizeBooking(raw) {
     session_time: raw.preferred_time,
     location_type: isStudio ? 'STUDIO' : 'OUTDOOR',
     location_address: raw.location || parsedNotes['Campus / Address'] || parsedNotes['School'] || '',
-    studio_location: '311 Rizal Street, City of Naga, Cebu',
+    studio_location: '331 Rizal Street, City of Naga, Cebu, 6037',
     total_price: resolvedPrice,
     tier_name: selectedTierName || matchedTier?.name || '',
     tier_details: matchedTier,
     parsed_notes: parsedNotes,
+    delivery_details: deliveryDetails,
+    booking_deliveries: Array.isArray(raw.booking_deliveries) ? raw.booking_deliveries : [],
     // Normalize profile shape
     profile: c
       ? {
@@ -181,7 +324,9 @@ function normalizeBooking(raw) {
           full_name: fullName || parsedNotes['Participant Name'] || parsedNotes['Student Name'] || '',
           email: c.email || parsedNotes['Participant Email'] || '',
           phone: c.phone || parsedNotes['Participant Phone'] || '',
+          address: c.address || '',
           avatar_url: c.avatar_url || null,
+          studio_specs: c.studio_specs || null,
         }
       : {
           full_name: parsedNotes['Participant Name'] || parsedNotes['Student Name'] || '',
@@ -203,7 +348,7 @@ export async function fetchStudioSettings() {
   if (!isSupabaseConfigured || !supabase) {
     return {
       data: {
-        address: '311 Rizal Street, City of Naga, Cebu',
+        address: '331 Rizal Street, City of Naga, Cebu, 6037',
         contact_phone: '+63 917 123 4567',
         contact_email: 'contact@e-kodak.com',
         business_hours: 'Mon – Sat: 8:00 AM – 6:00 PM | Sun: By Appointment',
@@ -222,7 +367,7 @@ export async function fetchStudioSettings() {
     if (error || !data) {
       return {
         data: {
-          address: '311 Rizal Street, City of Naga, Cebu',
+          address: '331 Rizal Street, City of Naga, Cebu, 6037',
           contact_phone: '+63 917 123 4567',
           contact_email: 'contact@e-kodak.com',
           business_hours: 'Mon – Sat: 8:00 AM – 6:00 PM | Sun: By Appointment',
@@ -234,7 +379,7 @@ export async function fetchStudioSettings() {
   } catch (err) {
     return {
       data: {
-        address: '311 Rizal Street, City of Naga, Cebu',
+        address: '331 Rizal Street, City of Naga, Cebu, 6037',
         contact_phone: '+63 917 123 4567',
         contact_email: 'contact@e-kodak.com',
         business_hours: 'Mon – Sat: 8:00 AM – 6:00 PM | Sun: By Appointment',
@@ -247,11 +392,50 @@ export async function fetchStudioSettings() {
 // ── Fetch Booking ─────────────────────────────────────────────────────────────
 
 /**
- * Fetch a booking by token, booking_number, or booking id.
- * Uses 4 fallback strategies to handle:
- *   - New bookings with booking_token set
- *   - Old bookings where booking_token is null (QR was generated from booking.id)
- *   - Manual entry using booking_number (e.g. BK-000042)
+ * Build ordered, normalized lookup candidates from a scanned token or customer Booking ID.
+ * Supports:
+ *  - booking_token UUID (e.g. c18facb6-8c84-4eec-821d-8712f0f1f551)
+ *  - booking_number (e.g. BK-2026-00001, #BK-2026-00001, bk-2026-1, 2026-00001, 00001)
+ *  - booking id UUID
+ */
+function buildBookingLookupCandidates(rawInput) {
+  const cleaned = String(rawInput || '').trim().replace(/^#+\s*/, '').trim();
+  if (!cleaned) return [];
+
+  const candidates = [];
+  const pushUnique = (val) => {
+    const v = String(val || '').trim();
+    if (v && !candidates.includes(v)) {
+      candidates.push(v);
+    }
+  };
+
+  pushUnique(cleaned);
+
+  // Normalize BK-YYYY-NNNNN variants (e.g. "bk-2026-1", "BK 2026 00001", "BK202600001")
+  const bkMatch = cleaned.match(/^bk[-\s]?(\d{4})[-\s]?(\d{1,6})$/i);
+  if (bkMatch) {
+    const [, year, seq] = bkMatch;
+    pushUnique(`BK-${year}-${seq.padStart(5, '0')}`);
+    pushUnique(`BK-${year}-${seq}`);
+  } else {
+    // Support YYYY-NNNNN shorthand (e.g. "2026-00001" or "2026-1")
+    const yearSeqMatch = cleaned.match(/^(\d{4})[-\s](\d{1,6})$/);
+    if (yearSeqMatch) {
+      const [, year, seq] = yearSeqMatch;
+      pushUnique(`BK-${year}-${seq.padStart(5, '0')}`);
+    } else if (/^\d{1,5}$/.test(cleaned)) {
+      // Support numeric sequence suffix (e.g. "00001" -> current year BK-YYYY-00001)
+      const currentYear = new Date().getFullYear();
+      pushUnique(`BK-${currentYear}-${cleaned.padStart(5, '0')}`);
+    }
+  }
+
+  return candidates;
+}
+
+/**
+ * Fetch a booking by token, customer booking ID (booking_number), or booking UUID id.
  */
 export async function fetchBookingByToken(lookupToken) {
   if (!isSupabaseConfigured || !supabase) {
@@ -259,11 +443,15 @@ export async function fetchBookingByToken(lookupToken) {
   }
 
   if (!lookupToken) {
-    return { data: null, error: new Error('No token provided.') };
+    return { data: null, error: new Error('No booking code or Booking ID provided.') };
   }
 
-  const token = String(lookupToken).trim();
-  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token);
+  const candidates = buildBookingLookupCandidates(lookupToken);
+  if (candidates.length === 0) {
+    return { data: null, error: new Error('No booking code or Booking ID provided.') };
+  }
+
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   try {
     async function handleMatchedBooking(b) {
@@ -278,42 +466,59 @@ export async function fetchBookingByToken(lookupToken) {
       return { data: normalizeBooking(b), error: null };
     }
 
-    // Strategy 0: Secure Definitive RPC for mobile pass scanning (bypasses RLS safely for exact token/booking_number)
-    try {
-      const { data: rpcBooking, error: rpcError } = await supabase.rpc('get_booking_by_pass_token', {
-        lookup_token: token,
-      });
-      if (rpcBooking && !rpcError) {
-        return await handleMatchedBooking(rpcBooking);
+    for (const candidate of candidates) {
+      const isUUID = uuidRegex.test(candidate);
+
+      // Strategy 0: Secure Definitive RPC for mobile pass scanning & Booking ID lookup
+      try {
+        const { data: rpcBooking, error: rpcError } = await supabase.rpc('get_booking_by_pass_token', {
+          lookup_token: candidate,
+        });
+        if (rpcBooking && !rpcError) {
+          return await handleMatchedBooking(rpcBooking);
+        }
+      } catch (rpcErr) {
+        console.warn('RPC pass lookup fallback:', rpcErr);
       }
-    } catch (rpcErr) {
-      console.warn('RPC pass lookup fallback:', rpcErr);
-    }
 
-    // Strategy 1: booking_token exact match
-    const { data: byToken } = await supabase
-      .from('bookings')
-      .select(BOOKING_SELECT)
-      .eq('booking_token', token)
-      .maybeSingle();
-    if (byToken) return await handleMatchedBooking(byToken);
+      // Strategy 1 & 3: UUID columns (booking_token or bookings.id)
+      if (isUUID) {
+        const { data: byToken } = await supabase
+          .from('bookings')
+          .select(BOOKING_SELECT)
+          .eq('booking_token', candidate)
+          .maybeSingle();
+        if (byToken) return await handleMatchedBooking(byToken);
 
-    // Strategy 2: booking_number exact match (case-insensitive)
-    const { data: byNumber } = await supabase
-      .from('bookings')
-      .select(BOOKING_SELECT)
-      .ilike('booking_number', token)
-      .maybeSingle();
-    if (byNumber) return await handleMatchedBooking(byNumber);
+        const { data: byId } = await supabase
+          .from('bookings')
+          .select(BOOKING_SELECT)
+          .eq('id', candidate)
+          .maybeSingle();
+        if (byId) return await handleMatchedBooking(byId);
+      }
 
-    // Strategy 3: booking id (UUID) match — handles old QRs generated from booking.id
-    if (isUUID) {
-      const { data: byId } = await supabase
+      // Strategy 2: booking_number (Customer Booking ID, case-insensitive)
+      const { data: byNumber } = await supabase
         .from('bookings')
         .select(BOOKING_SELECT)
-        .eq('id', token)
+        .ilike('booking_number', candidate)
         .maybeSingle();
-      if (byId) return await handleMatchedBooking(byId);
+      if (byNumber) return await handleMatchedBooking(byNumber);
+    }
+
+    // Strategy 4: Digits-only suffix fallback across any year (e.g. "00042" matching "%-00042")
+    const cleanedRaw = candidates[0];
+    if (/^\d{1,5}$/.test(cleanedRaw)) {
+      const suffix = `-${cleanedRaw.padStart(5, '0')}`;
+      const { data: bySuffix } = await supabase
+        .from('bookings')
+        .select(BOOKING_SELECT)
+        .ilike('booking_number', `%${suffix}`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (bySuffix) return await handleMatchedBooking(bySuffix);
     }
 
     logQRScan({ bookingId: null, scanResult: 'INVALID' });
@@ -321,7 +526,7 @@ export async function fetchBookingByToken(lookupToken) {
     return {
       data: null,
       error: new Error(
-        'No booking found for this pass. Please scan your official E-Kodak QR code or enter your exact booking reference (e.g. BK-2026-00001).'
+        'No booking found. Please scan your official E-Kodak QR code or enter your Booking ID (e.g. BK-2026-00001) or pass code.'
       ),
     };
   } catch (err) {
@@ -476,6 +681,7 @@ export async function signInWithEmail(email, password) {
 }
 
 export async function signOut() {
+  await clearPhotographerSessionData().catch(() => {});
   if (!isSupabaseConfigured || !supabase) return;
   return supabase.auth.signOut();
 }
@@ -490,7 +696,7 @@ export async function getProfile(userId) {
   if (!isSupabaseConfigured || !supabase) return null;
   const { data } = await supabase
     .from('profiles')
-    .select('id, first_name, last_name, email, role, avatar_url, phone')
+    .select('id, first_name, last_name, email, role, avatar_url, phone, is_active')
     .eq('id', userId)
     .single();
   if (!data) return null;
@@ -498,5 +704,231 @@ export async function getProfile(userId) {
     ...data,
     full_name: `${data.first_name || ''} ${data.last_name || ''}`.trim(),
   };
+}
+
+/**
+ * Authenticates a photographer strictly using their unique Photographer Login QR token.
+ * Persists the verified token & full credentials locally so schedules, shoots, and
+ * profile load immediately on mobile without requiring a password.
+ */
+export async function loginPhotographerWithQRToken(rawTokenOrPayload, { persist = true } = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    return {
+      authorized: false,
+      reason: 'Supabase is not configured. Please check your connection.',
+      profile: null,
+      qr_login_token: null,
+    };
+  }
+
+  const parsed = parseQRPayload(rawTokenOrPayload);
+  const cleanToken = (parsed.valid && parsed.token ? parsed.token : String(rawTokenOrPayload || '')).trim();
+  if (!cleanToken) {
+    return {
+      authorized: false,
+      reason: 'Invalid or empty photographer QR code.',
+      profile: null,
+      qr_login_token: null,
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('login_photographer_by_qr_token', {
+      lookup_token: cleanToken,
+    });
+
+    if (error) {
+      return {
+        authorized: false,
+        reason: error.message || 'Unable to verify photographer QR pass.',
+        profile: null,
+        qr_login_token: null,
+      };
+    }
+
+    if (!data || !data.authorized || !data.profile) {
+      return {
+        authorized: false,
+        reason: data?.reason || 'Photographer QR pass not recognized.',
+        profile: null,
+        qr_login_token: null,
+      };
+    }
+
+    const tokenToStore = data.qr_login_token || cleanToken;
+    const normalizedProfile = {
+      ...data.profile,
+      qr_login_token: tokenToStore,
+      full_name:
+        data.profile.full_name ||
+        `${data.profile.first_name || ''} ${data.profile.last_name || ''}`.trim(),
+    };
+
+    if (persist) {
+      await Promise.all([
+        savePhotographerSessionData(tokenToStore, normalizedProfile),
+        setUserRole('photographer'),
+      ]);
+    }
+
+    return {
+      authorized: true,
+      reason: null,
+      profile: normalizedProfile,
+      qr_login_token: tokenToStore,
+    };
+  } catch (err) {
+    return {
+      authorized: false,
+      reason: err?.message || 'Unable to verify photographer QR pass.',
+      profile: null,
+      qr_login_token: null,
+    };
+  }
+}
+
+/**
+ * Verifies that an active photographer session exists — either via the saved
+ * Photographer QR Login token (primary passwordless flow) or a legacy Supabase Auth session.
+ */
+export async function verifyPhotographerSession() {
+  const storedQRToken = await getPhotographerQRToken();
+  if (storedQRToken) {
+    if (!isSupabaseConfigured || !supabase) {
+      const cached = await getCachedPhotographerProfile();
+      if (cached?.id) {
+        return {
+          authorized: true,
+          reason: null,
+          profile: cached,
+          qr_login_token: storedQRToken,
+          authMode: 'qr-offline',
+        };
+      }
+      return { authorized: false, reason: 'Supabase is not configured.', profile: null };
+    }
+
+    const { data, error } = await supabase.rpc('login_photographer_by_qr_token', {
+      lookup_token: storedQRToken,
+    });
+
+    if (error) {
+      // Only fall back to cached profile on transient RPC/network failures
+      const cached = await getCachedPhotographerProfile();
+      if (cached?.id) {
+        return {
+          authorized: true,
+          reason: null,
+          profile: cached,
+          qr_login_token: storedQRToken,
+          authMode: 'qr-cached',
+        };
+      }
+      return {
+        authorized: false,
+        reason: error.message || 'Unable to verify photographer QR session.',
+        profile: null,
+      };
+    }
+
+    if (data?.authorized && data?.profile) {
+      const normalizedProfile = {
+        ...data.profile,
+        qr_login_token: data.qr_login_token || storedQRToken,
+        full_name:
+          data.profile.full_name ||
+          `${data.profile.first_name || ''} ${data.profile.last_name || ''}`.trim(),
+      };
+      await savePhotographerSessionData(normalizedProfile.qr_login_token, normalizedProfile);
+      return {
+        authorized: true,
+        reason: null,
+        profile: normalizedProfile,
+        qr_login_token: normalizedProfile.qr_login_token,
+        authMode: 'qr',
+      };
+    }
+
+    // Server explicitly revoked or deactivated this QR token
+    await clearPhotographerSessionData();
+    return {
+      authorized: false,
+      reason: data?.reason || 'Photographer QR pass is no longer active.',
+      profile: null,
+    };
+  }
+
+  if (!isSupabaseConfigured || !supabase) {
+    return { authorized: false, reason: 'Supabase is not configured.', profile: null };
+  }
+
+  const session = await getSession();
+  if (!session?.user) {
+    return { authorized: false, reason: 'Scan your Photographer QR Pass to open studio access.', profile: null };
+  }
+
+  const { data: rpcData, error: rpcError } = await supabase.rpc('verify_current_photographer_access');
+  if (!rpcError && rpcData && typeof rpcData === 'object') {
+    const profile = rpcData.profile
+      ? {
+          ...rpcData.profile,
+          full_name: `${rpcData.profile.first_name || ''} ${rpcData.profile.last_name || ''}`.trim(),
+        }
+      : null;
+    return {
+      authorized: Boolean(rpcData.authorized),
+      reason: rpcData.reason || null,
+      profile,
+    };
+  }
+
+  // Fallback query if RPC is unavailable: still enforces role === 'photographer' & is_active === true
+  const profile = await getProfile(session.user.id);
+  if (!profile) {
+    return {
+      authorized: false,
+      reason: 'Staff profile was not found. This portal is restricted to verified studio photographers.',
+      profile: null,
+    };
+  }
+  if (profile.role !== 'photographer') {
+    return {
+      authorized: false,
+      reason: 'This account is not a studio photographer account. Customers do not need to sign in — use your booking QR pass instead.',
+      profile: null,
+    };
+  }
+  if (!profile.is_active) {
+    return {
+      authorized: false,
+      reason: 'This photographer account is currently inactive. Contact studio management for access.',
+      profile: null,
+    };
+  }
+
+  return { authorized: true, reason: null, profile };
+}
+
+/**
+ * Updates the customer's `profiles.avatar_url` directly via booking pass token
+ * so mobile profile photo edits sync immediately to the shared Supabase DB & web dashboard.
+ */
+export async function updateCustomerAvatarByPassToken(lookupToken, avatarDataUri) {
+  if (!isSupabaseConfigured || !supabase) {
+    return { data: null, error: new Error('Supabase is not configured.') };
+  }
+  if (!lookupToken) {
+    return { data: null, error: new Error('No booking pass token found.') };
+  }
+  try {
+    const { data, error } = await supabase.rpc('update_customer_avatar_by_pass_token', {
+      lookup_token: String(lookupToken).trim(),
+      new_avatar_url: avatarDataUri || '',
+    });
+    if (error) return { data: null, error };
+    return { data, error: null };
+  } catch (err) {
+    return { data: null, error: err };
+  }
 }
 

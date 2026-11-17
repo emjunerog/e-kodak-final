@@ -5,14 +5,15 @@
  *   travelling sheen sweep, crisper tactile press physics
  */
 
-import React, { useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Pressable, Text, StyleSheet, ActivityIndicator, View, Animated,
+  Pressable, Text, StyleSheet, View, Animated, Easing,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../context/ThemeContext';
 import { Typography, Radius, Spacing, Shadow } from '../theme';
+import StudioShapeLoader from './StudioShapeLoader';
 
 export default function GoldButton({
   children,
@@ -22,57 +23,96 @@ export default function GoldButton({
   disabled = false,
   loading = false,
   icon: Icon,
+  iconPosition = 'left',
   style,
   textStyle: customTextStyle,
 }) {
   const { isDark, colors, gradients } = useTheme();
-  const styles = getStyles(colors);
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const sheenAnim = useRef(new Animated.Value(0)).current;
+  const [scaleAnim] = useState(() => new Animated.Value(1));
+  const [opacityAnim] = useState(() => new Animated.Value(1));
+  const [sheenAnim] = useState(() => new Animated.Value(0));
+
+  const isPrimary = variant === 'primary';
+  const isOutline = variant === 'outline';
+  const isGhost = variant === 'ghost';
+  const shouldSheen = isPrimary && !disabled && !loading;
 
   useEffect(() => {
-    // Slow ambient sheen drift for primary buttons (purely cosmetic)
+    if (!shouldSheen) {
+      sheenAnim.stopAnimation();
+      sheenAnim.setValue(0);
+      return undefined;
+    }
+
+    // Slow ambient sheen drift for active primary buttons
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(sheenAnim, { toValue: 1, duration: 2600, useNativeDriver: true }),
-        Animated.timing(sheenAnim, { toValue: 0, duration: 2600, useNativeDriver: true }),
+        Animated.timing(sheenAnim, {
+          toValue: 1,
+          duration: 2400,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(sheenAnim, {
+          toValue: 0,
+          duration: 2400,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
       ])
     );
     loop.start();
     return () => loop.stop();
-  }, [sheenAnim]);
+  }, [shouldSheen, sheenAnim]);
 
   const handlePressIn = () => {
     if (disabled || loading) return;
-    Animated.spring(scaleAnim, {
-      toValue: 0.965,
-      useNativeDriver: true,
-      speed: 28,
-      bounciness: 5,
-    }).start();
+    scaleAnim.stopAnimation();
+    opacityAnim.stopAnimation();
+    Animated.parallel([
+      Animated.timing(scaleAnim, {
+        toValue: 0.968,
+        duration: 75,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacityAnim, {
+        toValue: 0.92,
+        duration: 75,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start();
   };
 
   const handlePressOut = () => {
     if (disabled || loading) return;
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      speed: 24,
-      bounciness: 7,
-    }).start();
+    scaleAnim.stopAnimation();
+    opacityAnim.stopAnimation();
+    Animated.parallel([
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        stiffness: 420,
+        damping: 28,
+        mass: 0.65,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacityAnim, {
+        toValue: 1,
+        duration: 150,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
   };
 
-  const handlePress = async () => {
+  const handlePress = () => {
     if (disabled || loading) return;
     try {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {}
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
+    } catch { }
     onPress?.();
   };
-
-  const isPrimary = variant === 'primary';
-  const isOutline = variant === 'outline';
-  const isGhost   = variant === 'ghost';
 
   const iconColor = isPrimary
     ? (isDark ? '#1A1714' : '#FFFFFF')
@@ -81,8 +121,8 @@ export default function GoldButton({
   const textColor = isPrimary
     ? (isDark ? '#1A1714' : '#FFFFFF')
     : isOutline
-    ? (isDark ? colors.gold.light : colors.gold.DEFAULT)
-    : colors.gold.DEFAULT;
+      ? (isDark ? colors.gold.light : colors.gold.DEFAULT)
+      : colors.gold.DEFAULT;
 
   const sheenX = sheenAnim.interpolate({
     inputRange: [0, 1],
@@ -92,7 +132,7 @@ export default function GoldButton({
   return (
     <Animated.View
       style={[
-        { transform: [{ scale: scaleAnim }] },
+        { opacity: opacityAnim, transform: [{ scale: scaleAnim }] },
         isPrimary && !disabled && styles.primaryAura,
         style,
       ]}
@@ -102,6 +142,7 @@ export default function GoldButton({
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         disabled={disabled || loading}
+        pressRetentionOffset={8}
         style={[
           styles.base,
           styles[`size_${size}`],
@@ -155,10 +196,15 @@ export default function GoldButton({
         )}
 
         {loading ? (
-          <ActivityIndicator color={textColor} size="small" />
+          <StudioShapeLoader
+            size={size === 'sm' ? 18 : 22}
+            isDark={isDark}
+            ringColor={textColor}
+            accentColor={textColor}
+          />
         ) : (
           <View style={styles.inner}>
-            {Icon && (
+            {Icon && iconPosition !== 'right' && (
               <Icon
                 size={size === 'sm' ? 14 : size === 'lg' ? 20 : 17}
                 color={iconColor}
@@ -176,6 +222,14 @@ export default function GoldButton({
             >
               {children}
             </Text>
+            {Icon && iconPosition === 'right' && (
+              <Icon
+                size={size === 'sm' ? 14 : size === 'lg' ? 20 : 17}
+                color={iconColor}
+                strokeWidth={2}
+                style={{ marginLeft: 8 }}
+              />
+            )}
           </View>
         )}
       </Pressable>
@@ -183,7 +237,7 @@ export default function GoldButton({
   );
 }
 
-const getStyles = (colors) => StyleSheet.create({
+const styles = StyleSheet.create({
   primaryAura: {
     ...Shadow.goldGlow,
   },

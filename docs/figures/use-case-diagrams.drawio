@@ -1,0 +1,197 @@
+<mxfile host="app.diagrams.net" modified="2026-11-09T12:30:00.000Z" agent="Antigravity" version="21.0.0" type="device">
+  <diagram id="use-case-client" name="Client / Customer">
+    <mxGraphModel dx="1000" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="780" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="actor_client" value="Client / Customer" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="280.0" width="40" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_client_1" value="Register Account" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="60" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_client_1" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_client" target="uc_client_1" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_client_2" value="Login to Customer Portal" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="118" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_client_2" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_client" target="uc_client_2" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_client_3" value="Browse Service Packages &amp; Pricing" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="176" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_client_3" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_client" target="uc_client_3" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_client_4" value="Inquire with Gemini AI Assistant" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="234" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_client_4" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_client" target="uc_client_4" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_client_5" value="Book Photo Session &amp; Select Schedule" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="292" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_client_5" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_client" target="uc_client_5" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_client_6" value="Submit Downpayment &amp; Payment Proof" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="350" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_client_6" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_client" target="uc_client_6" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_client_7" value="Generate &amp; Access Digital QR Pass" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="408" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_client_7" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_client" target="uc_client_7" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_client_8" value="Track Real-Time Milestone Status" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="466" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_client_8" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_client" target="uc_client_8" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_client_9" value="View &amp; Download Released Soft Copies" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="524" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_client_9" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_client" target="uc_client_9" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_client_10" value="Preview 3D Digital Yearbook Flipbook" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="582" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_client_10" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_client" target="uc_client_10" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_client_11" value="Logout" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="640" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_client_11" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_client" target="uc_client_11" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="use-case-photographer" name="Photographer">
+    <mxGraphModel dx="1000" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="actor_photographer" value="Photographer" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="164.0" width="40" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_photographer_1" value="Login to Photographer Portal" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="60" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_photographer_1" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_photographer" target="uc_photographer_1" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_photographer_2" value="Configure Shift Availability &amp; Blackouts" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="118" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_photographer_2" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_photographer" target="uc_photographer_2" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_photographer_3" value="View Assigned Shoot Roster &amp; Briefs" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="176" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_photographer_3" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_photographer" target="uc_photographer_3" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_photographer_4" value="Scan Customer QR Pass for Check-In" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="234" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_photographer_4" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_photographer" target="uc_photographer_4" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_photographer_5" value="Update Live Production Milestone Status" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="292" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_photographer_5" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_photographer" target="uc_photographer_5" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_photographer_6" value="Upload Retouched Photo Deliverables" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="350" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_photographer_6" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_photographer" target="uc_photographer_6" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_photographer_7" value="Logout" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="408" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_photographer_7" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_photographer" target="uc_photographer_7" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="use-case-admin" name="Admin">
+    <mxGraphModel dx="1000" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="actor_admin" value="Admin" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="222.0" width="40" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_admin_1" value="Login to Admin Dashboard" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="60" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_admin_1" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_admin" target="uc_admin_1" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_admin_2" value="Manage Master Booking Queue &amp; Assignments" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="118" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_admin_2" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_admin" target="uc_admin_2" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_admin_3" value="Verify Payments &amp; Record Treasury Ledger" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="176" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_admin_3" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_admin" target="uc_admin_3" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_admin_4" value="Manage Service Packages, Tiers &amp; Add-Ons" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="234" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_admin_4" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_admin" target="uc_admin_4" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_admin_5" value="Manage Customer &amp; Photographer Directory" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="292" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_admin_5" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_admin" target="uc_admin_5" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_admin_6" value="Upload &amp; OCR Parse School Masterlists" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="350" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_admin_6" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_admin" target="uc_admin_6" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_admin_7" value="Manage Yearbook Projects &amp; Print PDF Export" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="408" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_admin_7" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_admin" target="uc_admin_7" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_admin_8" value="Configure Studio Settings &amp; CMS Bulletin" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="466" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_admin_8" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_admin" target="uc_admin_8" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc_admin_9" value="Logout" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1.3;fontFamily=Arial;fontSize=11;fontStyle=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="524" width="340" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_admin_9" style="edgeStyle=none;html=1;endArrow=none;strokeColor=#000000;strokeWidth=1.3;" edge="1" source="actor_admin" target="uc_admin_9" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

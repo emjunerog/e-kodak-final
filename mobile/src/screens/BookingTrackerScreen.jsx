@@ -15,7 +15,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  StatusBar, RefreshControl, Animated, Easing, Modal, Linking,
+  StatusBar, RefreshControl, Animated, Easing, Modal, Linking, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -352,7 +352,7 @@ function LuxuryStatusPill({ status, showStep = true, size = 'md' }) {
 
 function LiveTrackingRadarSign({ size = 52, isDark, colors }) {
   const radarPulse = useRef(new Animated.Value(0)).current;
-  const sweepSpin  = useRef(new Animated.Value(0)).current;
+  const sweepSpin = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const pulseAnim = Animated.loop(
@@ -407,7 +407,7 @@ function LiveTrackingRadarSign({ size = 52, isDark, colors }) {
       <Animated.View
         pointerEvents="none"
         style={[
-          StyleSheet.absoluteFillObject,
+          StyleSheet.absoluteFill,
           {
             borderRadius: size / 2,
             borderWidth: 1.5,
@@ -498,13 +498,13 @@ function DeliveryPanel({ booking, deliveries, colors, isDark, styles }) {
   const rawDelStatus = (booking?.delivery_status || deliveries?.[0]?.status || 'PREPARING').toUpperCase();
   const subPhaseIndex =
     ['DELIVERED', 'CONFIRMED'].includes(rawDelStatus) ? 3 :
-    ['NEAR', 'OUT_FOR_DELIVERY'].includes(rawDelStatus) ? 2 :
-    ['DISPATCHED', 'ONGOING'].includes(rawDelStatus) ? 1 : 0;
+      ['NEAR', 'OUT_FOR_DELIVERY'].includes(rawDelStatus) ? 2 :
+        ['DISPATCHED', 'ONGOING'].includes(rawDelStatus) ? 1 : 0;
 
   const SUB_PHASES = [
     { key: 'preparing delivery', title: 'preparing delivery', desc: 'Outputs packaged and sealed' },
-    { key: 'ongoing delivery',   title: 'ongoing delivery',   desc: 'Courier transit in progress' },
-    { key: 'delivery is near',    title: 'delivery is near',    desc: 'Courier arriving at destination' },
+    { key: 'ongoing delivery', title: 'ongoing delivery', desc: 'Courier transit in progress' },
+    { key: 'delivery is near', title: 'delivery is near', desc: 'Courier arriving at destination' },
     { key: 'delivery confirmed', title: 'delivery confirmed', desc: 'Safely handed over and completed' },
   ];
 
@@ -540,14 +540,14 @@ function DeliveryPanel({ booking, deliveries, colors, isDark, styles }) {
                   backgroundColor: isCurrent
                     ? (isDark ? 'rgba(217, 180, 108, 0.14)' : 'rgba(176, 125, 30, 0.10)')
                     : isDone
-                    ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.05)')
-                    : 'transparent',
+                      ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.05)')
+                      : 'transparent',
                   borderWidth: 1,
                   borderColor: isCurrent
                     ? colors.gold.borderLight
                     : isDone
-                    ? 'rgba(16, 185, 129, 0.25)'
-                    : colors.surface.hairline,
+                      ? 'rgba(16, 185, 129, 0.25)'
+                      : colors.surface.hairline,
                 }}
               >
                 <View style={{ marginRight: 10 }}>
@@ -619,14 +619,14 @@ function DeliveryPanel({ booking, deliveries, colors, isDark, styles }) {
 export default function BookingTrackerScreen({ route, navigation }) {
   const { isDark, colors, gradients } = useTheme();
   const styles = getStyles(colors, isDark);
-  const { booking: initialBooking, token: rawToken } = route.params || {};
+  const { booking: initialBooking, token: rawToken, initialMode } = route.params || {};
   const effectiveToken = rawToken || initialBooking?.booking_token || initialBooking?.booking_number || initialBooking?.id || '';
 
-  const [booking, setBooking]         = useState(initialBooking || {});
-  const [refreshing, setRefreshing]   = useState(false);
-  const [isSaved, setIsSaved]         = useState(false);
+  const [booking, setBooking] = useState(initialBooking || {});
+  const [refreshing, setRefreshing] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
   const [stepperOpen, setStepperOpen] = useState(true);
-  const [trackerMode, setTrackerMode] = useState('interactive'); // 'simple' | 'interactive'
+  const [trackerMode, setTrackerMode] = useState(initialMode || 'interactive'); // 'simple' | 'interactive'
   const [mascotAlert, setMascotAlert] = useState(null);
   const [showQRModal, setShowQRModal] = useState(false);
 
@@ -675,7 +675,7 @@ export default function BookingTrackerScreen({ route, navigation }) {
     const unsubscribe = subscribeToBookingUpdates(booking.id, (updated) => {
       try {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch {}
+      } catch { }
       setBooking((prev) => ({ ...prev, ...updated }));
     });
 
@@ -702,7 +702,7 @@ export default function BookingTrackerScreen({ route, navigation }) {
   const toggleSave = async () => {
     try {
       await Haptics.selectionAsync();
-    } catch {}
+    } catch { }
     const tokenToSave = effectiveToken || booking.booking_token || booking.booking_number || 'BK-2026-00001';
     if (isSaved) {
       await removeSavedBooking(tokenToSave);
@@ -734,16 +734,16 @@ export default function BookingTrackerScreen({ route, navigation }) {
   };
 
   // ── Derived display values (Real concrete records, zero AI fluff) ──────────
-  const realBookingId   = booking.booking_number || 'BK-2026-00001';
-  const rawPackageName  = booking.services?.name || booking.service?.name || 'Portrait Packages and Sets';
-  const cleanPackageName= rawPackageName.replace(/Senior\s*High\s*/gi, '').trim() || 'Portrait Packages and Sets';
-  const packageName     = cleanPackageName;
+  const realBookingId = booking.booking_number || 'BK-2026-00001';
+  const rawPackageName = booking.services?.name || booking.service?.name || 'Portrait Packages and Sets';
+  const cleanPackageName = rawPackageName.replace(/Senior\s*High\s*/gi, '').trim() || 'Portrait Packages and Sets';
+  const packageName = cleanPackageName;
   const selectedSetName = booking.tier_name || booking.parsed_notes?.['Set'] || 'Set A';
-  const tierDetails     = booking.tier_details;
+  const tierDetails = booking.tier_details;
 
   // Pricing calculation
-  const rawPriceNum     = Number(booking.total_price || booking.total_amount || 0);
-  const priceDisplay    = rawPriceNum > 0
+  const rawPriceNum = Number(booking.total_price || booking.total_amount || 0);
+  const priceDisplay = rawPriceNum > 0
     ? formatPeso(rawPriceNum)
     : (tierDetails?.price || '₱1,750.00');
 
@@ -751,35 +751,35 @@ export default function BookingTrackerScreen({ route, navigation }) {
   const isOrderPending = !booking.status || String(booking.status).toUpperCase() === 'PENDING';
   const hasConfirmedRecord = !!(booking.session_date || booking.event_date) && !isOrderPending;
 
-  const isScheduleTBA   = !hasConfirmedRecord;
+  const isScheduleTBA = !hasConfirmedRecord;
   const scheduleDisplay = isScheduleTBA
     ? 'To be announced'
     : `${formatDate(booking.session_date || booking.event_date)}${(booking.session_time || booking.preferred_time) ? ` · ${formatTime(booking.session_time || booking.preferred_time)}` : ''}`;
-  const scheduleSub     = isScheduleTBA
+  const scheduleSub = isScheduleTBA
     ? 'Campus schedule · Awaiting admin schedule confirmation & broadcast'
     : 'Confirmed photoshoot schedule locked in';
 
   // Studio / Campus Shoot location:
   // As long as datas of it are not recorded/confirmed by admin, do not display confirmed shoot location
   const isLocationPending = isOrderPending || !hasConfirmedRecord;
-  const rawLocation       = booking.location_address || booking.location || '';
-  const locationDisplay   = isLocationPending
+  const rawLocation = booking.location_address || booking.location || '';
+  const locationDisplay = isLocationPending
     ? 'Location Pending Admin Confirmation'
     : (rawLocation || 'E-Kodak Studio, 311 Rizal Street, City of Naga, Cebu');
-  const locationSub       = isLocationPending
+  const locationSub = isLocationPending
     ? (booking.parsed_notes?.['School'] ? `School preview: ${booking.parsed_notes['School']} (Shoot venue TBA)` : 'Reservation received · Official shoot venue will be announced upon admin broadcast')
     : 'Confirmed photoshoot venue';
 
   // Real student & participant data from notes
-  const studentName    = booking.parsed_notes?.['Student Name'] || booking.parsed_notes?.['Participant Name'] || booking.profile?.full_name || 'Mark June Alimento Repunte';
-  const schoolName     = booking.parsed_notes?.['School'] || 'Alpaco Senior High School';
-  const strandName     = booking.parsed_notes?.['Degree / Strand'] || 'TVL-ICT';
-  const batchName      = booking.parsed_notes?.['Batch'] || 'Batch 2026';
-  const sectionName    = booking.parsed_notes?.['Section'] || 'Magsaysay';
-  const studentIdNum   = booking.parsed_notes?.['Student ID'] || '1350690';
-  const mottoText      = booking.parsed_notes?.['Yearbook Motto'] || 'growing up';
-  const contactPhone   = booking.parsed_notes?.['Participant Phone'] || booking.profile?.phone || '09102949414';
-  const contactEmail   = booking.parsed_notes?.['Participant Email'] || booking.profile?.email || 'alimentomakie@gmail.com';
+  const studentName = booking.parsed_notes?.['Student Name'] || booking.parsed_notes?.['Participant Name'] || booking.profile?.full_name || 'Mark June Alimento Repunte';
+  const schoolName = booking.parsed_notes?.['School'] || 'Alpaco Senior High School';
+  const strandName = booking.parsed_notes?.['Degree / Strand'] || 'TVL-ICT';
+  const batchName = booking.parsed_notes?.['Batch'] || 'Batch 2026';
+  const sectionName = booking.parsed_notes?.['Section'] || 'Magsaysay';
+  const studentIdNum = booking.parsed_notes?.['Student ID'] || '1350690';
+  const mottoText = booking.parsed_notes?.['Yearbook Motto'] || 'growing up';
+  const contactPhone = booking.parsed_notes?.['Participant Phone'] || booking.profile?.phone || '09102949414';
+  const contactEmail = booking.parsed_notes?.['Participant Email'] || booking.profile?.email || 'alimentomakie@gmail.com';
 
   const defaultHighlights = [
     '1 piece 10×12" colored portrait with crystal wood frame',
@@ -793,23 +793,23 @@ export default function BookingTrackerScreen({ route, navigation }) {
   const tierHighlights = tierDetails?.highlights || defaultHighlights;
 
   // Milestone Progress
-  const statusMeta   = STATUS_META[String(booking.status || 'PENDING').toUpperCase()] || STATUS_META.PENDING;
-  const liveStep     = Math.max(0, statusMeta?.step ?? 0);
-  const totalSteps   = MILESTONE_STEPS.length;
-  const progressPct  = Math.round((Math.min(liveStep, totalSteps - 1) / Math.max(totalSteps - 1, 1)) * 100);
+  const statusMeta = STATUS_META[String(booking.status || 'PENDING').toUpperCase()] || STATUS_META.PENDING;
+  const liveStep = Math.max(0, statusMeta?.step ?? 0);
+  const totalSteps = MILESTONE_STEPS.length;
+  const progressPct = Math.round((Math.min(liveStep, totalSteps - 1) / Math.max(totalSteps - 1, 1)) * 100);
 
   const switchTrackerMode = (mode) => {
     if (mode === trackerMode) return;
     try {
       Haptics.selectionAsync();
-    } catch {}
+    } catch { }
     setTrackerMode(mode);
   };
 
   const toggleDossierSection = () => {
     try {
       Haptics.selectionAsync();
-    } catch {}
+    } catch { }
     const nextState = !dossierOpen;
     setDossierOpen(nextState);
     if (nextState) {
@@ -1328,11 +1328,14 @@ export default function BookingTrackerScreen({ route, navigation }) {
         visible={showQRModal}
         transparent
         animationType="fade"
+        statusBarTranslucent
         onRequestClose={() => setShowQRModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <BlurView intensity={isDark ? 65 : 45} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-          <GlassCard glow highlight style={styles.qrPassModalCard}>
+          {Platform.OS === 'ios' && (
+            <BlurView intensity={isDark ? 65 : 45} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+          )}
+          <GlassCard opaque blurred={false} glow highlight style={styles.qrPassModalCard}>
             <View style={styles.modalTopRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.modalPassTag, { color: colors.gold.DEFAULT }]}>OFFICIAL RECEPTION PASS</Text>
@@ -1586,7 +1589,7 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     gap: 8,
   },
 
-  scroll: { flex: 1 },
+  scroll: { flex: 1, zIndex: 1 },
   scrollContent: {
     padding: Spacing[4],
     gap: Spacing[4],
@@ -1895,7 +1898,7 @@ const getStyles = (colors, isDark) => StyleSheet.create({
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    backgroundColor: 'rgba(8, 10, 14, 0.72)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: Spacing[5],

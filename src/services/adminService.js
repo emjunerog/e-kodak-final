@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { getEffectivePaymentStatus } from '../lib/bookingUtils';
 import { ADD_ONS } from '../data/servicesData';
+import { sendTextBeeSms } from './textbeeService';
 
 // ── In-Memory Fast Cache with TTL ───────────────────────────────────────────
 const serviceCache = new Map();
@@ -386,7 +387,7 @@ export async function getPhotographers() {
       .from('profiles')
       .select(`
         id, first_name, last_name, phone, avatar_url, is_active, created_at,
-        photographer_profile:photographer_profiles(specialization, bio, is_available)
+        photographer_profile:photographer_profiles(specialization, bio, is_available, qr_login_token)
       `)
       .eq('role', 'photographer')
       .order('created_at', { ascending: false });
@@ -398,6 +399,7 @@ export async function getPhotographers() {
       specialization: p.photographer_profile?.[0]?.specialization || null,
       bio: p.photographer_profile?.[0]?.bio || null,
       is_available: p.photographer_profile?.[0]?.is_available ?? false,
+      qr_login_token: p.photographer_profile?.[0]?.qr_login_token || null,
       created_at: p.created_at,
       profile: {
         first_name: p.first_name,
@@ -776,7 +778,7 @@ export async function getSmsLogs({ page = 1, pageSize = 50 } = {}) {
 /**
  * dispatchManualSms
  * -----------------
- * Dispatches an SMS record to Supabase and local cache.
+ * Dispatches an SMS through TextBee (when gateway === 'textbee') or logs to Supabase/local cache.
  */
 export async function dispatchManualSms({
   phoneNumber,
@@ -786,8 +788,31 @@ export async function dispatchManualSms({
   customerId = null,
   customerName = '',
   bookingNumber = '',
-  gateway = 'semaphore'
+  gateway = 'textbee'
 }) {
+  if (gateway === 'textbee') {
+    const result = await sendTextBeeSms({
+      phoneNumber,
+      message,
+      notificationType,
+      bookingId,
+      customerId,
+      customerName,
+      bookingNumber,
+    });
+    if (!result.success) {
+      throw new Error(result.error || 'TextBee gateway dispatch failed');
+    }
+    return result.logs?.[0] || {
+      id: result.smsBatchId || `tb_${Date.now()}`,
+      phone_number: phoneNumber,
+      message,
+      status: 'SENT',
+      provider_message_id: result.smsBatchId ? `TEXTBEE_${result.smsBatchId}` : `TEXTBEE_${Date.now()}`,
+      gateway: 'textbee',
+    };
+  }
+
   const now = new Date().toISOString();
   const record = {
     phone_number: phoneNumber,
@@ -1418,7 +1443,7 @@ export async function getAllWorkers({ forceFresh = false } = {}) {
       .from('profiles')
       .select(`
         id, first_name, last_name, email, phone, avatar_url, role, is_active, bio, created_at, updated_at,
-        photographer_profile:photographer_profiles(specialization, bio, is_available)
+        photographer_profile:photographer_profiles(specialization, bio, is_available, qr_login_token)
       `)
       .in('role', ['admin', 'photographer'])
       .not('email', 'is', null)
@@ -1459,6 +1484,7 @@ export async function getAllWorkers({ forceFresh = false } = {}) {
         bio: w.bio || ph?.bio || '',
         specialization: ph?.specialization || null,
         is_available: ph?.is_available ?? true,
+        qr_login_token: ph?.qr_login_token || null,
         created_at: w.created_at,
         updated_at: w.updated_at
       };
@@ -1514,21 +1540,40 @@ export async function createWorkerProfile({
 
     if (profErr) throw profErr;
 
-    // If photographer, ensure photographer_profiles record exists
+    // If photographer, ensure photographer_profiles record exists and read unique qr_login_token
+    let qrLoginToken = null;
     if (role === 'photographer') {
-      const { error: phErr } = await supabase
+      const { data: phUpserted, error: phErr } = await supabase
         .from('photographer_profiles')
-        .insert([{
-          id: newId,
-          specialization: specialization?.trim() || 'General Photography',
-          bio: bio?.trim() || null,
-          is_available: true
-        }]);
-      if (phErr) console.warn('createWorkerProfile photographer_profiles insert warning:', phErr);
+        .upsert(
+          [{
+            id: newId,
+            specialization: specialization?.trim() || 'General Photography',
+            bio: bio?.trim() || null,
+            is_available: true
+          }],
+          { onConflict: 'id' }
+        )
+        .select('qr_login_token')
+        .maybeSingle();
+
+      if (phErr) {
+        console.warn('createWorkerProfile photographer_profiles upsert warning:', phErr);
+      }
+      qrLoginToken = phUpserted?.qr_login_token || null;
+
+      if (!qrLoginToken) {
+        const { data: phFetched } = await supabase
+          .from('photographer_profiles')
+          .select('qr_login_token')
+          .eq('id', newId)
+          .maybeSingle();
+        qrLoginToken = phFetched?.qr_login_token || null;
+      }
     }
 
     invalidateAdminCache('admin:all_workers');
-    return { data: createdProfile, error: null };
+    return { data: { ...createdProfile, qr_login_token: qrLoginToken }, error: null };
   } catch (err) {
     console.error('createWorkerProfile error:', err);
     return { data: null, error: err };
@@ -1623,6 +1668,30 @@ export async function deleteWorkerProfile(id) {
   } catch (err) {
     console.error('deleteWorkerProfile error:', err);
     return { error: err };
+  }
+}
+
+/**
+ * regeneratePhotographerQRToken
+ * -----------------------------
+ * Rotates and returns a fresh unique QR login token for a photographer.
+ */
+export async function regeneratePhotographerQRToken(photographerId) {
+  if (!isSupabaseConfigured || !photographerId) {
+    return { qr_login_token: null, error: new Error('Invalid photographer or database offline.') };
+  }
+  try {
+    const { data, error } = await supabase.rpc('regenerate_photographer_qr_token', {
+      target_photographer_id: photographerId,
+    });
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+
+    invalidateAdminCache('admin:all_workers');
+    return { qr_login_token: data?.qr_login_token || null, error: null };
+  } catch (err) {
+    console.error('regeneratePhotographerQRToken error:', err);
+    return { qr_login_token: null, error: err };
   }
 }
 

@@ -5,14 +5,18 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Image } from 'react-native';
 import { supabase } from './supabase';
 
 const KEYS = {
-  SAVED_BOOKINGS:    'ekodak:saved_bookings',
-  LAST_SCAN_TOKEN:   'ekodak:last_scan_token',
-  CUSTOMER_PROFILE:  'ekodak:customer_profile',
-  USER_ROLE:         'ekodak:user_role',
-  SETTINGS:          'ekodak:settings',
+  SAVED_BOOKINGS:       'ekodak:saved_bookings',
+  LAST_SCAN_TOKEN:      'ekodak:last_scan_token',
+  CUSTOMER_PROFILE:     'ekodak:customer_profile',
+  PHOTOGRAPHER_QR_TOKEN:'ekodak:photographer_qr_token',
+  PHOTOGRAPHER_PROFILE: 'ekodak:photographer_profile',
+  PROFILE_COVER:        'ekodak:profile_cover',
+  USER_ROLE:            'ekodak:user_role',
+  SETTINGS:             'ekodak:settings',
 };
 
 // ── Booking Passes ───────────────────────────────────────────
@@ -21,13 +25,33 @@ export async function saveBookingToken(token, bookingData = {}) {
   try {
     const existing = await getSavedBookings();
     const filtered = existing.filter((b) => b.token !== token);
+    const resolvedLocation =
+      bookingData.location ||
+      bookingData.location_address ||
+      (bookingData.location_type === 'STUDIO' ? 'E-Kodak Main Studio Bay' : bookingData.studio_location) ||
+      '';
+    const resolvedAmount = Number(bookingData.total_amount ?? bookingData.total_price ?? 0);
     const updated = [
       {
         token,
         bookingNumber: bookingData.booking_number || '',
         clientName:    bookingData.profile?.full_name || bookingData.client_name || '',
-        serviceName:   bookingData.services?.name || '',
-        sessionDate:   bookingData.session_date || '',
+        clientEmail:   bookingData.profile?.email || '',
+        clientPhone:   bookingData.profile?.phone || '',
+        avatarUrl:     bookingData.profile?.avatar_url || null,
+        serviceName:   bookingData.services?.name || bookingData.service?.name || '',
+        serviceCategory: bookingData.services?.category || bookingData.service?.category || '',
+        tierName:      bookingData.tier_name || '',
+        location:      resolvedLocation,
+        sessionDate:   bookingData.session_date || bookingData.event_date || '',
+        sessionTime:   bookingData.session_time || bookingData.preferred_time || '',
+        totalAmount:   Number.isFinite(resolvedAmount) && resolvedAmount > 0 ? resolvedAmount : 0,
+        paymentStatus: bookingData.payment_status || (bookingData.down_payment_confirmed ? 'PAID' : ''),
+        downPaymentConfirmed: Boolean(bookingData.down_payment_confirmed),
+        deliveryDetails: bookingData.delivery_details || null,
+        deliveries:    Array.isArray(bookingData.booking_deliveries) ? bookingData.booking_deliveries : [],
+        notes:         bookingData.notes || '',
+        createdAt:     bookingData.created_at || '',
         status:        bookingData.status || 'PENDING',
         savedAt:       new Date().toISOString(),
       },
@@ -59,6 +83,9 @@ export async function removeSavedBooking(token) {
     const existing = await getSavedBookings();
     const updated = existing.filter((b) => b.token !== token);
     await AsyncStorage.setItem(KEYS.SAVED_BOOKINGS, JSON.stringify(updated));
+    if (updated.length === 0) {
+      await AsyncStorage.removeItem(KEYS.CUSTOMER_PROFILE);
+    }
     return updated;
   } catch {
     return [];
@@ -69,9 +96,60 @@ export async function clearAllSavedBookings() {
   try {
     await AsyncStorage.removeItem(KEYS.SAVED_BOOKINGS);
     await AsyncStorage.removeItem(KEYS.CUSTOMER_PROFILE);
+    await AsyncStorage.removeItem(KEYS.LAST_SCAN_TOKEN);
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Clears temporary app caches (cached profile snapshot, last scan pointer,
+ * runtime image caches, and any temporary keys) while keeping saved booking
+ * passes, preferences, theme, and active staff auth intact.
+ */
+export async function clearAppCache() {
+  try {
+    const preserved = new Set([
+      KEYS.SAVED_BOOKINGS,
+      KEYS.SETTINGS,
+      KEYS.PROFILE_COVER,
+      KEYS.USER_ROLE,
+      KEYS.PHOTOGRAPHER_QR_TOKEN,
+      KEYS.PHOTOGRAPHER_PROFILE,
+      'ekodak:tutorial_done',
+      '@ekodak:theme_mode',
+    ]);
+
+    const allKeys = await AsyncStorage.getAllKeys();
+    const cacheKeys = allKeys.filter((k) => {
+      if (preserved.has(k)) return false;
+      if (k.startsWith('sb-')) return false;
+      return k === KEYS.CUSTOMER_PROFILE || k === KEYS.LAST_SCAN_TOKEN || k.startsWith('ekodak:');
+    });
+
+    const targets = Array.from(
+      new Set([KEYS.CUSTOMER_PROFILE, KEYS.LAST_SCAN_TOKEN, ...cacheKeys])
+    );
+
+    if (targets.length > 0) {
+      await AsyncStorage.multiRemove(targets);
+    }
+
+    try {
+      if (typeof Image?.clearMemoryCache === 'function') {
+        await Image.clearMemoryCache();
+      }
+      if (typeof Image?.clearDiskCache === 'function') {
+        await Image.clearDiskCache();
+      }
+    } catch {
+      // Optional native image cache clear
+    }
+
+    return { ok: true, clearedCount: targets.length };
+  } catch {
+    return { ok: false, clearedCount: 0 };
   }
 }
 
@@ -80,16 +158,24 @@ export async function clearAllSavedBookings() {
 export async function saveCustomerProfileFromBooking(bookingData) {
   if (!bookingData) return null;
   try {
+    const resolvedLocation =
+      bookingData.location ||
+      bookingData.location_address ||
+      (bookingData.location_type === 'STUDIO' ? 'E-Kodak Main Studio Bay' : '') ||
+      '';
     const profile = {
-      fullName:          bookingData.profile?.full_name || bookingData.client_name || 'Studio Guest',
+      fullName:          bookingData.profile?.full_name || bookingData.client_name || '',
       email:             bookingData.profile?.email || '',
       phone:             bookingData.profile?.phone || '',
+      avatarUrl:         bookingData.profile?.avatar_url || null,
       lastBookingNumber: bookingData.booking_number || '',
-      lastServiceName:   bookingData.services?.name || 'Studio Session',
-      lastSessionDate:   bookingData.session_date || '',
-      lastSessionTime:   bookingData.session_time || '',
+      lastServiceName:   bookingData.services?.name || bookingData.service?.name || '',
+      lastSessionDate:   bookingData.session_date || bookingData.event_date || '',
+      lastSessionTime:   bookingData.session_time || bookingData.preferred_time || '',
       lastStatus:        bookingData.status || 'PENDING',
-      location:          bookingData.location_type === 'STUDIO' ? 'E-Kodak Main Studio Bay' : bookingData.location_address || 'Studio Bay',
+      location:          resolvedLocation,
+      deliveryDetails:   bookingData.delivery_details || null,
+      deliveries:        Array.isArray(bookingData.booking_deliveries) ? bookingData.booking_deliveries : [],
       updatedAt:         new Date().toISOString(),
     };
     await AsyncStorage.setItem(KEYS.CUSTOMER_PROFILE, JSON.stringify(profile));
@@ -99,12 +185,55 @@ export async function saveCustomerProfileFromBooking(bookingData) {
   }
 }
 
+export async function updateCachedCustomerAvatar(avatarUrl) {
+  try {
+    const existing = await getSavedBookings();
+    const updatedBookings = existing.map((b, idx) =>
+      idx === 0 ? { ...b, avatarUrl: avatarUrl || null } : b
+    );
+    await AsyncStorage.setItem(KEYS.SAVED_BOOKINGS, JSON.stringify(updatedBookings));
+
+    const currentProfile = await getCustomerProfile();
+    if (currentProfile) {
+      await AsyncStorage.setItem(
+        KEYS.CUSTOMER_PROFILE,
+        JSON.stringify({
+          ...currentProfile,
+          avatarUrl: avatarUrl || null,
+          updatedAt: new Date().toISOString(),
+        })
+      );
+    }
+    return updatedBookings;
+  } catch {
+    return [];
+  }
+}
+
 export async function getCustomerProfile() {
   try {
     const raw = await AsyncStorage.getItem(KEYS.CUSTOMER_PROFILE);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
+  }
+}
+
+export async function getProfileCoverPreference() {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.PROFILE_COVER);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveProfileCoverPreference(preference) {
+  try {
+    await AsyncStorage.setItem(KEYS.PROFILE_COVER, JSON.stringify(preference));
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -124,18 +253,64 @@ export async function getUserRole() {
   }
 }
 
+// ── Photographer QR Session ───────────────────────────────────
+
+export async function savePhotographerSessionData(qrToken, profile = null) {
+  try {
+    if (qrToken) {
+      await AsyncStorage.setItem(KEYS.PHOTOGRAPHER_QR_TOKEN, String(qrToken).trim());
+    }
+    if (profile && typeof profile === 'object') {
+      await AsyncStorage.setItem(KEYS.PHOTOGRAPHER_PROFILE, JSON.stringify(profile));
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function getPhotographerQRToken() {
+  try {
+    const val = await AsyncStorage.getItem(KEYS.PHOTOGRAPHER_QR_TOKEN);
+    return val ? val.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getCachedPhotographerProfile() {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.PHOTOGRAPHER_PROFILE);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearPhotographerSessionData() {
+  try {
+    await AsyncStorage.multiRemove([KEYS.PHOTOGRAPHER_QR_TOKEN, KEYS.PHOTOGRAPHER_PROFILE]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── Settings Preferences ──────────────────────────────────────
 
 export async function getAppSettings() {
+  const defaults = {
+    notifications: true,
+    sound: true,
+    haptics: true,
+    highContrast: false,
+  };
   try {
     const raw = await AsyncStorage.getItem(KEYS.SETTINGS);
-    return raw ? JSON.parse(raw) : {
-      notifications: true,
-      haptics: true,
-      highContrast: false,
-    };
+    if (!raw) return defaults;
+    return { ...defaults, ...JSON.parse(raw) };
   } catch {
-    return { notifications: true, haptics: true, highContrast: false };
+    return defaults;
   }
 }
 

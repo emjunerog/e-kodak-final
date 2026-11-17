@@ -8,12 +8,16 @@
     "tunnel": "npx --yes cloudflared tunnel --url http://localhost:5173",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview --host"
+    "preview": "vite preview --host",
+    "astryx": "node node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs"
   },
   "dependencies": {
+    "@astryxdesign/core": "^0.7.15",
+    "@astryxdesign/theme-neutral": "^0.7.15",
     "@emailjs/browser": "^4.4.1",
     "@google/genai": "^2.18.0",
     "@iconify/react": "^6.0.2",
+    "@stylexjs/stylex": "^0.19.2",
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
     "bootstrap": "^5.3.8",
@@ -38,6 +42,7 @@
     "recharts": "^3.10.1"
   },
   "devDependencies": {
+    "@astryxdesign/cli": "^0.7.15",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",

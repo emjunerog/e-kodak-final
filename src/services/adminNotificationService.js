@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { getAiClient, isAiConfigured } from '../lib/ai';
+import { sendTextBeeSms, normalizePhPhone } from './textbeeService';
 
 // ─── Local Storage Keys ──────────────────────────────────────────────────────
 const BROADCASTS_KEY        = 'ekodak_admin_broadcasts';
@@ -475,7 +476,7 @@ export async function dispatchMultiChannelNotification({
   emailSubject      = '',
   emailHtml         = '',
   smsMessage        = '',
-  smsGateway        = 'semaphore'
+  smsGateway        = 'textbee'
 }) {
   const now = new Date().toISOString();
   const dispatchId = `local_broadcast_${Date.now()}`;
@@ -573,31 +574,71 @@ export async function dispatchMultiChannelNotification({
     }
   }
 
-  // ── 4. SMS: Insert to sms_logs per recipient ──────────────────────────────
-  if (isSupabaseConfigured && channels.sms) {
-    const smsTargets = recipients.filter(r => r.phone).map(r => ({
-      phone_number:      r.phone || recipientPhone,
-      message:           smsMessage || message,
-      notification_type: notificationType,
-      status:            'QUEUED',
-      sent_at:           now,
-      booking_id:        bookingId || null
-    }));
+  // ── 4. SMS: Dispatch via TextBee or insert to sms_logs per recipient ─────────
+  let smsDispatchSummary = { status: 'QUEUED', batchId: null, sentCount: 0, error: null };
+  if (channels.sms) {
+    const rawTargets = recipients
+      .filter(r => r.phone)
+      .map(r => ({
+        phone: r.phone,
+        normalized: normalizePhPhone(r.phone),
+        customerId: r.id || null,
+        customerName: `${r.first_name || ''} ${r.last_name || ''}`.trim() || recipientName,
+      }));
 
-    if (smsTargets.length === 0 && recipientPhone) {
-      smsTargets.push({
-        phone_number:      recipientPhone,
-        message:           smsMessage || message,
-        notification_type: notificationType,
-        status:            'QUEUED',
-        sent_at:           now,
-        booking_id:        bookingId || null
+    if (rawTargets.length === 0 && recipientPhone) {
+      rawTargets.push({
+        phone: recipientPhone,
+        normalized: normalizePhPhone(recipientPhone),
+        customerId: specificCustomerId || null,
+        customerName: recipientName || 'Client',
       });
     }
 
-    if (smsTargets.length > 0) {
-      try { await supabase.from('sms_logs').insert(smsTargets); }
-      catch (e) { console.warn('[dispatch] sms_logs insert error:', e.message); }
+    if (rawTargets.length > 0) {
+      if (smsGateway === 'textbee') {
+        const contextMap = new Map();
+        const phones = [];
+        rawTargets.forEach((t) => {
+          if (!t.normalized) return;
+          phones.push(t.normalized);
+          contextMap.set(t.normalized, {
+            customerId: t.customerId,
+            customerName: t.customerName,
+            bookingId: bookingId || null,
+            bookingNumber: bookingNumber || '',
+          });
+        });
+
+        const tbRes = await sendTextBeeSms({
+          recipients: phones,
+          message: smsMessage || message,
+          bookingId,
+          customerId: specificCustomerId,
+          customerName: recipientName,
+          bookingNumber,
+          notificationType,
+          recipientContextMap: contextMap,
+        });
+
+        smsDispatchSummary = {
+          status: tbRes.success ? 'SENT' : 'FAILED',
+          batchId: tbRes.smsBatchId || null,
+          sentCount: tbRes.success ? phones.length : 0,
+          error: tbRes.error || null,
+        };
+      } else if (isSupabaseConfigured) {
+        const smsTargets = rawTargets.map(t => ({
+          phone_number:      t.phone,
+          message:           smsMessage || message,
+          notification_type: notificationType,
+          status:            'QUEUED',
+          sent_at:           now,
+          booking_id:        bookingId || null
+        }));
+        try { await supabase.from('sms_logs').insert(smsTargets); }
+        catch (e) { console.warn('[dispatch] sms_logs insert error:', e.message); }
+      }
     }
   }
 
@@ -648,7 +689,9 @@ export async function dispatchMultiChannelNotification({
       phone:    recipientPhone,
       message:  smsMessage || message,
       gateway:  smsGateway,
-      status:   'QUEUED',
+      status:   smsDispatchSummary.status,
+      batchId:  smsDispatchSummary.batchId,
+      error:    smsDispatchSummary.error,
       sent_at:  now
     } : null,
     action_url: bookingId ? '/admin/bookings' : '/admin/notifications'

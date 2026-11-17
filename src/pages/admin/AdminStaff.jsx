@@ -2,13 +2,14 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import {
   Users, Plus, Search, X, Edit2, Trash2, Shield,
   RefreshCw, CheckCircle2, AlertCircle, Mail, Camera,
-  CreditCard, Briefcase, Download
+  CreditCard, Briefcase, Download, QrCode
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import CustomDropdown from '../../components/ui/CustomDropdown';
 import Modal from '../../components/ui/Modal';
+import PhotographerQRModal from '../../components/admin/PhotographerQRModal';
 import {
   getAllWorkers,
   createWorkerProfile,
@@ -84,6 +85,7 @@ export default function AdminStaff() {
   // Modal States
   const [modalOpen, setModalOpen] = useState(false);
   const [editingWorker, setEditingWorker] = useState(null);
+  const [qrWorker, setQrWorker] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -269,11 +271,19 @@ export default function AdminStaff() {
         await updateWorkerProfile(editingWorker.id, formData);
         showToast(`Worker account updated successfully.`);
       } else {
-        await createWorkerProfile(formData);
+        const res = await createWorkerProfile(formData);
+        if (res?.error) throw res.error;
         showToast(`New worker account created successfully.`);
+        if (formData.role === 'photographer' && res?.data?.qr_login_token) {
+          setQrWorker({
+            ...res.data,
+            specialization: formData.specialization || 'General Photography',
+            qr_login_token: res.data.qr_login_token,
+          });
+        }
       }
       setModalOpen(false);
-      loadData();
+      loadData(true);
     } catch (err) {
       alert('Error saving worker profile: ' + err.message);
     } finally {
@@ -623,6 +633,16 @@ export default function AdminStaff() {
                       {/* Actions */}
                       <td className="px-5 sm:px-6 py-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
+                          {w.role === 'photographer' && (
+                            <button
+                              type="button"
+                              onClick={() => setQrWorker(w)}
+                              className="p-1.5 text-amber-700 bg-amber-50/80 hover:bg-amber-100 rounded-xl transition-colors border border-amber-200 cursor-pointer shadow-2xs"
+                              title="Photographer Login QR Pass"
+                            >
+                              <QrCode size={13} />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => openEdit(w)}
@@ -803,6 +823,24 @@ export default function AdminStaff() {
           </div>
         </form>
       </Modal>
+
+      {qrWorker && (
+        <PhotographerQRModal
+          photographer={qrWorker}
+          onClose={() => setQrWorker(null)}
+          onTokenRotated={(workerId, nextToken) => {
+            setWorkers((prev) =>
+              prev.map((item) =>
+                item.id === workerId ? { ...item, qr_login_token: nextToken } : item
+              )
+            );
+            setQrWorker((prev) =>
+              prev && prev.id === workerId ? { ...prev, qr_login_token: nextToken } : prev
+            );
+            showToast('Photographer QR pass regenerated cleanly.');
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -734,7 +734,7 @@ export async function getPhotographersWithWorkloadAndAvailability(eventDate = nu
       .from('profiles')
       .select(`
         id, first_name, last_name, phone, email, avatar_url, is_active, created_at, role,
-        photographer_profile:photographer_profiles(specialization, bio, is_available)
+        photographer_profile:photographer_profiles(specialization, bio, is_available, qr_login_token)
       `)
       .eq('role', 'photographer')
       .neq('role', 'admin')
@@ -883,6 +883,7 @@ export async function getPhotographersWithWorkloadAndAvailability(eventDate = nu
           created_at: p.created_at,
           specialization,
           bio,
+          qr_login_token: phProfile?.qr_login_token || null,
           is_available: isAvailable,
           availability_status: availabilityStatus,
           working_hours: workingHours,

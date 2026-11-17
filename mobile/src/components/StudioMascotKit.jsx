@@ -83,8 +83,8 @@ export default function StudioMascotKit({
   const [isStrobeActive, setIsStrobeActive] = useState(false);
 
   // Animation values
-  const floatAnim   = useRef(new Animated.Value(0)).current;
-  const squashAnim  = useRef(new Animated.Value(1)).current;
+  const floatAnim = useRef(new Animated.Value(0)).current;
+  const squashAnim = useRef(new Animated.Value(1)).current;
   const tailSwayAnim = useRef(new Animated.Value(0)).current;
   const strobeFlashAnim = useRef(new Animated.Value(0)).current;
   const entranceAnim = useRef(new Animated.Value(0.7)).current;
@@ -169,7 +169,7 @@ export default function StudioMascotKit({
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } catch {}
+    } catch { }
 
     // Squash & stretch recoil
     Animated.sequence([
@@ -255,7 +255,7 @@ export default function StudioMascotKit({
         <Animated.View
           pointerEvents="none"
           style={[
-            StyleSheet.absoluteFillObject,
+            StyleSheet.absoluteFill,
             styles.strobeOverlay,
             { opacity: strobeFlashAnim },
           ]}
@@ -620,7 +620,7 @@ export default function StudioMascotKit({
                 <G>
                   <Path d="M72 154 C65 165 64 178 82 165 Z" fill="url(#mFoxAmber)" />
                   <Circle cx="80" cy="160" r="6" fill="url(#mFoxIvory)" stroke="#2E241B" strokeWidth="0.8" />
-                  
+
                   <Path d="M128 154 C135 165 136 178 118 165 Z" fill="url(#mFoxAmber)" />
                   <Circle cx="120" cy="160" r="6" fill="url(#mFoxIvory)" stroke="#2E241B" strokeWidth="0.8" />
                 </G>
@@ -629,13 +629,13 @@ export default function StudioMascotKit({
                   <Rect x="0" y="0" width="28" height="28" rx="4" fill="#FFFDF8" stroke="url(#mFoxGold)" strokeWidth="1.5" />
                   <Rect x="4" y="4" width="8" height="8" rx="1" fill="#2E241B" />
                   <Rect x="6" y="6" width="4" height="4" fill="#D4AF37" />
-                  
+
                   <Rect x="16" y="4" width="8" height="8" rx="1" fill="#2E241B" />
                   <Rect x="18" y="6" width="4" height="4" fill="#D4AF37" />
-                  
+
                   <Rect x="4" y="16" width="8" height="8" rx="1" fill="#2E241B" />
                   <Rect x="6" y="18" width="4" height="4" fill="#D4AF37" />
-                  
+
                   <Rect x="16" y="16" width="4" height="4" rx="0.5" fill="#2E241B" />
                   <Rect x="21" y="21" width="3" height="3" rx="0.5" fill="#D4AF37" />
                 </G>
@@ -649,7 +649,7 @@ export default function StudioMascotKit({
                 <G transform="translate(65, 130)">
                   <Rect x="0" y="0" width="70" height="45" rx="6" fill="#FAF5E8" stroke="#2E241B" strokeWidth="1.8" />
                   <Rect x="0" y="0" width="70" height="12" rx="3" fill="url(#mFoxGold)" />
-                  
+
                   {/* Step 1: Base Camera View (Flash closed, lens flat) */}
                   {animationStep >= 1 && (
                     <G>
@@ -671,7 +671,7 @@ export default function StudioMascotKit({
                       <Line x1="35" y1="-14" x2="35" y2="-22" stroke="url(#mFoxGold)" strokeWidth="1.5" />
                       <Line x1="35" y1="-14" x2="43" y2="-18" stroke="url(#mFoxGold)" strokeWidth="1.5" />
                       <Line x1="35" y1="-14" x2="27" y2="-18" stroke="url(#mFoxGold)" strokeWidth="1.5" />
-                      
+
                       {/* Lens extends (outer ring) */}
                       <Circle cx="35" cy="24" r="18" fill="rgba(212, 175, 55, 0.4)" stroke="#D4AF37" strokeWidth="2" />
                     </G>
@@ -692,7 +692,7 @@ export default function StudioMascotKit({
                     </G>
                   )}
                 </G>
-                
+
                 {/* Fox Paws holding the camera sides */}
                 <G>
                   <Circle cx="60" cy="152" r="6" fill="url(#mFoxIvory)" stroke="#2E241B" strokeWidth="0.8" />

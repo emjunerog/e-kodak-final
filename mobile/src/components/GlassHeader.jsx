@@ -1,21 +1,19 @@
 /**
  * GlassHeader.jsx
- * Shared frosted editorial header — one consistent glass bar app-wide.
- * Real BlurView foundation + translucent wash + gold hairline + specular
- * top edge. Content slots preserve each screen's behaviour:
+ * Shared floating frosted editorial header pill card — keeps app typography
+ * (Google Sans) with the luminous rounded pill aesthetic across screens.
  *
  *   <GlassHeader icon={BookOpen} title="..." subtitle="..." />
  *   <GlassHeader left={<.../>} right={<.../>}> custom center </GlassHeader>
- *
- * When `icon` is given and no `left`, a PremiumIcon podium renders it.
  */
 
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
-import { Typography, Spacing } from '../theme';
+import { Typography } from '../theme';
 import PremiumIcon from './PremiumIcon';
 
 export default function GlassHeader({
@@ -28,63 +26,106 @@ export default function GlassHeader({
   children,
   style,
 }) {
-  const { isDark, colors } = useTheme();
+  const { isDark, isSage, highContrast, colors, gradients } = useTheme();
+  const insets = useSafeAreaInsets();
+
+  const cardGradient =
+    gradients?.header ||
+    (isDark
+      ? ['#242029', '#151B24']
+      : isSage
+        ? ['rgba(255, 255, 254, 0.96)', 'rgba(241, 244, 236, 0.92)']
+        : ['rgba(255, 253, 250, 0.94)', 'rgba(241, 246, 252, 0.90)']);
+  const cardBorder = highContrast
+    ? colors.gold.borderLight
+    : isDark
+      ? 'rgba(180, 198, 224, 0.20)'
+      : isSage
+        ? 'rgba(216, 222, 209, 0.92)'
+        : 'rgba(255, 255, 255, 0.88)';
 
   return (
-    <View style={[styles.bar, { borderBottomColor: colors.surface?.hairline || colors.gold.border }, style]}>
-      {/* Frosted foundation */}
-      <BlurView
-        intensity={isDark ? 60 : 45}
-        tint={isDark ? 'dark' : 'light'}
-        style={StyleSheet.absoluteFill}
-      />
-      <View
-        style={[
-          StyleSheet.absoluteFill,
-          { backgroundColor: isDark ? 'rgba(12, 11, 14, 0.55)' : 'rgba(255, 255, 255, 0.62)' },
-        ]}
-      />
-      {/* Specular top edge */}
-      <LinearGradient
-        colors={['rgba(255,255,255,0.22)', 'transparent']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.specular}
-        pointerEvents="none"
-      />
+    <View
+      style={[
+        styles.outerShadow,
+        {
+          marginTop: Math.max(insets.top, 10) + 8,
+          shadowColor: isDark ? '#000000' : '#4E4332',
+        },
+        style,
+      ]}
+    >
+      <View style={[styles.pillFrame, { borderColor: cardBorder, borderWidth: highContrast ? 1.6 : 1 }]}>
+        {Platform.OS === 'ios' ? (
+          <BlurView
+            intensity={isDark ? 42 : 30}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+        ) : null}
+        <LinearGradient
+          colors={cardGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        {/* Subtle top specular hairline */}
+        <LinearGradient
+          colors={
+            isDark
+              ? ['rgba(255, 255, 255, 0.14)', 'transparent']
+              : ['rgba(255, 255, 255, 0.95)', 'transparent']
+          }
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.specular}
+          pointerEvents="none"
+        />
 
-      <View style={styles.row}>
-        {left || (Icon && (
-          <PremiumIcon icon={Icon} size={20} box={42} tone={iconTone} glow />
-        ))}
-        <View style={styles.center}>
-          {children || (
-            <>
-              {title ? (
-                <Text style={[styles.title, { color: colors.text.primary }]} numberOfLines={1}>
-                  {title}
-                </Text>
-              ) : null}
-              {subtitle ? (
-                <Text style={[styles.subtitle, { color: colors.text.secondary }]} numberOfLines={1}>
-                  {subtitle}
-                </Text>
-              ) : null}
-            </>
-          )}
+        <View style={styles.row}>
+          {left || (Icon && (
+            <PremiumIcon icon={Icon} size={19} box={42} tone={iconTone} glow />
+          ))}
+          <View style={styles.center}>
+            {children || (
+              <>
+                {title ? (
+                  <Text style={[styles.title, { color: colors.text.primary }]} numberOfLines={1}>
+                    {title}
+                  </Text>
+                ) : null}
+                {subtitle ? (
+                  <Text style={[styles.subtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+                    {subtitle}
+                  </Text>
+                ) : null}
+              </>
+            )}
+          </View>
+          {right}
         </View>
-        {right}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  bar: {
-    paddingTop: 54,
-    paddingBottom: Spacing[4],
-    paddingHorizontal: Spacing[5],
-    borderBottomWidth: 1,
+  outerShadow: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 28,
+    backgroundColor: 'transparent',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 18,
+    elevation: 6,
+    zIndex: 2,
+  },
+  pillFrame: {
+    borderRadius: 28,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -98,7 +139,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing[3],
+    gap: 12,
     zIndex: 1,
   },
   center: {
@@ -107,12 +148,16 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: Typography.fontHeading,
-    fontSize: Typography.size['2xl'] - 2,
+    fontSize: 21,
+    lineHeight: 26,
     letterSpacing: -0.3,
+    includeFontPadding: false,
   },
   subtitle: {
     fontFamily: Typography.fontBody,
-    fontSize: Typography.size.sm - 1,
+    fontSize: 12.5,
+    lineHeight: 17,
     marginTop: 2,
+    includeFontPadding: false,
   },
 });

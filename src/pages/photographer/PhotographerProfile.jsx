@@ -24,6 +24,8 @@ import {
   updatePhotographerProfileData,
   recordPhotographerActivity,
 } from '../../services/photographerService';
+import { regeneratePhotographerQRToken } from '../../services/adminService';
+import PhotographerQRPassCard from '../../components/photographer/PhotographerQRPassCard';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import Toast from '../../components/ui/Toast';
 
@@ -58,6 +60,8 @@ export default function PhotographerProfile() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [qrLoginToken, setQrLoginToken] = useState(null);
+  const [rotatingQr, setRotatingQr] = useState(false);
   const [toast, setToast] = useState(null);
 
   const fileInputRef = useRef(null);
@@ -95,6 +99,7 @@ export default function PhotographerProfile() {
         };
         setFormData(loaded);
         setInitialData(loaded);
+        setQrLoginToken(data.qr_login_token || null);
       }
       if (profile?.avatar_url) {
         setAvatarPreview(profile.avatar_url);
@@ -647,6 +652,26 @@ export default function PhotographerProfile() {
             </div>
 
           </div>
+
+          {/* ── Mobile Companion QR Login Pass Card (Astryx Redesign) ───── */}
+          <PhotographerQRPassCard
+            qrLoginToken={qrLoginToken}
+            fullName={fullName}
+            variant="full"
+            rotating={rotatingQr}
+            onRegenerate={async () => {
+              if (!user?.id || rotatingQr) return;
+              setRotatingQr(true);
+              const { qr_login_token: nextToken, error } = await regeneratePhotographerQRToken(user.id);
+              setRotatingQr(false);
+              if (error || !nextToken) {
+                setToast({ type: 'error', message: error?.message || 'Unable to regenerate QR pass.' });
+                return;
+              }
+              setQrLoginToken(nextToken);
+              setToast({ type: 'success', message: 'Your Mobile Login QR Pass has been regenerated.' });
+            }}
+          />
 
           {/* ── 3. FULL-WIDTH POINT-TO-POINT SYNCHRONIZED ACTION BAR ────────── */}
           <div className="w-full p-5 sm:p-6 rounded-3xl bg-neutral-900 dark:bg-neutral-950 text-white border border-neutral-800 shadow-md flex flex-wrap items-center justify-between gap-4 transition-colors">

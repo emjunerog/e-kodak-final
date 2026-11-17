@@ -4,22 +4,16 @@
     "slug": "ekodak-companion",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/ekodak-logo.png",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0B0B0E"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.ekodak.companion"
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0B0B0E"
+        "foregroundImage": "./assets/ekodak-logo.png",
+        "backgroundColor": "#EEF1F6"
       },
       "package": "com.ekodak.companion",
       "permissions": [
@@ -46,10 +40,18 @@
         }
       ],
       "expo-secure-store",
-      "expo-splash-screen",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/ekodak-logo.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#EEF1F6"
+        }
+      ],
       "expo-status-bar",
       "expo-font",
-      "expo-audio"
+      "expo-audio",
+      "expo-asset"
     ]
   }
 }

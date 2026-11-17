@@ -1,76 +1,82 @@
-/**
- * HomeScreen.jsx
- * Centered luxury customer dashboard for E-Kodak Photography Studio.
- * Features:
- * - Centered E-KODAK brandmark with animated aperture lens
- * - Studio tagline: "Track your photography journey from shoot to delivery"
- * - In-app visual scanning guide modal & first-scan suggestion banner
- * - 2 Wide primary action cards (Scan Pass, Saved Passes)
- * - 3 Functional interactive tool cards (Studio Rates, Shoot Prep, Studio Bay)
- * - Live animated swipable photo reel & collage (connected to Supabase gallery_items)
- * - Real-time Supabase database synchronization (updates when admin changes photos)
- * - Active session dossier preview
- * - Pull-to-refresh
- */
-
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity,
-  StatusBar, ScrollView, RefreshControl,
-  Platform, Modal,
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  RefreshControl,
+  StatusBar,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
-  QrCode, BookOpen, ChevronRight,
-  HelpCircle, Calendar, Bell, X,
-  Ticket, Wallet, Shirt, MapPin,
+  HelpCircle,
+  Bell,
+  ScanQrCode,
+  CalendarCheck,
+  Tags,
+  ClipboardCheck,
+  MapPin,
+  ChevronRight,
+  X,
 } from 'lucide-react-native';
 
-import BrandLogo from '../components/BrandLogo';
 import GlassCard from '../components/GlassCard';
 import GlassBackground from '../components/GlassBackground';
-import StatusBadge from '../components/StatusBadge';
 import GoldButton from '../components/GoldButton';
 import PremiumIcon from '../components/PremiumIcon';
-import MascotStage from '../components/MascotStage';
-import StudioPhotoReel from '../components/StudioPhotoReel';
 import ScanInstructionsModal from '../components/ScanInstructionsModal';
 import StudioMascotKit from '../components/StudioMascotKit';
+import CardDecorElements from '../components/CardDecorElements';
+import StudioShapeLoader from '../components/StudioShapeLoader';
 import { RatesModal, PrepModal, StudioBayModal } from '../components/StudioToolModals';
 import {
-  ScanPassVector,
-  MyPassesVector,
-} from '../components/StudioVectorIllustrations';
-import { useTheme } from '../context/ThemeContext';
-import {
-  getSavedBookings, fetchStudioGallery, subscribeToGalleryChanges,
+  getSavedBookings,
+  fetchStudioServices,
 } from '../services/storageService';
-import { Typography, Spacing, Radius } from '../theme';
+import { useTheme } from '../context/ThemeContext';
+import { useRegisterTourTarget } from '../context/TourContext';
+import { Typography } from '../theme';
+
+const E_KODAK_LOGO = require('../../assets/ekodak-logo.png');
 
 export default function HomeScreen({ navigation }) {
-  const { isDark, colors, gradients } = useTheme();
-  const styles = getStyles(colors, isDark);
+  const { isDark, isSage, colors, gradients } = useTheme();
+  const insets = useSafeAreaInsets();
+  const styles = useMemo(() => getStyles(colors, isDark, isSage), [colors, isDark, isSage]);
+  const guideBtnRef = useRegisterTourTarget('customer_btn_guide');
+  const alertsBtnRef = useRegisterTourTarget('customer_btn_notifications');
+  const heroCtaRef = useRegisterTourTarget('customer_btn_hero_cta');
+
   const [savedBookings, setSavedBookings] = useState([]);
-  const [galleryItems, setGalleryItems]   = useState([]);
-  const [refreshing, setRefreshing]       = useState(false);
+  const [studioServices, setStudioServices] = useState([]);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [ratesCategory, setRatesCategory] = useState('all');
 
   // Modals state
-  const [showScanGuide, setShowScanGuide]                 = useState(false);
+  const [showScanGuide, setShowScanGuide] = useState(false);
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
-  const [showRates, setShowRates]                         = useState(false);
-  const [showPrep, setShowPrep]                           = useState(false);
-  const [showStudio, setShowStudio]                       = useState(false);
+  const [showRates, setShowRates] = useState(false);
+  const [showPrep, setShowPrep] = useState(false);
+  const [showStudio, setShowStudio] = useState(false);
 
   const loadData = useCallback(async () => {
-    const [bookings, gallery] = await Promise.all([
-      getSavedBookings(),
-      fetchStudioGallery(),
-    ]);
-    setSavedBookings(bookings);
-    setGalleryItems(gallery);
+    try {
+      const [bookings, services] = await Promise.all([
+        getSavedBookings(),
+        fetchStudioServices(),
+      ]);
+      setSavedBookings(bookings);
+      setStudioServices(services);
+    } finally {
+      setInitialLoading(false);
+    }
   }, []);
 
   useFocusEffect(
@@ -79,434 +85,492 @@ export default function HomeScreen({ navigation }) {
     }, [loadData])
   );
 
-  // Subscribe to real-time changes in gallery_items from Supabase (web admin updates)
-  useEffect(() => {
-    const unsubscribe = subscribeToGalleryChanges((updated) => {
-      setGalleryItems(updated);
-    });
-    return () => {
-      unsubscribe?.();
-    };
-  }, []);
-
   const onRefresh = async () => {
     setRefreshing(true);
-    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch { }
     await loadData();
     setRefreshing(false);
   };
 
-  const handlePhotoLikeUpdated = (photoId, nextLikes) => {
-    setGalleryItems((prev) =>
-      prev.map((item) => (item.id === photoId ? { ...item, likes: nextLikes } : item))
-    );
-  };
-
   const recentBooking = savedBookings[0];
+
+  const openRatesForCategory = useCallback((category = 'all') => {
+    try {
+      Haptics.selectionAsync();
+    } catch { }
+    setRatesCategory(category);
+    setShowRates(true);
+  }, []);
 
   const mobileMascotPose = useMemo(() => {
     if (!recentBooking) return 'welcome';
     const st = (recentBooking.status || '').toUpperCase();
-    if (st === 'IN_PROGRESS' || st === 'CONFIRMED') return 'shoot';
-    if (st === 'PROOFS_READY' || st === 'PENDING_APPROVAL') return 'inspect';
-    if (st === 'COMPLETED') return 'celebrate';
+    if (st === 'IN_PROGRESS' || st === 'CAPTURE' || st === 'ONGOING') return 'shoot';
+    if (st === 'EDITING' || st === 'RETOUCHING' || st === 'FINALIZED' || st === 'PRINTING') return 'inspect';
+    if (st === 'READY' || st === 'UNDER_DELIVERY' || st === 'COMPLETED') return 'celebrate';
     return 'welcome';
   }, [recentBooking]);
 
+  const openBookingTracker = useCallback(() => {
+    try {
+      Haptics.selectionAsync();
+    } catch { }
+    if (recentBooking) {
+      navigation.navigate('BookingTracker', {
+        token: recentBooking.token || recentBooking.bookingNumber,
+        booking: {
+          booking_number: recentBooking.bookingNumber,
+          status: recentBooking.status,
+        },
+      });
+    } else {
+      navigation.navigate('Scanner');
+    }
+  }, [navigation, recentBooking]);
+
+  const bookingsSubtitle = useMemo(() => {
+    if (savedBookings.length === 0) {
+      return '0 existing bookings';
+    }
+    return `${savedBookings.length} ${savedBookings.length === 1 ? 'existing booking' : 'existing bookings'}`;
+  }, [savedBookings.length]);
+
+  const goldPillColors = gradients.goldPill || gradients.gold;
+  const cardGradientColors =
+    gradients.glassCard ||
+    gradients.card ||
+    (isDark ? ['rgba(36, 32, 42, 0.78)', 'rgba(21, 27, 36, 0.86)'] : ['rgba(255, 253, 250, 0.84)', 'rgba(237, 243, 250, 0.78)']);
+  const headerGradientColors =
+    gradients.header ||
+    (isDark
+      ? ['#242029', '#151B24']
+      : ['rgba(255, 253, 250, 0.94)', 'rgba(241, 246, 252, 0.90)']);
+  const accentIconColor = isSage ? colors.gold.DEFAULT : '#B88622';
+  const onPrimaryColor = isSage ? '#FFFFFF' : '#181410';
+
   return (
-    <View style={styles.screen}>
+    <View style={[styles.container, { backgroundColor: colors.bg.base }]}>
       <StatusBar
         barStyle={isDark ? 'light-content' : 'dark-content'}
-        backgroundColor={isDark ? '#0C0A08' : '#FAF8F5'}
+        backgroundColor={colors.bg.base}
       />
-
-      {/* Ambient Glass Backdrop */}
       <GlassBackground />
 
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: 110 }]}
+        style={styles.scrollView}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: Math.max(insets.top, 16) + 8 },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={colors.gold.light}
-            colors={[colors.gold.DEFAULT]}
+            tintColor={colors.gold.DEFAULT}
           />
         }
       >
-        {/* ── Top Header: Brand Logo, Title & Actions ── */}
-        <View style={styles.topHeaderBar}>
-          {/* Frosted header wash */}
-          <LinearGradient
-            colors={
-              isDark
-                ? ['rgba(28, 23, 18, 0.72)', 'rgba(14, 12, 9, 0.78)']
-                : ['rgba(255, 255, 255, 0.72)', 'rgba(247, 244, 238, 0.68)']
-            }
-            style={StyleSheet.absoluteFillObject}
-          />
-          {/* Subtle Bottom Gold Hairline */}
-          <LinearGradient
-            colors={['transparent', colors.gold.border, 'transparent']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.headerBottomHairline}
-          />
+        {/* Top Floating Glass-Pill Header */}
+        <View style={styles.headerPillShadow}>
+          <View style={styles.headerPillFrame}>
+            <LinearGradient
+              colors={headerGradientColors}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <LinearGradient
+              colors={
+                isDark
+                  ? ['rgba(255, 255, 255, 0.14)', 'transparent']
+                  : ['rgba(255, 255, 255, 0.96)', 'transparent']
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.headerSpecular}
+              pointerEvents="none"
+            />
 
-          {/* Foreground: Top Left Logo + Text, Top Right Action Icons */}
-          <View style={styles.headerContentRow}>
-            {/* Top Left: 3D Emblem + E-KODAK + Subtitle + Tagline */}
-            <BrandLogo layout="left" showTagline size="sm" withBackdrop={false} />
+            <View style={styles.headerRow}>
+              <View style={styles.brandRow}>
+                <Image
+                  source={E_KODAK_LOGO}
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
+                <View>
+                  <Text style={styles.brandWordmark}>E-KODAK</Text>
+                  <Text style={styles.brandTagline}>Studio Companion</Text>
+                </View>
+              </View>
 
-            {/* Top Right Quick Action Icons */}
-            <View style={styles.topRightActions}>
-              <PremiumIcon
-                icon={HelpCircle}
-                size={20}
-                box={44}
-                tone="glass"
-                glow={false}
-                accessibilityLabel="Quick Guide"
-                onPress={() => setShowScanGuide(true)}
-              />
+              <View style={styles.headerActions}>
+                <TouchableOpacity
+                  ref={guideBtnRef}
+                  collapsable={false}
+                  activeOpacity={0.8}
+                  onPress={() => setShowScanGuide(true)}
+                  style={styles.headerIconBtn}
+                  accessibilityLabel="Scan guide"
+                >
+                  <HelpCircle
+                    size={19}
+                    color={isDark ? colors.text.primary : '#241D14'}
+                    strokeWidth={1.85}
+                  />
+                </TouchableOpacity>
 
-              <View style={{ position: 'relative' }}>
-                <PremiumIcon
-                  icon={Bell}
-                  size={20}
-                  box={44}
-                  tone="glass"
-                  glow={false}
-                  accessibilityLabel="Studio Notifications"
+                <TouchableOpacity
+                  ref={alertsBtnRef}
+                  collapsable={false}
+                  activeOpacity={0.8}
                   onPress={() => setShowNotificationsModal(true)}
-                />
-                <View style={styles.unreadBadgeDot} pointerEvents="none" />
+                  style={styles.headerIconBtn}
+                  accessibilityLabel="Studio notifications"
+                >
+                  <Bell
+                    size={19}
+                    color={isDark ? colors.text.primary : '#241D14'}
+                    strokeWidth={1.85}
+                  />
+                  <View style={styles.notifBadgeDot} />
+                </TouchableOpacity>
               </View>
             </View>
           </View>
         </View>
 
-        {/* ── Mascot Initialization Stage — Kodak the Fox centerpiece ── */}
-        <MascotStage
-          pose={mobileMascotPose}
-          mascotSize={120}
-          actionLabel={recentBooking ? 'View Live Progress' : 'Scan Studio Pass'}
-          onAction={() => {
-            try { Haptics.selectionAsync(); } catch {}
-            if (recentBooking) {
-              navigation.navigate('Bookings');
-            } else {
-              navigation.navigate('Scanner');
-            }
-          }}
-        />
-
-        {/* ── Studio Pass Services ── */}
-        <View style={styles.compactCardsSection}>
-          <Text style={[styles.sectionHeaderTitle, { color: colors.gold.DEFAULT, marginBottom: Spacing[1] }]}>
-            STUDIO PASS SERVICES
-          </Text>
-
-          {/* Card 1: Activate Your Studio Pass */}
-          <TouchableOpacity
-            activeOpacity={0.88}
-            onPress={() => {
-              try { Haptics.selectionAsync(); } catch {}
-              setShowScanGuide(true);
-            }}
-            style={styles.activateCardWrapper}
-          >
-            <GlassCard glow highlight style={styles.activateCard}>
-              <View style={styles.activateRow}>
-                <PremiumIcon icon={Ticket} size={30} box={68} tone="gold" glow />
-
-                <View style={styles.activateInfoCol}>
-                  <Text style={[styles.activateTitle, { color: colors.text.primary }]}>
-                    Activate Your Studio Pass
-                  </Text>
-                  <Text style={[styles.activateDesc, { color: colors.text.secondary }]} numberOfLines={2}>
-                    Link your physical receipt or web reservation to unlock live shoot progress and milestones.
-                  </Text>
-
-                  {/* Quick Guide Pill */}
-                  <View style={styles.quickGuidePill}>
-                    <LinearGradient
-                      colors={gradients.gold}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.quickGuidePillGrad}
-                    >
-                      <HelpCircle size={12} color="#FFFFFF" strokeWidth={2.2} />
-                      <Text style={[styles.quickGuidePillText, { color: '#FFFFFF' }]}>
-                        Quick Guide
-                      </Text>
-                      <ChevronRight size={12} color="#FFFFFF" strokeWidth={2.4} />
-                    </LinearGradient>
-                  </View>
-                </View>
-              </View>
-            </GlassCard>
-          </TouchableOpacity>
-
-          {/* Cards 2 & 3: Scan Studio Pass & My Studio Passes */}
-          <View style={styles.sideBySideRow}>
-            {/* Left: Scan Studio Pass */}
-            <TouchableOpacity
-              activeOpacity={0.88}
-              onPress={() => navigation.navigate('Scanner')}
-              style={styles.sideCardCol}
-            >
-              <GlassCard glow highlight style={styles.sideCompactCard}>
-                <View style={styles.podiumCircleWrapper}>
-                  <LinearGradient
-                    colors={['#FFE7A3', '#D4AF37', '#7A5208', '#F5D77F']}
-                    start={{ x: 0.1, y: 0 }}
-                    end={{ x: 0.9, y: 1 }}
-                    style={styles.podiumCircleRing}
-                  >
-                    <View style={[styles.podiumCircleDisc, { backgroundColor: isDark ? 'rgba(255, 248, 235, 0.12)' : '#FFFDF9' }]}>
-                      <ScanPassVector size={58} />
-                    </View>
-                  </LinearGradient>
-                </View>
-
-                <Text style={[styles.sideCardTitle, { color: colors.text.primary }]}>
-                  Scan Studio Pass
-                </Text>
-                <Text style={[styles.sideCardDesc, { color: colors.text.muted }]} numberOfLines={2}>
-                  Point camera at any receipt or QR pass.
-                </Text>
-
-                <View style={styles.sideActionBtn}>
-                  <LinearGradient
-                    colors={gradients.gold}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.sideActionGrad}
-                  >
-                    <QrCode size={13} color="#FFFFFF" strokeWidth={2.2} />
-                    <Text style={[styles.sideActionText, { color: '#FFFFFF' }]}>
-                      Scan Pass
-                    </Text>
-                  </LinearGradient>
-                </View>
-              </GlassCard>
-            </TouchableOpacity>
-
-            {/* Right: My Studio Passes */}
-            <TouchableOpacity
-              activeOpacity={0.88}
-              onPress={() => navigation.navigate('Bookings')}
-              style={styles.sideCardCol}
-            >
-              <GlassCard highlight style={styles.sideCompactCard}>
-                <View style={styles.podiumCircleWrapper}>
-                  <LinearGradient
-                    colors={['#FFE7A3', '#D4AF37', '#7A5208', '#F5D77F']}
-                    start={{ x: 0.1, y: 0 }}
-                    end={{ x: 0.9, y: 1 }}
-                    style={styles.podiumCircleRing}
-                  >
-                    <View style={[styles.podiumCircleDisc, { backgroundColor: isDark ? 'rgba(255, 248, 235, 0.12)' : '#FFFDF9' }]}>
-                      <MyPassesVector size={58} />
-                    </View>
-                  </LinearGradient>
-                </View>
-
-                <Text style={[styles.sideCardTitle, { color: colors.text.primary }]}>
-                  My Studio Passes
-                </Text>
-                <Text style={[styles.sideCardDesc, { color: colors.text.muted }]} numberOfLines={2}>
-                  Review active photo passes & proofs.
-                </Text>
-
-                <View style={styles.sideActionBtn}>
-                  <LinearGradient
-                    colors={gradients.gold}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.sideActionGrad}
-                  >
-                    <BookOpen size={13} color="#FFFFFF" strokeWidth={2.2} />
-                    <Text style={[styles.sideActionText, { color: '#FFFFFF' }]}>
-                      {savedBookings.length > 0 ? `${savedBookings.length} Active` : 'Passes'}
-                    </Text>
-                  </LinearGradient>
-                </View>
-              </GlassCard>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* ── Three Functional Studio Tool Cards ── */}
-        <View style={styles.toolsSection}>
-          <Text style={[styles.sectionHeaderTitle, { color: colors.gold.DEFAULT }]}>STUDIO TOOLS & GUIDES</Text>
-          <View style={styles.threeToolsRow}>
-            {/* Tool 1: Rates & Packages */}
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => setShowRates(true)}
-              style={styles.toolCol}
-            >
-              <GlassCard highlight style={styles.toolCard}>
-                <PremiumIcon icon={Wallet} size={22} box={52} tone="soft" glow />
-                <Text style={[styles.toolTitle, { color: colors.text.primary }]} numberOfLines={1}>
-                  Studio Rates
-                </Text>
-                <Text style={[styles.toolSub, { color: colors.text.muted }]} numberOfLines={1}>
-                  Packages & Sets
-                </Text>
-              </GlassCard>
-            </TouchableOpacity>
-
-            {/* Tool 2: Shoot Prep */}
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => setShowPrep(true)}
-              style={styles.toolCol}
-            >
-              <GlassCard highlight style={styles.toolCard}>
-                <PremiumIcon icon={Shirt} size={22} box={52} tone="soft" glow />
-                <Text style={[styles.toolTitle, { color: colors.text.primary }]} numberOfLines={1}>
-                  Shoot Prep
-                </Text>
-                <Text style={[styles.toolSub, { color: colors.text.muted }]} numberOfLines={1}>
-                  Wardrobe & Tips
-                </Text>
-              </GlassCard>
-            </TouchableOpacity>
-
-            {/* Tool 3: Studio Bay */}
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => setShowStudio(true)}
-              style={styles.toolCol}
-            >
-              <GlassCard highlight style={styles.toolCard}>
-                <PremiumIcon icon={MapPin} size={22} box={52} tone="soft" glow />
-                <Text style={[styles.toolTitle, { color: colors.text.primary }]} numberOfLines={1}>
-                  Studio Bay
-                </Text>
-                <Text style={[styles.toolSub, { color: colors.text.muted }]} numberOfLines={1}>
-                  Hours & Location
-                </Text>
-              </GlassCard>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* ── Active Studio Pass Dossier Preview ── */}
-        {recentBooking && (
-          <View style={styles.recentPassSection}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionHeaderTitle, { color: colors.gold.DEFAULT }]}>ACTIVE SESSION DOSSIER</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Bookings')}>
-                <Text style={[styles.viewAllText, { color: colors.gold.light }]}>View All ({savedBookings.length})</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              activeOpacity={0.88}
-              onPress={() => navigation.navigate('Bookings')}
-            >
-              <GlassCard glow highlight style={styles.activeDossierCard}>
-                <LinearGradient
-                  colors={gradients.gold}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0, y: 1 }}
-                  style={styles.dossierSpine}
-                />
-                <View style={styles.dossierContent}>
-                  <View style={styles.dossierTop}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.dossierNum, { color: colors.gold.DEFAULT }]}>
-                        Pass #{recentBooking.bookingNumber || '—'}
-                      </Text>
-                      {recentBooking.clientName && (
-                        <Text style={[styles.dossierClient, { color: colors.text.primary }]}>{recentBooking.clientName}</Text>
-                      )}
-                      {recentBooking.serviceName && (
-                        <Text style={[styles.dossierService, { color: colors.text.secondary }]}>{recentBooking.serviceName}</Text>
-                      )}
-                    </View>
-                    <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                      <StatusBadge status={recentBooking.status} size="sm" />
-                      {recentBooking.sessionDate && (
-                        <View style={styles.dateBadge}>
-                          <Calendar size={11} color={colors.text.muted} />
-                          <Text style={[styles.dateBadgeText, { color: colors.text.muted }]}>
-                            {new Date(recentBooking.sessionDate).toLocaleDateString('en-US', {
-                              month: 'short', day: 'numeric',
-                            })}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-
-                  <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
-
-                  {/* Kodak Fox Active Session Companion */}
-                  <View style={styles.dossierMascotRow}>
-                    <StudioMascotKit pose={mobileMascotPose} size={46} interactive={true} />
-                    <View style={{ flex: 1, marginLeft: 10 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={[styles.dossierMascotTitle, { color: colors.gold.DEFAULT }]}>
-                          KODAK · STUDIO GUIDE
-                        </Text>
-                        <View style={[styles.mascotStatusPill, { backgroundColor: colors.gold.bg, borderColor: colors.gold.border }]}>
-                          <Text style={[styles.mascotStatusText, { color: colors.gold.light }]}>
-                            {mobileMascotPose.toUpperCase()}
-                          </Text>
-                        </View>
-                      </View>
-                      <Text style={[styles.dossierMascotText, { color: colors.text.secondary }]}>
-                        {mobileMascotPose === 'shoot' && 'Atelier camera is primed! Live shoot in flight.'}
-                        {mobileMascotPose === 'inspect' && 'Curating film negatives & proof sheet.'}
-                        {mobileMascotPose === 'celebrate' && 'Session deliverables ready to cherish!'}
-                        {mobileMascotPose === 'welcome' && 'Pass confirmed! Awaiting camera bay entry.'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={[styles.dossierDivider, { backgroundColor: colors.gold.border }]} />
-
-                  <View style={styles.dossierFooter}>
-                    <Text style={[styles.dossierPrompt, { color: colors.text.muted }]}>Tap to view live studio progress</Text>
-                    <PremiumIcon icon={ChevronRight} size={14} box={30} tone="gold" glow />
-                  </View>
-                </View>
-              </GlassCard>
-            </TouchableOpacity>
+        {/* Pure-shapes load / reload indicator (zero text) */}
+        {(initialLoading || refreshing) && (
+          <View style={styles.shapeLoaderBar}>
+            <StudioShapeLoader size={38} isDark={isDark} />
           </View>
         )}
 
-        {/* ── Live Studio Showcase Collage Reel (Connected to Database) ── */}
-        <StudioPhotoReel
-          galleryItems={galleryItems}
-          onPhotoLike={handlePhotoLikeUpdated}
-        />
+        {/* Hero Mascot Card */}
+        <View style={styles.heroCardOuter}>
+            <LinearGradient
+              colors={cardGradientColors}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.heroCardGradient}
+            >
+              <View pointerEvents="none" style={styles.heroOrbsClip}>
+                <CardDecorElements variant="hero" isDark={isDark} />
+              </View>
 
-        {/* ── Studio Quote Footer ── */}
-        <View style={styles.brandFooter}>
-          <View style={styles.footerLine} />
-          <Text style={styles.footerQuote}>
-            "Every frame tells an everlasting story."
-          </Text>
-          <Text style={styles.footerCopyright}>
-            E-KODAK PHOTOGRAPHY STUDIO · CEBU, PHILIPPINES
-          </Text>
+            <View style={styles.heroLeft}>
+              <Text style={styles.heroHeading}>
+                {'Kodak is ready\nto guide you.'}
+              </Text>
+              <Text style={styles.heroBody}>
+                Scan your booking QR to see your order status.
+              </Text>
+
+              <TouchableOpacity
+                ref={heroCtaRef}
+                collapsable={false}
+                activeOpacity={0.88}
+                onPress={openBookingTracker}
+                style={styles.heroCtaWrap}
+              >
+                <LinearGradient
+                  colors={goldPillColors}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.heroCtaGradient}
+                >
+                  <Text style={styles.heroCtaText}>Track Order →</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.mascotBox}>
+              <StudioMascotKit
+                pose={mobileMascotPose}
+                size={80}
+                interactive={true}
+                showBadge={false}
+              />
+            </View>
+          </LinearGradient>
         </View>
 
-        <View style={{ height: 32 }} />
+        {/* Quick Actions */}
+        <Text style={styles.sectionLabel}>Quick Actions</Text>
+
+        <View style={styles.quickActionsGrid}>
+          {/* Scan Booking QR */}
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={() => navigation.navigate('Scanner')}
+            style={styles.quickActionCard}
+          >
+            <LinearGradient
+              colors={cardGradientColors}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.quickActionGradient}
+            >
+              <CardDecorElements variant="action-scan" isDark={isDark} />
+              <LinearGradient
+                colors={goldPillColors}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.actionBadgeGold}
+              >
+                <ScanQrCode size={19} color={onPrimaryColor} strokeWidth={1.9} />
+              </LinearGradient>
+
+              <Text style={styles.quickActionTitle}>Scan Booking QR</Text>
+              <Text style={styles.quickActionSub}>
+                Use the QR from your receipt or email.
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          {/* My Bookings */}
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={() => navigation.navigate('Bookings')}
+            style={styles.quickActionCard}
+          >
+            <LinearGradient
+              colors={cardGradientColors}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.quickActionGradient}
+            >
+              <CardDecorElements variant="action-bookings" isDark={isDark} />
+              <View style={styles.actionBadgeDark}>
+                <CalendarCheck size={19} color="#FAF5EA" strokeWidth={1.9} />
+              </View>
+
+              <Text style={styles.quickActionTitle}>My Bookings</Text>
+              <Text style={styles.quickActionSub}>{bookingsSubtitle}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+
+        {/* Studio Tool Cards (same Quick Actions card style, centered icons) */}
+        <View style={styles.toolsCardsGrid}>
+          {[
+            {
+              key: 'rates',
+              title: 'Studio Rates',
+              sub: 'Sets & prices',
+              Icon: Tags,
+              tone: 'gold',
+              onPress: () => openRatesForCategory('all'),
+            },
+            {
+              key: 'prep',
+              title: 'Shoot Prep',
+              sub: 'Photo day tips',
+              Icon: ClipboardCheck,
+              tone: 'soft',
+              onPress: () => setShowPrep(true),
+            },
+            {
+              key: 'bay',
+              title: 'Studio Bay',
+              sub: 'Hours & map',
+              Icon: MapPin,
+              tone: 'dark',
+              onPress: () => setShowStudio(true),
+            },
+          ].map((tool) => {
+            const ToolIcon = tool.Icon;
+            return (
+              <TouchableOpacity
+                key={tool.key}
+                activeOpacity={0.88}
+                onPress={tool.onPress}
+                style={styles.toolMiniCard}
+              >
+                <LinearGradient
+                  colors={cardGradientColors}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.toolMiniGradient}
+                >
+                  <CardDecorElements variant="tool" isDark={isDark} />
+                  {tool.tone === 'gold' ? (
+                    <LinearGradient
+                      colors={goldPillColors}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.toolMiniBadge}
+                    >
+                      <ToolIcon size={19} color={onPrimaryColor} strokeWidth={1.9} />
+                    </LinearGradient>
+                  ) : tool.tone === 'dark' ? (
+                    <View style={styles.toolMiniBadgeDark}>
+                      <ToolIcon size={19} color="#FAF5EA" strokeWidth={1.9} />
+                    </View>
+                  ) : (
+                    <View style={styles.toolMiniBadgeSoft}>
+                      <ToolIcon size={19} color={accentIconColor} strokeWidth={1.9} />
+                    </View>
+                  )}
+
+                  <Text
+                    style={styles.toolMiniTitle}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
+                    {tool.title}
+                  </Text>
+                  <Text style={styles.toolMiniSub} numberOfLines={1}>
+                    {tool.sub}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Recent Summary */}
+        <Text style={styles.sectionLabel}>Recent</Text>
+
+        {recentBooking ? (
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={openBookingTracker}
+            style={styles.recentCard}
+          >
+            <LinearGradient
+              colors={cardGradientColors}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.recentCardGradient}
+            >
+              <CardDecorElements variant="recent" isDark={isDark} />
+              <View style={styles.recentTopRow}>
+                <View style={styles.recentIconBox}>
+                  <CalendarCheck size={18} color={accentIconColor} strokeWidth={1.9} />
+                </View>
+                <View style={styles.recentTopLeft}>
+                  <Text numberOfLines={1} style={styles.recentOrderTitle}>
+                    {recentBooking.serviceName || 'Studio Package'}
+                  </Text>
+                  <Text numberOfLines={1} style={styles.recentOrderMeta}>
+                    {recentBooking.clientName || 'Studio Guest'}
+                  </Text>
+                </View>
+                <ChevronRight
+                  size={19}
+                  color={isDark ? colors.text.muted : '#4B4338'}
+                  strokeWidth={1.9}
+                />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={() => navigation.navigate('Scanner')}
+            style={styles.recentCard}
+          >
+            <LinearGradient
+              colors={cardGradientColors}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.recentCardGradient}
+            >
+              <CardDecorElements variant="recent" isDark={isDark} />
+              <View style={styles.recentTopRow}>
+                <View style={styles.recentIconBox}>
+                  <ScanQrCode size={18} color={accentIconColor} strokeWidth={1.9} />
+                </View>
+                <View style={styles.recentTopLeft}>
+                  <Text style={styles.recentOrderTitle}>No scanned order yet</Text>
+                  <Text style={styles.recentOrderMeta}>
+                    Scan your booking QR to view it here.
+                  </Text>
+                </View>
+                <ChevronRight
+                  size={19}
+                  color={isDark ? colors.text.muted : '#4B4338'}
+                  strokeWidth={1.9}
+                />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
+
+        {/* EXISTING STUDIO PACKAGES */}
+        {studioServices.length > 0 && (
+          <View style={styles.packagesSection}>
+            <Text style={styles.sectionLabel}>Packages</Text>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.packagesScroll}
+            >
+              {studioServices.map((svc) => {
+                const tiers = Array.isArray(svc.tiers) ? svc.tiers : [];
+                let lowestTier = null;
+                let lowestVal = Infinity;
+                for (const t of tiers) {
+                  const num = Number(String(t?.price || '').replace(/[^0-9.]/g, ''));
+                  if (num > 0 && num < lowestVal) {
+                    lowestVal = num;
+                    lowestTier = t;
+                  }
+                }
+                const setCount = tiers.length;
+                const priceSummary = lowestTier
+                  ? `From ${lowestTier.price}${setCount > 0 ? ` • ${setCount} ${setCount === 1 ? 'set' : 'sets'}` : ''}`
+                  : svc.tagline || 'View studio sets';
+
+                return (
+                  <TouchableOpacity
+                    key={svc.id}
+                    activeOpacity={0.88}
+                    onPress={() => openRatesForCategory(svc.category || 'all')}
+                    style={styles.packageCard}
+                  >
+                    <LinearGradient
+                      colors={cardGradientColors}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.packageCardGradient}
+                    >
+                      <Image
+                        source={{ uri: svc.cover_image }}
+                        style={styles.packageImage}
+                        resizeMode="cover"
+                      />
+                      <View style={styles.packageBody}>
+                        <CardDecorElements variant="package" isDark={isDark} />
+                        <Text numberOfLines={2} style={styles.packageTitle}>
+                          {svc.name}
+                        </Text>
+                        <Text numberOfLines={1} style={styles.packageMeta}>
+                          {priceSummary}
+                        </Text>
+                      </View>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        <View style={{ height: 132 }} />
       </ScrollView>
 
-      {/* Aesthetic In-App Visual Scan Instructions Modal */}
+      {/* Scan Instructions Modal */}
       <ScanInstructionsModal
         visible={showScanGuide}
         onClose={() => setShowScanGuide(false)}
-        onOpenScanner={() => navigation.navigate('Scanner')}
       />
 
       {/* Studio Notifications & Activity Modal */}
@@ -514,556 +578,598 @@ export default function HomeScreen({ navigation }) {
         visible={showNotificationsModal}
         transparent
         animationType="fade"
+        statusBarTranslucent
         onRequestClose={() => setShowNotificationsModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <BlurView intensity={isDark ? 60 : 40} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
           <TouchableOpacity
             style={StyleSheet.absoluteFill}
             activeOpacity={1}
             onPress={() => setShowNotificationsModal(false)}
           />
           <View style={styles.notifCardWrapper}>
-            <GlassCard glow highlight style={styles.notifCard}>
+            <GlassCard opaque blurred={false} glow highlight style={styles.notifCard}>
               <View style={styles.notifHeader}>
                 <View style={styles.notifTitleRow}>
                   <PremiumIcon icon={Bell} size={18} box={40} tone="soft" glow />
                   <View>
-                    <Text style={[styles.notifTitle, { color: colors.text.primary }]}>Studio Alerts</Text>
-                    <Text style={[styles.notifSub, { color: colors.text.muted }]}>Real-time atelier updates</Text>
+                    <Text style={[styles.notifTitle, { color: colors.text.primary }]}>
+                      Studio Alerts
+                    </Text>
+                    <Text style={[styles.notifSub, { color: colors.text.muted }]}>
+                      Real-time atelier updates
+                    </Text>
                   </View>
                 </View>
-                <PremiumIcon
-                  icon={X}
-                  size={15}
-                  box={32}
-                  tone="glass"
-                  accessibilityLabel="Dismiss alerts"
+
+                <TouchableOpacity
                   onPress={() => setShowNotificationsModal(false)}
-                />
+                  style={styles.notifCloseBtn}
+                >
+                  <X size={18} color={colors.text.muted} />
+                </TouchableOpacity>
               </View>
 
               <View style={styles.notifList}>
                 <View style={[styles.notifItem, { borderBottomColor: colors.gold.border }]}>
                   <View style={[styles.notifDot, { backgroundColor: colors.status.ready }]} />
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.notifItemTitle, { color: colors.text.primary }]}>Live Shoot Milestones Active</Text>
-                    <Text style={[styles.notifItemDesc, { color: colors.text.secondary }]}>
-                      Your booked photography sessions sync in real time from our studio floor.
+                    <Text style={[styles.notifItemTitle, { color: colors.text.primary }]}>
+                      Live Shoot Milestones Active
                     </Text>
-                    <Text style={[styles.notifItemTime, { color: colors.gold.light }]}>Studio Live Feed · Connected</Text>
+                    <Text style={[styles.notifItemDesc, { color: colors.text.secondary }]}>
+                      Scan your booking pass to receive live updates for capture, editing, and pickup.
+                    </Text>
+                    <Text style={[styles.notifItemTime, { color: colors.gold.light }]}>
+                      Studio Live Feed · Connected
+                    </Text>
                   </View>
                 </View>
 
                 <View style={styles.notifItem}>
                   <View style={[styles.notifDot, { backgroundColor: colors.gold.DEFAULT }]} />
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.notifItemTitle, { color: colors.text.primary }]}>Editorial Portfolio Updated</Text>
-                    <Text style={[styles.notifItemDesc, { color: colors.text.secondary }]}>
-                      Fresh color-graded proofs and portrait sets have been added to the live gallery reel.
+                    <Text style={[styles.notifItemTitle, { color: colors.text.primary }]}>
+                      Studio Packages Ready
                     </Text>
-                    <Text style={[styles.notifItemTime, { color: colors.gold.light }]}>Atelier Reel · Just now</Text>
+                    <Text style={[styles.notifItemDesc, { color: colors.text.secondary }]}>
+                      View live package sets and crystal wood inclusions on your dashboard.
+                    </Text>
+                    <Text style={[styles.notifItemTime, { color: colors.gold.light }]}>
+                      Studio Rates · Connected
+                    </Text>
                   </View>
                 </View>
               </View>
 
               <GoldButton
-                size="sm"
                 onPress={() => setShowNotificationsModal(false)}
-                style={{ marginTop: Spacing[4] }}
+                variant="outline"
+                style={{ width: '100%', marginTop: 8 }}
               >
-                Dismiss Alerts
+                Close Alerts
               </GoldButton>
             </GlassCard>
           </View>
         </View>
       </Modal>
 
-      {/* Interactive Tool Modals */}
-      <RatesModal visible={showRates} onClose={() => setShowRates(false)} />
+      {/* Studio Tool Modals */}
+      <RatesModal
+        visible={showRates}
+        initialCategory={ratesCategory}
+        onClose={() => setShowRates(false)}
+      />
       <PrepModal visible={showPrep} onClose={() => setShowPrep(false)} />
       <StudioBayModal visible={showStudio} onClose={() => setShowStudio(false)} />
     </View>
   );
 }
 
-const getStyles = (colors, isDark) => StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg.base },
-  content: { paddingBottom: 20 },
+const getStyles = (colors, isDark, isSage) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    scrollView: {
+      flex: 1,
+      zIndex: 1,
+    },
+    scrollContent: {
+      paddingHorizontal: 18,
+    },
 
-  // Top Header Bar
-  topHeaderBar: {
-    position: 'relative',
-    overflow: 'hidden',
-    backgroundColor: 'transparent',
-    paddingTop: Platform.OS === 'ios' ? 48 : 38,
-    paddingBottom: 22,
-    paddingHorizontal: Spacing[4],
-    borderBottomWidth: 1,
-    borderBottomColor: colors.gold.border,
-  },
-  headerBottomHairline: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 1.5,
-    zIndex: 1,
-  },
-  headerContentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    zIndex: 2,
-  },
-  topRightActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  headerActionBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 3,
-    position: 'relative',
-  },
-  unreadBadgeDot: {
-    position: 'absolute',
-    top: 7,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#D4AF37',
-    borderWidth: 1.5,
-    borderColor: '#1A1714',
-  },
+    // Header
+    headerPillShadow: {
+      marginBottom: 16,
+      borderRadius: 28,
+      backgroundColor: 'transparent',
+      shadowColor: isDark ? '#000000' : '#4E4332',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: isDark ? 0.25 : 0.1,
+      shadowRadius: 18,
+      elevation: 6,
+    },
+    headerPillFrame: {
+      borderRadius: 28,
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(180, 198, 224, 0.20)' : 'rgba(255, 255, 255, 0.88)',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      overflow: 'hidden',
+      position: 'relative',
+    },
+    headerSpecular: {
+      position: 'absolute',
+      top: 0,
+      left: 24,
+      right: 24,
+      height: 1,
+    },
+    headerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      zIndex: 1,
+    },
+    brandRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    logoImage: {
+      width: 38,
+      height: 38,
+      backgroundColor: 'transparent',
+    },
+    shapeLoaderBar: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingBottom: 12,
+    },
+    brandWordmark: {
+      fontFamily: Typography.fontHeading,
+      fontSize: 19,
+      lineHeight: 23,
+      letterSpacing: 0.4,
+      color: isDark ? colors.text.primary : '#181410',
+      includeFontPadding: false,
+    },
+    brandTagline: {
+      fontFamily: Typography.fontBody,
+      fontSize: 12,
+      lineHeight: 16,
+      color: colors.text.secondary,
+      marginTop: 1,
+      includeFontPadding: false,
+    },
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    headerIconBtn: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : '#FFFFFF',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(220, 221, 230, 0.85)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'relative',
+      shadowColor: '#2E261B',
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: isDark ? 0.2 : 0.1,
+      shadowRadius: 8,
+      elevation: 3,
+    },
+    notifBadgeDot: {
+      position: 'absolute',
+      top: 9,
+      right: 10,
+      width: 7,
+      height: 7,
+      borderRadius: 3.5,
+      backgroundColor: '#E5484D',
+      borderWidth: 1,
+      borderColor: colors.bg.base,
+    },
 
-  // Modal styles for Notifications
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(5, 4, 3, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: Spacing[4],
-  },
-  notifCardWrapper: {
-    width: '100%',
-    maxWidth: 400,
-  },
-  notifCard: {
-    padding: Spacing[5],
-    borderRadius: Radius.xl,
-  },
-  notifHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: Spacing[4],
-  },
-  notifTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  notifIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notifTitle: {
-    fontFamily: Typography.fontHeadingSemi,
-    fontSize: Typography.size.base,
-  },
-  notifSub: {
-    fontFamily: Typography.fontBody,
-    fontSize: 10,
-    marginTop: 1,
-  },
-  notifCloseBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notifList: {
-    gap: 12,
-  },
-  notifItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    paddingBottom: 10,
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(212, 168, 83, 0.15)',
-  },
-  notifDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginTop: 4,
-  },
-  notifItemTitle: {
-    fontFamily: Typography.fontBodySemi,
-    fontSize: Typography.size.xs,
-    marginBottom: 2,
-  },
-  notifItemDesc: {
-    fontFamily: Typography.fontBody,
-    fontSize: 11,
-    lineHeight: 16,
-    marginBottom: 3,
-  },
-  notifItemTime: {
-    fontFamily: Typography.fontMono,
-    fontSize: 9,
-    letterSpacing: 0.4,
-  },
+    // Hero Card
+    heroCardOuter: {
+      borderRadius: 22,
+      borderWidth: 1,
+      borderColor: isDark
+        ? 'rgba(180, 198, 224, 0.20)'
+        : isSage
+          ? '#D7DDD1'
+          : '#DCDDE6',
+      shadowColor: '#5B6472',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: isDark ? 0 : 0.09,
+      shadowRadius: 14,
+      elevation: isDark ? 0 : 3,
+    },
+    heroCardGradient: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderRadius: 21,
+      padding: 18,
+      gap: 12,
+      position: 'relative',
+    },
+    heroOrbsClip: {
+      ...StyleSheet.absoluteFill,
+      borderRadius: 21,
+      overflow: 'hidden',
+    },
+    heroLeft: {
+      flex: 1,
+    },
+    heroHeading: {
+      fontFamily: Typography.fontHeading,
+      fontSize: 23,
+      lineHeight: 28,
+      color: isDark ? colors.text.primary : '#181410',
+    },
+    heroBody: {
+      fontFamily: Typography.fontBodyMedium,
+      fontSize: 12.5,
+      lineHeight: 18,
+      color: isDark ? colors.text.secondary : '#5C5346',
+      marginTop: 8,
+    },
+    heroCtaWrap: {
+      marginTop: 14,
+      alignSelf: 'flex-start',
+      borderRadius: 999,
+      overflow: 'hidden',
+    },
+    heroCtaGradient: {
+      paddingVertical: 10,
+      paddingHorizontal: 18,
+      borderRadius: 999,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroCtaText: {
+      fontFamily: Typography.fontBodyBold,
+      fontSize: 13,
+      color: isSage ? '#FFFFFF' : '#181410',
+    },
+    mascotBox: {
+      width: 108,
+      height: 116,
+      borderRadius: 16,
+      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255, 255, 255, 0.72)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(180, 198, 224, 0.16)' : 'rgba(214, 219, 230, 0.80)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 10,
+    },
 
-  // Compact Studio Pass Cards (3D Refined Physical Aesthetic)
-  compactCardsSection: {
-    paddingHorizontal: Spacing[4],
-    paddingTop: Spacing[3],
-    gap: Spacing[3],
-  },
+    // Section Header
+    sectionLabel: {
+      fontFamily: Typography.fontHeading,
+      fontSize: 21,
+      lineHeight: 26,
+      letterSpacing: -0.25,
+      color: isDark ? colors.text.primary : '#181410',
+      marginTop: 22,
+      marginBottom: 12,
+    },
 
-  // Compact Studio Pass Cards
-  compactCardsSection: {
-    paddingHorizontal: Spacing[4],
-    paddingTop: Spacing[3],
-    gap: Spacing[3],
-  },
+    // Quick Actions 2-column
+    quickActionsGrid: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    quickActionCard: {
+      flex: 1,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: isDark
+        ? 'rgba(180, 198, 224, 0.20)'
+        : isSage
+          ? '#D7DDD1'
+          : '#DCDDE6',
+      overflow: 'hidden',
+      shadowColor: '#5B6472',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: isDark ? 0 : 0.08,
+      shadowRadius: 10,
+      elevation: isDark ? 0 : 2,
+    },
+    quickActionGradient: {
+      flex: 1,
+      padding: 16,
+      borderRadius: 19,
+      position: 'relative',
+    },
+    actionBadgeGold: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    actionBadgeDark: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor: isSage ? '#1E241C' : '#1D1710',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    quickActionTitle: {
+      fontFamily: Typography.fontBodyBold,
+      fontSize: 16.5,
+      lineHeight: 21,
+      color: isDark ? colors.text.primary : '#181410',
+      marginTop: 14,
+    },
+    quickActionSub: {
+      fontFamily: Typography.fontBodyMedium,
+      fontSize: 12,
+      lineHeight: 17,
+      color: isDark ? colors.text.secondary : '#5C5346',
+      marginTop: 4,
+    },
 
-  // Card 1: Activate Your Studio Pass
-  activateCardWrapper: {
-    width: '100%',
-  },
-  activateCard: {
-    borderRadius: Radius['2xl'],
-    paddingVertical: Spacing[4] + 2,
-    paddingHorizontal: Spacing[5],
-    minHeight: 124,
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  activateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing[4],
-  },
-  activateInfoCol: {
-    flex: 1,
-    gap: 4,
-    justifyContent: 'center',
-  },
-  activateTitle: {
-    fontFamily: Typography.fontHeadingSemi,
-    fontSize: 16,
-    letterSpacing: 0.2,
-    lineHeight: 22,
-  },
-  activateDesc: {
-    fontFamily: Typography.fontBody,
-    fontSize: 11.5,
-    lineHeight: 16,
-  },
-  quickGuidePill: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
-    borderRadius: Radius.full,
-  },
-  quickGuidePillGrad: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 11,
-    paddingVertical: 5,
-    borderRadius: Radius.full,
-  },
-  quickGuidePillText: {
-    fontFamily: Typography.fontBodyBold,
-    fontSize: 10.5,
-    letterSpacing: 0.3,
-  },
+    // Studio Tool Cards Grid
+    toolsCardsGrid: {
+      flexDirection: 'row',
+      gap: 10,
+      marginTop: 12,
+    },
+    toolMiniCard: {
+      flex: 1,
+      minHeight: 128,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: isDark
+        ? 'rgba(180, 198, 224, 0.20)'
+        : isSage
+          ? '#D7DDD1'
+          : '#DCDDE6',
+      overflow: 'hidden',
+      shadowColor: '#5B6472',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: isDark ? 0 : 0.08,
+      shadowRadius: 10,
+      elevation: isDark ? 0 : 2,
+    },
+    toolMiniGradient: {
+      flex: 1,
+      paddingHorizontal: 10,
+      paddingVertical: 16,
+      borderRadius: 19,
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'relative',
+    },
+    toolMiniBadge: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    toolMiniBadgeDark: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor: isSage ? '#1E241C' : '#1D1710',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    toolMiniBadgeSoft: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor: isDark ? 'rgba(180, 198, 224, 0.14)' : 'rgba(255, 255, 255, 0.85)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(180, 198, 224, 0.24)' : 'rgba(198, 206, 222, 0.70)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    toolMiniTitle: {
+      fontFamily: Typography.fontBodyBold,
+      fontSize: 14,
+      lineHeight: 18,
+      color: isDark ? colors.text.primary : '#181410',
+      textAlign: 'center',
+      marginTop: 12,
+    },
+    toolMiniSub: {
+      fontFamily: Typography.fontBodyMedium,
+      fontSize: 11,
+      lineHeight: 15,
+      color: isDark ? colors.text.secondary : '#5C5346',
+      textAlign: 'center',
+      marginTop: 3,
+    },
 
-  // Cards 2 & 3: Side-by-Side Symmetrical Row
-  sideBySideRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: Spacing[3],
-    width: '100%',
-  },
-  sideCardCol: {
-    flex: 1,
-  },
-  sideCompactCard: {
-    flex: 1,
-    borderRadius: Radius['2xl'],
-    paddingVertical: 18,
-    paddingHorizontal: 12,
-    height: 236,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    position: 'relative',
-  },
-  podiumCircleWrapper: {
-    width: 72,
-    height: 72,
-    borderRadius: Radius.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  podiumCircleRing: {
-    width: 72,
-    height: 72,
-    borderRadius: Radius.xl,
-    padding: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  podiumCircleDisc: {
-    width: '100%',
-    height: '100%',
-    borderRadius: Radius.xl - 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  sideCardTitle: {
-    fontFamily: Typography.fontHeadingSemi,
-    fontSize: 14,
-    textAlign: 'center',
-    letterSpacing: 0.2,
-    lineHeight: 18,
-    marginTop: 4,
-  },
-  sideCardDesc: {
-    fontFamily: Typography.fontBody,
-    fontSize: 10.5,
-    lineHeight: 15,
-    textAlign: 'center',
-    paddingHorizontal: 4,
-    minHeight: 30,
-  },
-  sideActionBtn: {
-    width: '100%',
-    borderRadius: Radius.full,
-  },
-  sideActionGrad: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    height: 38,
-    borderRadius: Radius.full,
-  },
-  sideActionText: {
-    fontFamily: Typography.fontBodyBold,
-    fontSize: 11.5,
-    letterSpacing: 0.4,
-  },
+    // Recent Tracker Summary
+    recentCard: {
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: isDark
+        ? 'rgba(180, 198, 224, 0.20)'
+        : isSage
+          ? '#D7DDD1'
+          : '#DCDDE6',
+      overflow: 'hidden',
+      shadowColor: '#5B6472',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: isDark ? 0 : 0.08,
+      shadowRadius: 10,
+      elevation: isDark ? 0 : 2,
+    },
+    recentCardGradient: {
+      padding: 16,
+      borderRadius: 19,
+      position: 'relative',
+    },
+    recentIconBox: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor: isDark ? 'rgba(180, 198, 224, 0.14)' : 'rgba(255, 255, 255, 0.85)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(180, 198, 224, 0.24)' : 'rgba(198, 206, 222, 0.70)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    recentTopRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    recentTopLeft: {
+      flex: 1,
+    },
+    recentOrderTitle: {
+      fontFamily: Typography.fontBodyBold,
+      fontSize: 16.5,
+      color: isDark ? colors.text.primary : '#181410',
+    },
+    recentOrderMeta: {
+      fontFamily: Typography.fontBodyMedium,
+      fontSize: 12.5,
+      color: isDark ? colors.text.secondary : '#5C5346',
+      marginTop: 3,
+    },
 
-  // 3 Tools Section
-  toolsSection: {
-    paddingHorizontal: Spacing[4],
-    marginTop: Spacing[5],
-  },
-  sectionHeaderTitle: {
-    fontFamily: Typography.fontBodySemi,
-    fontSize: 10,
-    letterSpacing: 1,
-    color: colors.gold.light,
-    marginBottom: Spacing[2],
-  },
-  threeToolsRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: Spacing[2] + 2,
-    width: '100%',
-  },
-  toolCol: {
-    flex: 1,
-  },
-  toolCard: {
-    flex: 1,
-    borderRadius: Radius.xl,
-    paddingVertical: 14,
-    paddingHorizontal: 6,
-    height: 140,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    position: 'relative',
-  },
-  toolTitle: {
-    fontFamily: Typography.fontHeadingSemi,
-    fontSize: 12,
-    color: colors.text.primary,
-    textAlign: 'center',
-    marginTop: 2,
-  },
-  toolSub: {
-    fontFamily: Typography.fontBody,
-    fontSize: 9.5,
-    color: colors.text.muted,
-    textAlign: 'center',
-    marginBottom: 2,
-  },
+    // Existing Packages Section
+    packagesSection: {
+      marginTop: 2,
+    },
+    packagesScroll: {
+      gap: 12,
+      paddingRight: 8,
+      paddingBottom: 6,
+    },
+    packageCard: {
+      width: 220,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(180, 198, 224, 0.20)' : '#DCDDE6',
+      overflow: 'hidden',
+      shadowColor: '#5B6472',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: isDark ? 0 : 0.08,
+      shadowRadius: 10,
+      elevation: isDark ? 0 : 2,
+    },
+    packageCardGradient: {
+      borderRadius: 17,
+      overflow: 'hidden',
+    },
+    packageImage: {
+      width: '100%',
+      height: 112,
+      backgroundColor: '#E5EAF2',
+    },
+    packageBody: {
+      paddingHorizontal: 14,
+      paddingTop: 11,
+      paddingBottom: 13,
+      position: 'relative',
+      overflow: 'hidden',
+    },
+    packageTitle: {
+      fontFamily: Typography.fontBodyBold,
+      fontSize: 16,
+      lineHeight: 21,
+      color: isDark ? colors.text.primary : '#181410',
+    },
+    packageMeta: {
+      fontFamily: Typography.fontBodySemi,
+      fontSize: 12.5,
+      color: isDark ? colors.gold.light : '#8A6314',
+      marginTop: 6,
+    },
 
-  // Active Pass Dossier
-  recentPassSection: {
-    paddingHorizontal: Spacing[4],
-    marginTop: Spacing[5],
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: Spacing[2],
-  },
-  viewAllText: {
-    fontFamily: Typography.fontBodyMedium,
-    fontSize: Typography.size.xs,
-    color: colors.gold.light,
-  },
-  activeDossierCard: {
-    flexDirection: 'row',
-    borderRadius: Radius['2xl'],
-    overflow: 'hidden',
-    padding: 0,
-  },
-  dossierSpine: {
-    width: 4,
-  },
-  dossierContent: {
-    flex: 1,
-    padding: Spacing[4],
-  },
-  dossierTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-  },
-  dossierNum: {
-    fontFamily: Typography.fontMono,
-    fontSize: 11,
-    color: colors.gold.light,
-    marginBottom: 2,
-    letterSpacing: 0.5,
-  },
-  dossierClient: {
-    fontFamily: Typography.fontHeadingSemi,
-    fontSize: Typography.size.md,
-    color: colors.text.primary,
-  },
-  dossierService: {
-    fontFamily: Typography.fontBody,
-    fontSize: Typography.size.xs,
-    color: colors.text.muted,
-    marginTop: 1,
-  },
-  dateBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.bg.elevated,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: Radius.xs,
-  },
-  dateBadgeText: {
-    fontFamily: Typography.fontBody,
-    fontSize: 10,
-    color: colors.text.secondary,
-  },
-  dossierDivider: {
-    height: 1,
-    backgroundColor: colors.neutral[800],
-    marginVertical: Spacing[3],
-  },
-  dossierMascotRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing[1],
-  },
-  dossierMascotTitle: {
-    fontFamily: Typography.fontBodyBold,
-    fontSize: 9.5,
-    letterSpacing: 0.6,
-  },
-  mascotStatusPill: {
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-  },
-  mascotStatusText: {
-    fontFamily: Typography.fontMono,
-    fontSize: 8,
-    fontWeight: '700',
-  },
-  dossierMascotText: {
-    fontFamily: Typography.fontBody,
-    fontSize: Typography.size.xs,
-    lineHeight: 16,
-    marginTop: 2,
-  },
-  dossierFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  dossierPrompt: {
-    fontFamily: Typography.fontBody,
-    fontSize: Typography.size.xs,
-    color: colors.text.muted,
-  },
-  chevronPill: {
-    width: 22,
-    height: 22,
-    borderRadius: Radius.full,
-    backgroundColor: colors.gold.bg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // Footer
-  brandFooter: {
-    paddingHorizontal: Spacing[6],
-    alignItems: 'center',
-    marginTop: Spacing[7],
-  },
-  footerLine: {
-    width: 40,
-    height: 1,
-    backgroundColor: colors.gold.border,
-    marginBottom: Spacing[4],
-  },
-  footerQuote: {
-    fontFamily: Typography.fontHeadingItalic,
-    fontSize: Typography.size.sm,
-    color: colors.text.secondary,
-    textAlign: 'center',
-    marginBottom: 6,
-  },
-  footerCopyright: {
-    fontFamily: Typography.fontBody,
-    fontSize: 9,
-    color: colors.text.muted,
-    letterSpacing: 1,
-    textAlign: 'center',
-  },
-});
+    // Notifications Modal
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(10, 8, 6, 0.72)',
+      justifyContent: 'center',
+      padding: 20,
+    },
+    notifCardWrapper: {
+      width: '100%',
+      maxWidth: 420,
+      alignSelf: 'center',
+    },
+    notifCard: {
+      padding: 20,
+      borderRadius: 24,
+    },
+    notifHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 16,
+    },
+    notifTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    notifTitle: {
+      fontFamily: Typography.fontBodyBold,
+      fontSize: 17,
+    },
+    notifSub: {
+      fontFamily: Typography.fontBody,
+      fontSize: 12,
+      marginTop: 2,
+    },
+    notifCloseBtn: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: colors.surface?.chip || 'rgba(127, 127, 140, 0.14)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    notifList: {
+      gap: 12,
+      marginBottom: 8,
+    },
+    notifItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+      paddingBottom: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: 'rgba(180, 140, 50, 0.2)',
+    },
+    notifDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      marginTop: 5,
+    },
+    notifItemTitle: {
+      fontFamily: Typography.fontBodyBold,
+      fontSize: 13.5,
+    },
+    notifItemDesc: {
+      fontFamily: Typography.fontBody,
+      fontSize: 12.5,
+      lineHeight: 18,
+      marginTop: 3,
+    },
+    notifItemTime: {
+      fontFamily: Typography.fontBodyMedium,
+      fontSize: 11,
+      marginTop: 4,
+    },
+  });

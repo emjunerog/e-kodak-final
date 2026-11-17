@@ -11,6 +11,7 @@
  */
 
 import * as Haptics from 'expo-haptics';
+import { getAppSettings } from '../services/storageService';
 
 const SOUND_FILES = {
   alert: require('../../assets/sounds/mascot_alert.wav'),
@@ -33,17 +34,29 @@ function getExpoAudio() {
 }
 
 export async function playMascotSound(type = 'pop') {
+  const settings = await getAppSettings().catch(() => ({
+    sound: true,
+    haptics: true,
+  }));
+
   // 1. Coordinated haptic response corresponding to the sound emotion
-  try {
-    if (type === 'alert') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    } else if (type === 'success') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } else {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  if (settings?.haptics !== false) {
+    try {
+      if (type === 'alert') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      } else if (type === 'success') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+    } catch {
+      // Safe fallback if device does not support haptics
     }
-  } catch {
-    // Safe fallback if device does not support haptics
+  }
+
+  // Respect user's Sound Notification toggle
+  if (settings?.sound === false) {
+    return;
   }
 
   // 2. Try expo-audio if available in the current runtime

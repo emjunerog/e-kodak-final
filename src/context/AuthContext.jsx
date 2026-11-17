@@ -171,6 +171,56 @@ export const AuthProvider = ({ children }) => {
     };
   }, [fetchProfile]);
 
+  // Keep profile (including avatar_url updated from mobile) live-synced across web tabs/devices
+  useEffect(() => {
+    if (!isSupabaseConfigured || !user?.id) return undefined;
+
+    const channel = supabase
+      .channel(`profile-sync-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${user.id}`,
+        },
+        (payload) => {
+          const updatedRow = payload?.new;
+          if (!updatedRow) return;
+          setProfile((prev) => {
+            const first = updatedRow.first_name ?? prev?.first_name ?? '';
+            const last = updatedRow.last_name ?? prev?.last_name ?? '';
+            const merged = {
+              ...(prev || {}),
+              ...updatedRow,
+              full_name: `${first} ${last}`.trim(),
+            };
+            saveProfileCache(merged);
+            return merged;
+          });
+        }
+      )
+      .subscribe();
+
+    const handleVisibilityRefresh = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchProfile(user.id);
+      }
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityRefresh);
+    }
+
+    return () => {
+      supabase.removeChannel(channel);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityRefresh);
+      }
+    };
+  }, [user?.id, fetchProfile]);
+
   // ── Auth actions ─────────────────────────────────────────────────────────────
 
   const signIn = async (email, password) => {

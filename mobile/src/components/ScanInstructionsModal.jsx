@@ -8,7 +8,7 @@ import React, { useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import {
   Modal, View, Text, StyleSheet, TouchableOpacity,
-  Dimensions
+  Dimensions, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -84,10 +84,13 @@ export default function ScanInstructionsModal({ visible, onClose, onOpenScanner 
       visible={visible}
       transparent
       animationType="fade"
+      statusBarTranslucent
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <BlurView intensity={isDark ? 60 : 40} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        {Platform.OS === 'ios' && (
+          <BlurView intensity={isDark ? 60 : 40} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        )}
         <TouchableOpacity
           style={StyleSheet.absoluteFill}
           activeOpacity={1}
@@ -95,7 +98,7 @@ export default function ScanInstructionsModal({ visible, onClose, onOpenScanner 
         />
 
         <View style={styles.modalCardWrapper}>
-          <GlassCard glow highlight style={styles.modalCard}>
+          <GlassCard opaque blurred={false} glow highlight style={styles.modalCard}>
             {/* Header row */}
             <View style={styles.headerRow}>
               <View style={styles.headerLeft}>
@@ -122,7 +125,7 @@ export default function ScanInstructionsModal({ visible, onClose, onOpenScanner 
             <View style={styles.mascotStage}>
               <LinearGradient
                 colors={isDark ? ['rgba(212, 175, 55, 0.12)', 'transparent'] : ['rgba(212, 175, 55, 0.15)', 'transparent']}
-                style={StyleSheet.absoluteFillObject}
+                style={StyleSheet.absoluteFill}
               />
               <StudioMascotKit 
                 pose="camera_reveal" 
@@ -207,7 +210,7 @@ export default function ScanInstructionsModal({ visible, onClose, onOpenScanner 
 const getStyles = (colors, isDark) => StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(5, 4, 3, 0.45)',
+    backgroundColor: 'rgba(8, 10, 14, 0.68)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: Spacing[4],
@@ -279,7 +282,7 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: isDark ? 'rgba(28, 22, 17, 0.6)' : 'rgba(255, 250, 240, 0.6)',
+    backgroundColor: colors.bg.elevated,
     borderWidth: 1,
     borderColor: colors.gold.border,
     marginBottom: Spacing[4],
@@ -315,9 +318,9 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     letterSpacing: 0.8,
   },
   tagPill: {
-    backgroundColor: 'rgba(127, 127, 140, 0.12)',
+    backgroundColor: colors.surface?.chip || 'rgba(127, 127, 140, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: colors.surface?.hairline || colors.gold.border,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,

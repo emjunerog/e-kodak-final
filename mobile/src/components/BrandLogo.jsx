@@ -12,7 +12,7 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '../context/ThemeContext';
 import { Typography, Spacing, Radius } from '../theme';
 
-const LENS_3D_ASSET = require('../../assets/luxury_3d_lens.jpg');
+const LENS_3D_ASSET = require('../../assets/ekodak-logo.png');
 
 export default function BrandLogo({
   showTagline = true,

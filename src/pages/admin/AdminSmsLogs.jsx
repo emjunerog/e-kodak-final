@@ -1,8 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   MessageSquare,
-  Smartphone,
-  Radio,
   Send,
   RefreshCw,
   AlertCircle,
@@ -18,21 +16,31 @@ import {
   Copy,
   Check,
   Download,
-  Sparkles,
-  Filter,
-  ExternalLink,
-  ShieldCheck,
-  CheckCheck,
-  User,
-  Calendar,
   Layers,
-  ArrowUpDown
+  Users,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import CustomDropdown from '../../components/ui/CustomDropdown';
-import { getSmsLogs, dispatchManualSms, deleteSmsLog, getRecentBookings } from '../../services/adminService';
+import SmsGatewayBanner from '../../components/admin/SmsGatewayBanner';
+import SmsCustomerDirectory from '../../components/admin/SmsCustomerDirectory';
+import SmsInboxFeed from '../../components/admin/SmsInboxFeed';
+import { getSmsLogs, deleteSmsLog } from '../../services/adminService';
+import {
+  getTextBeeConfig,
+  saveTextBeeConfigOverride,
+  clearTextBeeConfigOverride,
+  getTextBeeDeviceStatus,
+  getTextBeeMessages,
+  getCustomerSmsDirectory,
+  subscribeLiveSmsDirectory,
+  resolveGatewayMessageContact,
+  sendPersonalizedBatchToCustomers,
+  interpolateSmsTemplate,
+  normalizePhPhone,
+  detectPhilippineCarrier,
+} from '../../services/textbeeService';
 
 const PAGE_SIZE = 15;
 
@@ -41,12 +49,12 @@ const fmt = (d) => (!d ? '—' : new Date(d).toLocaleString('en-PH', {
   day: 'numeric',
   year: 'numeric',
   hour: '2-digit',
-  minute: '2-digit'
+  minute: '2-digit',
 }));
 
 function timeAgo(dateString) {
   if (!dateString) return '—';
-  const diffSec = Math.floor((new Date() - new Date(dateString)) / 1000);
+  const diffSec = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000);
   if (diffSec < 60) return 'Just now';
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `${diffMin}m ago`;
@@ -57,227 +65,419 @@ function timeAgo(dateString) {
   return new Date(dateString).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
 }
 
-// Detect Philippine carrier network by phone prefix
-function detectPhilippineCarrier(phone) {
-  if (!phone) return 'PH Telco';
-  const clean = phone.replace(/[^0-9]/g, '');
-  let prefix = '';
-  if (clean.startsWith('639')) prefix = '09' + clean.slice(3, 5);
-  else if (clean.startsWith('09')) prefix = clean.slice(0, 4);
-
-  const globePrefixes = ['0905','0906','0915','0916','0917','0926','0927','0935','0936','0945','0955','0956','0965','0966','0967','0975','0976','0977','0978','0979','0995','0996','0997'];
-  const smartPrefixes = ['0907','0908','0909','0910','0911','0912','0913','0914','0918','0919','0920','0921','0928','0929','0930','0938','0939','0940','0946','0947','0948','0949','0950','0951','0961','0963','0964','0968','0969','0970','0971','0981','0989','0992','0998','0999'];
-  const ditoPrefixes = ['0991','0992','0993','0994','0895','0896','0897','0898'];
-
-  if (globePrefixes.includes(prefix)) return 'Globe / TM';
-  if (smartPrefixes.includes(prefix)) return 'Smart / TNT';
-  if (ditoPrefixes.includes(prefix)) return 'DITO Telco';
-  return 'Direct Route';
-}
-
 const STATUS_CONFIG = {
   SENT: {
-    label: 'Delivered',
+    label: 'Sent',
     icon: CheckCircle2,
     badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200/80',
-    dotClass: 'bg-emerald-500'
+    dotClass: 'bg-emerald-500',
   },
   DELIVERED: {
     label: 'Delivered',
     icon: CheckCircle2,
     badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200/80',
-    dotClass: 'bg-emerald-500'
+    dotClass: 'bg-emerald-500',
   },
   QUEUED: {
     label: 'Queued',
     icon: Clock,
     badgeClass: 'bg-amber-50 text-amber-800 border-amber-200/80',
-    dotClass: 'bg-amber-500'
+    dotClass: 'bg-amber-500',
   },
   PENDING: {
-    label: 'Queued',
+    label: 'Pending',
     icon: Clock,
     badgeClass: 'bg-amber-50 text-amber-800 border-amber-200/80',
-    dotClass: 'bg-amber-500'
+    dotClass: 'bg-amber-500',
   },
   FAILED: {
     label: 'Failed',
     icon: XCircle,
     badgeClass: 'bg-red-50 text-red-800 border-red-200/80',
-    dotClass: 'bg-red-500'
-  }
+    dotClass: 'bg-red-500',
+  },
 };
+
+const QUICK_TEMPLATES = [
+  {
+    id: 'SHOOT_REMINDER',
+    label: 'Shoot reminder',
+    text: 'E-KODAK REMINDER: Hi {firstName}, your studio session (#{bookingNumber}) is set for {date} at {time}. Please arrive 15 mins early with your QR pass. See you!',
+  },
+  {
+    id: 'ORDER_READY',
+    label: 'Proofs ready',
+    text: 'E-KODAK: Hi {firstName}, your edited portraits & soft copies for #{bookingNumber} are now ready! Log in to your E-Kodak client portal to view & download.',
+  },
+  {
+    id: 'PAYMENT_CONFIRMED',
+    label: 'Payment verified',
+    text: 'E-KODAK: Hi {firstName}, your payment for Booking #{bookingNumber} ({service}) is verified. Thank you for choosing E-Kodak Studios!',
+  },
+  {
+    id: 'BALANCE_REMINDER',
+    label: 'Balance notice',
+    text: 'E-KODAK: Hi {firstName}, friendly reminder that Booking #{bookingNumber} has a remaining balance of {balance} payable on session day. Thank you!',
+  },
+  {
+    id: 'RESCHEDULE_UPDATE',
+    label: 'Schedule update',
+    text: 'E-KODAK ADVISORY: Hi {firstName}, your schedule for #{bookingNumber} has been updated to {date} ({time}). Check your client dashboard for details.',
+  },
+];
 
 export default function AdminSmsLogs() {
   const { user, profile } = useAuth();
 
-  // Core Data State
-  const [rows, setRows] = useState([]);
-  const [recentBookings, setRecentBookings] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [actionSuccessMsg, setActionSuccessMsg] = useState(null);
+  // Workspace Tab
+  const [activeTab, setActiveTab] = useState('compose'); // 'compose' | 'inbox' | 'logs'
 
-  // Search & Filter State
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'SENT' | 'PENDING' | 'FAILED'
-  const [carrierFilter, setCarrierFilter] = useState('ALL'); // 'ALL' | 'SEMAPHORE' | 'PHILSMS' | 'TWILIO'
-  const [bookingFilter, setBookingFilter] = useState('ALL');
-  const [page, setPage] = useState(1);
-  const [copiedId, setCopiedId] = useState(null);
+  // TextBee Device & Cloud Feed State
+  const [tbConfig, setTbConfig] = useState(() => getTextBeeConfig());
+  const [device, setDevice] = useState(null);
+  const [deviceLoading, setDeviceLoading] = useState(true);
+  const [deviceError, setDeviceError] = useState(null);
+  const [gatewayMessages, setGatewayMessages] = useState([]);
+  const [gatewayMessagesLoading, setGatewayMessagesLoading] = useState(true);
+  const [gatewayMessagesError, setGatewayMessagesError] = useState(null);
 
-  // Modals & Tools
-  const [composeModalOpen, setComposeModalOpen] = useState(false);
-  const [inspectModalLog, setInspectModalLog] = useState(null);
-  const [showGatewayDrawer, setShowGatewayDrawer] = useState(false);
+  // Live Current Orders Directory State
+  const [contacts, setContacts] = useState([]);
+  const [phoneToCustomerMap, setPhoneToCustomerMap] = useState(() => new Map());
+  const [directoryStats, setDirectoryStats] = useState({
+    totalCustomers: 0,
+    reachableCount: 0,
+    missingPhoneCount: 0,
+    activeBookingPhones: 0,
+    unpaidBalanceCount: 0,
+  });
+  const [directoryLoading, setDirectoryLoading] = useState(true);
 
-  // Compose State
-  const [dispatchPhone, setDispatchPhone] = useState('');
-  const [dispatchName, setDispatchName] = useState('');
-  const [dispatchMessage, setDispatchMessage] = useState('');
-  const [dispatchBookingId, setDispatchBookingId] = useState('');
-  const [dispatchBookingNumber, setDispatchBookingNumber] = useState('');
-  const [dispatchGateway, setDispatchGateway] = useState('semaphore');
+  // Composer State (strictly DB-verified order recipients)
+  const [selectedContactIds, setSelectedContactIds] = useState([]);
+  const [orderLookupInput, setOrderLookupInput] = useState('');
+  const [messageText, setMessageText] = useState('');
   const [sendingSms, setSendingSms] = useState(false);
 
-  // Load Data
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [logsRes, bookingsRes] = await Promise.all([
-        getSmsLogs({ page: 1, pageSize: 100 }),
-        getRecentBookings(50)
-      ]);
+  // Supabase Audit Logs State
+  const [rows, setRows] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [page, setPage] = useState(1);
+  const [copiedId, setCopiedId] = useState(null);
+  const [inspectModalLog, setInspectModalLog] = useState(null);
 
+  // Gateway Settings Modal State
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [draftApiKey, setDraftApiKey] = useState('');
+  const [draftDeviceId, setDraftDeviceId] = useState('');
+
+  // Feedback Banners
+  const [toastSuccess, setToastSuccess] = useState(null);
+  const [toastError, setToastError] = useState(null);
+
+  const showSuccess = (msg) => {
+    setToastError(null);
+    setToastSuccess(msg);
+    setTimeout(() => setToastSuccess(null), 5000);
+  };
+
+  const showError = (msg) => {
+    setToastSuccess(null);
+    setToastError(msg);
+  };
+
+  // Load TextBee Device & Cloud Messages
+  const loadGatewayTelemetry = useCallback(async () => {
+    setDeviceLoading(true);
+    setGatewayMessagesLoading(true);
+    const currentCfg = getTextBeeConfig();
+    setTbConfig(currentCfg);
+
+    const [devRes, msgRes] = await Promise.all([
+      getTextBeeDeviceStatus(),
+      getTextBeeMessages({ direction: 'all', limit: 60 }),
+    ]);
+
+    if (devRes.success) {
+      setDevice(devRes.device);
+      setDeviceError(null);
+    } else {
+      setDevice(null);
+      setDeviceError(devRes.error);
+    }
+    setDeviceLoading(false);
+
+    if (msgRes.success) {
+      setGatewayMessages(msgRes.data || []);
+      setGatewayMessagesError(null);
+    } else {
+      setGatewayMessagesError(msgRes.error);
+    }
+    setGatewayMessagesLoading(false);
+  }, []);
+
+  // Load Current Orders with Phone Numbers (live from Supabase)
+  const loadCustomerDirectory = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setDirectoryLoading(true);
+    const res = await getCustomerSmsDirectory();
+    const freshContacts = res.contacts || [];
+    setContacts(freshContacts);
+    setPhoneToCustomerMap(res.phoneToCustomerMap || new Map());
+    setDirectoryStats(res.stats || {
+      totalCustomers: 0,
+      reachableCount: 0,
+      missingPhoneCount: 0,
+      activeBookingPhones: 0,
+      unpaidBalanceCount: 0,
+    });
+    setSelectedContactIds((prev) => {
+      if (prev.length === 0) return prev;
+      const validIds = new Set(freshContacts.map((c) => c.id));
+      const next = prev.filter((id) => validIds.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+    if (!silent) setDirectoryLoading(false);
+  }, []);
+
+  // Load Supabase sms_logs Audit Trail
+  const loadAuditLogs = useCallback(async () => {
+    setLogsLoading(true);
+    try {
+      const logsRes = await getSmsLogs({ page: 1, pageSize: 150 });
       setRows(logsRes.data || []);
-      setRecentBookings(bookingsRes.data || []);
     } catch (err) {
       console.error('Failed to load SMS logs:', err);
-      setError('Unable to load SMS transmission records.');
     } finally {
-      setLoading(false);
+      setLogsLoading(false);
     }
   }, []);
 
+  const refreshAll = useCallback(() => {
+    loadGatewayTelemetry();
+    loadCustomerDirectory();
+    loadAuditLogs();
+  }, [loadGatewayTelemetry, loadCustomerDirectory, loadAuditLogs]);
+
   useEffect(() => {
-    load();
-    const handleUpdate = () => load();
+    const timer = setTimeout(() => {
+      refreshAll();
+    }, 0);
+    const handleUpdate = () => loadAuditLogs();
+    const handleLiveDirectoryRefresh = () => {
+      if (typeof document === 'undefined' || !document.hidden) {
+        loadCustomerDirectory({ silent: true });
+      }
+    };
+
     window.addEventListener('ekodak:sms_logs_updated', handleUpdate);
-    return () => window.removeEventListener('ekodak:sms_logs_updated', handleUpdate);
-  }, [load]);
+    window.addEventListener('focus', handleLiveDirectoryRefresh);
 
-  // Statistics
-  const stats = useMemo(() => {
-    const total = rows.length;
-    const delivered = rows.filter(r => r.status === 'SENT' || r.status === 'DELIVERED').length;
-    const queued = rows.filter(r => r.status === 'QUEUED' || r.status === 'PENDING').length;
-    const failed = rows.filter(r => r.status === 'FAILED').length;
-    const deliveryRate = total > 0 ? Math.round((delivered / total) * 100) : 100;
-    return { total, delivered, queued, failed, deliveryRate };
-  }, [rows]);
+    // Live Supabase realtime + 15s polling while visible so new/updated orders pull automatically
+    const unsubscribeOrders = subscribeLiveSmsDirectory(() => {
+      loadCustomerDirectory({ silent: true });
+    });
+    const pollTimer = setInterval(handleLiveDirectoryRefresh, 15000);
 
-  // Filter Options for StudioDropdown: Bookings Filter
-  const bookingFilterOptions = useMemo(() => {
-    const opts = [
-      { value: 'ALL', label: 'All Bookings & Manual Messages', desc: 'Display all studio SMS dispatches' }
-    ];
-    recentBookings.forEach(b => {
-      const cName = b.customer 
-        ? `${b.customer.first_name || ''} ${b.customer.last_name || ''}`.trim()
-        : 'Client';
-      opts.push({
-        value: b.id,
-        label: `#${b.booking_number} — ${cName}`,
-        desc: `${b.service?.name || 'Studio Session'} · ${b.customer?.phone || 'No phone'}`
+    return () => {
+      clearTimeout(timer);
+      clearInterval(pollTimer);
+      window.removeEventListener('ekodak:sms_logs_updated', handleUpdate);
+      window.removeEventListener('focus', handleLiveDirectoryRefresh);
+      unsubscribeOrders();
+    };
+  }, [refreshAll, loadAuditLogs, loadCustomerDirectory]);
+
+  // Selected Customer Objects
+  const selectedContacts = useMemo(() => {
+    const idSet = new Set(selectedContactIds);
+    return contacts.filter((c) => idSet.has(c.id));
+  }, [contacts, selectedContactIds]);
+
+  const totalRecipientCount = selectedContacts.length;
+
+  // Live Preview of Interpolated Message for First Selected Database Order
+  const previewMessage = useMemo(() => {
+    if (!messageText.trim() || selectedContacts.length === 0) return '';
+    return interpolateSmsTemplate(messageText, selectedContacts[0]);
+  }, [messageText, selectedContacts]);
+
+  // Strict DB Order Lookup Helper (never allows arbitrary/non-DB phone numbers)
+  const findVerifiedOrderContact = useCallback((rawInput) => {
+    const clean = String(rawInput || '').trim();
+    if (!clean) return null;
+    const strippedBk = clean.replace(/^#/, '').toLowerCase();
+    const normalizedPhone = normalizePhPhone(clean);
+
+    return (
+      contacts.find((c) => {
+        const bk = String(c.latestBooking?.booking_number || '').toLowerCase();
+        if (bk && bk === strippedBk) return true;
+        if (normalizedPhone && c.normalizedPhone === normalizedPhone) return true;
+        if (c.rawPhone && c.rawPhone.toLowerCase() === clean.toLowerCase()) return true;
+        if (c.name && c.name.toLowerCase() === clean.toLowerCase()) return true;
+        return false;
+      }) || null
+    );
+  }, [contacts]);
+
+  // Selection Handlers
+  const handleToggleSelectContact = (id) => {
+    setSelectedContactIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleQuickPickCustomer = (contact) => {
+    if (!contact?.isValidPhone) {
+      showError('Selected order does not have a valid Philippine mobile number in the database.');
+      return;
+    }
+    setSelectedContactIds([contact.id]);
+    setActiveTab('compose');
+  };
+
+  const handleLookupOrderRecipient = () => {
+    const raw = orderLookupInput.trim();
+    if (!raw) return;
+
+    const matched = findVerifiedOrderContact(raw);
+    if (!matched) {
+      showError('No matching order found in the database. SMS is exclusive to verified booking records.');
+      return;
+    }
+
+    setSelectedContactIds((prev) => (prev.includes(matched.id) ? prev : [...prev, matched.id]));
+    setOrderLookupInput('');
+    setToastError(null);
+  };
+
+  const handleReplyFromInbox = ({ phone, customer }) => {
+    const normalized = normalizePhPhone(phone);
+    const activeMatch =
+      (customer?.id && contacts.find((c) => c.id === customer.id)) ||
+      (normalized && contacts.find((c) => c.normalizedPhone === normalized)) ||
+      null;
+
+    if (!activeMatch) {
+      showError('This number is not linked to any active order in the database.');
+      return;
+    }
+
+    setSelectedContactIds([activeMatch.id]);
+    setActiveTab('compose');
+  };
+
+  // Send SMS Handler (strictly exclusive to verified database order records)
+  const handleSendSms = async (e) => {
+    e.preventDefault();
+    if (!messageText.trim()) {
+      showError('Please enter an SMS message before sending.');
+      return;
+    }
+
+    let finalTargets = [...selectedContacts];
+    if (orderLookupInput.trim()) {
+      const matched = findVerifiedOrderContact(orderLookupInput.trim());
+      if (!matched) {
+        showError('No matching order found in the database. Clear the lookup field or enter an existing #BK / order mobile.');
+        return;
+      }
+      if (!finalTargets.some((c) => c.id === matched.id)) {
+        finalTargets.push(matched);
+      }
+    }
+
+    if (finalTargets.length === 0) {
+      showError('Select at least one current order from the database before sending.');
+      return;
+    }
+
+    setSendingSms(true);
+    setToastError(null);
+
+    try {
+      const res = await sendPersonalizedBatchToCustomers({
+        customers: finalTargets,
+        template: messageText.trim(),
+        notificationType: finalTargets.length > 1 ? 'BULK_DISPATCH' : 'MANUAL_DISPATCH',
       });
-    });
-    return opts;
-  }, [recentBookings]);
 
-  // Filter Options for StudioDropdown: Carrier Gateways
-  const carrierFilterOptions = [
-    { value: 'ALL', label: 'All Telco Carriers', desc: 'Semaphore, PhilSMS & Twilio' },
-    { value: 'SEMAPHORE', label: 'Semaphore PH', desc: 'Primary direct telco route' },
-    { value: 'PHILSMS', label: 'PhilSMS Gateway', desc: 'Secondary carrier failover' },
-    { value: 'TWILIO', label: 'Twilio Global', desc: 'International mobile numbers' }
-  ];
+      const sentTotal = res.sentCount || 0;
+      const failedTotal = res.failedCount || 0;
+      const lastBatchId = res.smsBatchId || null;
 
-  // Compose Modal: Booking Options for StudioDropdown
-  const composeBookingOptions = useMemo(() => {
-    return recentBookings.map(b => {
-      const cName = b.customer 
-        ? `${b.customer.first_name || ''} ${b.customer.last_name || ''}`.trim()
-        : 'Client';
-      const phone = b.customer?.phone || '';
-      return {
-        value: b.id,
-        label: `#${b.booking_number} — ${cName}`,
-        desc: `${phone ? `📱 ${phone} · ` : ''}${b.service?.name || 'Session'} · Rem: ₱${Number(b.remaining_balance || 0).toLocaleString()}`,
-        badge: phone ? 'Has Mobile' : 'No Phone',
-        colorBadge: phone ? 'bg-emerald-500' : 'bg-neutral-400'
-      };
-    });
-  }, [recentBookings]);
-
-  // Handle selecting a booking in the Quick Dispatch Modal
-  const handleSelectComposeBooking = (bId) => {
-    setDispatchBookingId(bId);
-    const found = recentBookings.find(b => String(b.id) === String(bId));
-    if (found) {
-      const cName = found.customer 
-        ? `${found.customer.first_name || ''} ${found.customer.last_name || ''}`.trim()
-        : (found.customer_name || 'Client');
-      setDispatchName(cName);
-      setDispatchBookingNumber(found.booking_number || '');
-      if (found.customer?.phone) {
-        setDispatchPhone(found.customer.phone);
-      }
-      // Auto-set initial SMS template if message is blank
-      if (!dispatchMessage.trim()) {
-        setDispatchMessage(
-          `E-KODAK: Hi ${cName}, your portrait session (#${found.booking_number}) has been updated. Please visit your client portal for details.`
+      if (sentTotal > 0) {
+        showSuccess(
+          `Dispatched ${sentTotal} SMS ${sentTotal === 1 ? 'message' : 'messages'} via TextBee${
+            lastBatchId ? ` (Batch: ${lastBatchId})` : ''
+          }${failedTotal > 0 ? ` · ${failedTotal} failed` : ''}.`
         );
+        setOrderLookupInput('');
+        setSelectedContactIds([]);
+        setMessageText('');
+        loadAuditLogs();
+        setTimeout(() => loadGatewayTelemetry(), 1200);
+      } else {
+        showError(res.error || 'Failed to send SMS via TextBee.');
       }
+    } catch (err) {
+      showError(err.message || 'Unexpected error sending SMS.');
+    } finally {
+      setSendingSms(false);
     }
   };
 
-  // Quick Preset Templates for SMS Dispatch
-  const applySmsTemplate = (type) => {
-    const name = dispatchName || 'Valued Client';
-    const bNum = dispatchBookingNumber || 'STUDIO';
-    const templates = {
-      ORDER_READY: `E-KODAK: Hi ${name}, your portraits & proofs for #${bNum} are now ready for download! View your gallery in the portal today.`,
-      PAYMENT_CONFIRMED: `E-KODAK: Payment verified for Booking #${bNum}. Your studio session schedule is confirmed. Thank you for choosing E-Kodak!`,
-      SHOOT_REMINDER: `E-KODAK REMINDER: Your studio session for #${bNum} is coming up. Please arrive 15 minutes before your time slot with prescribed attire. See you!`,
-      RESCHEDULE_UPDATE: `E-KODAK ADVISORY: Your session schedule for #${bNum} has been updated. Please check your client dashboard for the new call-time.`,
-      STUDIO_BULLETIN: `E-KODAK BULLETIN: 2026 graduation season slots and expedited portrait packages are now open for priority booking!`
-    };
-    setDispatchMessage(templates[type] || templates.ORDER_READY);
+  // Gateway Settings Modal Handlers
+  const openGatewaySettings = () => {
+    const cfg = getTextBeeConfig();
+    setDraftApiKey(cfg.apiKey);
+    setDraftDeviceId(cfg.deviceId);
+    setSettingsOpen(true);
   };
 
-  // Filtered Rows
+  const handleSaveGatewaySettings = (e) => {
+    e.preventDefault();
+    saveTextBeeConfigOverride({ apiKey: draftApiKey, deviceId: draftDeviceId });
+    setSettingsOpen(false);
+    showSuccess('TextBee gateway configuration updated. Syncing device status...');
+    loadGatewayTelemetry();
+  };
+
+  const handleResetGatewaySettings = () => {
+    clearTextBeeConfigOverride();
+    const cfg = getTextBeeConfig();
+    setDraftApiKey(cfg.apiKey);
+    setDraftDeviceId(cfg.deviceId);
+    showSuccess('Restored TextBee credentials from environment configuration.');
+    loadGatewayTelemetry();
+  };
+
+  // Audit Logs filtered strictly to verified database order/customer records
+  const dbMatchedRows = useMemo(() => {
+    return rows.filter((r) => {
+      if (r.booking_id || r.customer_id) return true;
+      const norm = normalizePhPhone(r.phone_number);
+      return Boolean(norm && phoneToCustomerMap.has(norm));
+    });
+  }, [rows, phoneToCustomerMap]);
+
+  // Audit Log Stats & Filtering
+  const auditStats = useMemo(() => {
+    const total = dbMatchedRows.length;
+    const delivered = dbMatchedRows.filter((r) => r.status === 'SENT' || r.status === 'DELIVERED').length;
+    const queued = dbMatchedRows.filter((r) => r.status === 'QUEUED' || r.status === 'PENDING').length;
+    const failed = dbMatchedRows.filter((r) => r.status === 'FAILED').length;
+    return { total, delivered, queued, failed };
+  }, [dbMatchedRows]);
+
   const filteredRows = useMemo(() => {
-    return rows.filter(r => {
-      // Status Filter
+    return dbMatchedRows.filter((r) => {
       if (statusFilter === 'SENT' && !(r.status === 'SENT' || r.status === 'DELIVERED')) return false;
       if (statusFilter === 'PENDING' && !(r.status === 'PENDING' || r.status === 'QUEUED')) return false;
       if (statusFilter === 'FAILED' && r.status !== 'FAILED') return false;
 
-      // Carrier Filter
-      if (carrierFilter !== 'ALL') {
-        const prov = (r.provider_message_id || r.gateway || '').toUpperCase();
-        if (!prov.includes(carrierFilter)) return false;
-      }
-
-      // Booking Filter
-      if (bookingFilter !== 'ALL') {
-        if (String(r.booking_id) !== String(bookingFilter) && String(r.booking?.id) !== String(bookingFilter)) {
-          return false;
-        }
-      }
-
-      // Search Query
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
       const cName = r.customer ? `${r.customer.first_name || ''} ${r.customer.last_name || ''}`.toLowerCase() : '';
@@ -285,96 +485,44 @@ export default function AdminSmsLogs() {
       const msg = (r.message || '').toLowerCase();
       const bNum = (r.booking?.booking_number || '').toLowerCase();
       const provId = (r.provider_message_id || '').toLowerCase();
-
       return cName.includes(q) || phone.includes(q) || msg.includes(q) || bNum.includes(q) || provId.includes(q);
     });
-  }, [rows, statusFilter, carrierFilter, bookingFilter, searchQuery]);
+  }, [dbMatchedRows, statusFilter, searchQuery]);
 
-  // Pagination calculation
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
   const paginatedRows = useMemo(() => {
-    const from = (page - 1) * PAGE_SIZE;
+    const from = (safePage - 1) * PAGE_SIZE;
     return filteredRows.slice(from, from + PAGE_SIZE);
-  }, [filteredRows, page]);
+  }, [filteredRows, safePage]);
 
-  // Reset page when filters change
-  useEffect(() => {
-    setPage(1);
-  }, [statusFilter, carrierFilter, bookingFilter, searchQuery]);
-
-  // Quick Dispatch Handler
-  const handleDispatchSms = async (e) => {
-    e.preventDefault();
-    if (!dispatchPhone.trim() || !dispatchMessage.trim()) {
-      alert('Please provide a mobile phone number and SMS message payload.');
-      return;
-    }
-
-    setSendingSms(true);
-    try {
-      await dispatchManualSms({
-        phoneNumber: dispatchPhone.trim(),
-        message: dispatchMessage.trim(),
-        notificationType: 'MANUAL_DISPATCH',
-        bookingId: dispatchBookingId || null,
-        customerId: recentBookings.find(b => String(b.id) === String(dispatchBookingId))?.customer_id || null,
-        customerName: dispatchName || 'Client',
-        bookingNumber: dispatchBookingNumber || '',
-        gateway: dispatchGateway
-      });
-
-      setActionSuccessMsg(`SMS dispatched to ${dispatchPhone} via ${dispatchGateway.toUpperCase()}! Transmission logged.`);
-      setTimeout(() => setActionSuccessMsg(null), 4000);
-
-      setComposeModalOpen(false);
-      setDispatchMessage('');
-      setDispatchPhone('');
-      setDispatchName('');
-      load();
-    } catch (err) {
-      console.error('SMS dispatch error:', err);
-      alert('Failed to dispatch SMS: ' + err.message);
-    } finally {
-      setSendingSms(false);
-    }
-  };
-
-  // Delete Log Handler
   const handleDeleteLog = async (id) => {
     if (!window.confirm('Are you sure you want to remove this SMS transmission record?')) return;
-    try {
-      await deleteSmsLog(id);
-      setActionSuccessMsg('SMS transmission record removed.');
-      setTimeout(() => setActionSuccessMsg(null), 3500);
-      if (inspectModalLog?.id === id) setInspectModalLog(null);
-      load();
-    } catch (err) {
-      console.error('Failed to delete SMS log:', err);
-    }
+    await deleteSmsLog(id);
+    showSuccess('SMS transmission record removed.');
+    if (inspectModalLog?.id === id) setInspectModalLog(null);
+    loadAuditLogs();
   };
 
-  // Copy text to clipboard
   const handleCopyText = async (text, id) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 2500);
+      setTimeout(() => setCopiedId(null), 2000);
     } catch {
       alert('Copied: ' + text);
     }
   };
 
-  // Export Filtered Logs to CSV
   const handleExportCsv = () => {
     if (filteredRows.length === 0) {
-      alert('No SMS records to export.');
+      showError('No SMS records to export.');
       return;
     }
-
     const headers = ['ID', 'Status', 'Recipient Name', 'Phone Number', 'Carrier', 'Notification Type', 'Booking Number', 'Message', 'Sent At'];
     const csvLines = [
       headers.join(','),
-      ...filteredRows.map(r => {
+      ...filteredRows.map((r) => {
         const cName = r.customer ? `${r.customer.first_name || ''} ${r.customer.last_name || ''}`.trim() : 'Valued Client';
         const carrier = detectPhilippineCarrier(r.phone_number);
         const escape = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
@@ -387,11 +535,10 @@ export default function AdminSmsLogs() {
           escape(r.notification_type),
           escape(r.booking?.booking_number || 'N/A'),
           escape(r.message),
-          escape(r.sent_at || r.created_at)
+          escape(r.sent_at || r.created_at),
         ].join(',');
-      })
+      }),
     ];
-
     const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -401,799 +548,741 @@ export default function AdminSmsLogs() {
     URL.revokeObjectURL(url);
   };
 
-  // Seed sample demonstration records if empty
-  const handleSeedDemoLogs = async () => {
-    const demos = [
-      {
-        phoneNumber: '09171234567',
-        customerName: 'Mark June Repunte',
-        bookingNumber: 'BK-2026-00004',
-        message: 'E-KODAK: Hi Mark June, your Senior High portrait soft copies and proofs are ready for review on your client portal!',
-        notificationType: 'ORDER_READY',
-        gateway: 'semaphore'
-      },
-      {
-        phoneNumber: '09189876543',
-        customerName: 'Maria Clara Santos',
-        bookingNumber: 'BK-2026-00008',
-        message: 'E-KODAK: Official Receipt: Downpayment of ₱500.00 confirmed for Booking #BK-2026-00008. Session confirmed.',
-        notificationType: 'PAYMENT_RECEIVED',
-        gateway: 'semaphore'
-      },
-      {
-        phoneNumber: '09228889999',
-        customerName: 'Gabriel Mendoza',
-        bookingNumber: 'BK-2026-00012',
-        message: 'E-KODAK REMINDER: Your studio session is tomorrow at 2:00 PM. Please bring your school prescribed hood. See you!',
-        notificationType: 'SHOOT_REMINDER',
-        gateway: 'philsms'
-      }
-    ];
+  // Filter TextBee messages strictly to numbers matching verified database order records
+  const matchedGatewayMessages = useMemo(() => {
+    return gatewayMessages.filter((m) => {
+      const { matchedCustomer } = resolveGatewayMessageContact(m, phoneToCustomerMap);
+      return Boolean(matchedCustomer);
+    });
+  }, [gatewayMessages, phoneToCustomerMap]);
 
-    for (const d of demos) {
-      await dispatchManualSms(d);
-    }
-    setActionSuccessMsg('Generated demonstration SMS logs.');
-    setTimeout(() => setActionSuccessMsg(null), 3500);
-    load();
-  };
+  const inboundCount = useMemo(
+    () => matchedGatewayMessages.filter((m) => m.direction === 'received' || m.type === 'RECEIVED').length,
+    [matchedGatewayMessages]
+  );
+
+  const gatewaySentCount = auditStats.delivered;
 
   return (
     <div className="w-full pb-16 animate-fade-in font-body">
-      {/* ── 1. Luxury Administrative Hero Banner ────────────────────────────── */}
+      {/* 1. Luxury Administrative Hero Banner */}
       <AdminHeroBanner
         station="admin"
         userName={profile?.full_name || user?.email?.split('@')[0] || 'Administrator'}
-        title="SMS Delivery Logs & Carrier Gateway"
-        subtitle="Real-time SMS dispatch audit trail, Philippine carrier delivery telemetry, and gateway logs."
-        primaryAction={{
-          label: 'Quick Dispatch SMS',
-          icon: Send,
-          onClick: () => setComposeModalOpen(true)
-        }}
-        secondaryAction={{
-          label: 'Export Logs CSV',
-          icon: Download,
-          onClick: handleExportCsv
-        }}
-        onRefresh={load}
-        isRefreshing={loading}
+        title="SMS Messaging"
+        subtitle="Active order directory, live SIM inbox, and SMS dispatch."
+        onRefresh={refreshAll}
+        isRefreshing={deviceLoading || directoryLoading || logsLoading}
       />
 
-      {/* ── Page Content Wrapper (Full Width Edge-to-Edge) ── */}
+      {/* Main Content */}
       <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
+        {/* Live TextBee Paired Phone Telemetry */}
+        <SmsGatewayBanner
+          device={device}
+          loading={deviceLoading}
+          error={deviceError}
+          isConfigured={tbConfig.isConfigured}
+          onRefresh={loadGatewayTelemetry}
+          onOpenSettings={openGatewaySettings}
+        />
 
-      {/* Action Success Toast Banner */}
-      {actionSuccessMsg && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs text-emerald-900 animate-fade-in shadow-warm-sm">
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
-            <span className="font-semibold">{actionSuccessMsg}</span>
-          </div>
-          <button onClick={() => setActionSuccessMsg(null)} className="text-emerald-700 hover:text-emerald-900">
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
-      {/* Error Alert */}
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center justify-between text-xs text-red-900 shadow-xs">
-          <div className="flex items-center gap-2">
-            <AlertCircle size={16} className="text-red-600" />
-            <span>{error}</span>
-          </div>
-          <button onClick={load} className="underline text-red-700 font-semibold">Retry</button>
-        </div>
-      )}
-
-      {/* ── 2. Metric Overview Strip (Unified Luxury Studio KPI Cards) ──────── */}
-      <CategorizedMetricStrip
-        loading={loading}
-        columns="grid-cols-2 lg:grid-cols-4"
-        cards={[
-          {
-            key: 'total',
-            label: 'AUDIT TRAIL',
-            subtitle: 'TOTAL DISPATCHED',
-            value: stats.total,
-            isActive: statusFilter === 'all',
-            onClick: () => setStatusFilter('all')
-          },
-          {
-            key: 'delivered',
-            label: `${stats.deliveryRate}% SUCCESS`,
-            subtitle: 'DELIVERED TO HANDSETS',
-            value: stats.delivered,
-            isActive: statusFilter === 'delivered',
-            onClick: () => setStatusFilter('delivered')
-          },
-          {
-            key: 'queued',
-            label: 'IN TRANSIT',
-            subtitle: 'CARRIER QUEUE',
-            value: stats.queued,
-            isActive: statusFilter === 'queued',
-            onClick: () => setStatusFilter('queued')
-          },
-          {
-            key: 'gateway',
-            label: showGatewayDrawer ? 'OPEN' : 'TELCO',
-            subtitle: 'SEMAPHORE · PHILSMS',
-            value: '2 ROUTES',
-            isActive: showGatewayDrawer,
-            onClick: () => setShowGatewayDrawer(!showGatewayDrawer)
-          }
-        ]}
-      />
-
-      {/* ── 3. Philippine Telco Carrier Gateways Status Card (Expandable) ────── */}
-      {showGatewayDrawer && (
-        <div className="bg-white rounded-2xl border border-neutral-200/80 p-5 shadow-xs animate-fade-in space-y-4 font-body">
-          <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-gold/15 text-gold flex items-center justify-center border border-gold/30">
-                <Radio size={14} />
-              </div>
-              <div>
-                <h4 className="font-heading text-sm font-bold text-primary">Philippine SMS Carrier Telemetry</h4>
-                <p className="text-[11px] text-neutral-400">Direct connections to Globe, Smart, TNT, and DITO cellular networks</p>
-              </div>
+        {/* Toasts */}
+        {toastSuccess && (
+          <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs text-emerald-900 shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 size={17} className="text-emerald-600 shrink-0" />
+              <span className="font-semibold">{toastSuccess}</span>
             </div>
-            <button onClick={() => setShowGatewayDrawer(false)} className="text-neutral-400 hover:text-primary">
-              <X size={16} />
+            <button type="button" onClick={() => setToastSuccess(null)} className="text-emerald-700 hover:text-emerald-900 cursor-pointer">
+              <X size={14} />
             </button>
           </div>
+        )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200/70 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-primary">Semaphore PH</span>
-                <span className="text-[11.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full">
-                  Primary · Connected
-                </span>
-              </div>
-              <p className="text-[11px] text-neutral-500">Official Sender ID: <strong className="text-neutral-800 font-mono">E-KODAK</strong></p>
-              <p className="text-xs text-neutral-400">Routes: Globe Telecom, Smart Communications, DITO</p>
+        {toastError && (
+          <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between text-xs text-rose-900 shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle size={17} className="text-rose-600 shrink-0" />
+              <span className="font-semibold">{toastError}</span>
             </div>
+            <button type="button" onClick={() => setToastError(null)} className="text-rose-700 hover:text-rose-900 cursor-pointer">
+              <X size={14} />
+            </button>
+          </div>
+        )}
 
-            <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200/70 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-primary">PhilSMS Gateway</span>
-                <span className="text-[11.5px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded-full">
-                  Failover Ready
-                </span>
-              </div>
-              <p className="text-[11px] text-neutral-500">Dedicated high-throughput transactional gateway</p>
-              <p className="text-xs text-neutral-400">Automatic retry on network congestion</p>
-            </div>
+        {/* 2. KPI Overview Strip */}
+        <CategorizedMetricStrip
+          loading={directoryLoading && deviceLoading}
+          columns="grid-cols-2 lg:grid-cols-4"
+          cards={[
+            {
+              key: 'detected',
+              label: 'CURRENT ORDERS',
+              value: directoryStats.reachableCount,
+              isActive: activeTab === 'compose',
+              onClick: () => setActiveTab('compose'),
+            },
+            {
+              key: 'balance_due',
+              label: 'WITH BALANCE',
+              value: directoryStats.unpaidBalanceCount ?? contacts.filter((c) => c.hasUnpaidBalance).length,
+              isActive: false,
+              onClick: () => setActiveTab('compose'),
+            },
+            {
+              key: 'inbound',
+              label: 'INBOX',
+              value: inboundCount,
+              isActive: activeTab === 'inbox',
+              onClick: () => setActiveTab('inbox'),
+            },
+            {
+              key: 'sent',
+              label: 'SENT',
+              value: gatewaySentCount,
+              isActive: activeTab === 'logs',
+              onClick: () => setActiveTab('logs'),
+            },
+          ]}
+        />
 
-            <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200/70 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-primary">Twilio SMS Global</span>
-                <span className="text-[11.5px] font-bold text-neutral-600 bg-neutral-100 border border-neutral-200 px-1.5 py-0.2 rounded-full">
-                  International Standby
-                </span>
-              </div>
-              <p className="text-[11px] text-neutral-500">Global roaming and overseas client notifications</p>
-              <p className="text-xs text-neutral-400">E.164 standard formatting verified</p>
-            </div>
+        {/* 3. Workspace Navigation Tabs */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#EAE7E0]/85 border border-neutral-200/60">
+            {[
+              { id: 'compose', label: 'Compose', badge: null },
+              { id: 'inbox', label: 'Inbox', badge: matchedGatewayMessages.length },
+              { id: 'logs', label: 'Audit Logs', badge: null },
+            ].map((tab) => {
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`h-8 px-3.5 rounded-lg text-xs flex items-center gap-2 transition-all cursor-pointer ${
+                    active
+                      ? 'bg-white text-neutral-900 font-semibold shadow-2xs'
+                      : 'text-neutral-600 font-medium hover:text-neutral-900'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  {tab.badge !== null && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-neutral-200/80 text-neutral-700">
+                      {tab.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
-      )}
 
-      {/* ── 4. Unified Luxury SMS Logs Table Hub ──────────────────────────── */}
-      <div className="relative overflow-hidden rounded-3xl border border-[#c9a96e]/35 bg-white/95 backdrop-blur-md shadow-xl shadow-amber-950/5 ring-1 ring-[#c9a96e]/15 font-body">
-        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-[#c9a96e] to-transparent pointer-events-none" />
-
-        {/* Header Controls Bar */}
-        <div className="p-4 sm:p-5 border-b border-neutral-100 flex-shrink-0 bg-white space-y-3.5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            {/* Left: Station Icon & Title */}
-            <div className="flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white shadow-sm ring-1 ring-amber-600/30 shrink-0">
-                <MessageSquare size={22} />
+        {/* TAB 1: Current Orders & Compose SMS Unified Card */}
+        {activeTab === 'compose' && (
+          <div className="rounded-2xl border border-neutral-200/90 bg-white shadow-xs overflow-hidden font-body">
+            <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-neutral-200/70">
+              {/* Left: Live Current Orders */}
+              <div className="lg:col-span-5 flex flex-col">
+                <SmsCustomerDirectory
+                  contacts={contacts}
+                  loading={directoryLoading}
+                  selectedIds={selectedContactIds}
+                  onToggleSelect={handleToggleSelectContact}
+                  onSelectMany={setSelectedContactIds}
+                  onClearSelection={() => setSelectedContactIds([])}
+                  onQuickPickCustomer={handleQuickPickCustomer}
+                  embedded
+                />
               </div>
-              <div>
-                <h3 className="font-heading text-xl sm:text-2xl font-bold text-neutral-900 tracking-tight">
-                  SMS Dispatch Logs
+
+              {/* Right: Compose SMS */}
+              <div className="lg:col-span-7 flex flex-col">
+                <form
+                  onSubmit={handleSendSms}
+                  className="p-5 sm:p-6 space-y-5 font-body flex-1 flex flex-col"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-[#B45309] text-white flex items-center justify-center shrink-0">
+                      <Send size={15} />
+                    </div>
+                    <h3 className="text-sm sm:text-base font-bold text-neutral-900">
+                      Compose SMS
+                    </h3>
+                  </div>
+
+                  {/* Recipients */}
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">
+                      TO
+                    </label>
+
+                    {selectedContacts.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 p-2.5 rounded-xl bg-neutral-50 border border-neutral-200/80 max-h-28 overflow-y-auto">
+                        {selectedContacts.map((c) => (
+                          <span
+                            key={c.id}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-neutral-200 text-xs font-medium text-neutral-800 shadow-2xs"
+                          >
+                            <Users size={11} className="text-[#B45309]" />
+                            <span>{c.name}</span>
+                            {c.latestBooking?.booking_number && (
+                              <span className="text-[11px] text-neutral-400">#{c.latestBooking.booking_number}</span>
+                            )}
+                            <span className="font-mono text-[11px] text-emerald-700">{c.normalizedPhone}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSelectContact(c.id)}
+                              className="text-neutral-400 hover:text-rose-600 cursor-pointer"
+                            >
+                              <X size={12} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={orderLookupInput}
+                        onChange={(e) => setOrderLookupInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleLookupOrderRecipient();
+                          }
+                        }}
+                        placeholder="Match #BK or order mobile (DB only)"
+                        className="flex-1 h-10 px-3.5 rounded-xl bg-white border border-neutral-200 text-xs text-neutral-800 placeholder:text-neutral-400 outline-none focus:border-[#B45309] focus:ring-2 focus:ring-amber-600/15"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleLookupOrderRecipient}
+                        className="h-10 px-4 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold shrink-0 cursor-pointer transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Quick Templates */}
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">
+                      TEMPLATES
+                    </label>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {QUICK_TEMPLATES.map((tpl) => (
+                        <button
+                          key={tpl.id}
+                          type="button"
+                          onClick={() => setMessageText(tpl.text)}
+                          className="px-3.5 py-1.5 rounded-full text-xs font-medium bg-white text-neutral-700 hover:bg-neutral-50 hover:border-neutral-300 border border-neutral-200 transition-colors cursor-pointer"
+                        >
+                          {tpl.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Message Textarea */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <label className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">
+                        MESSAGE
+                      </label>
+                      <span className="text-[11px] text-neutral-500 tabular-nums">
+                        {messageText.length} chars
+                        {messageText.length > 160 ? ` · ${Math.ceil(messageText.length / 160)} seg` : ''}
+                      </span>
+                    </div>
+                    <textarea
+                      rows={6}
+                      value={messageText}
+                      onChange={(e) => setMessageText(e.target.value)}
+                      placeholder="Write your message..."
+                      className="w-full p-3.5 rounded-xl bg-white border border-neutral-200 text-xs sm:text-sm leading-relaxed text-neutral-800 placeholder:text-neutral-400 outline-none focus:border-[#B45309] focus:ring-2 focus:ring-amber-600/15 resize-y"
+                    />
+                  </div>
+
+                  {/* Live Personalized Preview */}
+                  {previewMessage && (
+                    <div className="p-3.5 rounded-xl bg-neutral-900 text-neutral-100 border border-neutral-800 space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] text-neutral-400">
+                        <span className="font-semibold text-amber-400">
+                          Preview{selectedContacts[0] ? ` · ${selectedContacts[0].name}` : ''}
+                        </span>
+                        <span className="font-mono">{previewMessage.length} chars</span>
+                      </div>
+                      <p className="text-xs leading-relaxed whitespace-pre-wrap">{previewMessage}</p>
+                    </div>
+                  )}
+
+                  {/* Send Button Row */}
+                  <div className="mt-auto pt-4 border-t border-neutral-100 flex items-center justify-end gap-3">
+                    <button
+                      type="submit"
+                      disabled={sendingSms || !tbConfig.isConfigured}
+                      className="h-10 px-5 rounded-xl bg-[#B45309] hover:bg-[#92400E] disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-2 shadow-2xs cursor-pointer transition-colors"
+                    >
+                      {sendingSms ? <RefreshCw size={13} className="animate-spin" /> : <Send size={13} />}
+                      <span>
+                        {sendingSms
+                          ? 'Sending...'
+                          : `Send SMS${totalRecipientCount > 0 ? ` (${totalRecipientCount})` : ''}`}
+                      </span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: Live Order-Matched TextBee Inbox & Feed */}
+        {activeTab === 'inbox' && (
+          <SmsInboxFeed
+            messages={matchedGatewayMessages}
+            loading={gatewayMessagesLoading}
+            error={gatewayMessagesError}
+            phoneToCustomerMap={phoneToCustomerMap}
+            onRefresh={loadGatewayTelemetry}
+            onReply={handleReplyFromInbox}
+          />
+        )}
+
+        {/* TAB 3: Studio SMS Audit Logs (Supabase sms_logs) */}
+        {activeTab === 'logs' && (
+          <div className="rounded-2xl border border-neutral-200/90 bg-white shadow-xs overflow-hidden font-body">
+
+            {/* Header Controls */}
+            <div className="p-4 sm:p-5 border-b border-neutral-100 bg-white space-y-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white shadow-sm shrink-0">
+                    <MessageSquare size={22} />
+                  </div>
+                  <div>
+                    <h3 className="font-heading text-xl sm:text-2xl font-bold text-neutral-900 tracking-tight">
+                      SMS Audit
+                    </h3>
+                    <p className="text-xs text-neutral-500 mt-0.5">
+                      {filteredRows.length} {filteredRows.length === 1 ? 'record' : 'records'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleExportCsv}
+                    className="h-9 px-3.5 text-xs font-bold flex items-center gap-1.5 border border-neutral-200/80 hover:border-emerald-500/60 rounded-xl bg-white hover:bg-emerald-50/50 text-neutral-700 hover:text-emerald-900 shadow-2xs transition-all cursor-pointer"
+                  >
+                    <Download size={14} className="text-emerald-600" />
+                    <span>Export CSV</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('compose')}
+                    className="h-9 px-3.5 text-xs font-bold flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-[#c9a96e] to-amber-600 hover:brightness-105 text-neutral-900 shadow-xs transition-all cursor-pointer"
+                  >
+                    <Send size={14} />
+                    <span>Compose SMS</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={loadAuditLogs}
+                    disabled={logsLoading}
+                    className="w-9 h-9 flex items-center justify-center border border-neutral-200/80 hover:border-amber-400/60 rounded-xl bg-white hover:bg-amber-50/40 transition-colors disabled:opacity-50 text-neutral-600 cursor-pointer shadow-2xs"
+                    title="Refresh SMS Audit Logs"
+                  >
+                    <RefreshCw size={14} className={logsLoading ? 'animate-spin text-amber-600' : 'text-neutral-500'} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
+                <div className="relative flex-1 min-w-[220px]">
+                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setPage(1);
+                    }}
+                    placeholder="Search phone, name, #BK, or message..."
+                    className="w-full h-9 pl-9 pr-8 bg-neutral-50/80 hover:bg-neutral-100/60 focus:bg-white rounded-xl text-xs sm:text-sm font-body border border-neutral-200/80 focus:border-[#c9a96e] focus:ring-2 focus:ring-[#c9a96e]/20 outline-none transition-all shadow-2xs"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setPage(1);
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+
+                <div className="w-full sm:w-64 shrink-0">
+                  <CustomDropdown
+                    value={statusFilter}
+                    onChange={(val) => {
+                      setStatusFilter(val);
+                      setPage(1);
+                    }}
+                    options={[
+                      { value: 'ALL', label: `All Logs (${dbMatchedRows.length})`, icon: Layers },
+                      { value: 'SENT', label: `Sent / Delivered (${auditStats.delivered})`, icon: CheckCircle2 },
+                      { value: 'PENDING', label: `Queued (${auditStats.queued})`, icon: Clock },
+                      { value: 'FAILED', label: `Failed (${auditStats.failed})`, icon: XCircle },
+                    ]}
+                    placeholder="Filter Status"
+                    icon={Layers}
+                    className="w-full text-xs sm:text-sm"
+                    popoverWidth="w-full min-w-[240px]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Table */}
+            {logsLoading ? (
+              <div className="p-6 space-y-3">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-14 bg-neutral-100/70 rounded-xl animate-pulse" />
+                ))}
+              </div>
+            ) : filteredRows.length === 0 ? (
+              <div className="p-12 text-center flex flex-col items-center justify-center">
+                <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center mb-3 border border-amber-200">
+                  <MessageSquare size={24} />
+                </div>
+                <h3 className="font-heading text-lg font-bold text-neutral-900">
+                  {rows.length === 0 ? 'No SMS Dispatches Logged Yet' : 'No Logs Match Your Filter'}
                 </h3>
-                <p className="text-xs text-neutral-500 mt-0.5">
-                  {filteredRows.length} {filteredRows.length === 1 ? 'record' : 'records'} logged • Real-time carrier transmission
+                <p className="text-xs text-neutral-400 max-w-md mx-auto mt-1">
+                  Send your first message from the Compose &amp; Directory tab to populate your studio SMS audit trail.
                 </p>
               </div>
-            </div>
-
-            {/* Right: Actions */}
-            <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
-              <button
-                type="button"
-                onClick={handleExportCsv}
-                className="h-9 px-3.5 text-xs font-bold flex items-center gap-1.5 border border-neutral-200/80 hover:border-emerald-500/60 rounded-xl bg-white hover:bg-emerald-50/50 text-neutral-700 hover:text-emerald-900 shadow-2xs transition-all cursor-pointer"
-                title="Export SMS Logs to CSV"
-              >
-                <Download size={14} className="text-emerald-600" />
-                <span>Export CSV</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setComposeModalOpen(true)}
-                className="h-9 px-3.5 text-xs font-bold flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-[#c9a96e] to-amber-600 hover:brightness-105 text-neutral-900 shadow-xs transition-all cursor-pointer shrink-0 font-medium"
-                title="Dispatch Manual SMS Message"
-              >
-                <Send size={14} className="stroke-[2.5]" />
-                <span>Quick Dispatch</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => loadLogs(true)}
-                disabled={loading}
-                className="w-9 h-9 flex items-center justify-center border border-neutral-200/80 hover:border-amber-400/60 rounded-xl bg-white hover:bg-amber-50/40 transition-colors disabled:opacity-50 text-neutral-600 hover:text-neutral-900 cursor-pointer shadow-2xs"
-                title="Refresh SMS Records"
-              >
-                <RefreshCw size={14} className={loading ? 'animate-spin text-amber-600' : 'text-neutral-500'} />
-              </button>
-            </div>
-          </div>
-
-          {/* Search & Single Clean Status Filter Row */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
-            <div className="relative flex-1 min-w-[220px]">
-              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search phone, recipient, #BK, message..."
-                className="w-full h-9 pl-9 pr-8 bg-neutral-50/80 hover:bg-neutral-100/60 focus:bg-white rounded-xl text-xs sm:text-sm font-body border border-neutral-200/80 focus:border-[#c9a96e] focus:ring-2 focus:ring-[#c9a96e]/20 outline-none transition-all shadow-2xs"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 cursor-pointer"
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-
-            {/* Single Clean Status Filter (NO colored dots, no unnecessary dropdown clutter) */}
-            <div className="w-full sm:w-64 shrink-0">
-              <CustomDropdown
-                value={statusFilter}
-                onChange={setStatusFilter}
-                options={[
-                  { value: 'ALL', label: `All Logs (${rows.length})`, icon: Layers },
-                  { value: 'SENT', label: `Delivered (${stats.delivered})`, icon: CheckCircle2 },
-                  { value: 'PENDING', label: `Queued (${stats.queued})`, icon: Clock },
-                  { value: 'FAILED', label: `Failed (${stats.failed})`, icon: XCircle },
-                ]}
-                placeholder="Filter Status"
-                icon={Layers}
-                className="w-full text-xs sm:text-sm"
-                popoverWidth="w-full min-w-[240px]"
-              />
-            </div>
-          </div>
-
-          {/* Active Filter Pill */}
-          {(statusFilter !== 'ALL' || searchQuery) && (
-            <div className="flex items-center gap-2 pt-2 border-t border-neutral-100 flex-wrap text-xs text-neutral-500">
-              <span className="font-semibold text-neutral-400 uppercase tracking-wider text-[11px]">Active Filter:</span>
-              {searchQuery && (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-800 text-xs font-medium">
-                  Keyword: "{searchQuery}"
-                  <X size={12} className="cursor-pointer text-neutral-400 hover:text-neutral-700" onClick={() => setSearchQuery('')} />
-                </span>
-              )}
-              {statusFilter !== 'ALL' && (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200/70 text-xs font-medium">
-                  Status: {statusFilter}
-                  <X size={12} className="cursor-pointer text-amber-700 hover:text-amber-950" onClick={() => setStatusFilter('ALL')} />
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => { setSearchQuery(''); setStatusFilter('ALL'); setCarrierFilter('ALL'); setBookingFilter('ALL'); }}
-                className="text-amber-700 hover:underline font-semibold text-xs ml-1 cursor-pointer"
-              >
-                Reset
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Table Area */}
-        {loading ? (
-          <div className="p-6 space-y-3">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-16 bg-neutral-100/70 rounded-xl animate-pulse" />
-            ))}
-          </div>
-        ) : filteredRows.length === 0 ? (
-          /* Empty State */
-          <div className="p-12 text-center flex flex-col items-center justify-center">
-            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center mb-3 border border-amber-200">
-              <MessageSquare size={24} />
-            </div>
-            <h3 className="font-heading text-lg font-bold text-neutral-900">
-              {rows.length === 0 ? 'No SMS Messages Logged Yet' : 'No Messages Match Your Filters'}
-            </h3>
-            <p className="text-xs text-neutral-400 max-w-md mx-auto mt-1 leading-relaxed">
-              {rows.length === 0
-                ? 'SMS logs will record real-time notifications dispatched via Philippine carriers when client alerts are sent.'
-                : 'Try clearing your search query or status filter.'}
-            </p>
-
-            <div className="flex items-center gap-2 mt-5">
-              {rows.length === 0 ? (
-                <>
-                  <button
-                    onClick={() => setComposeModalOpen(true)}
-                    className="h-9 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-[#c9a96e] to-amber-600 hover:brightness-105 text-neutral-900 text-xs font-bold inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
-                  >
-                    <Send size={13} />
-                    Send First SMS
-                  </button>
-                  <button
-                    onClick={handleSeedDemoLogs}
-                    className="h-9 px-4 rounded-xl border border-neutral-200 hover:bg-neutral-50 text-xs font-semibold text-neutral-700 transition-colors cursor-pointer"
-                  >
-                    Generate Demo Logs
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={() => {
-                    setSearchQuery('');
-                    setStatusFilter('ALL');
-                    setCarrierFilter('ALL');
-                    setBookingFilter('ALL');
-                  }}
-                  className="h-9 px-4 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-semibold cursor-pointer"
-                >
-                  Clear All Filters
-                </button>
-              )}
-            </div>
-          </div>
-        ) : (
-          /* Table */
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs sm:text-sm font-body border-collapse">
-              <thead className="sticky top-0 z-10 bg-[#faf7f2]/95 border-b border-[#c9a96e]/25 shadow-2xs backdrop-blur-md">
-                <tr className="border-b border-neutral-200/80 text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
-                  <th className="px-4 py-3.5">Status</th>
-                  <th className="px-4 py-3.5">Recipient &amp; Mobile</th>
-                  <th className="px-4 py-3.5 hidden md:table-cell">Carrier Network</th>
-                  <th className="px-4 py-3.5 hidden lg:table-cell">Booking Context</th>
-                  <th className="px-4 py-3.5">Message Payload</th>
-                  <th className="px-4 py-3.5 hidden sm:table-cell">Sent Time</th>
-                  <th className="px-4 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {paginatedRows.map((r) => {
-                  const statusConf = STATUS_CONFIG[r.status] || STATUS_CONFIG.SENT;
-                  const StatusIcon = statusConf.icon;
-                  const cName = r.customer 
-                    ? `${r.customer.first_name || ''} ${r.customer.last_name || ''}`.trim()
-                    : 'Valued Client';
-                  const carrier = detectPhilippineCarrier(r.phone_number);
-                  const isCopied = copiedId === r.id;
-
-                  return (
-                    <tr
-                      key={r.id}
-                      className="hover:bg-neutral-50/60 transition-colors group cursor-pointer"
-                      onClick={() => setInspectModalLog(r)}
-                    >
-                      {/* Status */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-bold border ${statusConf.badgeClass}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${statusConf.dotClass}`} />
-                          <StatusIcon size={11} />
-                          <span>{statusConf.label}</span>
-                        </span>
-                      </td>
-
-                      {/* Recipient & Phone */}
-                      <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-neutral-100 text-neutral-600 flex items-center justify-center font-bold text-xs shrink-0 border border-neutral-200">
-                            {cName.charAt(0)}
-                          </div>
-                          <div>
-                            <div className="font-bold text-primary truncate max-w-[140px]">{cName}</div>
-                            <div className="font-mono text-xs text-neutral-500">{r.phone_number || 'No phone'}</div>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Carrier Network */}
-                      <td className="px-4 py-3.5 hidden md:table-cell whitespace-nowrap">
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200/80">
-                          {carrier}
-                        </span>
-                        <div className="text-[11.5px] text-neutral-400 mt-0.5">
-                          {r.provider_message_id?.split('_')[0] || 'SEMAPHORE'}
-                        </div>
-                      </td>
-
-                      {/* Booking Context */}
-                      <td className="px-4 py-3.5 hidden lg:table-cell whitespace-nowrap">
-                        {r.booking?.booking_number ? (
-                          <span className="font-mono text-xs font-bold bg-neutral-100 text-neutral-700 px-2 py-0.5 rounded border border-neutral-200">
-                            #{r.booking.booking_number}
-                          </span>
-                        ) : (
-                          <span className="text-neutral-400 text-xs">Direct SMS</span>
-                        )}
-                        <div className="text-[11.5px] text-neutral-400 mt-0.5">
-                          {r.notification_type?.replace(/_/g, ' ') || 'DISPATCH'}
-                        </div>
-                      </td>
-
-                      {/* Message Payload */}
-                      <td className="px-4 py-3.5 max-w-xs sm:max-w-sm">
-                        <p className="text-neutral-700 line-clamp-2 leading-relaxed">
-                          {r.message}
-                        </p>
-                        <span className="text-[11px] text-neutral-400 font-mono mt-0.5 block">
-                          {r.message?.length || 0} chars · {Math.ceil((r.message?.length || 1) / 160)} credit
-                        </span>
-                      </td>
-
-                      {/* Sent Time */}
-                      <td className="px-4 py-3.5 hidden sm:table-cell whitespace-nowrap">
-                        <div className="text-neutral-700 font-medium">{timeAgo(r.sent_at || r.created_at)}</div>
-                        <div className="text-xs text-neutral-400">{fmt(r.sent_at || r.created_at)}</div>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-4 py-3.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1">
-                          {/* Copy Text */}
-                          <button
-                            type="button"
-                            onClick={() => handleCopyText(r.message, r.id)}
-                            className="p-1.5 text-neutral-400 hover:text-primary hover:bg-neutral-100 rounded-lg transition-colors border border-neutral-200/80 text-xs"
-                            title="Copy SMS Message Text"
-                          >
-                            {isCopied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
-                          </button>
-
-                          {/* Inspect Modal */}
-                          <button
-                            type="button"
-                            onClick={() => setInspectModalLog(r)}
-                            className="p-1.5 text-neutral-500 hover:text-primary hover:bg-neutral-100 rounded-lg transition-colors border border-neutral-200/80 text-xs flex items-center gap-1"
-                            title="Inspect Details"
-                          >
-                            <Eye size={12} />
-                            <span className="hidden sm:inline">Details</span>
-                          </button>
-
-                          {/* Delete Log */}
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteLog(r.id)}
-                            className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-neutral-200 hover:border-red-200 text-xs"
-                            title="Delete this record"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </td>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs sm:text-sm font-body border-collapse">
+                  <thead className="sticky top-0 z-10 bg-[#faf7f2]/95 border-b border-[#c9a96e]/25">
+                    <tr className="text-[11px] font-bold text-neutral-600 uppercase tracking-wider">
+                      <th className="px-4 py-3.5">Status</th>
+                      <th className="px-4 py-3.5">Recipient &amp; Mobile</th>
+                      <th className="px-4 py-3.5 hidden md:table-cell">Carrier &amp; Gateway</th>
+                      <th className="px-4 py-3.5 hidden lg:table-cell">Booking Context</th>
+                      <th className="px-4 py-3.5">Message</th>
+                      <th className="px-4 py-3.5 hidden sm:table-cell">Sent Time</th>
+                      <th className="px-4 py-3.5 text-right">Actions</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {paginatedRows.map((r) => {
+                      const statusConf = STATUS_CONFIG[r.status] || STATUS_CONFIG.SENT;
+                      const StatusIcon = statusConf.icon;
+                      const matchedByPhone = phoneToCustomerMap.get(normalizePhPhone(r.phone_number));
+                      const cName = r.customer
+                        ? `${r.customer.first_name || ''} ${r.customer.last_name || ''}`.trim()
+                        : matchedByPhone?.name || 'Studio Contact';
+                      const carrier = detectPhilippineCarrier(r.phone_number);
+                      const isCopied = copiedId === r.id;
 
-        {/* Pagination Strip */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-neutral-200/80 text-xs text-neutral-500 font-body bg-neutral-50/50">
-            <span>
-              Page <strong>{page}</strong> of <strong>{totalPages}</strong> ({filteredRows.length} total entries)
-            </span>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:bg-white disabled:opacity-40 transition-colors flex items-center gap-1"
-              >
-                <ChevronLeft size={13} />
-                Prev
-              </button>
-              <button
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:bg-white disabled:opacity-40 transition-colors flex items-center gap-1"
-              >
-                Next
-                <ChevronRight size={13} />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-      </div>
+                      return (
+                        <tr
+                          key={r.id}
+                          className="hover:bg-neutral-50/60 transition-colors cursor-pointer"
+                          onClick={() => setInspectModalLog(r)}
+                        >
+                          <td className="px-4 py-3.5 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-bold border ${statusConf.badgeClass}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${statusConf.dotClass}`} />
+                              <StatusIcon size={11} />
+                              <span>{statusConf.label}</span>
+                            </span>
+                          </td>
 
-      {/* ── 6. TOOL: QUICK SMS DISPATCH MODAL ──────────────────────────────── */}
-      {composeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/65 backdrop-blur-sm animate-fade-in font-body">
-          <div className="bg-white rounded-3xl max-w-xl w-full border border-neutral-200 shadow-2xl flex flex-col overflow-hidden max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="px-5 py-3.5 bg-gradient-to-r from-neutral-50 via-white to-neutral-50 border-b border-neutral-200/80 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold flex items-center justify-center border border-gold/30 shrink-0">
-                  <Send size={15} />
-                </div>
-                <div>
-                  <h4 className="font-heading text-sm font-bold text-primary leading-tight">
-                    Quick Telco SMS Dispatch
-                  </h4>
-                  <p className="text-xs text-neutral-400 leading-tight">
-                    Direct transmission via Philippine carrier gateways (Semaphore / PhilSMS)
-                  </p>
+                          <td className="px-4 py-3.5">
+                            <div className="font-bold text-primary truncate max-w-[160px]">{cName}</div>
+                            <div className="font-mono text-xs text-neutral-500">{r.phone_number || 'No phone'}</div>
+                          </td>
+
+                          <td className="px-4 py-3.5 hidden md:table-cell whitespace-nowrap">
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200/80">
+                              {carrier}
+                            </span>
+                            <div className="text-[11px] text-neutral-400 mt-0.5">
+                              {r.provider_message_id?.split('_')[0] || 'TEXTBEE'}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3.5 hidden lg:table-cell whitespace-nowrap">
+                            {r.booking?.booking_number ? (
+                              <span className="font-mono text-xs font-bold bg-neutral-100 text-neutral-700 px-2 py-0.5 rounded border border-neutral-200">
+                                #{r.booking.booking_number}
+                              </span>
+                            ) : (
+                              <span className="text-neutral-400 text-xs">Direct SMS</span>
+                            )}
+                            <div className="text-[11px] text-neutral-400 mt-0.5">
+                              {r.notification_type?.replace(/_/g, ' ') || 'DISPATCH'}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3.5 max-w-xs sm:max-w-sm">
+                            <p className="text-neutral-700 line-clamp-2 leading-relaxed">{r.message}</p>
+                          </td>
+
+                          <td className="px-4 py-3.5 hidden sm:table-cell whitespace-nowrap">
+                            <div className="text-neutral-700 font-medium">{timeAgo(r.sent_at || r.created_at)}</div>
+                            <div className="text-xs text-neutral-400">{fmt(r.sent_at || r.created_at)}</div>
+                          </td>
+
+                          <td className="px-4 py-3.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleCopyText(r.message, r.id)}
+                                className="p-1.5 text-neutral-400 hover:text-primary hover:bg-neutral-100 rounded-lg border border-neutral-200/80 cursor-pointer"
+                                title="Copy SMS Text"
+                              >
+                                {isCopied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setInspectModalLog(r)}
+                                className="p-1.5 text-neutral-500 hover:text-primary hover:bg-neutral-100 rounded-lg border border-neutral-200/80 cursor-pointer"
+                                title="Inspect Details"
+                              >
+                                <Eye size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteLog(r.id)}
+                                className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg border border-neutral-200 cursor-pointer"
+                                title="Delete Log"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-5 py-3 border-t border-neutral-200/80 text-xs text-neutral-500 bg-neutral-50/50">
+                <span>
+                  Page <strong>{page}</strong> of <strong>{totalPages}</strong> ({filteredRows.length} entries)
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:bg-white disabled:opacity-40 flex items-center gap-1 cursor-pointer"
+                  >
+                    <ChevronLeft size={13} />
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:bg-white disabled:opacity-40 flex items-center gap-1 cursor-pointer"
+                  >
+                    Next
+                    <ChevronRight size={13} />
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setComposeModalOpen(false)}
-                className="p-1.5 text-neutral-400 hover:text-primary rounded-xl hover:bg-neutral-100"
-              >
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Gateway Settings Modal */}
+      {settingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 border border-neutral-200 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between border-b border-neutral-100 pb-3">
+              <div>
+                <span className="text-[11px] font-bold text-gold uppercase tracking-widest">TextBee Android Gateway</span>
+                <h3 className="font-heading text-lg font-bold text-neutral-900">Gateway Credentials</h3>
+              </div>
+              <button type="button" onClick={() => setSettingsOpen(false)} className="p-1.5 text-neutral-400 hover:text-neutral-900 rounded-lg cursor-pointer">
                 <X size={16} />
               </button>
             </div>
 
-            {/* Modal Form */}
-            <form onSubmit={handleDispatchSms} className="p-5 overflow-y-auto space-y-4">
-              {/* Select from Booking with StudioDropdown */}
+            <form onSubmit={handleSaveGatewaySettings} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1">
-                  Recipient Booking (Auto-detects Mobile &amp; Name)
+                <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                  TextBee API Key
                 </label>
-                <StudioDropdown
-                  value={dispatchBookingId}
-                  onChange={handleSelectComposeBooking}
-                  options={composeBookingOptions}
-                  searchable={true}
-                  placeholder="Select a customer booking or enter manual number..."
-                  className="w-full"
-                  triggerClassName="py-2 text-xs bg-neutral-50/60 border-neutral-200 rounded-xl"
-                />
-              </div>
-
-              {/* Recipient Name & Phone Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1">
-                    Recipient Name
-                  </label>
-                  <input
-                    type="text"
-                    value={dispatchName}
-                    onChange={e => setDispatchName(e.target.value)}
-                    placeholder="e.g. Mark June Repunte"
-                    className="w-full px-3 py-2 bg-neutral-50/60 border border-neutral-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-gold/30 focus:bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1">
-                    Philippine Mobile Number
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      required
-                      value={dispatchPhone}
-                      onChange={e => setDispatchPhone(e.target.value)}
-                      placeholder="09XXXXXXXXX or +639XXXXXXXXX"
-                      className="w-full pl-3 pr-16 py-2 bg-neutral-50/60 border border-neutral-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-gold/30 focus:bg-white"
-                    />
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-neutral-400 bg-neutral-100 px-1.5 py-0.5 rounded border border-neutral-200">
-                      {detectPhilippineCarrier(dispatchPhone)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Quick Preset Templates */}
-              <div>
-                <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1">
-                  Quick Studio Templates
-                </label>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {[
-                    { id: 'ORDER_READY',       label: '📸 Proofs Ready' },
-                    { id: 'PAYMENT_CONFIRMED', label: '💳 Payment Verified' },
-                    { id: 'SHOOT_REMINDER',    label: '⏰ Call-Time' },
-                    { id: 'RESCHEDULE_UPDATE', label: '📅 Reschedule' },
-                    { id: 'STUDIO_BULLETIN',   label: '📢 Season Bulletin' },
-                  ].map(tpl => (
-                    <button
-                      key={tpl.id}
-                      type="button"
-                      onClick={() => applySmsTemplate(tpl.id)}
-                      className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gold/10 text-gold-dark hover:bg-gold hover:text-white border border-gold/30 transition-colors"
-                    >
-                      {tpl.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* SMS Message Payload */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-bold text-neutral-400 uppercase tracking-wider">
-                    SMS Message Payload
-                  </label>
-                  <span className="text-xs font-mono text-neutral-500">
-                    {dispatchMessage.length} / 160 chars ({Math.ceil(dispatchMessage.length / 160) || 1} credit)
-                  </span>
-                </div>
-                <textarea
+                <input
+                  type="text"
                   required
-                  rows={4}
-                  value={dispatchMessage}
-                  onChange={e => setDispatchMessage(e.target.value)}
-                  placeholder="Type official SMS text message..."
-                  className="w-full p-3 bg-neutral-50/60 border border-neutral-200 rounded-xl text-xs font-body leading-relaxed outline-none focus:ring-2 focus:ring-gold/30 focus:bg-white resize-none"
+                  value={draftApiKey}
+                  onChange={(e) => setDraftApiKey(e.target.value)}
+                  className="w-full h-10 px-3 rounded-xl bg-neutral-50 border border-neutral-200 text-xs font-mono outline-none focus:bg-white focus:border-gold"
                 />
               </div>
 
-              {/* Gateway Selection & Telco Route */}
-              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/80 flex items-center justify-between gap-3 text-xs flex-wrap">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-neutral-600">Telco Gateway:</span>
-                  <select
-                    value={dispatchGateway}
-                    onChange={e => setDispatchGateway(e.target.value)}
-                    className="bg-white border border-neutral-200 rounded-lg px-2 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-gold"
-                  >
-                    <option value="semaphore">Semaphore PH (Official Direct Route)</option>
-                    <option value="philsms">PhilSMS Gateway (Failover Route)</option>
-                    <option value="twilio">Twilio SMS (Global Numbers)</option>
-                  </select>
-                </div>
-                <span className="text-emerald-700 font-bold text-[11px] flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Carrier Ready
-                </span>
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                  Device ID
+                </label>
+                <input
+                  type="text"
+                  value={draftDeviceId}
+                  onChange={(e) => setDraftDeviceId(e.target.value)}
+                  placeholder="Optional (uses default paired device if blank)"
+                  className="w-full h-10 px-3 rounded-xl bg-neutral-50 border border-neutral-200 text-xs font-mono outline-none focus:bg-white focus:border-gold"
+                />
               </div>
 
-              {/* Modal Actions */}
-              <div className="pt-3 border-t border-neutral-200/80 flex items-center justify-end gap-2 shrink-0">
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-neutral-100">
                 <button
                   type="button"
-                  onClick={() => setComposeModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-neutral-200 text-xs font-semibold text-neutral-600 hover:bg-neutral-50"
+                  onClick={handleResetGatewaySettings}
+                  className="text-xs font-semibold text-neutral-500 hover:text-neutral-900 underline cursor-pointer"
                 >
-                  Cancel
+                  Reset to .env default
                 </button>
-                <button
-                  type="submit"
-                  disabled={sendingSms}
-                  className="btn-primary py-2 px-5 text-xs font-bold shadow-xs flex items-center gap-1.5"
-                >
-                  {sendingSms ? <RefreshCw size={12} className="animate-spin" /> : <Send size={12} />}
-                  <span>{sendingSms ? 'Transmitting...' : 'Dispatch SMS'}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSettingsOpen(false)}
+                    className="h-9 px-3.5 rounded-xl border border-neutral-200 text-xs font-semibold text-neutral-600 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="h-9 px-4 rounded-xl bg-neutral-900 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Save &amp; Sync
+                  </button>
+                </div>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* ── 7. TOOL: SMS LOG DETAILS & AUDIT INSPECTION MODAL ──────────────── */}
+      {/* Inspect Log Modal */}
       {inspectModalLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in font-body">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 border border-neutral-200 shadow-2xl space-y-4">
-            {/* Header */}
             <div className="flex items-start justify-between border-b border-neutral-100 pb-3">
               <div>
-                <span className="text-xs font-bold text-gold uppercase tracking-widest">
-                  SMS Transmission Audit
-                </span>
+                <span className="text-xs font-bold text-gold uppercase tracking-widest">SMS Transmission Audit</span>
                 <h3 className="font-heading text-base font-bold text-primary mt-0.5">
-                  {inspectModalLog.customer ? `${inspectModalLog.customer.first_name || ''} ${inspectModalLog.customer.last_name || ''}`.trim() : 'Studio SMS Dispatch'}
+                  {inspectModalLog.customer
+                    ? `${inspectModalLog.customer.first_name || ''} ${inspectModalLog.customer.last_name || ''}`.trim()
+                    : 'Studio SMS Dispatch'}
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setInspectModalLog(null)}
-                className="p-1.5 text-neutral-400 hover:text-primary rounded-lg hover:bg-neutral-100"
+                className="p-1.5 text-neutral-400 hover:text-primary rounded-lg hover:bg-neutral-100 cursor-pointer"
               >
                 <X size={16} />
               </button>
             </div>
 
-            {/* Message Bubble Preview */}
-            <div className="p-4 bg-neutral-900 text-white rounded-2xl border border-neutral-800 space-y-2 shadow-inner">
+            <div className="p-4 bg-neutral-900 text-white rounded-2xl border border-neutral-800 space-y-2">
               <div className="flex items-center justify-between text-xs text-neutral-400 border-b border-neutral-800 pb-1.5 font-mono">
-                <span>Sender: E-KODAK</span>
+                <span>Gateway: TextBee</span>
                 <span>{fmt(inspectModalLog.sent_at || inspectModalLog.created_at)}</span>
               </div>
-              <p className="text-xs leading-relaxed font-body text-neutral-100">
-                {inspectModalLog.message}
-              </p>
-              <div className="text-[11.5px] text-neutral-400 text-right pt-1 font-mono">
-                {inspectModalLog.message?.length || 0} characters ({Math.ceil((inspectModalLog.message?.length || 1) / 160)} SMS Credit)
-              </div>
+              <p className="text-xs leading-relaxed text-neutral-100 whitespace-pre-wrap">{inspectModalLog.message}</p>
             </div>
 
-            {/* Dossier Grid */}
-            <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200/80 grid grid-cols-2 gap-2.5 text-[11px] text-neutral-600">
+            <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200/80 grid grid-cols-2 gap-2.5 text-xs text-neutral-600">
               <div>
-                <span className="text-neutral-400 block text-xs">Mobile Phone:</span>
+                <span className="text-neutral-400 block">Mobile Phone:</span>
                 <span className="font-mono font-bold text-primary">{inspectModalLog.phone_number || '—'}</span>
               </div>
               <div>
-                <span className="text-neutral-400 block text-xs">Carrier Network:</span>
+                <span className="text-neutral-400 block">Carrier Network:</span>
                 <span className="font-semibold text-blue-700">{detectPhilippineCarrier(inspectModalLog.phone_number)}</span>
               </div>
               <div>
-                <span className="text-neutral-400 block text-xs">Delivery Status:</span>
+                <span className="text-neutral-400 block">Status:</span>
                 <span className="font-semibold text-emerald-700">{inspectModalLog.status || 'SENT'}</span>
               </div>
               <div>
-                <span className="text-neutral-400 block text-xs">Booking Reference:</span>
+                <span className="text-neutral-400 block">Booking Reference:</span>
                 <span className="font-semibold text-primary">
                   {inspectModalLog.booking?.booking_number ? `#${inspectModalLog.booking.booking_number}` : 'Direct SMS'}
                 </span>
               </div>
+              {inspectModalLog.error_message && (
+                <div className="col-span-2 text-rose-700 bg-rose-50 p-2 rounded-xl border border-rose-200">
+                  Error: {inspectModalLog.error_message}
+                </div>
+              )}
               <div className="col-span-2 pt-1 border-t border-neutral-200/60">
-                <span className="text-neutral-400 block text-xs">Provider Transaction ID:</span>
+                <span className="text-neutral-400 block">Provider Batch / Reference ID:</span>
                 <span className="font-mono text-xs text-neutral-700">{inspectModalLog.provider_message_id || inspectModalLog.id}</span>
               </div>
             </div>
 
-            {/* Modal Actions */}
             <div className="flex items-center justify-between gap-2 pt-2 border-t border-neutral-100 flex-wrap">
               <button
                 type="button"
                 onClick={() => handleDeleteLog(inspectModalLog.id)}
-                className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 text-xs font-semibold flex items-center gap-1.5 transition-all"
-                title="Delete this record"
+                className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
               >
                 <Trash2 size={13} />
-                <span>Delete Log</span>
+                <span>Delete</span>
               </button>
 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => handleCopyText(inspectModalLog.message, inspectModalLog.id)}
-                  className="px-3.5 py-2 rounded-xl border border-neutral-200 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 flex items-center gap-1.5 transition-all"
-                >
-                  <Copy size={13} />
-                  <span>{copiedId === inspectModalLog.id ? 'Copied!' : 'Copy Text'}</span>
-                </button>
-
-                <button
-                  type="button"
                   onClick={() => {
-                    setDispatchPhone(inspectModalLog.phone_number || '');
-                    setDispatchMessage(inspectModalLog.message || '');
-                    setDispatchName(inspectModalLog.customer ? `${inspectModalLog.customer.first_name || ''} ${inspectModalLog.customer.last_name || ''}`.trim() : '');
+                    const norm = normalizePhPhone(inspectModalLog.phone_number);
+                    const matchedOrder =
+                      (inspectModalLog.booking_id &&
+                        contacts.find((c) => c.bookingId === inspectModalLog.booking_id)) ||
+                      (norm && contacts.find((c) => c.normalizedPhone === norm)) ||
+                      null;
+
                     setInspectModalLog(null);
-                    setComposeModalOpen(true);
+                    if (!matchedOrder) {
+                      showError('Cannot resend: this record is no longer an active order in the database.');
+                      return;
+                    }
+                    setSelectedContactIds([matchedOrder.id]);
+                    setMessageText(inspectModalLog.message || '');
+                    setActiveTab('compose');
                   }}
-                  className="px-3.5 py-2 rounded-xl border border-gold/40 bg-gold/10 text-gold-dark hover:bg-gold hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all"
+                  className="px-3.5 py-2 rounded-xl border border-gold/40 bg-gold/10 text-gold-dark hover:bg-gold hover:text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
                 >
                   <RefreshCw size={13} />
-                  <span>Resend / Retry</span>
+                  <span>Resend</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setInspectModalLog(null)}
-                  className="btn-primary px-4 py-2 text-xs font-semibold"
+                  className="px-4 py-2 rounded-xl bg-neutral-900 text-white text-xs font-semibold cursor-pointer"
                 >
                   Close
                 </button>

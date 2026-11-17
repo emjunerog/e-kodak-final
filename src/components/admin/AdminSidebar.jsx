@@ -22,6 +22,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   BookOpen,
+  MessageSquare,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -180,6 +181,7 @@ export default function AdminSidebar({ onClose, onOpenProfile, isCollapsed = fal
 
   const opsNav = [
     { name: 'Notifications',     path: '/admin/notifications', icon: Bell          },
+    { name: 'SMS Messaging',     path: '/admin/sms',           icon: MessageSquare },
     { name: 'Security & Audit',  path: '/admin/security',      icon: ShieldCheck   },
   ];
 

@@ -1,327 +1,245 @@
-/**
- * StudioPhotoReel.jsx
- * Swipable animated photo collage & editorial reel for E-Kodak Studio.
- * Features:
- * - Real-time sync with Supabase gallery_items table
- * - Swipable card carousel with animated pagination dots
- * - Interactive heart like animation with haptic feedback & Supabase persistence
- * - Interactive full-screen lightbox with before/after retouching comparison
- */
-
-import React, { useState, useRef } from 'react';
-import { useTheme } from '../context/ThemeContext';
+import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, Image, Dimensions,
-  ScrollView, TouchableOpacity, Modal, Animated,
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Modal,
+  Dimensions,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
-import {
-  Heart, Sparkles, X, Sliders, Image as ImageIcon,
-  Maximize2, Eye, Award, Camera,
-} from 'lucide-react-native';
-
-import GlassCard from './GlassCard';
+import { Heart, X } from 'lucide-react-native';
 import { likeGalleryPhoto } from '../services/storageService';
-import { Colors, Gradients, Typography, Spacing, Radius } from '../theme';
+import { useTheme } from '../context/ThemeContext';
+import { Typography } from '../theme';
 
-const { width, height } = Dimensions.get('window');
-const CARD_WIDTH = width * 0.78;
-const CARD_SPACING = 16;
-const SNAP_INTERVAL = CARD_WIDTH + CARD_SPACING;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function StudioPhotoReel({ galleryItems = [], onPhotoLike }) {
-  const { isDark, colors, gradients } = useTheme();
-  const styles = getStyles(colors, isDark);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const { isDark, colors } = useTheme();
   const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [likedIds, setLikedIds] = useState({});
   const [showBefore, setShowBefore] = useState(false);
-  const [likedMap, setLikedMap] = useState({});
 
-  const heartScaleAnim = useRef(new Animated.Value(1)).current;
-
-  const handleScroll = (event) => {
-    const offset = event.nativeEvent.contentOffset.x;
-    const index = Math.round(offset / SNAP_INTERVAL);
-    if (index !== activeIndex && index >= 0 && index < galleryItems.length) {
-      setActiveIndex(index);
-    }
-  };
-
-  const handleLike = async (photo) => {
+  const handleLike = useCallback(async (photo) => {
+    if (!photo?.id) return;
     try {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {}
 
-    Animated.sequence([
-      Animated.timing(heartScaleAnim, { toValue: 1.4, duration: 120, useNativeDriver: true }),
-      Animated.spring(heartScaleAnim, { toValue: 1, friction: 4, useNativeDriver: true }),
-    ]).start();
+    const alreadyLiked = Boolean(likedIds[photo.id]);
+    setLikedIds((prev) => ({ ...prev, [photo.id]: !alreadyLiked }));
 
-    const isAlreadyLiked = likedMap[photo.id];
-    const currentLikes = photo.likes || 0;
-    const nextLikes = isAlreadyLiked ? Math.max(0, currentLikes - 1) : currentLikes + 1;
+    if (!alreadyLiked) {
+      const nextLikes = await likeGalleryPhoto(photo.id, photo.likes || 0);
+      onPhotoLike?.(photo.id, nextLikes);
+    }
+  }, [likedIds, onPhotoLike]);
 
-    setLikedMap((prev) => ({ ...prev, [photo.id]: !isAlreadyLiked }));
-
-    // Persist to Supabase
-    await likeGalleryPhoto(photo.id, currentLikes);
-    onPhotoLike?.(photo.id, nextLikes);
-  };
-
-  const openLightbox = (photo) => {
-    try { Haptics.selectionAsync(); } catch {}
-    setSelectedPhoto(photo);
+  const openLightbox = useCallback((photo) => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
     setShowBefore(false);
-  };
+    setSelectedPhoto(photo);
+  }, []);
 
   if (!galleryItems || galleryItems.length === 0) {
     return null;
   }
 
   return (
-    <View style={styles.container}>
-      {/* ── Section Header ── */}
-      <View style={styles.headerRow}>
-        <View style={styles.titleGroup}>
-          <View style={styles.badgePulse}>
-            <View style={styles.pulseDot} />
-            <Text style={styles.liveBadgeText}>LIVE STUDIO GALLERY</Text>
-          </View>
-          <Text style={styles.sectionTitle}>Curated Portfolio Reel</Text>
-        </View>
+    <View style={styles.sectionWrap}>
+      <Text
+        style={[
+          styles.sectionHeading,
+          { color: isDark ? colors.text.secondary : '#5E5447' },
+        ]}
+      >
+        SAMPLE PHOTOS
+      </Text>
 
-        <Text style={styles.photoCountText}>
-          {activeIndex + 1} / {galleryItems.length}
-        </Text>
-      </View>
-
-      {/* ── Swipable Photo Carousel ── */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        snapToInterval={SNAP_INTERVAL}
-        decelerationRate="fast"
         contentContainerStyle={styles.scrollContent}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
       >
-        {galleryItems.map((photo, index) => {
-          const isLiked = likedMap[photo.id];
-          const displayLikes = (photo.likes || 0) + (isLiked ? 1 : 0);
-
+        {galleryItems.map((photo) => {
+          const isLiked = Boolean(likedIds[photo.id]);
           return (
             <TouchableOpacity
-              key={photo.id || index}
-              activeOpacity={0.92}
+              key={photo.id}
+              activeOpacity={0.9}
               onPress={() => openLightbox(photo)}
-              style={styles.cardWrapper}
+              style={[
+                styles.card,
+                {
+                  backgroundColor: isDark ? colors.bg.card : '#FFFFFF',
+                  borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#EAE1CF',
+                },
+              ]}
             >
-              <GlassCard glow={false} highlight={false} style={styles.photoCard}>
-                {/* Photo Image */}
+              <View style={styles.imageWrap}>
                 <Image
                   source={{ uri: photo.image_url }}
                   style={styles.cardImage}
                   resizeMode="cover"
                 />
+              </View>
 
-                {/* Dark Vignette Gradient */}
-                <LinearGradient
-                  colors={['transparent', 'rgba(13, 11, 9, 0.4)', 'rgba(13, 11, 9, 0.94)']}
-                  locations={[0.3, 0.65, 1]}
-                  style={styles.vignette}
-                />
+              <View style={styles.cardBody}>
+                <Text
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  style={[
+                    styles.cardTitle,
+                    { color: isDark ? colors.text.primary : '#181410' },
+                  ]}
+                >
+                  {photo.title || 'Studio Portrait'}
+                </Text>
 
-                {/* Top Overlay Badges */}
-                <View style={styles.cardTopRow}>
-                  <View style={styles.categoryPill}>
-                    <Text style={styles.categoryText}>{photo.category}</Text>
-                  </View>
-
-                  {photo.before_image && (
-                    <View style={styles.retouchPill}>
-                      <Sliders size={10} color={colors.gold.light} />
-                      <Text style={styles.retouchText}>RAW / RETOUCH</Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Bottom Overlay Content */}
-                <View style={styles.cardBottom}>
-                  <Text style={styles.photoTitle} numberOfLines={1}>
-                    {photo.title}
-                  </Text>
-                  {photo.description ? (
-                    <Text style={styles.photoDesc} numberOfLines={2}>
-                      {photo.description}
-                    </Text>
-                  ) : null}
-
-                  {/* Footer with Like & Fullscreen */}
-                  <View style={styles.cardFooter}>
-                    <TouchableOpacity
-                      onPress={() => handleLike(photo)}
-                      style={styles.likeBtn}
-                      activeOpacity={0.8}
-                    >
-                      <Animated.View style={{ transform: [{ scale: heartScaleAnim }] }}>
-                        <Heart
-                          size={15}
-                          color={isLiked ? '#EF4444' : colors.gold.light}
-                          fill={isLiked ? '#EF4444' : 'transparent'}
-                        />
-                      </Animated.View>
-                      <Text style={[styles.likeCount, isLiked && { color: '#EF4444' }]}>
-                        {displayLikes}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <View style={styles.expandPrompt}>
-                      <Text style={styles.expandPromptText}>Tap to inspect</Text>
-                      <Maximize2 size={12} color={colors.gold.light} />
-                    </View>
-                  </View>
-                </View>
-              </GlassCard>
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    handleLike(photo);
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={[
+                    styles.heartPill,
+                    isLiked
+                      ? {
+                          backgroundColor: isDark ? 'rgba(225, 29, 72, 0.22)' : '#FCE8EA',
+                          borderColor: isDark ? 'rgba(244, 63, 94, 0.35)' : 'rgba(190, 60, 80, 0.16)',
+                        }
+                      : {
+                          backgroundColor: isDark ? 'rgba(212, 175, 55, 0.16)' : '#FCF3D6',
+                          borderColor: isDark ? 'rgba(212, 175, 55, 0.28)' : 'rgba(180, 140, 50, 0.16)',
+                        },
+                  ]}
+                  accessibilityLabel={`Favorite ${photo.title || 'sample photo'}`}
+                >
+                  <Heart
+                    size={12}
+                    strokeWidth={2}
+                    color={
+                      isLiked
+                        ? (isDark ? '#FDA4AF' : '#A93A4B')
+                        : (isDark ? '#F5D67B' : '#3D3224')
+                    }
+                    fill={isLiked ? (isDark ? '#FDA4AF' : '#A93A4B') : 'transparent'}
+                  />
+                </TouchableOpacity>
+              </View>
             </TouchableOpacity>
           );
         })}
       </ScrollView>
 
-      {/* ── Animated Pagination Dots Indicator ── */}
-      <View style={styles.dotsRow}>
-        {galleryItems.map((_, i) => {
-          const isActive = i === activeIndex;
-          return (
-            <View
-              key={i}
-              style={[
-                styles.dot,
-                isActive && styles.dotActive,
-              ]}
-            />
-          );
-        })}
-      </View>
-
-      {/* ── Fullscreen Interactive Lightbox Modal ── */}
+      {/* Lightbox Modal */}
       <Modal
         visible={Boolean(selectedPhoto)}
         transparent
         animationType="fade"
+        statusBarTranslucent
         onRequestClose={() => setSelectedPhoto(null)}
       >
-        <View style={styles.modalOverlay}>
-          <BlurView intensity={isDark ? 60 : 40} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-          {/* Backdrop dismiss */}
+        <View style={styles.modalBackdrop}>
           <TouchableOpacity
-            style={StyleSheet.absoluteFill}
-            activeOpacity={1}
+            style={styles.modalCloseBtn}
             onPress={() => setSelectedPhoto(null)}
-          />
+            accessibilityLabel="Close photo preview"
+          >
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
 
           {selectedPhoto && (
-            <View style={styles.lightboxCard}>
-              <GlassCard glow highlight style={styles.lightboxGlass}>
-                {/* Header with close button */}
-                <View style={styles.lightboxHeader}>
-                  <View style={styles.lightboxCategory}>
-                    <Text style={styles.lightboxCategoryText}>
-                      {selectedPhoto.category} · E-KODAK STUDIO
+            <View style={styles.modalCard}>
+              <Image
+                source={{
+                  uri:
+                    showBefore && selectedPhoto.before_image
+                      ? selectedPhoto.before_image
+                      : selectedPhoto.image_url,
+                }}
+                style={styles.modalImage}
+                resizeMode="contain"
+              />
+
+              <View
+                style={[
+                  styles.modalMeta,
+                  {
+                    backgroundColor: isDark ? '#1A171C' : '#FFFFFF',
+                    borderColor: isDark ? 'rgba(255,255,255,0.1)' : '#EAE1CF',
+                  },
+                ]}
+              >
+                <View style={styles.modalTitleRow}>
+                  <View style={styles.modalTextCol}>
+                    <Text
+                      style={[
+                        styles.modalTitle,
+                        { color: isDark ? '#FFFFFF' : '#181410' },
+                      ]}
+                    >
+                      {selectedPhoto.title}
                     </Text>
+                    {Boolean(selectedPhoto.description) && (
+                      <Text
+                        style={[
+                          styles.modalDesc,
+                          { color: isDark ? '#BDB5A8' : '#5C5346' },
+                        ]}
+                      >
+                        {selectedPhoto.description}
+                      </Text>
+                    )}
                   </View>
+
                   <TouchableOpacity
-                    onPress={() => setSelectedPhoto(null)}
-                    style={styles.lightboxCloseBtn}
-                    activeOpacity={0.7}
+                    activeOpacity={0.8}
+                    onPress={() => handleLike(selectedPhoto)}
+                    style={[
+                      styles.modalHeartBtn,
+                      {
+                        backgroundColor: likedIds[selectedPhoto.id] ? '#FCE8EA' : '#FCF3D6',
+                      },
+                    ]}
                   >
-                    <X size={18} color={colors.text.primary} />
+                    <Heart
+                      size={16}
+                      color={likedIds[selectedPhoto.id] ? '#A93A4B' : '#3D3224'}
+                      fill={likedIds[selectedPhoto.id] ? '#A93A4B' : 'transparent'}
+                    />
                   </TouchableOpacity>
                 </View>
 
-                {/* Main Large Image Container */}
-                <View style={styles.lightboxImageWrapper}>
-                  <Image
-                    source={{
-                      uri: showBefore && selectedPhoto.before_image
-                        ? selectedPhoto.before_image
-                        : selectedPhoto.image_url,
-                    }}
-                    style={styles.lightboxImage}
-                    resizeMode="cover"
-                  />
-
-                  {/* Retouching comparison tag overlay */}
-                  {showBefore && (
-                    <View style={styles.beforeTagOverlay}>
-                      <Text style={styles.beforeTagText}>UNEDITED RAW PREVIEW</Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* RAW vs Retouched Toggle (If Before Image Available) */}
-                {selectedPhoto.before_image && (
-                  <View style={styles.toggleRow}>
-                    <TouchableOpacity
-                      onPress={() => {
-                        try { Haptics.selectionAsync(); } catch {}
-                        setShowBefore(false);
-                      }}
-                      style={[styles.toggleBtn, !showBefore && styles.toggleBtnActive]}
-                      activeOpacity={0.8}
+                {Boolean(selectedPhoto.before_image) && (
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setShowBefore((v) => !v)}
+                    style={[
+                      styles.beforeToggleBtn,
+                      {
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F4EEDB',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.beforeToggleText,
+                        { color: isDark ? '#F5D67B' : '#181410' },
+                      ]}
                     >
-                      <Sparkles size={13} color={!showBefore ? colors.text.onGold : colors.neutral[400]} />
-                      <Text style={[styles.toggleBtnText, !showBefore && styles.toggleBtnTextActive]}>
-                        Color Graded & Retouched
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={() => {
-                        try { Haptics.selectionAsync(); } catch {}
-                        setShowBefore(true);
-                      }}
-                      style={[styles.toggleBtn, showBefore && styles.toggleBtnActive]}
-                      activeOpacity={0.8}
-                    >
-                      <Camera size={13} color={showBefore ? colors.text.onGold : colors.neutral[400]} />
-                      <Text style={[styles.toggleBtnText, showBefore && styles.toggleBtnTextActive]}>
-                        Original RAW
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {/* Details Footer */}
-                <View style={styles.lightboxDetails}>
-                  <Text style={styles.lightboxTitle}>{selectedPhoto.title}</Text>
-                  <Text style={styles.lightboxDesc}>
-                    {selectedPhoto.description || 'Captured in Studio Bay A under high-CRI continuous lighting and hand-retouched.'}
-                  </Text>
-
-                  <View style={styles.lightboxMetaRow}>
-                    <TouchableOpacity
-                      onPress={() => handleLike(selectedPhoto)}
-                      style={styles.lightboxLikeBtn}
-                      activeOpacity={0.8}
-                    >
-                      <Heart
-                        size={16}
-                        color={likedMap[selectedPhoto.id] ? '#EF4444' : colors.gold.light}
-                        fill={likedMap[selectedPhoto.id] ? '#EF4444' : 'transparent'}
-                      />
-                      <Text style={styles.lightboxLikeText}>
-                        {(selectedPhoto.likes || 0) + (likedMap[selectedPhoto.id] ? 1 : 0)} Likes
-                      </Text>
-                    </TouchableOpacity>
-
-                    <Text style={styles.lightboxStudioTag}>
-                      E-Kodak Master Color Science
+                      {showBefore ? 'View Final Edit' : 'View Original'}
                     </Text>
-                  </View>
-                </View>
-              </GlassCard>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           )}
         </View>
@@ -330,346 +248,131 @@ export default function StudioPhotoReel({ galleryItems = [], onPhotoLike }) {
   );
 }
 
-const getStyles = (colors, isDark) => StyleSheet.create({
-  container: {
-    marginTop: Spacing[6],
-    marginBottom: Spacing[4],
+const styles = StyleSheet.create({
+  sectionWrap: {
+    marginTop: 22,
   },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing[5],
-    marginBottom: Spacing[3],
+  sectionHeading: {
+    fontFamily: Typography.fontBodyBold,
+    fontSize: 11,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    marginBottom: 12,
   },
-  titleGroup: {
-    gap: 4,
-  },
-  badgePulse: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(212, 168, 83, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: Radius.full,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: 'rgba(212, 168, 83, 0.25)',
-  },
-  pulseDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.status.ready,
-  },
-  liveBadgeText: {
-    fontFamily: Typography.fontBodySemi,
-    fontSize: 9,
-    color: colors.gold.light,
-    letterSpacing: 0.8,
-  },
-  sectionTitle: {
-    fontFamily: Typography.fontHeadingSemi,
-    fontSize: Typography.size.lg,
-    color: isDark ? colors.text.primary : '#1F1A15',
-  },
-  photoCountText: {
-    fontFamily: Typography.fontMono,
-    fontSize: Typography.size.xs,
-    color: isDark ? colors.gold.light : colors.gold.dark,
-    letterSpacing: 1,
-  },
-
-  // Carousel
   scrollContent: {
-    paddingHorizontal: Spacing[5],
-    gap: CARD_SPACING,
+    gap: 12,
+    paddingRight: 8,
+    paddingBottom: 6,
   },
-  cardWrapper: {
-    width: CARD_WIDTH,
-  },
-  photoCard: {
-    height: 380,
-    borderRadius: Radius.xl,
+  card: {
+    width: 158,
+    borderRadius: 18,
+    borderWidth: 1,
     overflow: 'hidden',
-    position: 'relative',
-    padding: 0,
+    shadowColor: '#8B7344',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  imageWrap: {
+    width: '100%',
+    height: 152,
+    backgroundColor: '#E8DEC8',
   },
   cardImage: {
     width: '100%',
     height: '100%',
   },
-  vignette: {
-    ...StyleSheet.absoluteFillObject,
+  cardBody: {
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 12,
   },
-  cardTopRow: {
-    position: 'absolute',
-    top: 14,
-    left: 14,
-    right: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  categoryPill: {
-    backgroundColor: 'rgba(13, 11, 9, 0.75)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-    borderColor: 'rgba(212, 168, 83, 0.3)',
-  },
-  categoryText: {
-    fontFamily: Typography.fontBodySemi,
-    fontSize: 10,
-    color: colors.gold.light,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-  retouchPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(13, 11, 9, 0.75)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-    borderColor: 'rgba(212, 168, 83, 0.3)',
-  },
-  retouchText: {
-    fontFamily: Typography.fontBodySemi,
-    fontSize: 9,
-    color: colors.gold.light,
-    letterSpacing: 0.5,
-  },
-
-  // Bottom Content
-  cardBottom: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: Spacing[4],
-  },
-  photoTitle: {
-    fontFamily: Typography.fontHeadingSemi,
-    fontSize: Typography.size.lg,
-    color: '#FFFFFF',
-    marginBottom: 4,
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  photoDesc: {
-    fontFamily: Typography.fontBody,
-    fontSize: Typography.size.xs,
-    color: '#F5EFE6', // Crisp warm ivory with high contrast over dark photo vignette in both light & dark mode
+  cardTitle: {
+    fontFamily: Typography.fontBodyBold,
+    fontSize: 13.5,
     lineHeight: 18,
-    marginBottom: Spacing[3],
-    textShadowColor: 'rgba(0, 0, 0, 0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
   },
-  cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: Spacing[2],
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(212, 168, 83, 0.15)',
-  },
-  likeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(13, 11, 9, 0.6)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: Radius.full,
+  heartPill: {
+    marginTop: 8,
+    width: 34,
+    height: 22,
+    borderRadius: 11,
     borderWidth: 1,
-    borderColor: 'rgba(212, 168, 83, 0.25)',
-  },
-  likeCount: {
-    fontFamily: Typography.fontMono,
-    fontSize: 11,
-    color: colors.text.primary,
-  },
-  expandPrompt: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-  },
-  expandPromptText: {
-    fontFamily: Typography.fontBody,
-    fontSize: 10,
-    color: colors.gold.light,
-    letterSpacing: 0.4,
-  },
-
-  // Dots indicator
-  dotsRow: {
-    flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: Spacing[3],
   },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  dotActive: {
-    width: 22,
-    backgroundColor: colors.gold.light,
-  },
-
-  // Lightbox Modal
-  modalOverlay: {
+  modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(5, 4, 3, 0.5)',
+    backgroundColor: 'rgba(12, 10, 8, 0.9)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: Spacing[4],
+    padding: 20,
   },
-  lightboxCard: {
-    width: '100%',
-    maxWidth: 440,
-    maxHeight: height * 0.9,
-  },
-  lightboxGlass: {
-    padding: Spacing[4],
-    borderRadius: Radius.xl,
-    overflow: 'hidden',
-  },
-  lightboxHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: Spacing[3],
-  },
-  lightboxCategory: {
-    backgroundColor: 'rgba(212, 168, 83, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-    borderColor: colors.gold.border,
-  },
-  lightboxCategoryText: {
-    fontFamily: Typography.fontBodySemi,
-    fontSize: 9,
-    color: colors.gold.light,
-    letterSpacing: 0.8,
-  },
-  lightboxCloseBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: Radius.full,
-    backgroundColor: 'rgba(127, 127, 140, 0.16)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lightboxImageWrapper: {
-    width: '100%',
-    height: 280,
-    borderRadius: Radius.lg,
-    overflow: 'hidden',
-    position: 'relative',
-    backgroundColor: colors.bg.surface,
-  },
-  lightboxImage: {
-    width: '100%',
-    height: '100%',
-  },
-  beforeTagOverlay: {
+  modalCloseBtn: {
     position: 'absolute',
-    bottom: 10,
-    left: 10,
-    backgroundColor: 'rgba(239, 68, 68, 0.85)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  beforeTagText: {
-    fontFamily: Typography.fontBodySemi,
-    fontSize: 9,
-    color: '#FFF',
-    letterSpacing: 0.6,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: Spacing[3],
-  },
-  toggleBtn: {
-    flex: 1,
-    flexDirection: 'row',
+    top: 52,
+    right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.16)',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    borderRadius: Radius.md,
-    backgroundColor: 'rgba(127, 127, 140, 0.12)',
+    zIndex: 10,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    alignItems: 'center',
+    gap: 14,
+  },
+  modalImage: {
+    width: SCREEN_WIDTH - 40,
+    height: SCREEN_HEIGHT * 0.54,
+    borderRadius: 18,
+  },
+  modalMeta: {
+    width: '100%',
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    padding: 16,
   },
-  toggleBtnActive: {
-    backgroundColor: colors.gold.DEFAULT,
-    borderColor: colors.gold.light,
-  },
-  toggleBtnText: {
-    fontFamily: Typography.fontBodyMedium,
-    fontSize: 11,
-    color: colors.neutral[400],
-  },
-  toggleBtnTextActive: {
-    fontFamily: Typography.fontBodySemi,
-    color: colors.text.onGold,
-  },
-  lightboxDetails: {
-    marginTop: Spacing[3],
-  },
-  lightboxTitle: {
-    fontFamily: Typography.fontHeadingSemi,
-    fontSize: Typography.size.md,
-    color: colors.text.primary,
-    marginBottom: 4,
-  },
-  lightboxDesc: {
-    fontFamily: Typography.fontBody,
-    fontSize: Typography.size.xs,
-    color: isDark ? colors.text.secondary : '#3A322A',
-    lineHeight: 18,
-    marginBottom: Spacing[3],
-  },
-  lightboxMetaRow: {
+  modalTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: Spacing[2],
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(212, 168, 83, 0.15)',
+    gap: 12,
   },
-  lightboxLikeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  modalTextCol: {
+    flex: 1,
   },
-  lightboxLikeText: {
-    fontFamily: Typography.fontMono,
-    fontSize: 12,
-    color: colors.text.primary,
+  modalTitle: {
+    fontFamily: Typography.fontBodyBold,
+    fontSize: 16,
   },
-  lightboxStudioTag: {
+  modalDesc: {
     fontFamily: Typography.fontBody,
-    fontSize: 10,
-    color: colors.gold.light,
-    letterSpacing: 0.5,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  modalHeartBtn: {
+    width: 40,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  beforeToggleBtn: {
+    marginTop: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  beforeToggleText: {
+    fontFamily: Typography.fontBodySemi,
+    fontSize: 13,
   },
 });

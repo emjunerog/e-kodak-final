@@ -929,11 +929,23 @@ export async function getPhotographerProfileData(photographerId) {
 
     if (pError) throw pError;
 
-    const { data: phProfile } = await supabase
+    let { data: phProfile } = await supabase
       .from('photographer_profiles')
-      .select('specialization, bio, is_available')
+      .select('specialization, bio, is_available, qr_login_token')
       .eq('id', photographerId)
-      .single();
+      .maybeSingle();
+
+    if (!phProfile && profile?.role === 'photographer') {
+      const { data: createdPh } = await supabase
+        .from('photographer_profiles')
+        .upsert(
+          [{ id: photographerId, specialization: 'Studio Photographer', is_available: true }],
+          { onConflict: 'id' }
+        )
+        .select('specialization, bio, is_available, qr_login_token')
+        .maybeSingle();
+      phProfile = createdPh || phProfile;
+    }
 
     return {
       data: {
@@ -941,6 +953,7 @@ export async function getPhotographerProfileData(photographerId) {
         specialization: phProfile?.specialization || '',
         bio: phProfile?.bio || '',
         is_available: phProfile?.is_available ?? true,
+        qr_login_token: phProfile?.qr_login_token || null,
       },
       error: null,
     };

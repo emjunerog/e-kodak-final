@@ -6,48 +6,138 @@
  * - Navigation container with luxury dark-gold theme & 5-tab structure
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { StatusBar } from 'react-native';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { AppState, BackHandler, StatusBar, View } from 'react-native';
+import {
+  NavigationContainer,
+  DefaultTheme,
+  createNavigationContainerRef,
+} from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   useFonts,
-  PlayfairDisplay_400Regular,
-  PlayfairDisplay_600SemiBold,
-  PlayfairDisplay_700Bold,
-  PlayfairDisplay_400Regular_Italic,
-} from '@expo-google-fonts/playfair-display';
-import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
-} from '@expo-google-fonts/inter';
+  GoogleSans_400Regular,
+  GoogleSans_500Medium,
+  GoogleSans_600SemiBold,
+  GoogleSans_700Bold,
+  GoogleSans_400Regular_Italic,
+} from '@expo-google-fonts/google-sans';
 
 import AppNavigator from './src/navigation/AppNavigator';
 import TutorialScreen from './src/screens/TutorialScreen';
+import AnimatedSplashOverlay from './src/components/AnimatedSplashOverlay';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+import { DialogProvider } from './src/context/DialogContext';
+import { TourProvider, useTour } from './src/context/TourContext';
+import TourSpotlightOverlay from './src/components/TourSpotlightOverlay';
+import { verifyPhotographerSession } from './src/services/bookingService';
+import { setUserRole, getSavedBookings } from './src/services/storageService';
 import { Typography } from './src/theme';
 
-// Keep splash visible until fonts and storage are ready
-SplashScreen.preventAutoHideAsync().catch(() => {});
+const navigationRef = createNavigationContainerRef();
 
-function AppContent({ showTutorial, setShowTutorial, initialRoute, setInitialRoute }) {
+// Keep splash visible until fonts and storage are ready
+SplashScreen.preventAutoHideAsync().catch(() => { });
+
+function AppContent({
+  showTutorial,
+  setShowTutorial,
+  tutorialInitialSlide,
+  initialRoute,
+  setInitialRoute,
+}) {
   const { isDark, colors } = useTheme();
+  const tour = useTour();
+  const [splashMode, setSplashMode] = useState('enter');
+  const [splashKey, setSplashKey] = useState(0);
+  const appStateRef = useRef(AppState.currentState);
+  const wentBackgroundAtRef = useRef(0);
+  const isExitingRef = useRef(false);
+
+  // Play enter splash animation whenever returning into the app from background
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const prevState = appStateRef.current;
+      appStateRef.current = nextState;
+
+      if (nextState === 'background') {
+        wentBackgroundAtRef.current = Date.now();
+        return;
+      }
+
+      if (
+        prevState === 'background' &&
+        nextState === 'active' &&
+        !isExitingRef.current &&
+        Date.now() - wentBackgroundAtRef.current >= 900
+      ) {
+        setSplashMode('enter');
+        setSplashKey((k) => k + 1);
+      }
+    });
+
+    return () => subscription.remove();
+  }, []);
+
+  // Play exit splash animation when Android hardware Back closes the root app
+  useEffect(() => {
+    const backSub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (isExitingRef.current) {
+        return true;
+      }
+      if (showTutorial) {
+        isExitingRef.current = true;
+        setSplashMode('exit');
+        setSplashKey((k) => k + 1);
+        return true;
+      }
+      if (!navigationRef.isReady() || navigationRef.canGoBack()) {
+        return false;
+      }
+
+      const rootState = navigationRef.getRootState();
+      const activeMain = rootState?.routes?.[rootState.index];
+      const activeTabIndex = activeMain?.state?.index ?? 0;
+
+      // Let Tab.Navigator return non-Home tabs back to Home first
+      if ((activeMain?.name === 'Main' || activeMain?.name === 'PhotographerMain') && activeTabIndex > 0) {
+        return false;
+      }
+
+      isExitingRef.current = true;
+      setSplashMode('exit');
+      setSplashKey((k) => k + 1);
+      return true;
+    });
+
+    return () => backSub.remove();
+  }, [showTutorial]);
+
+  const handleSplashComplete = useCallback(() => {
+    if (splashMode === 'exit') {
+      BackHandler.exitApp();
+      setTimeout(() => {
+        isExitingRef.current = false;
+        setSplashMode(null);
+      }, 250);
+      return;
+    }
+    setSplashMode(null);
+  }, [splashMode]);
 
   const appNavTheme = {
     ...DefaultTheme,
     dark: isDark,
     colors: {
       ...DefaultTheme.colors,
-      primary:      colors.gold.DEFAULT,
-      background:   colors.bg.base,
-      card:         colors.bg.surface,
-      text:         colors.text.primary,
-      border:       colors.gold.border,
+      primary: colors.gold.DEFAULT,
+      background: colors.bg.base,
+      card: colors.bg.surface,
+      text: colors.text.primary,
+      border: colors.gold.border,
       notification: colors.gold.DEFAULT,
     },
     fonts: {
@@ -60,8 +150,8 @@ function AppContent({ showTutorial, setShowTutorial, initialRoute, setInitialRou
         fontWeight: '500',
       },
       bold: {
-        fontFamily: Typography.fontHeadingSemi,
-        fontWeight: '600',
+        fontFamily: Typography.fontBodyBold,
+        fontWeight: '700',
       },
       heavy: {
         fontFamily: Typography.fontHeading,
@@ -71,62 +161,104 @@ function AppContent({ showTutorial, setShowTutorial, initialRoute, setInitialRou
   };
 
   return (
-    <>
+    <View style={{ flex: 1, backgroundColor: colors.bg.base }}>
       <StatusBar
         barStyle={isDark ? 'light-content' : 'dark-content'}
         backgroundColor={colors.bg.base}
       />
       {showTutorial ? (
         <TutorialScreen
-          onComplete={async (role) => {
-            await AsyncStorage.setItem('ekodak:tutorial_done', '1');
+          initialSlide={tutorialInitialSlide}
+          onComplete={async (role = 'customer', extra = {}) => {
             if (role === 'photographer') {
-              setInitialRoute('PhotographerLogin');
+              await setUserRole('photographer');
+              await AsyncStorage.setItem('ekodak:tutorial_done', '1');
+              setInitialRoute('PhotographerMain');
             } else {
+              await setUserRole('customer');
+              await AsyncStorage.setItem('ekodak:tutorial_done', '1');
               setInitialRoute('Main');
             }
             setShowTutorial(false);
+            if (extra?.startInteractiveTour && tour?.startTour) {
+              setTimeout(() => {
+                tour.startTour(role === 'photographer' ? 'photographer' : 'customer');
+              }, 320);
+            }
           }}
         />
       ) : (
-        <NavigationContainer theme={appNavTheme}>
-          <AppNavigator initialRouteName={initialRoute} />
-        </NavigationContainer>
+        <>
+          <NavigationContainer ref={navigationRef} theme={appNavTheme}>
+            <AppNavigator initialRouteName={initialRoute} />
+          </NavigationContainer>
+          <TourSpotlightOverlay />
+        </>
       )}
-    </>
+      {splashMode && (
+        <AnimatedSplashOverlay
+          key={`${splashMode}-${splashKey}`}
+          mode={splashMode}
+          isDark={isDark}
+          onComplete={handleSplashComplete}
+        />
+      )}
+    </View>
   );
 }
 
 export default function App() {
-  const [appReady, setAppReady]         = useState(false);
+  const [appReady, setAppReady] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialInitialSlide, setTutorialInitialSlide] = useState(0);
   const [initialRoute, setInitialRoute] = useState('Main');
 
   const [fontsLoaded, fontError] = useFonts({
-    PlayfairDisplay_400Regular,
-    PlayfairDisplay_600SemiBold,
-    PlayfairDisplay_700Bold,
-    PlayfairDisplay_400Regular_Italic,
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
+    GoogleSans_400Regular,
+    GoogleSans_500Medium,
+    GoogleSans_600SemiBold,
+    GoogleSans_700Bold,
+    GoogleSans_400Regular_Italic,
   });
 
   useEffect(() => {
     async function prepare() {
       try {
-        const hasSeenTutorial = await AsyncStorage.getItem('ekodak:tutorial_done');
-        const savedRole = await AsyncStorage.getItem('ekodak:user_role');
-        
-        if (!hasSeenTutorial || !savedRole) {
-          setShowTutorial(true);
-        } else {
+        const [storedRole, tutorialDone, savedBookings] = await Promise.all([
+          AsyncStorage.getItem('ekodak:user_role'),
+          AsyncStorage.getItem('ekodak:tutorial_done'),
+          getSavedBookings(),
+        ]);
+
+        const seenTour = tutorialDone === '1';
+
+        if (storedRole === 'photographer') {
+          const authCheck = await verifyPhotographerSession();
+          if (authCheck.authorized) {
+            setInitialRoute('PhotographerMain');
+            setShowTutorial(false);
+          } else {
+            await setUserRole('customer');
+            if (seenTour && Array.isArray(savedBookings) && savedBookings.length > 0) {
+              setInitialRoute('Main');
+              setShowTutorial(false);
+            } else {
+              setTutorialInitialSlide(seenTour ? 1 : 0);
+              setShowTutorial(true);
+            }
+          }
+        } else if (seenTour && Array.isArray(savedBookings) && savedBookings.length > 0) {
+          setInitialRoute('Main');
           setShowTutorial(false);
-          setInitialRoute(savedRole === 'photographer' ? 'PhotographerLogin' : 'Main');
+        } else {
+          // QR code scan is required in splash/tutorial before entering Home for both roles
+          setTutorialInitialSlide(seenTour ? 1 : 0);
+          setShowTutorial(true);
         }
       } catch {
-        setShowTutorial(false);
+        setTutorialInitialSlide(0);
+        setShowTutorial(true);
+        setInitialRoute('Main');
       } finally {
         setAppReady(true);
       }
@@ -135,7 +267,7 @@ export default function App() {
 
     // Safety fallback: Never allow splash screen to hang indefinitely
     const fallbackTimer = setTimeout(() => {
-      SplashScreen.hideAsync().catch(() => {});
+      SplashScreen.hideAsync().catch(() => { });
     }, 2000);
 
     return () => clearTimeout(fallbackTimer);
@@ -146,7 +278,7 @@ export default function App() {
   // Immediately hide splash screen once ready
   useEffect(() => {
     if (isReady) {
-      SplashScreen.hideAsync().catch(() => {});
+      SplashScreen.hideAsync().catch(() => { });
     }
   }, [isReady]);
 
@@ -158,12 +290,17 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <AppContent
-            showTutorial={showTutorial}
-            setShowTutorial={setShowTutorial}
-            initialRoute={initialRoute}
-            setInitialRoute={setInitialRoute}
-          />
+          <DialogProvider>
+            <TourProvider>
+              <AppContent
+                showTutorial={showTutorial}
+                setShowTutorial={setShowTutorial}
+                tutorialInitialSlide={tutorialInitialSlide}
+                initialRoute={initialRoute}
+                setInitialRoute={setInitialRoute}
+              />
+            </TourProvider>
+          </DialogProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

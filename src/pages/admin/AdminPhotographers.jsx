@@ -27,7 +27,7 @@ import {
   Calendar, Clock, Briefcase, User, Phone, Eye, X, ChevronRight,
   ShieldCheck, FileText, Download, Plus, Edit3, Trash2, Mail,
   Check, AlertTriangle, Activity, Radio, Sparkles, UserCheck,
-  CalendarDays, ArrowRightLeft, Users, Filter, History
+  CalendarDays, ArrowRightLeft, Users, Filter, History, QrCode
 } from 'lucide-react';
 import { getPhotographersWithWorkloadAndAvailability } from '../../services/bookingAdminService';
 import {
@@ -43,6 +43,8 @@ import { useAuth } from '../../context/AuthContext';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import CustomDropdown from '../../components/ui/CustomDropdown';
+import PhotographerQRModal from '../../components/admin/PhotographerQRModal';
+import { PhotographerQRCodeSVG } from '../../lib/qr';
 
 function fmt(d) {
   if (!d) return '—';
@@ -186,6 +188,7 @@ export default function AdminPhotographers() {
 
   // Details inspection modal state
   const [selectedPh, setSelectedPh]       = useState(null);
+  const [qrModalPh, setQrModalPh]         = useState(null);
   const [modalLoading, setModalLoading]   = useState(false);
   const [availRecords, setAvailRecords]   = useState([]);
   const [phBookings, setPhBookings]       = useState([]);
@@ -820,6 +823,20 @@ export default function AdminPhotographers() {
                       {/* Actions & Tools */}
                       <td className="px-5 sm:px-6 py-4 sm:py-4.5 text-right whitespace-nowrap align-middle">
                         <div className="flex items-center justify-end gap-2">
+                          {/* Login QR Pass */}
+                          <button
+                            type="button"
+                            onClick={() => setQrModalPh(ph)}
+                            className="group relative h-9 px-2.5 hover:px-3 rounded-xl border border-amber-200 hover:border-gold bg-amber-50/70 hover:bg-gold/15 text-gold-dark flex items-center justify-center transition-all duration-300 ease-out shadow-2xs hover:shadow-md cursor-pointer overflow-hidden select-none"
+                            title="View Photographer Login QR Code"
+                            aria-label="View Photographer Login QR Code"
+                          >
+                            <QrCode size={17} className="shrink-0 transition-all duration-300 text-gold-dark" />
+                            <span className="action-expand-label text-xs font-semibold text-gold-dark">
+                              QR Pass
+                            </span>
+                          </button>
+
                           {/* View Profile & Schedule */}
                           <button
                             type="button"
@@ -1210,6 +1227,38 @@ export default function AdminPhotographers() {
                 </p>
               </div>
 
+              {/* Scannable Mobile Login QR Pass */}
+              <div className="p-3.5 rounded-xl bg-amber-50/50 border border-amber-200/80 flex flex-col sm:flex-row items-center gap-4">
+                {selectedPh.qr_login_token ? (
+                  <div className="p-2 rounded-xl bg-white border border-amber-200 shadow-2xs shrink-0">
+                    <PhotographerQRCodeSVG
+                      photographerToken={selectedPh.qr_login_token}
+                      size={92}
+                      level="M"
+                      includeMargin={false}
+                      foregroundColor="#181410"
+                      backgroundColor="#ffffff"
+                    />
+                  </div>
+                ) : null}
+                <div className="flex-1 text-center sm:text-left space-y-1.5">
+                  <div className="flex items-center justify-center sm:justify-start gap-1.5">
+                    <QrCode size={14} className="text-gold-dark" />
+                    <span className="text-xs font-heading font-bold text-primary">
+                      Mobile App Login QR Pass
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-600 leading-relaxed">
+                    Scan this unique QR code using the mobile onboarding scanner or Scan tab to sign in directly to this photographer&apos;s credentials, schedules, and profile.
+                  </p>
+                  {selectedPh.qr_login_token && (
+                    <span className="inline-block text-[11px] font-mono text-gold-dark bg-white px-2 py-0.5 rounded border border-amber-200/80">
+                      ID: {selectedPh.qr_login_token.slice(0, 8).toUpperCase()}...{selectedPh.qr_login_token.slice(-4).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+              </div>
+
               {/* Recorded Availability Schedule */}
               <div>
                 <h3 className="text-xs font-heading font-bold text-primary mb-2 flex items-center gap-1.5">
@@ -1315,18 +1364,32 @@ export default function AdminPhotographers() {
 
             {/* Modal Footer */}
             <div className="p-3.5 border-t border-neutral-100 bg-neutral-50/70 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => {
-                  const target = selectedPh;
-                  setSelectedPh(null);
-                  openEditModal(target);
-                }}
-                className="px-3 py-1.5 text-xs font-semibold text-neutral-700 bg-white border border-neutral-200 hover:border-gold rounded-lg transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <Edit3 size={12} className="text-gold" />
-                <span>Edit Profile</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = selectedPh;
+                    setSelectedPh(null);
+                    setQrModalPh(target);
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold text-gold-dark bg-amber-50 border border-amber-200 hover:border-gold rounded-lg transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <QrCode size={12} className="text-gold-dark" />
+                  <span>Login QR Pass</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = selectedPh;
+                    setSelectedPh(null);
+                    openEditModal(target);
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold text-neutral-700 bg-white border border-neutral-200 hover:border-gold rounded-lg transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Edit3 size={12} className="text-gold" />
+                  <span>Edit Profile</span>
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setSelectedPh(null)}
@@ -1337,6 +1400,25 @@ export default function AdminPhotographers() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Unique Photographer Login QR Pass Modal */}
+      {qrModalPh && (
+        <PhotographerQRModal
+          photographer={qrModalPh}
+          onClose={() => setQrModalPh(null)}
+          onTokenRotated={(phId, nextToken) => {
+            setPhotographers((prev) =>
+              prev.map((item) =>
+                item.id === phId ? { ...item, qr_login_token: nextToken } : item
+              )
+            );
+            setQrModalPh((prev) =>
+              prev && prev.id === phId ? { ...prev, qr_login_token: nextToken } : prev
+            );
+            notifySuccess('Photographer QR pass regenerated cleanly.');
+          }}
+        />
       )}
     </div>
   );

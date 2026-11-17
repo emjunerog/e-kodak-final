@@ -1,11 +1,7 @@
 /**
- * GlassCard.jsx — True glassmorphism card.
- * Same API: { children, style, glow, gradient, highlight, borderGold }
- *  + optional { blurred=true, intensity }.
- * Renders a real hardware BlurView foundation with a light translucent
- * wash and a softened gradient veil, finished with a hairline border and
- * a top specular highlight. Set blurred={false} to fall back to the
- * plain translucent fill (e.g. inside already-blurred sheets).
+ * GlassCard.jsx — Tinted frosted glass card container.
+ * Renders a theme-colored frosted gradient surface + subtle top specular
+ * highlight without noisy circular decorations behind text.
  */
 
 import React from 'react';
@@ -23,12 +19,33 @@ export default function GlassCard({
   highlight = true,
   borderGold = false,
   blurred = true,
+  opaque = false,
   intensity,
 }) {
-  const { isDark, colors, gradients } = useTheme();
-  const cardBorder = borderGold || glow
+  const { isDark, isSage, highContrast, colors, gradients } = useTheme();
+  const cardBorder = highContrast
     ? colors.gold.borderLight
-    : (colors.surface?.hairline || colors.gold.border);
+    : borderGold || glow
+      ? colors.gold.borderLight
+      : isDark
+        ? 'rgba(180, 198, 224, 0.20)'
+        : isSage
+          ? 'rgba(194, 206, 184, 0.92)'
+          : 'rgba(216, 222, 234, 0.94)';
+
+  const resolvedBackground = opaque || highContrast
+    ? colors.bg.card
+    : Platform.OS === 'ios'
+      ? isDark
+        ? 'rgba(24, 26, 36, 0.62)'
+        : isSage
+          ? 'rgba(248, 250, 245, 0.72)'
+          : 'rgba(255, 252, 248, 0.72)'
+      : isDark
+        ? 'rgba(24, 27, 38, 0.76)'
+        : isSage
+          ? 'rgba(248, 250, 245, 0.78)'
+          : 'rgba(252, 250, 247, 0.78)';
 
   return (
     <View
@@ -36,7 +53,8 @@ export default function GlassCard({
         styles.container,
         {
           borderColor: cardBorder,
-          backgroundColor: isDark ? 'rgba(24, 22, 26, 0.58)' : 'rgba(255, 255, 255, 0.72)',
+          borderWidth: highContrast ? 1.75 : 1,
+          backgroundColor: resolvedBackground,
           shadowColor: isDark ? '#000000' : '#6B5530',
           shadowOpacity: isDark ? 0.28 : 0.08,
         },
@@ -50,30 +68,46 @@ export default function GlassCard({
         style,
       ]}
     >
-      {/* Real frosted-glass foundation */}
-      {blurred && (
+      {/* Native frosted glass on iOS; tinted frosted gradient across all platforms */}
+      {!opaque && blurred && Platform.OS === 'ios' && (
         <BlurView
-          intensity={intensity ?? (isDark ? 45 : 32)}
+          intensity={intensity ?? (isDark ? 45 : 36)}
           tint={isDark ? 'dark' : 'light'}
           style={StyleSheet.absoluteFill}
         />
       )}
 
-      {/* Soft gradient veil (kept subtle so content stays legible) */}
-      {gradient && (
-        <View style={[StyleSheet.absoluteFill, { opacity: 0.5 }]}>
+      {/* Rich theme gradient fill inside frost surface */}
+      {!opaque && gradient && (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: 0.88 }]}>
           <LinearGradient
             colors={gradients.glassCard}
             start={{ x: 0, y: 0 }}
-            end={{ x: 0.8, y: 1 }}
+            end={{ x: 0.9, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
         </View>
       )}
 
+      {/* Subtle top-edge frost shimmer */}
+      {!opaque && (
+        <LinearGradient
+          pointerEvents="none"
+          colors={
+            isDark
+              ? ['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0)']
+              : ['rgba(255, 255, 255, 0.56)', 'rgba(255, 255, 255, 0)']
+          }
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.topFrostGlaze}
+        />
+      )}
+
       {/* Top specular edge highlight */}
       {highlight && (
         <LinearGradient
+          pointerEvents="none"
           colors={gradients.glassHighlight}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
@@ -96,7 +130,13 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     elevation: Platform.OS === 'android' ? 2 : 10,
   },
-
+  topFrostGlaze: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 18,
+  },
   specularHighlight: {
     position: 'absolute',
     top: 0,

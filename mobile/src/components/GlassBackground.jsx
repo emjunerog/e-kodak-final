@@ -1,124 +1,159 @@
-/**
- * GlassBackground.jsx
- * Shared ambient backdrop for every app screen — the foundation of the
- * app-wide "Modern Atelier" glass system.
- * Layers (all pointer-transparent, zero behaviour):
- *  1. Theme base fill + vertical studio wash
- *  2. Three slowly drifting aurora orbs (champagne, ember, violet) that
- *     give frosted surfaces something soft to blur
- *  3. Fine top vignette for header legibility
- *
- * Animations are transform-only and native-driven (each orb owns its own
- * Animated.Value, never shared with layout props).
- *
- * Usage: render as the first child of the screen root View.
- */
-
-import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated, Easing, Dimensions } from 'react-native';
+import React from 'react';
+import { View, StyleSheet, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import Svg, { Defs, RadialGradient, Stop, Rect } from 'react-native-svg';
 import { useTheme } from '../context/ThemeContext';
 
-const { width: W, height: H } = Dimensions.get('window');
+/**
+ * GlassBackground
+ * Renders a lush, frosted gradient backdrop with smooth radial color blooms
+ * (feathered smoothly to 0 opacity with no sharp circular outlines) and a
+ * gentle translucent frost glaze so theme colors stay vivid and blurred.
+ */
+const GlassBackground = ({ children, variant }) => {
+  const { isDark, isSage, colors } = useTheme();
+  const mode = variant || (isDark ? 'dark' : isSage ? 'sage' : 'light');
+  const isDarkMode = mode === 'dark';
+  const isSageMode = mode === 'sage';
 
-function Orb({ color, size, top, left, dx, dy, duration, delay = 0 }) {
-  const t = useRef(new Animated.Value(0)).current;
+  const baseBg = isDarkMode
+    ? colors.bg.base
+    : isSageMode
+      ? '#EDF2E7'
+      : '#EDEFF6';
 
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(delay),
-        Animated.timing(t, { toValue: 1, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(t, { toValue: 0, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [t, duration, delay]);
+  const gradientColors = isDarkMode
+    ? ['#12101A', '#131926', '#11141E', '#0B0D13']
+    : isSageMode
+      ? ['#F6F8F2', '#E5EDE0', '#EEF3E9', '#DDE7D5']
+      : ['#F9F2E6', '#EBF1F9', '#F3F5FA', '#E2EAF6'];
+
+  // Rich theme-tinted ambient glows feathered softly to 0 at edges
+  const warmGlow = isDarkMode
+    ? '#D9B46C'
+    : isSageMode
+      ? '#B4C8A2'
+      : '#E6C27D';
+  const coolGlow = isDarkMode
+    ? '#6B8FC2'
+    : isSageMode
+      ? '#95AC84'
+      : '#A4BDDD';
+  const secondaryGlow = isDarkMode
+    ? '#7A5B8E'
+    : isSageMode
+      ? '#CBD9BF'
+      : '#EBD3AB';
+
+  const glowOpacityMain = isDarkMode ? 0.22 : isSageMode ? 0.50 : 0.48;
+  const glowOpacityCool = isDarkMode ? 0.20 : isSageMode ? 0.46 : 0.48;
+  const glowOpacityWarm = isDarkMode ? 0.16 : isSageMode ? 0.42 : 0.44;
 
   return (
-    <Animated.View
-      style={{
-        position: 'absolute',
-        top,
-        left,
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: color,
-        transform: [
-          { translateX: t.interpolate({ inputRange: [0, 1], outputRange: [0, dx] }) },
-          { translateY: t.interpolate({ inputRange: [0, 1], outputRange: [0, dy] }) },
-          { scale: t.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }) },
-        ],
-      }}
-    />
-  );
-}
+    <View
+      pointerEvents={children ? 'box-none' : 'none'}
+      style={[styles.wrapper, { backgroundColor: baseBg }]}
+    >
+      <View
+        pointerEvents="none"
+        style={[styles.container, { backgroundColor: baseBg }]}
+      >
+        <LinearGradient
+          colors={gradientColors}
+          locations={[0, 0.36, 0.72, 1]}
+          start={{ x: 0.1, y: 0 }}
+          end={{ x: 0.9, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
 
-export default function GlassBackground({ children }) {
-  const { isDark, colors } = useTheme();
+        {/* Feathered gaussian ambient gradient blooms — rich color, zero circle outlines */}
+        <Svg
+          width="100%"
+          height="100%"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          style={StyleSheet.absoluteFill}
+        >
+          <Defs>
+            <RadialGradient id="ekBgTopRight" cx="84%" cy="10%" rx="62%" ry="46%">
+              <Stop offset="0%" stopColor={coolGlow} stopOpacity={glowOpacityCool} />
+              <Stop offset="45%" stopColor={coolGlow} stopOpacity={glowOpacityCool * 0.48} />
+              <Stop offset="80%" stopColor={coolGlow} stopOpacity={glowOpacityCool * 0.12} />
+              <Stop offset="100%" stopColor={coolGlow} stopOpacity={0} />
+            </RadialGradient>
 
-  return (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.bg.base }]}>
-      {/* Studio wash */}
-      <LinearGradient
-        colors={
-          isDark
-            ? ['#141216', '#0B0A0C', '#09080A', '#0E0C0F']
-            : ['#FBF9F5', '#F6F3EE', '#F1ECE4', '#F7F4EF']
-        }
-        locations={[0, 0.35, 0.7, 1]}
-        style={StyleSheet.absoluteFillObject}
-      />
+            <RadialGradient id="ekBgMidLeft" cx="10%" cy="40%" rx="60%" ry="44%">
+              <Stop offset="0%" stopColor={warmGlow} stopOpacity={glowOpacityMain} />
+              <Stop offset="45%" stopColor={warmGlow} stopOpacity={glowOpacityMain * 0.48} />
+              <Stop offset="82%" stopColor={warmGlow} stopOpacity={glowOpacityMain * 0.12} />
+              <Stop offset="100%" stopColor={warmGlow} stopOpacity={0} />
+            </RadialGradient>
 
-      {/* Drifting aurora orbs */}
-      <Orb
-        color={isDark ? 'rgba(217,180,108,0.11)' : 'rgba(217,180,108,0.20)'}
-        size={W * 0.9}
-        top={-W * 0.35}
-        left={W * 0.35}
-        dx={-30}
-        dy={24}
-        duration={9000}
-      />
-      <Orb
-        color={isDark ? 'rgba(242,140,58,0.07)' : 'rgba(242,140,58,0.10)'}
-        size={W * 0.75}
-        top={H * 0.38}
-        left={-W * 0.38}
-        dx={36}
-        dy={-28}
-        duration={11000}
-        delay={600}
-      />
-      <Orb
-        color={isDark ? 'rgba(140,110,220,0.06)' : 'rgba(122,184,255,0.08)'}
-        size={W * 0.8}
-        top={H * 0.72}
-        left={W * 0.4}
-        dx={-24}
-        dy={-30}
-        duration={13000}
-        delay={1200}
-      />
+            <RadialGradient id="ekBgLowRight" cx="88%" cy="76%" rx="62%" ry="46%">
+              <Stop offset="0%" stopColor={coolGlow} stopOpacity={glowOpacityCool} />
+              <Stop offset="48%" stopColor={coolGlow} stopOpacity={glowOpacityCool * 0.46} />
+              <Stop offset="84%" stopColor={coolGlow} stopOpacity={glowOpacityCool * 0.10} />
+              <Stop offset="100%" stopColor={coolGlow} stopOpacity={0} />
+            </RadialGradient>
 
-      {/* Top vignette for header legibility */}
-      <LinearGradient
-        colors={isDark ? ['rgba(9,8,10,0.55)', 'transparent'] : ['rgba(255,255,255,0.5)', 'transparent']}
-        style={styles.topVignette}
-      />
-      {children}
+            <RadialGradient id="ekBgLowLeft" cx="16%" cy="94%" rx="58%" ry="40%">
+              <Stop offset="0%" stopColor={secondaryGlow} stopOpacity={glowOpacityWarm} />
+              <Stop offset="50%" stopColor={secondaryGlow} stopOpacity={glowOpacityWarm * 0.40} />
+              <Stop offset="100%" stopColor={secondaryGlow} stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+
+          <Rect x="0" y="0" width="100" height="100" fill="url(#ekBgTopRight)" />
+          <Rect x="0" y="0" width="100" height="100" fill="url(#ekBgMidLeft)" />
+          <Rect x="0" y="0" width="100" height="100" fill="url(#ekBgLowRight)" />
+          <Rect x="0" y="0" width="100" height="100" fill="url(#ekBgLowLeft)" />
+        </Svg>
+
+        {/* Subtle frosted mist glaze — preserves rich gradient colors beneath */}
+        {Platform.OS === 'ios' && (
+          <BlurView
+            intensity={isDarkMode ? 32 : 34}
+            tint={isDarkMode ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+        )}
+        <LinearGradient
+          colors={
+            isDarkMode
+              ? ['rgba(22, 20, 32, 0.14)', 'rgba(12, 14, 22, 0.06)', 'rgba(20, 24, 36, 0.16)']
+              : isSageMode
+                ? ['rgba(255, 255, 253, 0.14)', 'rgba(228, 238, 220, 0.08)', 'rgba(218, 231, 208, 0.16)']
+                : ['rgba(255, 252, 245, 0.14)', 'rgba(235, 242, 252, 0.08)', 'rgba(226, 236, 249, 0.16)']
+          }
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
+
+      {children ? (
+        <View style={styles.foreground} collapsable={false}>
+          {children}
+        </View>
+      ) : null}
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  topVignette: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 140,
+  wrapper: {
+    ...StyleSheet.absoluteFill,
+  },
+  container: {
+    ...StyleSheet.absoluteFill,
+    overflow: 'hidden',
+  },
+  foreground: {
+    flex: 1,
+    position: 'relative',
+    zIndex: 1,
   },
 });
+
+export default GlassBackground;

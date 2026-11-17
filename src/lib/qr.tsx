@@ -98,6 +98,14 @@ export function generateQRDataURL(bookingToken: string): string {
   return `/pass?token=${encodeURIComponent(bookingToken)}`;
 }
 
+export function generatePhotographerQRDataURL(photographerToken: string): string {
+  const clean = (photographerToken || '').trim();
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}/photographer-pass?ph_token=${encodeURIComponent(clean)}`;
+  }
+  return `/photographer-pass?ph_token=${encodeURIComponent(clean)}`;
+}
+
 export function validateBookingQRToken(token: string): { valid: boolean; bookingToken?: string; error?: string } {
   const payload = decodeQRBookingPayload(token);
   if (!payload || !payload.bid) {
@@ -142,6 +150,44 @@ export function QRCodeCanvas({
   ...options
 }: { bookingToken: string } & QRGenerationOptions) {
   const data = generateQRDataURL(bookingToken);
+  return (
+    <BaseQRCodeCanvas
+      value={data}
+      size={options.size ?? defaultQRStyle.size}
+      level={options.level ?? defaultQRStyle.level}
+      includeMargin={options.includeMargin ?? defaultQRStyle.includeMargin}
+      fgColor={options.foregroundColor ?? defaultQRStyle.foregroundColor}
+      bgColor={options.backgroundColor ?? defaultQRStyle.backgroundColor}
+      className={options.className}
+      style={options.style}
+    />
+  );
+}
+
+export function PhotographerQRCodeSVG({
+  photographerToken,
+  ...options
+}: { photographerToken: string } & QRGenerationOptions) {
+  const data = generatePhotographerQRDataURL(photographerToken);
+  return (
+    <BaseQRCodeSVG
+      value={data}
+      size={options.size ?? defaultQRStyle.size}
+      level={options.level ?? defaultQRStyle.level}
+      includeMargin={options.includeMargin ?? defaultQRStyle.includeMargin}
+      fgColor={options.foregroundColor ?? defaultQRStyle.foregroundColor}
+      bgColor={options.backgroundColor ?? defaultQRStyle.backgroundColor}
+      className={options.className}
+      style={options.style}
+    />
+  );
+}
+
+export function PhotographerQRCodeCanvas({
+  photographerToken,
+  ...options
+}: { photographerToken: string } & QRGenerationOptions) {
+  const data = generatePhotographerQRDataURL(photographerToken);
   return (
     <BaseQRCodeCanvas
       value={data}

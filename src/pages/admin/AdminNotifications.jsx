@@ -297,7 +297,7 @@ export default function AdminNotifications() {
   const [emailBody, setEmailBody] = useState('');
   const [emailCta, setEmailCta] = useState('View Studio Portal');
   const [smsMessage, setSmsMessage] = useState('');
-  const [smsGateway, setSmsGateway] = useState('semaphore');
+  const [smsGateway, setSmsGateway] = useState('textbee');
   const [sendingDispatch, setSendingDispatch] = useState(false);
 
   // Load Data
@@ -1317,6 +1317,7 @@ export default function AdminNotifications() {
                             onChange={e => setSmsGateway(e.target.value)}
                             className="bg-white border border-neutral-200 rounded px-1 py-0.5 text-[10.5px] font-semibold outline-none"
                           >
+                            <option value="textbee">TextBee Android Gateway (Active)</option>
                             <option value="semaphore">Semaphore PH</option>
                             <option value="philsms">PhilSMS</option>
                             <option value="twilio">Twilio Global</option>
