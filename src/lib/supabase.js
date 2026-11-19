@@ -1,4 +1,4 @@
-﻿/**
+/**
  * supabase.js
  * ===========
  * SUPABASE CLIENT INITIALIZATION WITH FULL TAB ISOLATION
