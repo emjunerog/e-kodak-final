@@ -318,14 +318,14 @@ export async function getCustomers({ page = 1, pageSize = 20, search = '', force
     let query = supabase
       .from('profiles')
       .select(`
-        id, first_name, last_name, middle_name, phone, address, avatar_url, is_active, created_at, updated_at, role, bio, studio_specs,
+        id, first_name, last_name, middle_name, email, phone, address, avatar_url, is_active, created_at, updated_at, role, bio, studio_specs,
         bookings(id, booking_number, status, payment_status, total_amount, event_date, is_deleted, created_at, service_id, tier_name, service:services(id, name, slug, category))
       `, { count: 'exact' })
       .eq('role', 'customer')
       .order('created_at', { ascending: false })
       .range(from, to);
     if (search.trim()) {
-      query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,phone.ilike.%${search}%`);
+      query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
     }
     const { data, error, count } = await query;
     if (error) throw error;
@@ -354,7 +354,7 @@ export async function getCustomerDetail(id) {
     const { data, error } = await supabase
       .from('profiles')
       .select(`
-        id, first_name, last_name, middle_name, phone, address, avatar_url, is_active, created_at, role, bio, studio_specs,
+        id, first_name, last_name, middle_name, email, phone, address, avatar_url, is_active, created_at, role, bio, studio_specs,
         bookings(id, booking_number, status, payment_status, event_date, is_deleted, created_at, total_amount, service:services(name))
       `)
       .eq('id', id)

@@ -14,6 +14,7 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -33,6 +34,7 @@ import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import {
   RefreshCw,
+  CalendarDays,
   Clock,
   MapPin,
   UserCheck,
@@ -50,7 +52,6 @@ import GlassHeader from '../components/GlassHeader';
 import GlassCard from '../components/GlassCard';
 import GoldButton from '../components/GoldButton';
 import CardDecorElements from '../components/CardDecorElements';
-import StatusBadge from '../components/StatusBadge';
 import StudioShapeLoader from '../components/StudioShapeLoader';
 import ShootDetailModal from '../components/ShootDetailModal';
 import { verifyPhotographerSession } from '../services/bookingService';
@@ -63,7 +64,6 @@ import {
   fetchPhotographerAvailability,
   saveDayAvailability,
   acceptPhotographerAssignment,
-  declinePhotographerAssignment,
   updatePhotographerShootStatus,
   requestPhotographerReschedule,
 } from '../services/photographerService';
@@ -72,6 +72,8 @@ import { useDialog } from '../context/DialogContext';
 import { Typography } from '../theme';
 
 const WEEKDAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const LINEUP_SCENERY_LIGHT = require('../../assets/cover-atelier-gold.jpg');
+const LINEUP_SCENERY_DARK = require('../../assets/cover-velvet-twilight.jpg');
 
 function parseLocalDate(dateStr) {
   const parts = String(dateStr || '').split('-').map(Number);
@@ -276,20 +278,24 @@ export default function PhotographerScheduleScreen({ navigation }) {
   const shootsByDate = useMemo(() => {
     const map = {};
     bookings.forEach((b) => {
-      const key = normalizeDateStr(b.shoot_date || b.booking_date);
+      const key = normalizeDateStr(b.session_date || b.shoot_date || b.booking_date);
       if (!key) return;
       if (!map[key]) map[key] = [];
       map[key].push(b);
     });
     Object.keys(map).forEach((key) => {
-      map[key].sort((a, b) => (a.shoot_time || '').localeCompare(b.shoot_time || ''));
+      map[key].sort((a, b) =>
+        String(a.session_time || a.shoot_time || '').localeCompare(
+          String(b.session_time || b.shoot_time || ''),
+        ),
+      );
     });
     return map;
   }, [bookings]);
 
   const dayShoots = shootsByDate[selectedDateKey] || [];
   const selectedDayAvail = availabilityMap[selectedDateKey];
-  const activeAvailStatus = selectedDayAvail?.status || 'available';
+  const activeAvailStatus = selectedDayAvail?.status || 'unset';
 
   const shiftMonth = (delta) => {
     Haptics.selectionAsync().catch(() => {});
@@ -313,6 +319,46 @@ export default function PhotographerScheduleScreen({ navigation }) {
     setSelectedDateKey(dateKey);
     if (typeof yearOverride === 'number' && typeof monthOverride === 'number') {
       setCalendarMonth({ year: yearOverride, monthIndex: monthOverride });
+    }
+    const dayOrders = shootsByDate[dateKey] || [];
+    const savedDay = availabilityMap[dateKey];
+
+    if (dayOrders.length > 0) {
+      const summaryLines = dayOrders
+        .slice(0, 3)
+        .map(
+          (s) =>
+            `• ${s.profile?.full_name || s.client_name || 'Studio Client'} (${formatTime12(s.session_time || s.shoot_time) || 'Scheduled'})`,
+        )
+        .join('\n');
+      const extraCount = dayOrders.length > 3 ? `\n+${dayOrders.length - 3} more` : '';
+      const availLine = savedDay
+        ? `\n\nAvailability: ${
+            savedDay.status === 'available'
+              ? 'Available'
+              : savedDay.status === 'partial'
+                ? `${formatTime12(savedDay.startTime || '08:00')} - ${formatTime12(savedDay.endTime || '17:00')}`
+                : 'Off-Duty'
+          }`
+        : '';
+      showAlert(
+        'Order Scheduled on This Day',
+        `You have ${dayOrders.length} assigned ${dayOrders.length === 1 ? 'shoot' : 'shoots'}:\n${summaryLines}${extraCount}${availLine}`,
+      );
+      return;
+    }
+
+    if (savedDay) {
+      if (savedDay.status === 'available') {
+        showAlert('Availability', 'You are available in this day');
+      } else if (savedDay.status === 'partial') {
+        showAlert(
+          'Custom Schedule',
+          `You are available in this day from ${formatTime12(savedDay.startTime || '08:00')} to ${formatTime12(savedDay.endTime || '17:00')}.`,
+        );
+      } else if (savedDay.status === 'off') {
+        showAlert('Off-Duty', 'You marked this day as Off-Duty.');
+      }
     }
   };
 
@@ -398,28 +444,6 @@ export default function PhotographerScheduleScreen({ navigation }) {
     }
   };
 
-  const handleDeclineShoot = async (booking, reason) => {
-    if (!photographer?.id) return;
-    setShootBusy(true);
-    try {
-      const res = await declinePhotographerAssignment({
-        bookingId: booking.id,
-        photographerId: photographer.id,
-        photographerName: photographer.full_name || photographer.email,
-        bookingNumber: booking.booking_number,
-        reason,
-      });
-      if (res.error) {
-        showAlert('Decline Failed', res.error.message || 'Could not decline assignment.');
-        return;
-      }
-      setSelectedShoot(null);
-      await loadSchedule();
-    } finally {
-      setShootBusy(false);
-    }
-  };
-
   const handleAdvanceStatus = async (booking, nextStatus) => {
     if (!photographer?.id) return;
     setShootBusy(true);
@@ -468,6 +492,18 @@ export default function PhotographerScheduleScreen({ navigation }) {
   };
 
   const getAvailabilityPillMeta = (status) => {
+    if (status === 'unset') {
+      return {
+        label: 'No Schedule',
+        statement: 'No inputted schedule',
+        dot: isDark ? '#94A3B8' : '#64748B',
+        bg: isDark ? 'rgba(148, 163, 184, 0.16)' : 'rgba(100, 116, 139, 0.12)',
+        text: isDark ? '#CBD5E1' : '#475569',
+        frostColors: isDark
+          ? ['rgba(148, 163, 184, 0.0)', 'rgba(148, 163, 184, 0.06)', 'rgba(148, 163, 184, 0.12)']
+          : ['rgba(255, 255, 255, 0.0)', 'rgba(241, 245, 249, 0.55)', 'rgba(226, 232, 240, 0.40)'],
+      };
+    }
     if (status === 'off') {
       return {
         label: 'Off-Duty',
@@ -655,14 +691,31 @@ export default function PhotographerScheduleScreen({ navigation }) {
                 const isSelected = cell.key === selectedDateKey;
                 const isToday = cell.key === todayKey;
                 const shootCount = (shootsByDate[cell.key] || []).length;
-                const dayAvail = availabilityMap[cell.key]?.status || 'available';
-                const hasCustomAvail = Boolean(availabilityMap[cell.key]);
+                const dayAvailObj = availabilityMap[cell.key];
+                const dayAvail = dayAvailObj?.status || null;
+                const hasCustomAvail = Boolean(dayAvailObj);
                 const availDotColor =
                   dayAvail === 'off'
                     ? '#EF4444'
                     : dayAvail === 'partial'
                       ? '#F59E0B'
                       : '#10B981';
+                const statusCellStyle =
+                  hasCustomAvail && !isSelected
+                    ? dayAvail === 'off'
+                      ? styles.calCellOff
+                      : dayAvail === 'partial'
+                        ? styles.calCellPartial
+                        : styles.calCellAvailable
+                    : null;
+                const statusNumStyle =
+                  hasCustomAvail && !isSelected
+                    ? dayAvail === 'off'
+                      ? styles.calCellNumOff
+                      : dayAvail === 'partial'
+                        ? styles.calCellNumPartial
+                        : styles.calCellNumAvailable
+                    : null;
 
                 return (
                   <TouchableOpacity
@@ -680,6 +733,7 @@ export default function PhotographerScheduleScreen({ navigation }) {
                     <View
                       style={[
                         styles.calCellPill,
+                        statusCellStyle,
                         isToday && !isSelected && styles.calCellTodayRing,
                         isSelected && styles.calCellSelected,
                         !cell.inCurrentMonth && styles.calCellOutside,
@@ -689,6 +743,7 @@ export default function PhotographerScheduleScreen({ navigation }) {
                         style={[
                           styles.calCellNum,
                           cell.isWeekend && !isSelected && styles.calCellWeekendText,
+                          statusNumStyle,
                           isSelected && styles.calCellNumSelected,
                         ]}
                       >
@@ -699,18 +754,18 @@ export default function PhotographerScheduleScreen({ navigation }) {
                         {shootCount > 0 && (
                           <View
                             style={[
-                              styles.calShootDot,
+                              styles.calShootStripe,
                               isSelected && { backgroundColor: '#FFFFFF' },
                             ]}
                           />
                         )}
-                        {hasCustomAvail && dayAvail !== 'available' && (
+                        {hasCustomAvail && (
                           <View
                             style={[
                               styles.calAvailDot,
                               {
                                 backgroundColor: isSelected
-                                  ? 'rgba(255,255,255,0.85)'
+                                  ? 'rgba(255,255,255,0.9)'
                                   : availDotColor,
                               },
                             ]}
@@ -730,24 +785,45 @@ export default function PhotographerScheduleScreen({ navigation }) {
             {workweekDays.map((day) => {
               const isSelected = day.key === selectedDateKey;
               const count = (shootsByDate[day.key] || []).length;
-              const dayAvail = availabilityMap[day.key]?.status || 'available';
-              const nonAvailableDotColor =
+              const dayAvailObj = availabilityMap[day.key];
+              const dayAvail = dayAvailObj?.status || null;
+              const hasScheduledStatus = Boolean(dayAvailObj);
+              const availDotColor =
                 dayAvail === 'off'
                   ? '#EF4444'
                   : dayAvail === 'partial'
                     ? '#F59E0B'
-                    : null;
+                    : dayAvail === 'available'
+                      ? '#10B981'
+                      : null;
+              const chipStatusStyle =
+                hasScheduledStatus && !isSelected
+                  ? dayAvail === 'off'
+                    ? styles.dayChipOff
+                    : dayAvail === 'partial'
+                      ? styles.dayChipPartial
+                      : styles.dayChipAvailable
+                  : null;
 
               return (
                 <TouchableOpacity
                   key={day.key}
                   style={[
                     styles.dayChip,
+                    chipStatusStyle,
                     isSelected && styles.dayChipSelected,
                   ]}
                   onPress={() => handleSelectDate(day.key)}
                   activeOpacity={0.82}
                 >
+                  {count > 0 && (
+                    <View
+                      style={[
+                        styles.dayChipOrderStripe,
+                        isSelected && { backgroundColor: '#FFFFFF' },
+                      ]}
+                    />
+                  )}
                   <Text
                     style={[
                       styles.dayWeekday,
@@ -765,13 +841,13 @@ export default function PhotographerScheduleScreen({ navigation }) {
                   >
                     {day.dayNum}
                   </Text>
-                  {(nonAvailableDotColor || count > 0) && (
+                  {(availDotColor || count > 0) && (
                     <View style={styles.dayFooterRow}>
-                      {nonAvailableDotColor && (
+                      {availDotColor && (
                         <View
                           style={[
                             styles.availDot,
-                            { backgroundColor: nonAvailableDotColor },
+                            { backgroundColor: isSelected ? '#FFFFFF' : availDotColor },
                           ]}
                         />
                       )}
@@ -856,9 +932,11 @@ export default function PhotographerScheduleScreen({ navigation }) {
                 <View style={styles.availSplitTimeRow}>
                   <Clock size={15} color={colors.gold.DEFAULT} strokeWidth={2.2} />
                   <Text style={styles.availSplitTimeText} numberOfLines={1}>
-                    {activeAvailStatus === 'off'
-                      ? 'No studio hours'
-                      : `${formatTime12(selectedDayAvail?.startTime || '08:00')} - ${formatTime12(selectedDayAvail?.endTime || '17:00')}`}
+                    {activeAvailStatus === 'unset'
+                      ? 'No schedule inputted'
+                      : activeAvailStatus === 'off'
+                        ? 'No studio hours'
+                        : `${formatTime12(selectedDayAvail?.startTime || '08:00')} - ${formatTime12(selectedDayAvail?.endTime || '17:00')}`}
                   </Text>
                 </View>
               </View>
@@ -902,67 +980,119 @@ export default function PhotographerScheduleScreen({ navigation }) {
               <Text style={styles.emptySub}>
                 {activeAvailStatus === 'off'
                   ? 'You marked this day as Off-Duty. Studio dispatch will hold assignments.'
-                  : 'Your calendar is open for this date. New assignments appear here automatically.'}
+                  : activeAvailStatus === 'unset'
+                    ? 'No inputted schedule for this date yet. Tap the pencil button to set your availability.'
+                    : 'Your calendar is open for this date. New assignments appear here automatically.'}
               </Text>
             </GlassCard>
           ) : (
             dayShoots.map((shoot) => {
               const needsAccept = shoot.status === 'CONFIRMED';
+              const shootDateLabel = formatReadableDate(
+                shoot.session_date || shoot.shoot_date || shoot.booking_date,
+              );
+              const shootTimeLabel = formatTime12(
+                shoot.session_time || shoot.shoot_time || shoot.preferred_time,
+              );
+              const shootClient =
+                shoot.profile?.full_name || shoot.client_name || 'Studio Client';
+              const shootLocation =
+                shoot.location_address || shoot.location || 'Main Studio Bay';
+              const frostScrimColors = isDark
+                ? ['rgba(16, 23, 20, 0.74)', 'rgba(18, 28, 24, 0.56)', 'rgba(14, 20, 17, 0.82)']
+                : isSage
+                  ? ['rgba(255, 255, 255, 0.74)', 'rgba(244, 248, 242, 0.52)', 'rgba(232, 240, 228, 0.74)']
+                  : ['rgba(255, 252, 246, 0.78)', 'rgba(250, 243, 230, 0.54)', 'rgba(244, 234, 214, 0.78)'];
+
               return (
                 <TouchableOpacity
                   key={shoot.id}
-                  activeOpacity={0.86}
+                  activeOpacity={0.88}
+                  style={styles.shootSceneryCardWrap}
                   onPress={() => {
                     Haptics.selectionAsync().catch(() => {});
                     setSelectedShoot(shoot);
                   }}
                 >
-                  <GlassCard style={styles.shootCard}>
-                    <View style={styles.shootTopRow}>
-                      <View style={styles.passTag}>
-                        <Text style={styles.passTagText}>
-                          {shoot.booking_number || 'PASS'}
+                  <View style={styles.shootSceneryCard}>
+                    <Image
+                      source={isDark ? LINEUP_SCENERY_DARK : LINEUP_SCENERY_LIGHT}
+                      style={StyleSheet.absoluteFill}
+                      resizeMode="cover"
+                    />
+                    <BlurView
+                      intensity={isDark ? 36 : 30}
+                      tint={isDark ? 'dark' : 'light'}
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <LinearGradient
+                      colors={frostScrimColors}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+
+                    <View style={styles.shootCardContent}>
+                      <View style={styles.shootHeaderRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.shootEyebrow}>ASSIGNED SESSION</Text>
+                          <Text style={styles.clientName} numberOfLines={1}>
+                            {shootClient}
+                          </Text>
+                        </View>
+                        <View style={styles.shootFrostIconBadge}>
+                          <Camera
+                            size={18}
+                            color={isDark ? colors.gold.light : colors.gold.DEFAULT}
+                            strokeWidth={2}
+                          />
+                        </View>
+                      </View>
+
+                      <View style={styles.shootFrostSchedulePill}>
+                        <CalendarDays
+                          size={15}
+                          color={isDark ? colors.gold.light : colors.gold.DEFAULT}
+                          strokeWidth={2.1}
+                        />
+                        <Text style={styles.shootScheduleText} numberOfLines={1}>
+                          {shootDateLabel}
+                          {shootTimeLabel ? ` • ${shootTimeLabel}` : ''}
                         </Text>
                       </View>
-                      <StatusBadge status={shoot.status} />
-                    </View>
 
-                    <Text style={styles.clientName} numberOfLines={1}>
-                      {shoot.client_name || 'Studio Client'}
-                    </Text>
-
-                    <View style={styles.metaStack}>
                       <View style={styles.metaRow}>
-                        <Clock size={14} color={colors.gold.DEFAULT} strokeWidth={2} />
-                        <Text style={styles.metaText}>
-                          {formatTime12(shoot.shoot_time)} •{' '}
-                          {shoot.package_name || 'Studio Session'}
-                        </Text>
-                      </View>
-                      <View style={styles.metaRow}>
-                        <MapPin size={14} color={colors.text.muted} strokeWidth={2} />
+                        <MapPin
+                          size={14}
+                          color={isDark ? 'rgba(255,255,255,0.72)' : '#574E42'}
+                          strokeWidth={2}
+                        />
                         <Text style={styles.metaText} numberOfLines={1}>
-                          {shoot.location || 'Main Studio Bay'}
+                          {shootLocation}
                         </Text>
                       </View>
-                    </View>
 
-                    <View style={styles.shootFooterRow}>
-                      <View style={styles.actionHintRow}>
-                        {needsAccept ? (
-                          <View style={styles.pendingBanner}>
-                            <UserCheck size={13} color={colors.gold.DEFAULT} strokeWidth={2.2} />
-                            <Text style={styles.pendingBannerText}>
-                              Action Needed: Accept or Decline
-                            </Text>
-                          </View>
-                        ) : (
-                          <Text style={styles.tapPrompt}>Open shoot dossier</Text>
-                        )}
+                      <View style={styles.shootFooterRow}>
+                        <View style={styles.actionHintRow}>
+                          {needsAccept ? (
+                            <View style={styles.pendingBanner}>
+                              <UserCheck size={13} color={colors.gold.DEFAULT} strokeWidth={2.2} />
+                              <Text style={styles.pendingBannerText}>
+                                Action Needed: Ready to Accept
+                              </Text>
+                            </View>
+                          ) : (
+                            <Text style={styles.tapPrompt}>Open session details</Text>
+                          )}
+                        </View>
+                        <ChevronRight
+                          size={17}
+                          color={isDark ? colors.gold.light : '#4B4338'}
+                          strokeWidth={2.2}
+                        />
                       </View>
-                      <ChevronRight size={17} color={colors.text.muted} strokeWidth={2.2} />
                     </View>
-                  </GlassCard>
+                  </View>
                 </TouchableOpacity>
               );
             })
@@ -1163,9 +1293,12 @@ export default function PhotographerScheduleScreen({ navigation }) {
         busy={shootBusy}
         onClose={() => setSelectedShoot(null)}
         onAccept={handleAcceptShoot}
-        onDecline={handleDeclineShoot}
         onAdvanceStatus={handleAdvanceStatus}
         onRequestReschedule={handleRequestReschedule}
+        onViewSession={() => {
+          setSelectedShoot(null);
+          navigation.navigate('PhotographerShoots');
+        }}
       />
     </View>
   );
@@ -1323,6 +1456,21 @@ const getStyles = (colors, isDark, isSage) =>
       borderWidth: 1.5,
       borderColor: colors.gold.DEFAULT,
     },
+    calCellAvailable: {
+      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.22)' : 'rgba(16, 185, 129, 0.15)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(110, 231, 183, 0.45)' : 'rgba(16, 185, 129, 0.45)',
+    },
+    calCellPartial: {
+      backgroundColor: isDark ? 'rgba(245, 158, 11, 0.22)' : 'rgba(245, 158, 11, 0.15)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(252, 211, 77, 0.45)' : 'rgba(245, 158, 11, 0.45)',
+    },
+    calCellOff: {
+      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.20)' : 'rgba(239, 68, 68, 0.14)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(252, 165, 165, 0.42)' : 'rgba(239, 68, 68, 0.42)',
+    },
     calCellSelected: {
       backgroundColor: colors.gold.DEFAULT,
     },
@@ -1333,6 +1481,18 @@ const getStyles = (colors, isDark, isSage) =>
       fontFamily: Typography.fontBodySemi,
       fontSize: 13.5,
       color: colors.text.primary,
+    },
+    calCellNumAvailable: {
+      color: isDark ? '#6EE7B7' : '#047857',
+      fontFamily: Typography.fontBodyBold,
+    },
+    calCellNumPartial: {
+      color: isDark ? '#FCD34D' : '#B45309',
+      fontFamily: Typography.fontBodyBold,
+    },
+    calCellNumOff: {
+      color: isDark ? '#FCA5A5' : '#B91C1C',
+      fontFamily: Typography.fontBodyBold,
     },
     calCellWeekendText: {
       color: colors.text.muted,
@@ -1348,11 +1508,21 @@ const getStyles = (colors, isDark, isSage) =>
       height: 6,
       marginTop: 2,
     },
-    calShootDot: {
-      width: 4.5,
-      height: 4.5,
-      borderRadius: 2.25,
-      backgroundColor: colors.gold.DEFAULT,
+    calShootStripe: {
+      width: 18,
+      height: 3.5,
+      borderRadius: 2,
+      backgroundColor: '#D97706',
+    },
+    dayChipOrderStripe: {
+      position: 'absolute',
+      top: 0,
+      left: 12,
+      right: 12,
+      height: 3.5,
+      borderBottomLeftRadius: 3,
+      borderBottomRightRadius: 3,
+      backgroundColor: '#D97706',
     },
     calAvailDot: {
       width: 4.5,
@@ -1392,6 +1562,18 @@ const getStyles = (colors, isDark, isSage) =>
         : isSage
           ? 'rgba(202, 212, 192, 0.90)'
           : 'rgba(218, 224, 236, 0.95)',
+    },
+    dayChipAvailable: {
+      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.20)' : 'rgba(209, 250, 229, 0.78)',
+      borderColor: isDark ? 'rgba(110, 231, 183, 0.45)' : 'rgba(16, 185, 129, 0.50)',
+    },
+    dayChipPartial: {
+      backgroundColor: isDark ? 'rgba(245, 158, 11, 0.20)' : 'rgba(254, 243, 199, 0.82)',
+      borderColor: isDark ? 'rgba(252, 211, 77, 0.45)' : 'rgba(245, 158, 11, 0.50)',
+    },
+    dayChipOff: {
+      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.18)' : 'rgba(254, 226, 226, 0.78)',
+      borderColor: isDark ? 'rgba(252, 165, 165, 0.42)' : 'rgba(239, 68, 68, 0.45)',
     },
     dayChipSelected: {
       backgroundColor: colors.gold.DEFAULT,
@@ -1571,46 +1753,83 @@ const getStyles = (colors, isDark, isSage) =>
       textAlign: 'center',
       lineHeight: 19,
     },
-    shootCard: {
-      padding: 16,
-      marginBottom: 12,
+    shootSceneryCardWrap: {
+      marginBottom: 14,
+      borderRadius: 24,
+      shadowColor: isDark ? '#000000' : '#4E4332',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: isDark ? 0.34 : 0.12,
+      shadowRadius: 16,
+      elevation: isDark ? 0 : 4,
     },
-    shootTopRow: {
+    shootSceneryCard: {
+      borderRadius: 24,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(255, 255, 255, 0.78)',
+      position: 'relative',
+    },
+    shootCardContent: {
+      padding: 18,
+    },
+    shootHeaderRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      marginBottom: 10,
+      gap: 12,
+      marginBottom: 12,
     },
-    passTag: {
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: 10,
-      backgroundColor: colors.gold.bg,
+    shootEyebrow: {
+      fontFamily: Typography.fontBodySemi,
+      fontSize: 10.5,
+      letterSpacing: 1.1,
+      color: isDark ? colors.gold.light : '#6B5C43',
+      marginBottom: 2,
     },
-    passTagText: {
-      fontFamily: Typography.fontBodyBold,
-      fontSize: 11.5,
-      color: colors.gold.DEFAULT,
+    shootFrostIconBadge: {
+      width: 40,
+      height: 40,
+      borderRadius: 14,
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.65)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(255, 255, 255, 0.90)',
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     clientName: {
       fontFamily: Typography.fontHeading,
-      fontSize: 17.5,
-      color: colors.text.primary,
-      marginBottom: 8,
+      fontSize: 18.5,
+      color: isDark ? '#F8FAFC' : '#181410',
     },
-    metaStack: {
-      gap: 6,
-      marginBottom: 12,
+    shootFrostSchedulePill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      borderRadius: 14,
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(255, 255, 255, 0.62)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(255, 255, 255, 0.85)',
+      marginBottom: 10,
+    },
+    shootScheduleText: {
+      fontFamily: Typography.fontBodySemi,
+      fontSize: 13.5,
+      color: isDark ? '#FFFFFF' : '#181410',
+      flex: 1,
     },
     metaRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
+      marginBottom: 12,
+      paddingHorizontal: 2,
     },
     metaText: {
       fontFamily: Typography.fontBodyMedium,
       fontSize: 13.5,
-      color: colors.text.secondary,
+      color: isDark ? 'rgba(255, 255, 255, 0.80)' : '#4B4338',
       flex: 1,
     },
     shootFooterRow: {
@@ -1619,7 +1838,7 @@ const getStyles = (colors, isDark, isSage) =>
       justifyContent: 'space-between',
       paddingTop: 10,
       borderTopWidth: 1,
-      borderTopColor: colors.surface.divider,
+      borderTopColor: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(24, 20, 16, 0.10)',
     },
     actionHintRow: {
       flex: 1,
@@ -1635,9 +1854,9 @@ const getStyles = (colors, isDark, isSage) =>
       color: colors.gold.DEFAULT,
     },
     tapPrompt: {
-      fontFamily: Typography.fontBodyMedium,
+      fontFamily: Typography.fontBodySemi,
       fontSize: 12.5,
-      color: colors.text.muted,
+      color: isDark ? 'rgba(255, 255, 255, 0.72)' : '#5A5042',
     },
     modalBackdropWrap: {
       flex: 1,

@@ -83,11 +83,13 @@ export default function OrderProgressControl({
           title={
             needsPhotographer
               ? 'Assign a photographer first before proceeding to pictorial'
-              : `${action.label} (moves to ${action.nextLabel})`
+              : action.isPhotographerAction
+                ? `${action.label} (${action.overrideHint || 'With photographer — click to override as Admin'})`
+                : `${action.label} (moves to ${action.nextLabel})`
           }
           className={`h-7 px-2.5 rounded-lg border text-[11px] font-bold inline-flex items-center gap-1.5 shrink-0 transition-all cursor-pointer active:scale-[0.98] ${
-            needsPhotographer
-              ? 'bg-neutral-100 text-neutral-500 border-neutral-200 hover:bg-amber-50 hover:text-amber-900 hover:border-amber-300'
+            needsPhotographer || action.isPhotographerAction
+              ? 'bg-neutral-100 text-neutral-400 border-neutral-200 opacity-70 hover:opacity-100 hover:bg-neutral-200/70 hover:text-neutral-700'
               : BUTTON_TONE_CLASSES[action.tone] || BUTTON_TONE_CLASSES.dark
           }`}
         >

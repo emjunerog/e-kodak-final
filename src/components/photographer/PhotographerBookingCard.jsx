@@ -1,62 +1,48 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Link } from 'react-router-dom';
+import React, { useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import {
-  Calendar,
-  Clock,
-  MapPin,
-  Phone,
-  Mail,
-  User,
-  Sparkles,
-  Loader2,
-  Upload,
-  Check,
-  X,
-  ChevronDown,
-  ChevronUp,
-  ExternalLink,
-  GraduationCap,
-  Palette,
-  MessageSquare,
-  FileImage,
-  IdCard,
-  Building2,
+  AlertTriangle,
   BookOpen,
-  Wallet,
-  Eye,
-  Shirt,
-  AlertCircle,
+  Building2,
+  Calendar,
   Camera,
   CheckCircle2,
-  PackageCheck,
-  UserCheck,
-  CalendarCheck,
-  Copy,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  GraduationCap,
+  IdCard,
+  Loader2,
   Package,
-  CheckSquare,
+  Phone,
+  Send,
+  Upload,
+  User,
 } from 'lucide-react';
-import BookingLifecycleBadge from '../admin/BookingLifecycleBadge';
-import { parseBookingBrief } from '../../services/photographerService';
-import { getReferenceImageUrl } from '../../services/bookingService';
+import {
+  parseBookingBrief,
+  resolveEditingWorkflowState,
+  uploadPhotoOutput,
+  submitSamplesToAdmin,
+} from '../../services/photographerService';
+import { getStatusLabel } from '../../lib/bookingUtils';
 
-// Format time from 24h (e.g. 09:00:00) to 12h (9:00 AM)
 function formatTime12h(timeStr) {
   if (!timeStr) return '';
-  const parts = timeStr.split(':');
+  if (/am|pm|full/i.test(String(timeStr))) return String(timeStr);
+  const parts = String(timeStr).split(':');
   const hour = parseInt(parts[0], 10);
-  if (isNaN(hour)) return timeStr;
+  if (Number.isNaN(hour)) return timeStr;
   const minute = parts[1] || '00';
   const ampm = hour >= 12 ? 'PM' : 'AM';
   const hour12 = hour % 12 || 12;
   return `${hour12}:${minute} ${ampm}`;
 }
 
-// Format date to human readable (e.g. Fri, Sep 25, 2026)
 function formatDatePretty(dateStr) {
   if (!dateStr) return 'Date TBD';
   const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
+  if (Number.isNaN(d.getTime())) return dateStr;
   return d.toLocaleDateString('en-US', {
     weekday: 'short',
     month: 'short',
@@ -65,12 +51,85 @@ function formatDatePretty(dateStr) {
   });
 }
 
-// Format raw strings like 'classic_grey' to 'Classic Grey'
-function formatSpecName(str) {
-  if (!str) return '';
-  return str
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+function resolveFormDetails(booking) {
+  const brief = parseBookingBrief(booking);
+  const { academicSpecs, participantDetails } = brief;
+  const studioSpecs = booking?.customer?.studio_specs || {};
+  const studentObj = booking?.student_details || {};
+  const participantObj = booking?.participant_details || {};
+
+  const isSomeoneElse =
+    booking?.booking_for === 'someone_else' ||
+    participantObj?.booking_for === 'someone_else' ||
+    participantDetails?.bookingFor === 'someone_else';
+
+  const accountOwnerName =
+    `${booking?.customer?.first_name || ''} ${booking?.customer?.last_name || ''}`.trim() || 'Client';
+
+  const name = isSomeoneElse
+    ? booking?.participant_name || participantObj?.full_name || participantDetails?.participantName || accountOwnerName
+    : academicSpecs?.studentName || studentObj?.student_name || accountOwnerName;
+
+  const number = isSomeoneElse
+    ? booking?.participant_phone || participantObj?.phone || participantDetails?.phone || booking?.customer?.phone || '—'
+    : booking?.customer?.phone || booking?.participant_phone || participantObj?.phone || '—';
+
+  const school =
+    booking?.school ||
+    studentObj?.school ||
+    academicSpecs?.school ||
+    (!isSomeoneElse ? studioSpecs?.university : '') ||
+    '—';
+
+  const trackOrCourse =
+    booking?.track ||
+    studentObj?.track ||
+    studentObj?.course ||
+    academicSpecs?.degree ||
+    (!isSomeoneElse ? studioSpecs?.degree || studioSpecs?.course : '') ||
+    '';
+  const rawBatch = (
+    booking?.batch ||
+    studentObj?.batch ||
+    academicSpecs?.batch ||
+    (!isSomeoneElse ? studioSpecs?.gradYear : '') ||
+    ''
+  )
+    .toString()
+    .replace(/^Batch\s*/i, '')
+    .trim();
+
+  const classLabel =
+    trackOrCourse && rawBatch
+      ? `${trackOrCourse} · Batch ${rawBatch}`
+      : trackOrCourse || (rawBatch ? `Batch ${rawBatch}` : '—');
+
+  const section =
+    booking?.section ||
+    studentObj?.section ||
+    academicSpecs?.section ||
+    (!isSomeoneElse ? studioSpecs?.section : '') ||
+    '—';
+
+  const idNumber =
+    booking?.student_id ||
+    studentObj?.student_id ||
+    academicSpecs?.studentId ||
+    (!isSomeoneElse ? studioSpecs?.student_id : '') ||
+    '—';
+
+  const serviceName = booking?.service?.name || 'Photoshoot Session';
+  const selectedPackage = booking?.tier_name ? `${serviceName} — ${booking.tier_name}` : serviceName;
+
+  return {
+    name,
+    number,
+    school,
+    classLabel,
+    section,
+    idNumber,
+    selectedPackage,
+  };
 }
 
 export default function PhotographerBookingCard({
@@ -78,140 +137,176 @@ export default function PhotographerBookingCard({
   isExpanded,
   onToggleExpand,
   updatingId,
-  onAccept,
-  onDecline,
+  conflictBooking = null,
+  embedded = false,
+  fillHeight = false,
   onAdvanceStatus,
   onReschedule,
-  onReportIssue,
+  onPhotosSubmitted,
 }) {
-  const [previewImage, setPreviewImage] = useState(null);
-  const [copiedNumber, setCopiedNumber] = useState(false);
-  const brief = parseBookingBrief(booking);
-  const { academicSpecs, hasAcademicSpecs, _weddingSpecs, _corporateSpecs, stylePegs, cleanNotes, clientName, cleanLocation } = brief;
-
   const isUpdating = updatingId === booking.id;
+  const details = resolveFormDetails(booking);
+  const statusUpper = String(booking.status || 'PENDING').toUpperCase();
 
-  const totalAmount = Number(booking.total_amount || 0);
-  const remainingBalance = Number(booking.remaining_balance ?? Math.max(0, totalAmount - Number(booking.down_payment_amount || 0)));
-  const downPayment = Math.max(0, totalAmount - remainingBalance);
+  const fileInputRef = useRef(null);
+  const [extraOutputs, setExtraOutputs] = useState([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [sendingToAdmin, setSendingToAdmin] = useState(false);
+  const [sentLocally, setSentLocally] = useState(false);
+  const [uploadNotice, setUploadNotice] = useState(null);
 
-  // Grab active tier details and highlights directly from database
-  const tierList = Array.isArray(booking.service?.tiers) ? booking.service.tiers : [];
-  const selectedTier = tierList.find(
-    t => t.name?.toLowerCase().trim() === booking.tier_name?.toLowerCase().trim()
-  ) || tierList[0] || null;
+  const editingState = resolveEditingWorkflowState(booking);
+  const existingOutputs = Array.isArray(booking.photo_outputs) ? booking.photo_outputs : [];
+  const allOutputs = [...extraOutputs, ...existingOutputs];
+  const isSentToAdmin = editingState.isSentToAdmin || sentLocally;
+  const isReceivedByAdmin = editingState.isReceivedByAdmin;
 
-  const tierHighlights = Array.isArray(selectedTier?.highlights) ? selectedTier.highlights : [];
-  const serviceInclusions = Array.isArray(booking.service?.inclusions) ? booking.service.inclusions : [];
+  const canStartPictorial = statusUpper === 'PHOTOGRAPHER_ASSIGNED' || statusUpper === 'CONFIRMED';
+  const isOngoingPictorial = statusUpper === 'CAPTURE' || statusUpper === 'IN_PROGRESS';
+  const isEditingStage = statusUpper === 'EDITING';
+  const isEditingWithPhotographer = isEditingStage && !isSentToAdmin;
+  const isPostEditingStage = [
+    'RETOUCHING',
+    'FINALIZED',
+    'PRINTING',
+    'READY',
+    'UNDER_DELIVERY',
+    'COMPLETED',
+  ].includes(statusUpper);
 
-  // Payments recorded from database
-  const paymentsList = Array.isArray(booking.payments) ? booking.payments : [];
-  const latestPayment = paymentsList[0] || null;
+  const sessionStatusLabel = canStartPictorial
+    ? 'Your assigned sessions'
+    : isOngoingPictorial
+      ? 'Ongoing Pictorial'
+      : isEditingWithPhotographer
+        ? 'Pictorial Done · Editing Photos'
+        : isEditingStage && !isReceivedByAdmin
+          ? 'Edited Photos Sent to Admin'
+          : isEditingStage && isReceivedByAdmin
+            ? 'Received by Admin · Under Review'
+            : isPostEditingStage
+              ? 'Confirmed by Admin · Retouching'
+              : getStatusLabel(statusUpper);
 
-  const handleCopyBookingNumber = (e) => {
-    e.stopPropagation();
-    if (booking.booking_number) {
-      navigator.clipboard?.writeText(booking.booking_number);
-      setCopiedNumber(true);
-      setTimeout(() => setCopiedNumber(false), 2000);
+  const handleUploadEditedFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploadingFiles(true);
+    setUploadNotice(null);
+    try {
+      const uploaded = [];
+      for (let i = 0; i < files.length; i += 1) {
+        const setLabel = `Edited Photo ${allOutputs.length + i + 1}`;
+        const { data, error } = await uploadPhotoOutput(files[i], booking.id, setLabel);
+        if (error) throw error;
+        if (data) uploaded.push(data);
+      }
+      setExtraOutputs((prev) => [...uploaded, ...prev]);
+      setUploadNotice({
+        type: 'success',
+        text: `${uploaded.length} edited photo${uploaded.length === 1 ? '' : 's'} uploaded. Ready to send to Admin.`,
+      });
+    } catch (err) {
+      setUploadNotice({
+        type: 'error',
+        text: err?.message || 'Failed to upload edited photo.',
+      });
+    } finally {
+      setUploadingFiles(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  // Modern 6-Step Shoot Pipeline with Icons
-  const LIFECYCLE_STEPS = [
-    { key: 'PHOTOGRAPHER_ASSIGNED', label: 'Assigned', Icon: UserCheck },
-    { key: 'CONFIRMED', label: 'Confirmed', Icon: CalendarCheck },
-    { key: 'CAPTURE', label: 'Shoot', Icon: Camera },
-    { key: 'EDITING', label: 'Editing', Icon: Sparkles },
-    { key: 'READY', label: 'Ready', Icon: CheckCircle2 },
-    { key: 'COMPLETED', label: 'Released', Icon: PackageCheck },
-  ];
-
-  const orderKeys = ['PENDING', 'PHOTOGRAPHER_ASSIGNED', 'CONFIRMED', 'CAPTURE', 'EDITING', 'PRINTING', 'READY', 'COMPLETED'];
-  const currentIndex = orderKeys.indexOf(booking.status);
+  const handleSendPhotosToAdmin = async () => {
+    if (sendingToAdmin) return;
+    if (allOutputs.length === 0) {
+      setUploadNotice({
+        type: 'error',
+        text: 'Please upload at least one edited photo before sending to Admin.',
+      });
+      fileInputRef.current?.click();
+      return;
+    }
+    setSendingToAdmin(true);
+    setUploadNotice(null);
+    try {
+      const { error } = await submitSamplesToAdmin({
+        bookingId: booking.id,
+        photographerId: booking.photographer_id || null,
+        photographerName: 'Studio Photographer',
+        bookingNumber: booking.booking_number || '',
+        photoCount: allOutputs.length,
+        setsSummary: 'Edited Session Photos',
+      });
+      if (error) throw error;
+      setSentLocally(true);
+      setUploadNotice({
+        type: 'success',
+        text: 'Edited photos sent to Admin! Admin must receive and review the order to confirm retouching.',
+      });
+      onPhotosSubmitted?.(booking.id);
+    } catch (err) {
+      setUploadNotice({
+        type: 'error',
+        text: err?.message || 'Failed to send photos to Admin.',
+      });
+    } finally {
+      setSendingToAdmin(false);
+    }
+  };
 
   return (
     <motion.div
-      whileHover={{ y: -1, transition: { duration: 0.15 } }}
-      className={`rounded-2xl border transition-all duration-200 overflow-hidden bg-white shadow-xs w-full ${
-        isExpanded
-          ? 'border-gold ring-2 ring-gold/15 shadow-sm'
-          : 'border-neutral-200/80 hover:border-gold/50 hover:shadow-xs'
-      }`}
+      whileHover={embedded ? undefined : { y: -1, transition: { duration: 0.15 } }}
+      className={`overflow-hidden w-full transition-all duration-200 ${fillHeight ? 'flex-1 flex flex-col' : ''
+        } ${embedded
+          ? conflictBooking
+            ? 'bg-rose-50/25'
+            : 'bg-transparent'
+          : `rounded-2xl border bg-white shadow-xs ${conflictBooking
+            ? 'border-rose-300 ring-1 ring-rose-200'
+            : isExpanded
+              ? 'border-gold ring-2 ring-gold/15 shadow-sm'
+              : 'border-neutral-200/80 hover:border-gold/50 hover:shadow-xs'
+          }`
+        }`}
     >
-      {/* ── 1. Clean Compact Header Bar ── */}
+      {/* ── Compact Header Bar ── */}
       <div
         onClick={onToggleExpand}
-        className="p-4 sm:p-5 cursor-pointer select-none hover:bg-neutral-50/60 transition-colors"
+        className="px-5 py-4 sm:px-6 sm:py-5 cursor-pointer select-none hover:bg-neutral-50/60 transition-colors shrink-0"
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
-          
-          {/* Left: Service Title, Badges & Booking Number */}
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <div className="w-10 h-10 rounded-xl bg-gold/10 border border-gold/25 flex items-center justify-center text-gold-dark shrink-0">
-              {hasAcademicSpecs ? <GraduationCap size={20} /> : <Camera size={20} />}
+          <div className="flex items-center gap-3.5 min-w-0 flex-1">
+            <div className="w-11 h-11 rounded-xl bg-gold/10 border border-gold/25 flex items-center justify-center text-gold-dark shrink-0">
+              <GraduationCap size={22} />
             </div>
 
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={handleCopyBookingNumber}
-                  className="font-mono text-[11px] font-bold text-neutral-800 bg-neutral-100 hover:bg-neutral-200 px-2 py-0.5 rounded-md border border-neutral-200/80 inline-flex items-center gap-1 transition-colors cursor-pointer"
-                  title="Copy booking number"
-                >
-                  <span>#{booking.booking_number}</span>
-                  {copiedNumber ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} className="text-neutral-400" />}
-                </button>
-
-                <BookingLifecycleBadge
-                  status={booking.status}
-                  paymentStatus={booking.payment_status}
-                  layout="inline"
-                />
-
-                {booking.tier_name && (
-                  <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-gold/10 text-gold-dark border border-gold/25 flex items-center gap-1">
-                    <Package size={11} />
-                    <span>{booking.tier_name}</span>
-                  </span>
-                )}
-
-                {academicSpecs?.isSchoolPartner && (
-                  <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
-                    <GraduationCap size={11} />
-                    <span>School Partner</span>
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                <h3 className="font-heading text-base sm:text-lg font-bold text-primary tracking-tight truncate">
-                  {booking.service?.name || 'Photoshoot Session'}
+                <h3 className="font-heading text-lg sm:text-xl font-bold text-primary tracking-tight truncate">
+                  {sessionStatusLabel}
                 </h3>
-                {isExpanded && (
-                  <>
-                    <span className="text-neutral-300 hidden sm:inline">·</span>
-                    <span className="text-xs font-semibold text-neutral-600 flex items-center gap-1">
-                      <User size={12} className="text-gold" />
-                      <span>{clientName}</span>
-                    </span>
-                  </>
+
+                {conflictBooking && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                    <AlertTriangle size={12} />
+                    <span>Conflicts with #{conflictBooking.booking_number}</span>
+                  </span>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Right: Date, Time & Collapse Toggle */}
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="inline-flex items-center gap-2 text-xs font-semibold text-neutral-800 bg-neutral-50 px-3 py-1.5 rounded-xl border border-neutral-200/80">
-              <Calendar size={13} className="text-gold shrink-0" />
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-neutral-800 bg-neutral-50 px-3.5 py-2 rounded-xl border border-neutral-200/80">
+              <Calendar size={14} className="text-gold shrink-0" />
               <span>{formatDatePretty(booking.event_date)}</span>
               {booking.preferred_time && (
                 <>
                   <span className="text-neutral-300">·</span>
-                  <Clock size={12} className="text-neutral-400 shrink-0" />
-                  <span className="font-mono text-[11px] text-neutral-600 font-bold">
+                  <Clock size={13} className="text-neutral-400 shrink-0" />
+                  <span className="font-mono text-xs sm:text-sm text-neutral-700 font-bold">
                     {formatTime12h(booking.preferred_time)}
                   </span>
                 </>
@@ -220,540 +315,278 @@ export default function PhotographerBookingCard({
 
             <button
               type="button"
-              className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center gap-1 text-xs font-semibold ${
-                isExpanded
+              className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center gap-1 text-xs font-semibold ${isExpanded
                   ? 'bg-neutral-900 text-white border-neutral-900'
                   : 'bg-neutral-100 text-neutral-600 border-neutral-200 hover:bg-neutral-200 hover:text-primary'
-              }`}
-              aria-label={isExpanded ? 'Collapse brief' : 'Expand full order details'}
-              title={isExpanded ? 'Collapse' : 'Expand'}
+                }`}
+              aria-label={isExpanded ? 'Collapse details' : 'Expand details'}
             >
-              {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+              {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
           </div>
         </div>
 
-        {/* Quick Identity Strip - Show only when collapsed to prevent duplicate information */}
         {!isExpanded && (
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 mt-3 border-t border-neutral-100 text-xs text-neutral-600 font-body">
-            {/* Client Name & Phone */}
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 font-bold text-primary">
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-3.5 mt-3.5 border-t border-neutral-100 text-sm text-neutral-600 font-body">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 font-bold text-primary">
                 <User size={14} className="text-gold" />
-                <span>{clientName}</span>
-              </div>
-              {booking.customer?.phone && (
+                <span>{details.name}</span>
+              </span>
+              {details.number !== '—' && (
                 <a
-                  href={`tel:${booking.customer.phone}`}
+                  href={`tel:${details.number}`}
                   onClick={(e) => e.stopPropagation()}
-                  className="text-neutral-500 hover:text-gold transition-colors inline-flex items-center gap-1 font-mono text-[11px]"
-                  title="Call client"
+                  className="text-neutral-600 hover:text-gold transition-colors inline-flex items-center gap-1 font-mono text-xs sm:text-sm"
                 >
-                  <Phone size={11} className="text-neutral-400" />
-                  <span>{booking.customer.phone}</span>
+                  <Phone size={12} className="text-neutral-400" />
+                  <span>{details.number}</span>
                 </a>
               )}
             </div>
 
-            {/* Location & Quick Balance */}
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1.5 text-neutral-500">
-                <MapPin size={13} className="text-gold shrink-0" />
-                <span className="truncate max-w-[200px] sm:max-w-none">{cleanLocation.name}</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="font-heading font-bold text-primary">₱{totalAmount.toLocaleString()}</span>
-                {remainingBalance > 0 ? (
-                  <span className="text-xs font-mono font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
-                    Due: ₱{remainingBalance.toLocaleString()}
-                  </span>
-                ) : (
-                  <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                    Paid
-                  </span>
-                )}
-              </div>
+            <div className="inline-flex items-center gap-1.5 text-neutral-700 font-medium truncate max-w-sm">
+              <Building2 size={14} className="text-gold shrink-0" />
+              <span className="truncate">{details.school}</span>
             </div>
           </div>
         )}
       </div>
 
-      {/* ── 2. Expanded Order Dossier ── */}
+      {/* ── Expanded Essential Form Details Only ── */}
       {isExpanded && (
-        <div className="px-4 sm:px-6 pb-5 pt-3 border-t border-neutral-200/80 bg-neutral-50/40 space-y-4 animate-fade-in text-xs font-body">
-          
-          {/* ── Visual Shoot Pipeline (Connected Icons) ── */}
-          <div className="p-3.5 sm:p-4 rounded-xl bg-white border border-neutral-200/80 shadow-2xs">
-            <div className="flex items-center justify-between relative px-2 sm:px-6">
-              {/* Background track */}
-              <div className="absolute left-6 right-6 top-4 h-0.5 bg-neutral-200 -z-0" />
-              
-              {LIFECYCLE_STEPS.map((step) => {
-                const stepIdx = orderKeys.indexOf(step.key);
-                const isDone = currentIndex > stepIdx;
-                const isCurrent = booking.status === step.key;
-
-                return (
-                  <div key={step.key} className="flex flex-col items-center gap-1 relative z-10">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                        isCurrent
-                          ? 'bg-neutral-900 text-gold ring-4 ring-gold/20 shadow-xs'
-                          : isDone
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-white border-2 border-neutral-300 text-neutral-400'
-                      }`}
-                      title={`${step.label}: ${isCurrent ? 'Active Stage' : isDone ? 'Completed' : 'Upcoming'}`}
-                    >
-                      {isDone ? <Check size={14} className="stroke-[3]" /> : <step.Icon size={14} />}
-                    </div>
-                    <span
-                      className={`text-xs font-semibold transition-colors ${
-                        isCurrent ? 'text-primary font-bold' : isDone ? 'text-emerald-700' : 'text-neutral-400'
-                      }`}
-                    >
-                      {step.label}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ── 3-Column Core Information Deck ── */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            
-            {/* Box 1: Customer & Studio Bay */}
-            <div className="p-3.5 rounded-xl bg-white border border-neutral-200/80 space-y-2.5">
-              <div className="flex items-center gap-1.5 text-neutral-400 text-xs font-bold uppercase tracking-wider border-b border-neutral-100 pb-1.5">
-                <User size={12} className="text-gold" />
-                <span>Customer & Studio Bay</span>
-              </div>
-
-              <div className="space-y-2">
-                <div className="font-bold text-primary text-sm flex items-center gap-1.5">
-                  <span>{clientName}</span>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5">
-                  {booking.customer?.phone && (
-                    <a
-                      href={`tel:${booking.customer.phone}`}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-neutral-50 hover:bg-neutral-100 border border-neutral-200/80 text-neutral-700 font-mono text-[11px] transition-colors"
-                      title="Call client"
-                    >
-                      <Phone size={11} className="text-neutral-400" />
-                      <span>{booking.customer.phone}</span>
-                    </a>
-                  )}
-
-                  {booking.customer?.email && (
-                    <a
-                      href={`mailto:${booking.customer.email}`}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-neutral-50 hover:bg-neutral-100 border border-neutral-200/80 text-neutral-700 text-[11px] transition-colors truncate max-w-full"
-                      title="Email client"
-                    >
-                      <Mail size={11} className="text-neutral-400 shrink-0" />
-                      <span className="truncate">{booking.customer.email}</span>
-                    </a>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between gap-1 text-neutral-600 text-[11px] pt-1.5 border-t border-neutral-100">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <MapPin size={12} className="text-gold shrink-0" />
-                    <span className="truncate">{cleanLocation.name}</span>
-                  </div>
-                  {cleanLocation.mapUrl && (
-                    <a
-                      href={cleanLocation.mapUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs font-bold text-gold hover:text-gold-dark bg-gold/10 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 shrink-0"
-                    >
-                      <span>Map</span>
-                      <ExternalLink size={9} />
-                    </a>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Box 2: Payment & Balance */}
-            <div className="p-3.5 rounded-xl bg-white border border-neutral-200/80 space-y-2.5">
-              <div className="flex items-center gap-1.5 text-neutral-400 text-xs font-bold uppercase tracking-wider border-b border-neutral-100 pb-1.5">
-                <Wallet size={12} className="text-gold" />
-                <span>Payment & Balance</span>
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-neutral-500">Package Total:</span>
-                  <span className="font-bold text-primary">₱{totalAmount.toLocaleString()}</span>
-                </div>
-
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-neutral-500">Down Payment:</span>
-                  <span className="font-medium text-emerald-700">
-                    ₱{downPayment.toLocaleString()} {latestPayment?.payment_method ? `(${latestPayment.payment_method})` : ''}
-                  </span>
-                </div>
-
-                <div className="pt-1.5 border-t border-neutral-100">
-                  {remainingBalance > 0 ? (
-                    <div className="p-2 rounded-lg bg-rose-50 border border-rose-200/70 flex items-center justify-between text-rose-700">
-                      <span className="text-[11px] font-bold uppercase tracking-wider">Balance Due:</span>
-                      <span className="font-mono text-sm font-bold">₱{remainingBalance.toLocaleString()}</span>
-                    </div>
-                  ) : (
-                    <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200/70 flex items-center justify-between text-emerald-700">
-                      <span className="text-[11px] font-bold uppercase tracking-wider">Status:</span>
-                      <span className="text-xs font-bold">Fully Paid</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Box 3: Session & Academic Specifications */}
-            <div className="p-3.5 rounded-xl bg-white border border-neutral-200/80 space-y-2.5">
-              <div className="flex items-center justify-between border-b border-neutral-100 pb-1.5">
-                <span className="text-neutral-400 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
-                  <GraduationCap size={13} className="text-gold" />
-                  <span>Session Specifications</span>
-                </span>
-                {academicSpecs?.type && (
-                  <span className="px-1.5 py-0.2 rounded text-[11px] font-bold bg-gold/10 text-gold-dark">
-                    {academicSpecs.type}
-                  </span>
-                )}
-              </div>
-
-              {hasAcademicSpecs ? (
-                <div className="space-y-1.5">
-                  {academicSpecs.school && (
-                    <div className="flex items-start gap-1.5">
-                      <Building2 size={12} className="text-neutral-400 mt-0.5 shrink-0" />
-                      <div className="min-w-0">
-                        <span className="font-bold text-primary text-xs block leading-tight truncate" title={academicSpecs.school}>
-                          {academicSpecs.school}
-                        </span>
-                        {academicSpecs.campus && (
-                          <span className="text-xs text-neutral-500 block truncate">{academicSpecs.campus}</span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {academicSpecs.degree && (
-                    <div className="flex items-center gap-1.5 text-xs text-neutral-700">
-                      <BookOpen size={12} className="text-neutral-400 shrink-0" />
-                      <span className="font-medium truncate">{academicSpecs.degree}</span>
-                    </div>
-                  )}
-
-                  {(academicSpecs.section || academicSpecs.studentId) && (
-                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-600 pt-1 border-t border-neutral-100">
-                      <IdCard size={12} className="text-neutral-400 shrink-0" />
-                      {academicSpecs.section && (
-                        <span className="px-1.5 py-0.5 rounded bg-neutral-100 font-medium">Sec: {academicSpecs.section}</span>
-                      )}
-                      {academicSpecs.studentId && (
-                        <span className="px-1.5 py-0.5 rounded bg-neutral-100 font-mono font-medium">ID: {academicSpecs.studentId}</span>
-                      )}
-                    </div>
-                  )}
-
-                  {(academicSpecs.togaSize || academicSpecs.backdrop) && (
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      {academicSpecs.togaSize && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200 text-[11px] font-medium">
-                          <Shirt size={11} className="text-amber-700" />
-                          <span>Toga: {academicSpecs.togaSize}</span>
-                        </span>
-                      )}
-                      {academicSpecs.backdrop && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-800 border border-neutral-200 text-[11px] font-medium">
-                          <Palette size={11} className="text-gold" />
-                          <span>{formatSpecName(academicSpecs.backdrop)}</span>
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-1 text-neutral-600 text-xs py-1">
-                  <div className="font-bold text-primary">{booking.service?.name}</div>
-                  <div className="text-[11px] text-neutral-500 line-clamp-2">
-                    {booking.service?.tagline || booking.service?.description || 'Standard Studio Portrait Session'}
-                  </div>
-                </div>
-              )}
-            </div>
-
-          </div>
-
-          {/* ── Package Inclusions & Deliverables (Compact Chips) ── */}
-          {(tierHighlights.length > 0 || serviceInclusions.length > 0) && (
-            <div className="p-3.5 sm:p-4 rounded-xl bg-white border border-neutral-200/80 space-y-2">
-              <div className="flex items-center justify-between border-b border-neutral-100 pb-1.5">
-                <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
-                  <CheckSquare size={13} className="text-gold" />
-                  <span>Session Deliverables ({booking.tier_name || 'Standard'})</span>
-                </span>
-                <span className="text-xs text-neutral-500 font-medium">
-                  {tierHighlights.length > 0 ? `${tierHighlights.length} items` : `${serviceInclusions.length} items`}
-                </span>
-              </div>
-
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                {(tierHighlights.length > 0 ? tierHighlights : serviceInclusions).map((item, idx) => (
-                  <span
-                    key={idx}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-50 hover:bg-neutral-100/80 border border-neutral-200/70 text-[11px] font-medium text-neutral-800 transition-colors"
-                  >
-                    <Check size={12} className="text-emerald-600 shrink-0 stroke-[2.5]" />
-                    <span>{item}</span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Customer Instructions & Style Pegs (If any exist) ── */}
-          {(cleanNotes || stylePegs.length > 0 || booking.reference_images?.length > 0) && (
-            <div className="p-3.5 rounded-xl bg-white border border-neutral-200/80 space-y-2.5">
-              <div className="flex items-center gap-1.5 text-neutral-400 text-xs font-bold uppercase tracking-wider border-b border-neutral-100 pb-1.5">
-                <Palette size={12} className="text-gold" />
-                <span>Client Notes & Style Pegs</span>
-              </div>
-
-              <div className="space-y-2.5">
-                {cleanNotes && (
-                  <div className="p-2.5 rounded-lg bg-amber-50/60 border border-amber-200/70 text-xs text-neutral-700 flex items-start gap-2">
-                    <MessageSquare size={13} className="text-amber-700 mt-0.5 shrink-0" />
-                    <span className="leading-relaxed">"{cleanNotes}"</span>
-                  </div>
-                )}
-
-                {stylePegs.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {stylePegs.map((peg, idx) => (
-                      <span
-                        key={idx}
-                        className="px-2.5 py-0.5 rounded-md bg-neutral-100 text-neutral-800 text-[11px] font-medium border border-neutral-200"
-                      >
-                        {peg}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Reference Photo Thumbnails (Only rendered if images actually exist) */}
-                {booking.reference_images?.length > 0 && (
-                  <div className="pt-1">
-                    <div className="text-xs text-neutral-400 font-semibold mb-1.5 flex items-center gap-1">
-                      <FileImage size={11} className="text-gold" />
-                      <span>Reference Photos ({booking.reference_images.length})</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {booking.reference_images.map((img, idx) => {
-                        const url = getReferenceImageUrl(img);
-                        return (
-                          <div
-                            key={idx}
-                            onClick={() => setPreviewImage(url)}
-                            className="w-16 h-16 rounded-xl overflow-hidden border border-neutral-200 hover:border-gold transition-all relative group cursor-pointer"
-                            title="Click to zoom reference photo"
-                          >
-                            <img src={url} alt={`Peg ${idx + 1}`} className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
-                              <Eye size={14} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ── Operational Action Toolbar ── */}
-          <div className="pt-2 flex flex-wrap items-center justify-between gap-2.5">
-            {/* Left: Studio Bay Status & Escalation */}
-            <div className="flex items-center gap-2">
-              <div className="text-[11px] text-neutral-600 font-medium flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>Assigned to your bay</span>
-              </div>
-
-              {onReportIssue && (
-                <button
-                  type="button"
-                  onClick={() => onReportIssue(booking)}
-                  className="px-2.5 py-1.5 rounded-lg border border-neutral-200 hover:border-rose-300 bg-white hover:bg-rose-50 text-neutral-600 hover:text-rose-700 text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
-                  title="Report wardrobe, technical, or customer issue to front desk"
-                >
-                  <AlertCircle size={12} className="text-rose-500" />
-                  <span>Report Bay Issue</span>
-                </button>
-              )}
-            </div>
-
-            {/* Right: Progression Actions */}
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Newly Assigned: Accept / Decline */}
-              {booking.status === 'PHOTOGRAPHER_ASSIGNED' && (
-                <>
-                  <motion.button
-                    type="button"
-                    whileTap={{ scale: 0.96 }}
-                    onClick={() => onAccept(booking)}
-                    disabled={isUpdating}
-                    className="h-9 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    {isUpdating ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                    <span>Accept</span>
-                  </motion.button>
-
-                  <motion.button
-                    type="button"
-                    whileTap={{ scale: 0.96 }}
-                    onClick={() => onDecline(booking)}
-                    disabled={isUpdating}
-                    className="h-9 px-3 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
-                  >
-                    <X size={13} />
-                    <span>Decline</span>
-                  </motion.button>
-                </>
-              )}
-
-              {/* Confirmed: Start Photoshoot */}
-              {booking.status === 'CONFIRMED' && (
-                <>
-                  <motion.button
-                    type="button"
-                    whileTap={{ scale: 0.96 }}
-                    onClick={() => onAdvanceStatus(booking.id, 'CAPTURE')}
-                    disabled={isUpdating}
-                    className="h-9 px-3.5 rounded-xl bg-neutral-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    {isUpdating ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} className="text-gold" />}
-                    <span>Start Shoot</span>
-                  </motion.button>
-
-                  <motion.button
-                    type="button"
-                    whileTap={{ scale: 0.96 }}
-                    onClick={() => onDecline(booking)}
-                    disabled={isUpdating}
-                    className="h-9 px-3 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
-                    title="Decline and return to admin"
-                  >
-                    <X size={13} />
-                    <span>Decline</span>
-                  </motion.button>
-                </>
-              )}
-
-              {/* In Capture: Send to Editing */}
-              {booking.status === 'CAPTURE' && (
-                <motion.button
-                  type="button"
-                  whileTap={{ scale: 0.96 }}
-                  onClick={() => onAdvanceStatus(booking.id, 'EDITING')}
-                  disabled={isUpdating}
-                  className="h-9 px-3.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  {isUpdating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} className="text-gold" />}
-                  <span>To Editing</span>
-                </motion.button>
-              )}
-
-              {/* In Editing: Mark Ready */}
-              {booking.status === 'EDITING' && (
-                <motion.button
-                  type="button"
-                  whileTap={{ scale: 0.96 }}
-                  onClick={() => onAdvanceStatus(booking.id, 'READY')}
-                  disabled={isUpdating}
-                  className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  {isUpdating ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-                  <span>Mark Ready</span>
-                </motion.button>
-              )}
-
-              {/* Reschedule */}
-              <motion.button
-                type="button"
-                whileTap={{ scale: 0.96 }}
-                onClick={() => onReschedule(booking)}
-                className="h-9 px-3 rounded-xl border border-neutral-200/80 hover:border-gold bg-white hover:bg-neutral-50 text-neutral-700 text-xs font-semibold transition-all cursor-pointer shadow-xs flex items-center gap-1.5"
-                title="Send reschedule request to Admin"
-              >
-                <Clock size={12} className="text-neutral-400" />
-                <span>Reschedule</span>
-              </motion.button>
-
-              {/* Upload Photos */}
-              <Link
-                to={`/photographer/uploads?booking=${booking.id}`}
-                className="h-9 px-3 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-xs"
-              >
-                <Upload size={12} className="text-neutral-600" />
-                <span>Upload Photos</span>
-              </Link>
-            </div>
-          </div>
-
-        </div>
-      )}
-
-      {/* ── Reference Photo Full-Screen Lightbox Modal ── */}
-      {previewImage && (
         <div
-          className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in"
-          onClick={() => setPreviewImage(null)}
+          className={`px-5 sm:px-6 py-5 sm:py-6 border-t border-neutral-200/80 bg-neutral-50/40 animate-fade-in font-body ${fillHeight ? 'flex-1 flex flex-col justify-between gap-4 sm:gap-5' : 'space-y-4'
+            }`}
         >
           <div
-            className="relative max-w-4xl max-h-[90vh] bg-neutral-900 rounded-3xl overflow-hidden border border-white/10 shadow-2xl flex flex-col"
-            onClick={e => e.stopPropagation()}
+            className={`grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4 ${fillHeight ? 'flex-1 content-stretch' : 'lg:grid-cols-3'
+              }`}
           >
-            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 bg-neutral-950/80">
-              <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <FileImage size={14} className="text-gold" />
-                <span>Client Reference Photo</span>
+            <div className="p-4 sm:p-5 rounded-xl bg-white border border-neutral-200/80 flex flex-col justify-center gap-1.5">
+              <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                <User size={12} className="text-gold" /> Name
               </span>
-              <div className="flex items-center gap-2">
+              <p className="font-bold text-base sm:text-lg text-neutral-900 leading-snug">{details.name}</p>
+            </div>
+
+            <div className="p-4 sm:p-5 rounded-xl bg-white border border-neutral-200/80 flex flex-col justify-center gap-1.5">
+              <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                <Phone size={12} className="text-gold" /> Contact Number
+              </span>
+              {details.number !== '—' ? (
                 <a
-                  href={previewImage}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"
+                  href={`tel:${details.number}`}
+                  className="font-mono font-bold text-base sm:text-lg text-neutral-900 hover:text-gold leading-snug block truncate"
                 >
-                  <ExternalLink size={15} />
+                  {details.number}
                 </a>
-                <button
-                  type="button"
-                  onClick={() => setPreviewImage(null)}
-                  className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-                >
-                  <X size={16} />
-                </button>
-              </div>
+              ) : (
+                <p className="text-base sm:text-lg text-neutral-400">—</p>
+              )}
             </div>
-            <div className="p-4 flex items-center justify-center overflow-auto bg-black/40">
-              <img
-                src={previewImage}
-                alt="Reference full size"
-                className="max-h-[78vh] max-w-full object-contain rounded-xl shadow-lg"
+
+            <div className="p-4 sm:p-5 rounded-xl bg-white border border-neutral-200/80 flex flex-col justify-center gap-1.5">
+              <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                <IdCard size={12} className="text-gold" /> ID Number
+              </span>
+              <p className="font-mono font-bold text-base sm:text-lg text-neutral-900 leading-snug truncate">
+                {details.idNumber}
+              </p>
+            </div>
+
+            <div className="p-4 sm:p-5 rounded-xl bg-white border border-neutral-200/80 flex flex-col justify-center gap-1.5">
+              <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                <Building2 size={12} className="text-gold" /> School
+              </span>
+              <p className="font-bold text-base sm:text-lg text-neutral-900 leading-snug" title={details.school}>
+                {details.school}
+              </p>
+            </div>
+
+            <div className="p-4 sm:p-5 rounded-xl bg-white border border-neutral-200/80 flex flex-col justify-center gap-1.5">
+              <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                <BookOpen size={12} className="text-gold" /> Class
+              </span>
+              <p className="font-bold text-base sm:text-lg text-neutral-900 leading-snug" title={details.classLabel}>
+                {details.classLabel}
+              </p>
+            </div>
+
+            <div className="p-4 sm:p-5 rounded-xl bg-white border border-neutral-200/80 flex flex-col justify-center gap-1.5">
+              <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                <GraduationCap size={12} className="text-gold" /> Section
+              </span>
+              <p className="font-bold text-base sm:text-lg text-neutral-900 leading-snug">{details.section}</p>
+            </div>
+          </div>
+
+          <div className="p-4 sm:p-5 rounded-xl bg-white border border-neutral-200/80 flex flex-wrap items-center justify-between gap-3">
+            <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5 shrink-0">
+              <Package size={13} className="text-gold" /> Selected Package
+            </span>
+            <p className="font-bold text-sm sm:text-base text-neutral-900 text-right">
+              {details.selectedPackage}
+            </p>
+          </div>
+
+          {/* ── Edited Photos Workspace (when pictorial is done & photographer is editing) ── */}
+          {isEditingStage && (
+            <div className="p-4 sm:p-5 rounded-xl bg-white border border-gold/35 space-y-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleUploadEditedFiles}
+                className="hidden"
               />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-gold-dark">
+                    {isSentToAdmin
+                      ? isReceivedByAdmin
+                        ? 'Received by Admin · Awaiting Retouching Confirmation'
+                        : 'Edited Photos Sent · Waiting for Admin to Receive'
+                      : 'Photographer Editing · Upload & Send Edited Photos'}
+                  </p>
+                  <p className="text-xs text-neutral-500 mt-0.5">
+                    {isSentToAdmin
+                      ? `${allOutputs.length} edited photo${allOutputs.length === 1 ? '' : 's'} submitted to Admin.`
+                      : 'Pictorial is confirmed done. Edit the session photos, upload them here, then send to Admin.'}
+                  </p>
+                </div>
+
+                {!isSentToAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingFiles || sendingToAdmin}
+                    className="h-9 px-3.5 rounded-xl border border-gold/40 bg-gold/10 hover:bg-gold/20 text-neutral-900 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
+                  >
+                    {uploadingFiles ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} className="text-gold-dark" />}
+                    <span>{uploadingFiles ? 'Uploading…' : `Upload Edited Photos (${allOutputs.length})`}</span>
+                  </button>
+                )}
+              </div>
+
+              {allOutputs.length > 0 && (
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1">
+                  {allOutputs.slice(0, 6).map((item, idx) => (
+                    <a
+                      key={item.id || idx}
+                      href={item.file_path}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="aspect-square rounded-lg overflow-hidden border border-neutral-200 bg-neutral-100 block"
+                    >
+                      <img
+                        src={item.file_path}
+                        alt={item.file_name || 'Edited output'}
+                        className="w-full h-full object-cover"
+                      />
+                    </a>
+                  ))}
+                </div>
+              )}
+
+              {uploadNotice && (
+                <p
+                  className={`text-xs font-semibold px-3 py-2 rounded-lg border ${uploadNotice.type === 'error'
+                      ? 'bg-rose-50 border-rose-200 text-rose-700'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    }`}
+                >
+                  {uploadNotice.text}
+                </p>
+              )}
             </div>
+          )}
+
+          {/* ── Actions Toolbar ── */}
+          <div className={`grid gap-3 pt-1 ${(isEditingStage && isSentToAdmin) || isPostEditingStage ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'}`}>
+            {canStartPictorial && (
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.98 }}
+                onClick={() => onAdvanceStatus(booking.id, 'CAPTURE', conflictBooking)}
+                disabled={isUpdating}
+                className="w-full h-11 px-4 rounded-xl bg-neutral-900 hover:bg-black text-white text-sm font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isUpdating ? <Loader2 size={15} className="animate-spin" /> : <Camera size={15} className="text-gold" />}
+                <span>Start Pictorial</span>
+              </motion.button>
+            )}
+
+            {isOngoingPictorial && (
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.98 }}
+                onClick={() => onAdvanceStatus(booking.id, 'EDITING')}
+                disabled={isUpdating}
+                className="w-full h-11 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isUpdating ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                <span>Confirm Pictorial Done</span>
+              </motion.button>
+            )}
+
+            {isEditingWithPhotographer && (
+              <>
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleSendPhotosToAdmin}
+                  disabled={sendingToAdmin || uploadingFiles}
+                  className="w-full h-11 px-4 rounded-xl bg-neutral-900 hover:bg-black text-white text-sm font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {sendingToAdmin ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} className="text-gold" />}
+                  <span>{sendingToAdmin ? 'Sending Photos to Admin…' : 'Send Photos to Admin'}</span>
+                </motion.button>
+
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingFiles || sendingToAdmin}
+                  className="w-full h-11 px-4 rounded-xl border border-neutral-200/80 hover:border-gold bg-white hover:bg-neutral-50 text-neutral-800 text-sm font-semibold transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} className="text-gold" />}
+                  <span>{uploadingFiles ? 'Uploading…' : 'Upload Edited Photos'}</span>
+                </motion.button>
+              </>
+            )}
+
+            {isEditingStage && isSentToAdmin && (
+              <span className="w-full h-11 px-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-semibold inline-flex items-center justify-center gap-2">
+                <CheckCircle2 size={15} className="text-emerald-600" />
+                <span>
+                  {isReceivedByAdmin
+                    ? 'Admin Received Photos · Under Review for Retouching'
+                    : 'Edited Photos Sent to Admin · Waiting for Admin to Receive'}
+                </span>
+              </span>
+            )}
+
+            {isPostEditingStage && (
+              <span className="w-full h-11 px-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-semibold inline-flex items-center justify-center gap-2">
+                <CheckCircle2 size={15} className="text-emerald-600" />
+                <span>Confirmed by Admin · Proceeded to Retouching</span>
+              </span>
+            )}
+
+            {(canStartPictorial || isOngoingPictorial) && (
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.98 }}
+                onClick={() => onReschedule(booking)}
+                disabled={isUpdating}
+                className="w-full h-11 px-4 rounded-xl border border-neutral-200/80 hover:border-gold bg-white hover:bg-neutral-50 text-neutral-800 text-sm font-semibold transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <Clock size={14} className="text-neutral-400" />
+                <span>Reschedule</span>
+              </motion.button>
+            )}
           </div>
         </div>
       )}

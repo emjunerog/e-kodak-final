@@ -49,10 +49,18 @@ const SHORTCUTS = [
  * ====================
  * Warm editorial Studio Shortcuts card matching PhotographerDashboard styling.
  */
-export default function StationShortcutsCard() {
+export default function StationShortcutsCard({ embedded = false }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl p-5 bg-gradient-to-br from-white via-surface-warm to-amber-50/20 border border-neutral-200/90 shadow-xs font-body space-y-3.5">
-      <div className="absolute -bottom-10 -right-10 w-36 h-36 bg-gradient-to-tl from-gold/15 via-amber-500/5 to-transparent rounded-full blur-2xl pointer-events-none" />
+    <div
+      className={
+        embedded
+          ? 'font-body space-y-3.5'
+          : 'relative overflow-hidden rounded-2xl p-5 bg-gradient-to-br from-white via-surface-warm to-amber-50/20 border border-neutral-200/90 shadow-xs font-body space-y-3.5'
+      }
+    >
+      {!embedded && (
+        <div className="absolute -bottom-10 -right-10 w-36 h-36 bg-gradient-to-tl from-gold/15 via-amber-500/5 to-transparent rounded-full blur-2xl pointer-events-none" />
+      )}
 
       {/* Header */}
       <div className="relative z-10 flex items-center justify-between border-b border-neutral-200/70 pb-3">

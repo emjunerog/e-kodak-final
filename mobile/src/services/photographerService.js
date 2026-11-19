@@ -88,11 +88,25 @@ export function parseBookingNotes(notes) {
   return details;
 }
 
+function cleanFieldValue(value) {
+  if (value === null || value === undefined) return '';
+  const trimmed = String(value).trim();
+  if (!trimmed) return '';
+  const upper = trimmed.toUpperCase();
+  if (upper === 'N/A' || upper === 'NA' || upper === 'NULL' || upper === 'UNDEFINED' || trimmed === '—') {
+    return '';
+  }
+  return trimmed;
+}
+
 function normalizeAssignedBooking(raw) {
   if (!raw) return null;
   const c = raw.customer || null;
   const fullName = c ? `${c.first_name || ''} ${c.last_name || ''}`.trim() : '';
   const parsedNotes = parseBookingNotes(raw.notes);
+  const sDetails = raw.student_details && typeof raw.student_details === 'object' ? raw.student_details : {};
+  const cSpecs = c?.studio_specs && typeof c.studio_specs === 'object' ? c.studio_specs : {};
+
   const loc = String(raw.location || '').toLowerCase();
   const isStudio =
     !loc ||
@@ -101,29 +115,101 @@ function normalizeAssignedBooking(raw) {
     loc.includes('331 rizal') ||
     loc.includes('311 rizal');
 
+  const normalizedDate = normalizeDateStr(raw.event_date || raw.session_date || raw.shoot_date);
+  const normalizedTime = raw.preferred_time || raw.session_time || raw.shoot_time || '';
+
+  const schoolName =
+    cleanFieldValue(raw.school) ||
+    cleanFieldValue(sDetails.school) ||
+    cleanFieldValue(parsedNotes['School']) ||
+    cleanFieldValue(parsedNotes['School Name']) ||
+    cleanFieldValue(cSpecs.university);
+
+  const schoolLocation =
+    cleanFieldValue(raw.school_address) ||
+    cleanFieldValue(sDetails.school_address) ||
+    cleanFieldValue(parsedNotes['Campus / Address']) ||
+    cleanFieldValue(parsedNotes['School Location']) ||
+    cleanFieldValue(parsedNotes['Campus']) ||
+    cleanFieldValue(cSpecs.campus);
+
+  const sectionName =
+    cleanFieldValue(raw.section) ||
+    cleanFieldValue(sDetails.section) ||
+    cleanFieldValue(parsedNotes['Section']) ||
+    cleanFieldValue(parsedNotes['Section / Batch']);
+
+  const batchLabel =
+    cleanFieldValue(raw.batch) ||
+    cleanFieldValue(sDetails.batch) ||
+    cleanFieldValue(parsedNotes['Batch']);
+
+  const studentId =
+    cleanFieldValue(raw.student_id) ||
+    cleanFieldValue(sDetails.student_id) ||
+    cleanFieldValue(parsedNotes['Student ID']);
+
+  const degreeProgram =
+    cleanFieldValue(raw.track) ||
+    cleanFieldValue(sDetails.course) ||
+    cleanFieldValue(parsedNotes['Track / Strand / Program']) ||
+    cleanFieldValue(parsedNotes['Degree / Program']) ||
+    cleanFieldValue(parsedNotes['Course']) ||
+    cleanFieldValue(cSpecs.degree);
+
+  const participantName =
+    cleanFieldValue(parsedNotes['Participant / Adviser Name']) ||
+    cleanFieldValue(parsedNotes['Participant Name']) ||
+    cleanFieldValue(parsedNotes['Student Name']) ||
+    cleanFieldValue(sDetails.student_name);
+
+  const participantPhone =
+    cleanFieldValue(parsedNotes['Participant Phone']) ||
+    cleanFieldValue(parsedNotes['Phone']) ||
+    cleanFieldValue(c?.phone);
+
+  const participantEmail =
+    cleanFieldValue(parsedNotes['Participant Email']) ||
+    cleanFieldValue(c?.email);
+
+  const serviceName = raw.service?.name || raw.services?.name || raw.package_name || 'Studio Session';
+  const packageDisplayName = raw.tier_name ? `${serviceName} • ${raw.tier_name}` : serviceName;
+
   return {
     ...raw,
     booking_token: raw.booking_token || raw.booking_number || raw.id,
-    session_date: normalizeDateStr(raw.event_date),
-    session_time: raw.preferred_time || '',
+    session_date: normalizedDate,
+    shoot_date: normalizedDate,
+    session_time: normalizedTime,
+    shoot_time: normalizedTime,
+    package_name: packageDisplayName,
     location_type: isStudio ? 'STUDIO' : 'OUTDOOR',
-    location_address: raw.location || parsedNotes['Campus / Address'] || parsedNotes['School'] || 'E-Kodak Main Studio Bay',
+    location_address: raw.location || schoolLocation || schoolName || 'E-Kodak Main Studio Bay',
     parsed_notes: parsedNotes,
+    student_info: {
+      school: schoolName,
+      school_location: schoolLocation,
+      section: sectionName,
+      batch: batchLabel,
+      student_id: studentId,
+      degree: degreeProgram,
+      student_name: participantName,
+    },
     profile: c
       ? {
           id: c.id,
-          full_name: fullName || parsedNotes['Participant Name'] || parsedNotes['Student Name'] || 'Studio Client',
-          email: c.email || parsedNotes['Participant Email'] || '',
-          phone: c.phone || parsedNotes['Participant Phone'] || '',
+          full_name: fullName || participantName || 'Studio Client',
+          email: c.email || participantEmail || '',
+          phone: c.phone || participantPhone || '',
           avatar_url: c.avatar_url || null,
         }
       : {
-          full_name: parsedNotes['Participant Name'] || parsedNotes['Student Name'] || 'Studio Client',
-          email: parsedNotes['Participant Email'] || '',
-          phone: parsedNotes['Participant Phone'] || '',
+          full_name: participantName || 'Studio Client',
+          email: participantEmail || '',
+          phone: participantPhone || '',
           avatar_url: null,
         },
-    services: raw.service || null,
+    services: raw.service || raw.services || null,
   };
 }
 
@@ -166,6 +252,13 @@ export async function fetchAllAssignedShoots(photographerId) {
         preferred_time,
         location,
         notes,
+        school,
+        school_address,
+        track,
+        batch,
+        section,
+        student_id,
+        student_details,
         total_amount,
         remaining_balance,
         created_at,
@@ -175,7 +268,7 @@ export async function fetchAllAssignedShoots(photographerId) {
           id, name, category, tagline, inclusions, tiers
         ),
         customer:profiles!bookings_customer_id_fkey (
-          id, first_name, last_name, email, phone, avatar_url
+          id, first_name, last_name, email, phone, avatar_url, studio_specs
         )
       `)
       .eq('photographer_id', photographerId)

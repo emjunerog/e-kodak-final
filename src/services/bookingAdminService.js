@@ -17,7 +17,8 @@ import {
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { generateAndStoreQRCode } from './qrService';
 import { parseStudentDetailsFromNotes, parseAddOnsFromNotes, parseParticipantDetailsFromNotes, toDatabaseTime } from './bookingService';
-import { recordAdminActivity } from './workstationService';
+import { createTransferLog, recordAdminActivity } from './workstationService';
+import { doBookingTimesConflict } from '../lib/bookingUtils';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -805,7 +806,11 @@ function normalizeDateStr(val) {
  * - Conflict status for a target eventDate & preferredTime (checks both assigned bookings and availability records)
  * - Next upcoming shoot
  */
-export async function getPhotographersWithWorkloadAndAvailability(eventDate = null, preferredTime = null) {
+export async function getPhotographersWithWorkloadAndAvailability(
+  eventDate = null,
+  preferredTime = null,
+  excludeBookingId = null
+) {
   try {
     // 1. Fetch photographer accounts ONLY (strictly role = photographer, never admin or staff)
     const { data: profiles, error: profError } = await supabase
@@ -821,12 +826,12 @@ export async function getPhotographersWithWorkloadAndAvailability(eventDate = nu
     if (profError) throw profError;
 
     // 2. Fetch all active bookings assigned to any photographer
-    // Active statuses: neither completed, rejected, nor cancelled
-    const activeStatuses = ['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'EDITING', 'PRINTING', 'READY'];
+    const activeStatuses = ['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING', 'FINALIZED', 'PRINTING', 'READY'];
     const { data: assignedBookings, error: bError } = await supabase
       .from('bookings')
       .select('id, booking_number, photographer_id, event_date, preferred_time, status, service:services(name)')
       .in('status', activeStatuses)
+      .or('is_deleted.is.null,is_deleted.eq.false')
       .not('photographer_id', 'is', null);
 
     if (bError) throw bError;
@@ -879,23 +884,36 @@ export async function getPhotographersWithWorkloadAndAvailability(eventDate = nu
           isAvailable = p.is_active && (phProfile?.is_available !== false);
           availabilityStatus = isAvailable ? 'AVAILABLE' : 'UNAVAILABLE';
         } else {
-          // Specific eventDate provided: photographer MUST be active, have an explicit shift entry marked AVAILABLE for that date, and no conflicts
           const isGeneralActive = p.is_active && (phProfile?.is_available !== false);
           const cleanEventDate = normalizeDateStr(eventDate);
+          const shootSlotStatuses = new Set(['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'IN_PROGRESS']);
+          sameDateBookings = myBookings.filter(
+            (b) => b.id !== excludeBookingId && normalizeDateStr(b.event_date) === cleanEventDate
+          );
+          const overlappingShoot = sameDateBookings.find(
+            (b) =>
+              shootSlotStatuses.has(String(b.status || '').toUpperCase()) &&
+              doBookingTimesConflict({ event_date: cleanEventDate, preferred_time: preferredTime }, b)
+          );
 
-          if (!isGeneralActive) {
+          if (overlappingShoot) {
+            isAvailable = false;
+            hasConflict = true;
+            const conflictTime = overlappingShoot.preferred_time ? formatTime24To12(overlappingShoot.preferred_time.slice(0, 5)) : 'same day';
+            conflictReason = `Conflicting hours with #${overlappingShoot.booking_number} (${conflictTime})`;
+            availabilityStatus = 'BOOKED';
+          } else if (!isGeneralActive) {
             isAvailable = false;
             hasConflict = true;
             conflictReason = !p.is_active ? 'Account inactive' : 'Photographer profile unavailable';
             availabilityStatus = 'UNAVAILABLE';
           } else if (!avRecord) {
-            // No schedule shift set for this date!
+            // No schedule shift set for this date
             isAvailable = false;
             hasConflict = true;
             conflictReason = `No scheduled shift on ${cleanEventDate}`;
             availabilityStatus = 'OFF_DUTY';
           } else {
-            // Explicit schedule record exists for eventDate
             const isOffDuty = avRecord.is_available === false || avRecord.status === 'UNAVAILABLE' || avRecord.status === 'BLOCKED';
             if (isOffDuty) {
               isAvailable = false;
@@ -903,7 +921,6 @@ export async function getPhotographersWithWorkloadAndAvailability(eventDate = nu
               conflictReason = `Marked off-duty on ${cleanEventDate}${avRecord.notes ? ` (${avRecord.notes})` : ''}`;
               availabilityStatus = 'UNAVAILABLE';
             } else {
-              // Record is AVAILABLE or CUSTOM
               const sTime = (avRecord.start_time || '08:00').substring(0, 5);
               const eTime = (avRecord.end_time || '17:00').substring(0, 5);
 
@@ -918,24 +935,11 @@ export async function getPhotographersWithWorkloadAndAvailability(eventDate = nu
                 }
               }
 
-              // Check existing bookings on that date
-              sameDateBookings = myBookings.filter(b => normalizeDateStr(b.event_date) === cleanEventDate);
-              if (sameDateBookings.length > 0) {
-                const timeMatch = preferredTime
-                  ? sameDateBookings.some(b => b.preferred_time && b.preferred_time.substring(0, 5) === preferredTime.substring(0, 5))
-                  : false;
-
-                if (timeMatch) {
-                  hasConflict = true;
-                  conflictReason = `Direct conflict: Already booked on ${cleanEventDate} at ${preferredTime}.`;
-                  availabilityStatus = 'BOOKED';
-                } else {
+              if (!outsideCustomHours) {
+                if (sameDateBookings.length > 0) {
                   const times = sameDateBookings.map(b => b.preferred_time || 'time TBD').join(', ');
-                  conflictReason = `Notice: Has ${sameDateBookings.length} other booking(s) on ${cleanEventDate} (${times}).`;
+                  conflictReason = `Has ${sameDateBookings.length} other booking(s) on ${cleanEventDate} (${times})`;
                 }
-              }
-
-              if (!outsideCustomHours && !hasConflict) {
                 isAvailable = true;
                 availabilityStatus = 'AVAILABLE';
               } else {
@@ -981,11 +985,59 @@ export async function getPhotographersWithWorkloadAndAvailability(eventDate = nu
 }
 
 /**
+ * Checks whether a photographer already has an overlapping booking on the same day & hour.
+ */
+export async function checkPhotographerScheduleConflict({
+  photographerId,
+  bookingId,
+  eventDate = null,
+  preferredTime = null,
+}) {
+  if (!isSupabaseConfigured || !photographerId || !bookingId) return { conflict: null };
+  try {
+    let targetDate = eventDate ? normalizeDateStr(eventDate) : null;
+    let targetTime = preferredTime || null;
+
+    if (!targetDate || !targetTime) {
+      const { data: targetRow } = await supabase
+        .from('bookings')
+        .select('event_date, preferred_time')
+        .eq('id', bookingId)
+        .maybeSingle();
+      if (targetRow) {
+        targetDate = targetDate || normalizeDateStr(targetRow.event_date);
+        targetTime = targetTime || targetRow.preferred_time || null;
+      }
+    }
+
+    if (!targetDate) return { conflict: null };
+
+    const { data: activeRows } = await supabase
+      .from('bookings')
+      .select('id, booking_number, event_date, preferred_time, status')
+      .eq('photographer_id', photographerId)
+      .in('status', ['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'IN_PROGRESS'])
+      .or('is_deleted.is.null,is_deleted.eq.false')
+      .neq('id', bookingId);
+
+    const conflict =
+      (activeRows || []).find((other) =>
+        doBookingTimesConflict({ event_date: targetDate, preferred_time: targetTime }, other)
+      ) || null;
+
+    return { conflict };
+  } catch (err) {
+    console.warn('checkPhotographerScheduleConflict warning:', err);
+    return { conflict: null };
+  }
+}
+
+/**
  * assignPhotographerToBooking
  * ---------------------------
  * Assigns a photographer to a confirmed booking, transitions status to
  * PHOTOGRAPHER_ASSIGNED, records the audit trail in booking_status_history,
- * and emits notifications.
+ * and emits notifications. Smartly declines if hours conflict with another order.
  */
 export async function assignPhotographerToBooking({
   bookingId,
@@ -996,8 +1048,25 @@ export async function assignPhotographerToBooking({
   customerId = null,
   bookingNumber = '',
   eventDate = '',
+  preferredTime = null,
 }) {
   try {
+    // 0. Smart conflict guard: decline if photographer already has an overlapping shoot
+    const { conflict } = await checkPhotographerScheduleConflict({
+      photographerId,
+      bookingId,
+      eventDate,
+      preferredTime,
+    });
+    if (conflict) {
+      const timeLabel = conflict.preferred_time
+        ? ` at ${formatTime24To12(String(conflict.preferred_time).slice(0, 5))}`
+        : '';
+      throw new Error(
+        `Declined: ${photographerName || 'Photographer'} already has booking #${conflict.booking_number} on ${normalizeDateStr(conflict.event_date)}${timeLabel}.`
+      );
+    }
+
     // 1. Update the booking record
     const { data: updatedBooking, error: updateError } = await supabase
       .from('bookings')
@@ -1014,8 +1083,8 @@ export async function assignPhotographerToBooking({
 
     // 2. Append history record
     const histRemarks = remarks.trim()
-      ? remarks.trim()
-      : `Photographer assigned: ${photographerName || 'Studio Photographer'}`;
+      ? `Order moved to photographer ${photographerName || 'Studio Photographer'} — ${remarks.trim()}`
+      : `Order moved to photographer ${photographerName || 'Studio Photographer'}`;
 
     const { error: histError } = await supabase
       .from('booking_status_history')
@@ -1050,24 +1119,42 @@ export async function assignPhotographerToBooking({
       });
     }
 
-    // 5. Detect and log movement to admin_activity_logs
+    // 5. Detect and log movement to admin_activity_logs & workstation transfer
     try {
-      await recordAdminActivity({
-        adminId: changedById,
-        actionType: 'PHOTOGRAPHER_ASSIGNED',
-        entityType: 'booking',
-        entityId: bookingId,
-        entityLabel: bookingNumber || `Booking`,
-        description: `Assigned photographer ${photographerName || 'Studio Photographer'} to #${bookingNumber || bookingId}`,
-        details: {
-          photographer_id: photographerId,
-          photographer_name: photographerName,
-          booking_id: bookingId,
-          booking_number: bookingNumber,
-          event_date: eventDate,
-          remarks: histRemarks,
-        },
-      });
+      await Promise.all([
+        recordAdminActivity({
+          adminId: changedById,
+          actionType: 'PHOTOGRAPHER_ASSIGNED',
+          entityType: 'booking',
+          entityId: bookingId,
+          entityLabel: bookingNumber || `Booking`,
+          description: `Moved order #${bookingNumber || bookingId} to photographer ${photographerName || 'Studio Photographer'}`,
+          details: {
+            photographer_id: photographerId,
+            photographer_name: photographerName,
+            booking_id: bookingId,
+            booking_number: bookingNumber,
+            event_date: eventDate,
+            remarks: histRemarks,
+          },
+        }),
+        createTransferLog({
+          bookingId,
+          senderId: changedById || null,
+          senderRole: 'admin',
+          targetRole: 'photographer',
+          transferType: 'ORDER_HANDOFF',
+          priority: 'NORMAL',
+          title: `Order Assigned to Photographer: #${bookingNumber || 'Booking'}`,
+          message: `Moved booking #${bookingNumber || bookingId} to ${photographerName || 'Studio Photographer'}. Ready to start pictorial on check-in.`,
+          payload: {
+            photographer_id: photographerId,
+            photographer_name: photographerName,
+            booking_number: bookingNumber,
+            event_date: eventDate,
+          },
+        }),
+      ]);
     } catch (assignLogErr) {
       console.warn('assignPhotographerToBooking recordAdminActivity error:', assignLogErr);
     }
@@ -1095,8 +1182,25 @@ export async function reassignPhotographer({
   customerId = null,
   bookingNumber = '',
   eventDate = '',
+  preferredTime = null,
 }) {
   try {
+    // 0. Smart conflict guard: decline if replacement photographer already has conflicting hours
+    const { conflict } = await checkPhotographerScheduleConflict({
+      photographerId: newPhotographerId,
+      bookingId,
+      eventDate,
+      preferredTime,
+    });
+    if (conflict) {
+      const timeLabel = conflict.preferred_time
+        ? ` at ${formatTime24To12(String(conflict.preferred_time).slice(0, 5))}`
+        : '';
+      throw new Error(
+        `Declined: ${newPhotographerName || 'Photographer'} already has booking #${conflict.booking_number} on ${normalizeDateStr(conflict.event_date)}${timeLabel}.`
+      );
+    }
+
     // 1. Update the booking record
     const { data: updatedBooking, error: updateError } = await supabase
       .from('bookings')
@@ -1112,8 +1216,8 @@ export async function reassignPhotographer({
 
     // 2. Append history record
     const histRemarks = remarks.trim()
-      ? remarks.trim()
-      : `Photographer reassigned${oldPhotographerName ? ` from ${oldPhotographerName}` : ''} to ${newPhotographerName}`;
+      ? `Order moved to photographer ${newPhotographerName} — ${remarks.trim()}`
+      : `Order moved to photographer ${newPhotographerName}${oldPhotographerName ? ` (from ${oldPhotographerName})` : ''}`;
 
     const { error: histError } = await supabase
       .from('booking_status_history')

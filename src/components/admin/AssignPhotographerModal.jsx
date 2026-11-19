@@ -42,7 +42,7 @@ export default function AssignPhotographerModal({
     setRemarks('');
     setSelectedId(booking.photographer_id || booking.photographer?.id || '');
 
-    getPhotographersWithWorkloadAndAvailability(booking.event_date, booking.preferred_time)
+    getPhotographersWithWorkloadAndAvailability(booking.event_date, booking.preferred_time, booking.id)
       .then(({ data }) => {
         if (!active) return;
         const list = Array.isArray(data) ? data : [];
@@ -86,6 +86,7 @@ export default function AssignPhotographerModal({
         customerId: booking.customer?.id || booking.customer_id || null,
         bookingNumber: booking.booking_number || '',
         eventDate: booking.event_date || '',
+        preferredTime: booking.preferred_time || null,
       });
       if (error) throw error;
       onAssigned?.(booking, chosenName, selectedId);

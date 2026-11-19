@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
-  X, Mail, Calendar, CreditCard, Camera,
+  X, Mail, Calendar, CreditCard,
   GraduationCap, ChevronRight, ArrowRight, User,
-  Loader2, Banknote, Wallet, Receipt, Building, CheckCircle2, Sparkles, AlertCircle,
+  Loader2, Banknote, Wallet, Receipt, Building, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import {
   parseStudentDetailsFromNotes,
@@ -25,7 +25,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { createTransferLog, recordAdminActivity } from '../../services/workstationService';
 import { useAuth } from '../../context/AuthContext';
-import AssignPhotographerModal from './AssignPhotographerModal';
+import InspectorStageCard from './InspectorStageCard';
 
 const INVALID = ['n/a', 'na', 'none', 'null', '—', '-', '""', "''"];
 const isReal = (v) => Boolean(v && !INVALID.includes(String(v).trim().toLowerCase()));
@@ -132,7 +132,8 @@ function cleanSchoolAndLocation(rawSchool, rawCampus) {
   };
 }
 
-/* ── Presentational Helper Components Matching Screenshot ──────────────────── */
+/* ── Presentational Helper Components ──────────────────────────────────────── */
+
 function SectionTitle({ icon: Icon, children, action }) {
   return (
     <div className="flex items-center justify-between mb-3">
@@ -223,7 +224,6 @@ export default function BookingQuickInspector({
   const [paymentRefNumber, setPaymentRefNumber] = useState('');
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [confirmingDownpayment, setConfirmingDownpayment] = useState(false);
-  const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [paymentToast, setPaymentToast] = useState(null);
 
   useEffect(() => {
@@ -231,20 +231,18 @@ export default function BookingQuickInspector({
       setPaymentModalOpen(true);
     } else if (!isOpen) {
       setPaymentModalOpen(false);
-      setAssignModalOpen(false);
     }
   }, [isOpen, initialOpenPayment, booking?.id]);
 
-  const showInspectorToast = (message, type = 'success') => {
+  const showInspectorToast = useCallback((message, type = 'success') => {
     setPaymentToast({ message, type });
     setTimeout(() => setPaymentToast(null), 4000);
-  };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
-        if (assignModalOpen) return;
         if (paymentModalOpen && !submittingPayment) {
           setPaymentModalOpen(false);
         } else if (!submittingPayment) {
@@ -254,7 +252,7 @@ export default function BookingQuickInspector({
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, assignModalOpen, paymentModalOpen, submittingPayment, onClose]);
+  }, [isOpen, paymentModalOpen, submittingPayment, onClose]);
 
   if (!isOpen || !booking) return null;
 
@@ -284,8 +282,13 @@ export default function BookingQuickInspector({
     navigate(`/admin/payments?booking_id=${active.id}&search=${active.booking_number}`);
   };
 
+  const goPhotos = () => {
+    onClose();
+    navigate('/admin/photos');
+  };
+
   const openRecordPayment = (e) => {
-    e.stopPropagation();
+    e?.stopPropagation?.();
     setPaymentAmount(remainingBal > 0 ? remainingBal.toFixed(2) : '');
     setPaymentType(downPayment > 0 ? 'FINAL_PAYMENT' : 'DOWN_PAYMENT');
     setPaymentMethod('CASH');
@@ -506,26 +509,6 @@ export default function BookingQuickInspector({
     return missing;
   };
 
-  const missingForNext = getMissingVerifications(nextStatus);
-  const isNextStageBlocked = missingForNext.length > 0;
-  const needsAssignPhotographerCTA = Boolean(
-    nextStatus &&
-      hasPaymentConfirmed &&
-      !hasPhotographer &&
-      [
-        'PHOTOGRAPHER_ASSIGNED',
-        'CAPTURE',
-        'IN_PROGRESS',
-        'EDITING',
-        'RETOUCHING',
-        'FINALIZED',
-        'PRINTING',
-        'READY',
-        'UNDER_DELIVERY',
-        'COMPLETED',
-      ].includes(nextStatus)
-  );
-
   const handleSetStage = async (targetStatus) => {
     if (!targetStatus || targetStatus === currentStatusUpper || advancingStage) return;
     const missing = getMissingVerifications(targetStatus);
@@ -557,6 +540,19 @@ export default function BookingQuickInspector({
   };
 
   const handleAdvanceStage = () => handleSetStage(nextStatus);
+
+  const handleBookingMutated = async ({ nextStatus: updatedStatus, patch, toastMessage }) => {
+    if (patch) {
+      setDetailedBooking((prev) => ({
+        ...(prev || active),
+        ...patch,
+        updated_at: new Date().toISOString(),
+      }));
+    }
+    if (toastMessage) showInspectorToast(toastMessage);
+    await refreshDetail();
+    if (onStatusUpdated) onStatusUpdated(active.id, updatedStatus || currentStatusUpper);
+  };
 
   // ── Derived Data from Database & Notes ────────────────────────────────────
   const formattedDate = active.event_date
@@ -640,8 +636,8 @@ export default function BookingQuickInspector({
       {/* Backdrop */}
       <div className="fixed inset-0 bg-neutral-950/80 backdrop-blur-md cursor-pointer" onClick={onClose} aria-hidden="true" />
 
-      {/* Main Luxury Modal Canvas: Matches Screenshot Completely */}
-      <div className="relative w-full max-w-[1020px] max-h-[calc(100dvh-2.5rem)] flex flex-col bg-[#faf8f5] rounded-[28px] shadow-[0_32px_100px_-20px_rgba(0,0,0,0.65)] border border-white/20 overflow-hidden z-10 animate-in zoom-in-95 duration-200">
+      {/* Main Luxury Modal Canvas */}
+      <div className="relative w-full max-w-[1060px] max-h-[calc(100dvh-2.5rem)] flex flex-col bg-[#faf8f5] rounded-[28px] shadow-[0_32px_100px_-20px_rgba(0,0,0,0.65)] border border-white/20 overflow-hidden z-10 animate-in zoom-in-95 duration-200">
 
         {/* ── 1. HEADER (Dark Section) ────────────────────────────────────── */}
         <header className="relative shrink-0 bg-[#0b0f17] text-white px-6 sm:px-7 pt-4 pb-3.5 overflow-hidden border-b border-white/10">
@@ -725,204 +721,105 @@ export default function BookingQuickInspector({
         )}
 
         {/* ── 2. SCROLLABLE CONTENT BODY (Ivory Section) ───────────────────── */}
-        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-6 sm:px-8 py-6">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-6 sm:px-8 py-5 sm:py-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-stretch">
 
-            {/* Left Column (Approx 60%): Order Information */}
-            <div className="lg:col-span-7 space-y-5 lg:pr-2">
+            {/* Left Column (50%): Order Information */}
+            <div className="lg:col-span-6 flex flex-col justify-between gap-4 lg:pr-1">
+              <div className="space-y-5">
+                {/* 1. CLIENT IDENTITY */}
+                <section>
+                  <SectionTitle icon={User}>CLIENT IDENTITY</SectionTitle>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                    <Field label="ACCOUNT OWNER">{accountOwnerName}</Field>
 
-              {/* 1. CLIENT IDENTITY */}
-              <section>
-                <SectionTitle icon={User}>CLIENT IDENTITY</SectionTitle>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-                  <Field label="ACCOUNT OWNER">{accountOwnerName}</Field>
+                    <Field label="EMAIL ADDRESS">
+                      {hasEmail ? (
+                        <span className="inline-flex items-center gap-1.5 font-bold text-[12.5px] text-neutral-900">
+                          <Mail size={12} className="text-[#c9a96e] shrink-0" />
+                          <span className="truncate">{email}</span>
+                        </span>
+                      ) : (
+                        <span className="text-neutral-400 font-normal">Not provided</span>
+                      )}
+                    </Field>
 
-                  <Field label="EMAIL ADDRESS">
-                    {hasEmail ? (
-                      <span className="inline-flex items-center gap-1.5 font-bold text-[12.5px] text-neutral-900">
-                        <Mail size={12} className="text-[#c9a96e] shrink-0" />
-                        <span className="truncate">{email}</span>
-                      </span>
-                    ) : (
-                      <span className="text-neutral-400 font-normal">Not provided</span>
-                    )}
-                  </Field>
+                    <Field label="CONTACT PHONE" muted={!hasPhone}>
+                      {hasPhone ? phone : 'Not provided'}
+                    </Field>
 
-                  <Field label="CONTACT PHONE" muted={!hasPhone}>
-                    {hasPhone ? phone : 'Not provided'}
-                  </Field>
+                    <Field label="BENEFICIARY TYPE">
+                      {isSomeoneElse ? (
+                        <span className="text-neutral-900 font-semibold">
+                          {participantName || participant.full_name || 'Beneficiary'}
+                          {participant.relationship ? ` (${participant.relationship})` : ''}
+                        </span>
+                      ) : (
+                        <span className="text-neutral-800 font-medium">Self (Account Owner)</span>
+                      )}
+                    </Field>
+                  </div>
+                </section>
 
-                  <Field label="BENEFICIARY TYPE">
-                    {isSomeoneElse ? (
-                      <span className="text-neutral-900 font-semibold">
-                        {participantName || participant.full_name || 'Beneficiary'}
-                        {participant.relationship ? ` (${participant.relationship})` : ''}
-                      </span>
-                    ) : (
-                      <span className="text-neutral-800 font-medium">Self (Account Owner)</span>
-                    )}
-                  </Field>
-                </div>
-              </section>
+                {/* Hairline Divider */}
+                <div className="border-b border-[#ece6da]" />
 
-              {/* Hairline Divider */}
-              <div className="border-b border-[#ece6da]" />
+                {/* 2. ACADEMIC & INSTITUTION */}
+                <section>
+                  <SectionTitle icon={GraduationCap}>ACADEMIC & INSTITUTION</SectionTitle>
+                  <div className="mb-4">
+                    <h4 className="font-heading font-bold text-[17px] text-neutral-900 leading-snug">
+                      {school}
+                    </h4>
+                    {campus && <p className="text-xs text-neutral-500 font-normal mt-1 leading-none">{campus}</p>}
+                  </div>
 
-              {/* 2. ACADEMIC & INSTITUTION */}
-              <section>
-                <SectionTitle icon={GraduationCap}>ACADEMIC & INSTITUTION</SectionTitle>
-                <div className="mb-4">
-                  <h4 className="font-heading font-bold text-[17px] text-neutral-900 leading-snug">
-                    {school}
-                  </h4>
-                  {campus && <p className="text-xs text-neutral-500 font-normal mt-1 leading-none">{campus}</p>}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <Field label="TRACK / STRAND">
-                    {strand}
-                  </Field>
-                  <Field label="SECTION / GRADE">
-                    {sectionGrade}
-                  </Field>
-                  <Field label="STUDENT ID">
-                    <span className="font-mono tabular-nums">{studentId}</span>
-                  </Field>
-                </div>
-              </section>
-            </div>
-
-            {/* Right Column (Approx 40%): Balance & Payment Actions */}
-            <aside className="lg:col-span-5 space-y-3">
-
-              {/* REMAINING BALANCE CARD (Obsidian Black) */}
-              <div className="rounded-[20px] bg-[#0b0f17] text-white p-4.5 sm:p-5 shadow-xl border border-white/10">
-                <div>
-                  <p className="font-sans uppercase text-xs font-semibold text-neutral-400 leading-none">
-                    REMAINING BALANCE
-                  </p>
-                  <p className="font-sans font-bold text-3xl sm:text-[32px] text-white tracking-tight mt-1 leading-none">
-                    {peso(remainingBal, remainingBal % 1 ? 2 : 0)}
-                  </p>
-                </div>
-
-                {/* Gold Progress Bar */}
-                <div className="mt-2.5 h-1.5 w-full bg-neutral-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-[#c9a96e] transition-all duration-500"
-                    style={{ width: `${paidPercent}%` }}
-                  />
-                </div>
-
-                {/* Paid vs Total */}
-                <div className="mt-1.5 flex items-center justify-between text-[11px] tabular-nums">
-                  <span className="text-neutral-400">
-                    Paid <strong className="text-white font-bold">{peso(downPayment)}</strong>
-                  </span>
-                  <span className="text-neutral-400">
-                    Total <strong className="text-white font-bold">{peso(totalAmount)}</strong> · {paidPercent}%
-                  </span>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="mt-3.5 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={openRecordPayment}
-                    className="flex-1 h-9 px-3 rounded-xl bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all active:scale-[0.99]"
-                  >
-                    {needsDownpaymentConfirmation ? (
-                      <>
-                        <CheckCircle2 size={13} className="shrink-0" />
-                        Confirm Downpayment
-                      </>
-                    ) : (
-                      <>
-                        <CreditCard size={13} className="shrink-0" />
-                        Update records
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={goPayments}
-                    title="Open Payments Dashboard"
-                    className="h-9 px-3.5 rounded-xl border border-white/20 hover:bg-white/10 text-white font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors shrink-0"
-                  >
-                    Payments Dashboard <ArrowRight size={12} />
-                  </button>
-                </div>
+                  <div className="flex flex-wrap items-start gap-x-7 gap-y-3">
+                    <Field label="TRACK / STRAND">
+                      {strand}
+                    </Field>
+                    <Field label="SECTION / GRADE">
+                      {sectionGrade}
+                    </Field>
+                    <Field label="STUDENT ID">
+                      <span className="font-mono tabular-nums">{studentId}</span>
+                    </Field>
+                  </div>
+                </section>
               </div>
 
-              {isNextStageBlocked && (
-                <div className="rounded-xl border border-amber-300/70 bg-amber-50/90 px-3.5 py-2.5 flex items-start gap-2 text-xs text-amber-950">
-                  <AlertCircle size={14} className="text-amber-700 shrink-0 mt-0.5" aria-hidden="true" />
-                  <span>
-                    {needsAssignPhotographerCTA ? (
-                      <>
-                        Missing <strong>assigned photographer</strong> — assign one below to move to{' '}
-                        <strong>{getStatusLabel(nextStatus)}</strong>.
-                      </>
-                    ) : (
-                      <>
-                        Stage progression paused: missing <strong>{missingForNext.join(' and ')}</strong> verification.
-                      </>
-                    )}
-                  </span>
-                </div>
-              )}
-            </aside>
+              <p className="text-[11px] text-neutral-400 pt-2 border-t border-[#ece6da]/70">{lastUpdated}</p>
+            </div>
+
+            {/* Right Column (50%): Stage-Adaptive Smart Action Card */}
+            <InspectorStageCard
+              key={`${active.id}-${currentStatusUpper}`}
+              active={active}
+              profile={profile}
+              currentStatusUpper={currentStatusUpper}
+              nextStatus={nextStatus}
+              hasPhotographer={hasPhotographer}
+              hasPaymentConfirmed={hasPaymentConfirmed}
+              needsDownpaymentConfirmation={needsDownpaymentConfirmation}
+              gatewayStatus={gatewayStatus}
+              downPayment={downPayment}
+              totalAmount={totalAmount}
+              remainingBal={remainingBal}
+              paidPercent={paidPercent}
+              isPaid={isPaid}
+              formattedDate={formattedDate}
+              advancingStage={advancingStage}
+              onOpenPayment={openRecordPayment}
+              onOpenPaymentsPage={goPayments}
+              onOpenPhotosPage={goPhotos}
+              onOpenFullOrder={goBooking}
+              onAdvanceStage={handleAdvanceStage}
+              onSetStage={handleSetStage}
+              onBookingMutated={handleBookingMutated}
+              onShowToast={showInspectorToast}
+            />
           </div>
         </div>
-
-        {/* ── 3. FIXED FOOTER (Pure White) ─────────────────────────────────── */}
-        <footer className="shrink-0 flex flex-wrap items-center justify-between gap-3 px-6 sm:px-8 py-3 bg-white border-t border-[#ece6da]">
-          <span className="text-[11px] text-neutral-400">{lastUpdated}</span>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {needsAssignPhotographerCTA ? (
-              <button
-                type="button"
-                onClick={() => setAssignModalOpen(true)}
-                className="h-9 px-4 rounded-lg bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
-                title={`Assign a photographer before moving to ${getStatusLabel(nextStatus)}`}
-              >
-                <Camera size={13} />
-                <span>Assign Photographer</span>
-              </button>
-            ) : (
-              nextStatus && (
-                <button
-                  type="button"
-                  onClick={handleAdvanceStage}
-                  disabled={advancingStage || isNextStageBlocked}
-                  className="h-9 px-4 rounded-lg bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-45 disabled:cursor-not-allowed"
-                  title={
-                    isNextStageBlocked
-                      ? `Verification required: missing ${missingForNext.join(' and ')}`
-                      : `Advance order from ${getStatusLabel(currentStatusUpper)} to ${getStatusLabel(nextStatus)}`
-                  }
-                >
-                  {advancingStage ? (
-                    <Loader2 size={13} className="animate-spin" />
-                  ) : (
-                    <Sparkles size={13} />
-                  )}
-                  <span>Move to {getStatusLabel(nextStatus)}</span>
-                </button>
-              )
-            )}
-
-            <button
-              type="button"
-              onClick={goBooking}
-              className="h-9 px-4 rounded-lg border border-neutral-300 hover:border-neutral-400 bg-white text-neutral-800 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              Full Order <ArrowRight size={12} />
-            </button>
-          </div>
-        </footer>
       </div>
 
       {/* ── CONFIRM DOWNPAYMENT / UPDATE PAYMENT RECORDS DIALOG ──────────── */}
@@ -934,9 +831,11 @@ export default function BookingQuickInspector({
                 <h3 className="font-heading text-lg font-bold text-neutral-900">
                   {needsDownpaymentConfirmation
                     ? 'Confirm Downpayment'
-                    : hasPaymentConfirmed || isPaid || gatewayStatus.isFullyPaid
-                      ? 'Notice'
-                      : 'Update records'}
+                    : gatewayStatus.isFullyPaid || isPaid
+                      ? 'Payment Settled'
+                      : hasPaymentConfirmed
+                        ? 'Collect Remaining Balance'
+                        : 'Record Payment'}
                 </h3>
                 <p className="text-xs text-neutral-500 mt-0.5">
                   {accountOwnerName} · #{active.booking_number}
@@ -1060,38 +959,26 @@ export default function BookingQuickInspector({
                   </button>
                 </div>
               </>
-            ) : hasPaymentConfirmed ? (
-              <>
-                <div className="rounded-2xl border border-[#e6decb] bg-[#faf7f0] p-4 space-y-1">
-                  <p className="text-xs font-bold text-neutral-900">
-                    Customer downpayment is recorded
-                  </p>
-                  <p className="text-xs text-neutral-600 leading-relaxed">
-                    This customer&apos;s downpayment has already been confirmed and recorded. Go to the Payments Dashboard to update the remaining {peso(remainingBal, 2)} balance.
-                  </p>
-                </div>
-                <div className="flex justify-end gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentModalOpen(false)}
-                    className="h-9 px-4 rounded-xl border border-neutral-200 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 cursor-pointer"
-                  >
-                    Close
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPaymentModalOpen(false);
-                      goPayments();
-                    }}
-                    className="h-9 px-4 rounded-xl bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
-                  >
-                    Go to Payments Dashboard <ArrowRight size={13} />
-                  </button>
-                </div>
-              </>
             ) : (
               <>
+                {hasPaymentConfirmed && remainingBal > 0 && (
+                  <div className="rounded-2xl border border-[#e6decb] bg-[#faf7f0] p-3.5 flex items-center justify-between gap-3">
+                    <div className="text-xs text-neutral-700">
+                      <span className="font-bold text-neutral-900 block">Downpayment confirmed</span>
+                      Record the remaining {peso(remainingBal, 2)} balance below or open Payments Dashboard.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentModalOpen(false);
+                        goPayments();
+                      }}
+                      className="text-xs font-semibold text-[#9a732a] hover:underline shrink-0 cursor-pointer"
+                    >
+                      Dashboard →
+                    </button>
+                  </div>
+                )}
                 <div>
                   <label className="text-xs font-semibold uppercase text-neutral-500">
                     Payment Amount
@@ -1204,32 +1091,6 @@ export default function BookingQuickInspector({
           </form>
         </div>
       )}
-
-      {/* ── ASSIGN PHOTOGRAPHER MODAL ────────────────────────────────────── */}
-      <AssignPhotographerModal
-        booking={active}
-        changedById={profile?.id || null}
-        isOpen={assignModalOpen}
-        onClose={() => setAssignModalOpen(false)}
-        zIndexClass="z-[10003]"
-        onAssigned={async (_b, chosenName, selectedId) => {
-          setDetailedBooking((prev) => ({
-            ...(prev || booking),
-            status: 'PHOTOGRAPHER_ASSIGNED',
-            photographer_id: selectedId,
-            photographer: {
-              ...(prev?.photographer || booking?.photographer || {}),
-              id: selectedId,
-              first_name: chosenName.split(' ')[0] || chosenName,
-              last_name: chosenName.split(' ').slice(1).join(' ') || '',
-            },
-          }));
-          showInspectorToast(`${chosenName} assigned to #${active.booking_number}`);
-          await refreshDetail();
-          if (onStatusUpdated) onStatusUpdated(active.id, 'PHOTOGRAPHER_ASSIGNED');
-        }}
-        onError={(errMsg) => showInspectorToast(errMsg || 'Failed to assign photographer.', 'error')}
-      />
     </div>,
     document.body
   );

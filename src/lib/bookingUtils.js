@@ -292,6 +292,29 @@ export function formatBookingTime(value) {
   return `${hour12}:${mins} ${period}`;
 }
 
+function hasAdminReceivedEditedPhotos(booking) {
+  const history = Array.isArray(booking?.booking_status_history)
+    ? booking.booking_status_history
+    : [];
+  let sentAt = 0;
+  let receivedAt = 0;
+  let returnedAt = 0;
+  history.forEach((h, idx) => {
+    const r = String(h?.remarks || '');
+    const ts = new Date(h?.created_at || 0).getTime() || idx + 1;
+    if (/sent\s+(?:edited\s+)?photos\s+to\s+admin|submitted\s+\d+\s+sample\s+photo/i.test(r)) {
+      sentAt = Math.max(sentAt, ts);
+    }
+    if (/admin\s+received\s+(?:edited\s+)?photos/i.test(r)) {
+      receivedAt = Math.max(receivedAt, ts);
+    }
+    if (/requested\s+sample\s+revisions|returned\s+to\s+photographer/i.test(r)) {
+      returnedAt = Math.max(returnedAt, ts);
+    }
+  });
+  return Boolean(sentAt > 0 && sentAt >= returnedAt && receivedAt >= sentAt);
+}
+
 export function getNextBookingAction(booking) {
   if (!booking) return null;
   const status = String(booking.status || 'PENDING').toUpperCase();
@@ -333,49 +356,38 @@ export function getNextBookingAction(booking) {
     if (!hasPhotog) {
       return {
         type: 'ASSIGN_PHOTOGRAPHER',
-        label: 'Assign Photographer',
+        label: 'Move to Photographer',
         nextStatus: 'PHOTOGRAPHER_ASSIGNED',
         nextLabel: getStatusLabel('PHOTOGRAPHER_ASSIGNED'),
       };
     }
-    return {
-      type: 'ADVANCE_STAGE',
-      label: 'Start Pictorial',
-      nextStatus: 'CAPTURE',
-      nextLabel: getStatusLabel('CAPTURE'),
-    };
+    return null;
   }
 
   if (status === 'PHOTOGRAPHER_ASSIGNED') {
     if (!hasPhotog) {
       return {
         type: 'ASSIGN_PHOTOGRAPHER',
-        label: 'Assign Photographer',
+        label: 'Move to Photographer',
         nextStatus: 'PHOTOGRAPHER_ASSIGNED',
         nextLabel: getStatusLabel('PHOTOGRAPHER_ASSIGNED'),
       };
     }
-    return {
-      type: 'ADVANCE_STAGE',
-      label: 'Start Pictorial',
-      nextStatus: 'CAPTURE',
-      nextLabel: getStatusLabel('CAPTURE'),
-    };
+    return null;
   }
 
   if (status === 'CAPTURE' || status === 'IN_PROGRESS') {
-    return {
-      type: 'ADVANCE_STAGE',
-      label: 'Move to Editing',
-      nextStatus: 'EDITING',
-      nextLabel: getStatusLabel('EDITING'),
-    };
+    return null;
   }
 
   if (status === 'EDITING') {
+    const adminReadyToConfirm = hasAdminReceivedEditedPhotos(booking);
+    if (!adminReadyToConfirm) {
+      return null;
+    }
     return {
       type: 'ADVANCE_STAGE',
-      label: 'Move to Retouching',
+      label: 'Confirm Retouching',
       nextStatus: 'RETOUCHING',
       nextLabel: getStatusLabel('RETOUCHING'),
     };
@@ -411,4 +423,51 @@ export function getNextBookingAction(booking) {
 
   return null;
 }
+
+const INACTIVE_CONFLICT_STATUSES = new Set(['COMPLETED', 'CANCELLED', 'REJECTED']);
+
+/** Parses "09:00:00", "9:00 AM", etc. into minutes since midnight, or null for unparsed/full-day values. */
+export function parseBookingTimeMinutes(raw) {
+  if (!raw) return null;
+  const trimmed = String(raw).trim();
+  if (!trimmed || /full[-\s]*day|school/i.test(trimmed)) return null;
+  const match = trimmed.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?/i);
+  if (!match) return null;
+  let hours = parseInt(match[1], 10);
+  const mins = parseInt(match[2], 10);
+  const mer = match[3]?.toLowerCase();
+  if (mer === 'pm' && hours < 12) hours += 12;
+  if (mer === 'am' && hours === 12) hours = 0;
+  if (Number.isNaN(hours) || Number.isNaN(mins) || hours < 0 || hours > 23 || mins < 0 || mins > 59) {
+    return null;
+  }
+  return hours * 60 + mins;
+}
+
+/** Returns true if two bookings share the same day and overlapping studio hours (< 60 mins apart or full-day). */
+export function doBookingTimesConflict(a, b) {
+  if (!a || !b) return false;
+  const dA = String(a.event_date || '').slice(0, 10);
+  const dB = String(b.event_date || '').slice(0, 10);
+  if (!dA || !dB || dA !== dB) return false;
+
+  const tA = parseBookingTimeMinutes(a.preferred_time);
+  const tB = parseBookingTimeMinutes(b.preferred_time);
+  if (tA === null || tB === null) return true;
+  return Math.abs(tA - tB) < 60;
+}
+
+/** Finds any other active booking in `list` whose day/time conflicts with `target`. */
+export function findConflictingBooking(target, list = []) {
+  if (!target?.event_date || !Array.isArray(list)) return null;
+  return (
+    list.find((other) => {
+      if (!other || other.id === target.id || other.is_deleted) return false;
+      const st = String(other.status || '').toUpperCase();
+      if (INACTIVE_CONFLICT_STATUSES.has(st)) return false;
+      return doBookingTimesConflict(target, other);
+    }) || null
+  );
+}
+
 

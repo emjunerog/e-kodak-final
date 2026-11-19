@@ -4,7 +4,6 @@ import { useAuth } from '../../context/AuthContext';
 import {
   getAssignedBookings,
   updateBookingStatusByPhotographer,
-  acceptAssignment,
   declineAssignment,
   requestRescheduleByPhotographer,
   parseBookingBrief,
@@ -12,6 +11,7 @@ import {
   toggleGeneralAvailability,
   getPhotographerProfileData,
 } from '../../services/photographerService';
+import { findConflictingBooking } from '../../lib/bookingUtils';
 import {
   CalendarDays,
   MapPin,
@@ -297,61 +297,21 @@ export default function PhotographerBookings() {
     });
   };
 
-  // Workflow Step 4: Accept Assignment
-  const handleAccept = async (booking) => {
-    setUpdatingId(booking.id);
-    try {
-      const { error: err } = await acceptAssignment({
-        bookingId: booking.id,
-        photographerId: user.id,
-        photographerName: `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Photographer',
-        bookingNumber: booking.booking_number,
-      });
-
-      if (err) throw err;
-      setToast({ type: 'success', message: `Assignment accepted for #${booking.booking_number}! Session locked in.` });
-      if (selectedBooking?.id === booking.id) {
-        setSelectedBooking(prev => ({ ...prev, status: 'CONFIRMED' }));
-      }
-      await loadBookings();
-    } catch (err) {
-      setToast({ type: 'error', message: err.message || 'Failed to accept assignment.' });
-    } finally {
-      setUpdatingId(null);
-    }
-  };
-
-  // Workflow Step 4: Confirm Decline
-  const handleConfirmDecline = async (e) => {
-    e.preventDefault();
-    if (!selectedBooking) return;
-    setDeclining(true);
-    try {
-      const { error: err } = await declineAssignment({
-        bookingId: selectedBooking.id,
-        photographerId: user.id,
-        photographerName: `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Photographer',
-        bookingNumber: selectedBooking.booking_number,
-        reason: declineReason.trim() || 'Unavailable for requested slot',
-      });
-
-      if (err) throw err;
-      setToast({ type: 'success', message: `Assignment declined. #${selectedBooking.booking_number} returned to admin queue for reassignment.` });
-      setDeclineModalOpen(false);
-      setDeclineReason('');
-      setSelectedBooking(null);
-      await loadBookings();
-    } catch (err) {
-      setToast({ type: 'error', message: err.message || 'Failed to decline assignment.' });
-    } finally {
-      setDeclining(false);
-    }
-  };
-
   // Workflow Step 5: Confirm Reschedule Request
   const handleConfirmReschedule = async (e) => {
     e.preventDefault();
     if (!selectedBooking) return;
+    const conflict = findConflictingBooking(
+      { id: selectedBooking.id, event_date: proposedDate, preferred_time: proposedTime },
+      bookings
+    );
+    if (conflict) {
+      setToast({
+        type: 'error',
+        message: `Conflicting hours: you already have booking #${conflict.booking_number} on ${conflict.event_date}.`,
+      });
+      return;
+    }
     setRescheduling(true);
     try {
       const { error: err } = await requestRescheduleByPhotographer({
@@ -378,11 +338,37 @@ export default function PhotographerBookings() {
     }
   };
 
-  // Workflow Step 6: Advance Session Status
-  const handleAdvanceStatus = async (bookingId, targetStatus) => {
+  // Workflow Step 6: Advance Session Status (with smart conflict auto-decline)
+  const handleAdvanceStatus = async (bookingId, targetStatus, explicitConflict = null) => {
     setUpdatingId(bookingId);
     try {
-      const logRemarks = remarks.trim() || `Status updated to ${targetStatus} by studio photographer.`;
+      const targetBk = bookings.find((b) => b.id === bookingId);
+      const conflict = explicitConflict || (targetStatus === 'CAPTURE' ? findConflictingBooking(targetBk, bookings) : null);
+
+      if (targetStatus === 'CAPTURE' && conflict && targetBk) {
+        const photographerName = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Photographer';
+        await declineAssignment({
+          bookingId: targetBk.id,
+          photographerId: user.id,
+          photographerName,
+          bookingNumber: targetBk.booking_number,
+          reason: `Auto-declined due to conflicting shoot hours with #${conflict.booking_number} on ${conflict.event_date}`,
+        });
+        setToast({
+          type: 'error',
+          message: `Smartly declined #${targetBk.booking_number}: conflicting hours with #${conflict.booking_number} — returned to Admin.`,
+        });
+        await loadBookings();
+        return;
+      }
+
+      const defaultMsg =
+        targetStatus === 'CAPTURE'
+          ? 'Photographer started the pictorial session.'
+          : targetStatus === 'EDITING'
+            ? 'Photographer confirmed pictorial is done and started editing the photos.'
+            : `Status updated to ${targetStatus} by studio photographer.`;
+      const logRemarks = remarks.trim() || defaultMsg;
       const { error: updateErr } = await updateBookingStatusByPhotographer(
         bookingId,
         targetStatus,
@@ -392,14 +378,21 @@ export default function PhotographerBookings() {
 
       if (updateErr) throw updateErr;
 
-      setToast({ type: 'success', message: `Photoshoot status progressed to ${targetStatus}!` });
+      setToast({
+        type: 'success',
+        message:
+          targetStatus === 'CAPTURE'
+            ? 'Pictorial started! Confirm done once capture wraps up.'
+            : targetStatus === 'EDITING'
+              ? 'Pictorial confirmed done! Now edit the photos and send them to Admin when ready.'
+              : `Photoshoot status progressed to ${targetStatus}!`,
+      });
       if (selectedBooking?.id === bookingId) {
         setSelectedBooking(prev => ({ ...prev, status: targetStatus }));
       }
 
-      // Emit synchronized transfer log to Studio Admin
-      const targetBk = bookings.find(b => b.id === bookingId);
-      if (targetBk) {
+      // Emit transfer log only for statuses not already dispatched in updateBookingStatusByPhotographer
+      if (targetBk && !['CAPTURE', 'EDITING'].includes(targetStatus)) {
         await createTransferLog({
           bookingId: targetBk.id,
           senderId: user.id,
@@ -520,238 +513,225 @@ export default function PhotographerBookings() {
       {/* ── Page Content Wrapper (Full Width Edge-to-Edge) ── */}
       <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-5 mt-2.5 sm:mt-3">
 
-      {/* ── 2. KPI Metric Strip (Unified Luxury Studio KPI Cards) ─────────────── */}
-      <CategorizedMetricStrip
-        loading={loading}
-        columns="grid-cols-2 lg:grid-cols-4"
-        cards={[
-          {
-            key: 'all',
-            label: 'TOTAL',
-            subtitle: 'ALL ASSIGNED SHOOTS',
-            value: counts.total,
-            isActive: statusFilter === 'all',
-            onClick: () => setStatusFilter('all')
-          },
-          {
-            key: 'upcoming',
-            label: 'UPCOMING',
-            subtitle: 'READY FOR CAPTURE',
-            value: counts.upcoming,
-            isActive: statusFilter === 'upcoming',
-            onClick: () => setStatusFilter('upcoming')
-          },
-          {
-            key: 'in_progress',
-            label: 'IN PRODUCTION',
-            subtitle: 'CAPTURE OR EDITING',
-            value: counts.inProgress,
-            isActive: statusFilter === 'in_progress',
-            onClick: () => setStatusFilter('in_progress')
-          },
-          {
-            key: 'completed',
-            label: 'COMPLETED',
-            subtitle: 'FINISHED SESSIONS',
-            value: counts.completed,
-            isActive: statusFilter === 'completed',
-            onClick: () => setStatusFilter('completed')
-          }
-        ]}
-      />
+        {/* ── 2. KPI Metric Strip (Unified Luxury Studio KPI Cards) ─────────────── */}
+        <CategorizedMetricStrip
+          loading={loading}
+          columns="grid-cols-2 lg:grid-cols-4"
+          cards={[
+            {
+              key: 'all',
+              label: 'TOTAL',
+              subtitle: 'ALL ASSIGNED SHOOTS',
+              value: counts.total,
+              isActive: statusFilter === 'all',
+              onClick: () => setStatusFilter('all')
+            },
+            {
+              key: 'upcoming',
+              label: 'UPCOMING',
+              subtitle: 'READY FOR CAPTURE',
+              value: counts.upcoming,
+              isActive: statusFilter === 'upcoming',
+              onClick: () => setStatusFilter('upcoming')
+            },
+            {
+              key: 'in_progress',
+              label: 'IN PRODUCTION',
+              subtitle: 'CAPTURE OR EDITING',
+              value: counts.inProgress,
+              isActive: statusFilter === 'in_progress',
+              onClick: () => setStatusFilter('in_progress')
+            },
+            {
+              key: 'completed',
+              label: 'COMPLETED',
+              subtitle: 'FINISHED SESSIONS',
+              value: counts.completed,
+              isActive: statusFilter === 'completed',
+              onClick: () => setStatusFilter('completed')
+            }
+          ]}
+        />
 
-      {/* Error Alert */}
-      {error && (
-        <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700 text-xs font-semibold">
-          <AlertCircle size={18} />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* ── 3. Integrated Assigned Shoots Station Box ──────────────────────── */}
-      <div className="rounded-3xl bg-white border border-neutral-200/80 shadow-xs overflow-hidden">
-        {/* Integrated Header: Title, Active Filter Badge, Search, Dropdowns & View Toggle */}
-        <div className="p-4 sm:p-5 border-b border-neutral-100/90 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3.5 bg-neutral-50/50">
-          
-          {/* Left: Section Title & Active Filter Tag */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <h3 className="font-heading text-base sm:text-lg font-bold text-neutral-900 leading-tight">
-              Assigned Shoots
-            </h3>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-white text-neutral-700 border border-neutral-200/90 shadow-2xs">
-              {filteredBookings.length} {filteredBookings.length === 1 ? 'session' : 'sessions'}
-            </span>
-
-            {(statusFilter !== 'all' || timeframeFilter !== 'all' || serviceFilter !== 'all' || search) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setStatusFilter('all');
-                  setTimeframeFilter('all');
-                  setServiceFilter('all');
-                  setSearch('');
-                }}
-                className="text-[11px] font-bold text-gold hover:text-gold-dark flex items-center gap-1 transition-colors cursor-pointer ml-1"
-                title="Reset all filters"
-              >
-                <span>Reset filters</span>
-                <X size={12} />
-              </button>
-            )}
+        {/* Error Alert */}
+        {error && (
+          <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700 text-xs font-semibold">
+            <AlertCircle size={18} />
+            <span>{error}</span>
           </div>
+        )}
 
-          {/* Right: Integrated Search Input, Dropdowns & View Mode Toggle */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            {/* Search Input */}
-            <div className="relative flex-1 min-w-[190px] sm:w-60">
-              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
-              <input
-                type="text"
-                placeholder="Search booking #, client, service..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-8 py-2 bg-white border border-neutral-200/80 rounded-xl text-xs font-body focus:ring-2 focus:ring-gold/20 focus:border-gold outline-none transition-all shadow-2xs"
-              />
-              {search && (
+        {/* ── 3. Integrated Assigned Shoots Station Box ──────────────────────── */}
+        <div className="rounded-3xl bg-white border border-neutral-200/80 shadow-xs overflow-hidden">
+          {/* Integrated Header: Title, Active Filter Badge, Search, Dropdowns & View Toggle */}
+          <div className="p-4 sm:p-5 border-b border-neutral-100/90 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3.5 bg-neutral-50/50">
+
+            {/* Left: Section Title & Active Filter Tag */}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h3 className="font-heading text-base sm:text-lg font-bold text-neutral-900 leading-tight">
+                Assigned Shoots
+              </h3>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-white text-neutral-700 border border-neutral-200/90 shadow-2xs">
+                {filteredBookings.length} {filteredBookings.length === 1 ? 'session' : 'sessions'}
+              </span>
+
+              {(statusFilter !== 'all' || timeframeFilter !== 'all' || serviceFilter !== 'all' || search) && (
                 <button
                   type="button"
-                  onClick={() => setSearch('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 p-0.5 cursor-pointer"
-                  title="Clear search"
+                  onClick={() => {
+                    setStatusFilter('all');
+                    setTimeframeFilter('all');
+                    setServiceFilter('all');
+                    setSearch('');
+                  }}
+                  className="text-[11px] font-bold text-gold hover:text-gold-dark flex items-center gap-1 transition-colors cursor-pointer ml-1"
+                  title="Reset all filters"
                 >
+                  <span>Reset filters</span>
                   <X size={12} />
                 </button>
               )}
             </div>
 
-            {/* Timeframe Dropdown */}
-            <div className="w-38 sm:w-42 shrink-0">
-              <CustomDropdown
-                value={timeframeFilter}
-                onChange={setTimeframeFilter}
-                options={timeframeOptions}
-                icon={CalendarDays}
-                popoverWidth="w-52"
-                align="right"
-              />
-            </div>
+            {/* Right: Integrated Search Input, Dropdowns & View Mode Toggle */}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Search Input */}
+              <div className="relative flex-1 min-w-[190px] sm:w-60">
+                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+                <input
+                  type="text"
+                  placeholder="Search booking #, client, service..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-9 pr-8 py-2 bg-white border border-neutral-200/80 rounded-xl text-xs font-body focus:ring-2 focus:ring-gold/20 focus:border-gold outline-none transition-all shadow-2xs"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 p-0.5 cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
 
-            {/* Service Dropdown (shown when multiple services exist) */}
-            {serviceOptions.length > 0 && (
+              {/* Timeframe Dropdown */}
               <div className="w-38 sm:w-42 shrink-0">
                 <CustomDropdown
-                  value={serviceFilter}
-                  onChange={setServiceFilter}
-                  options={serviceOptions}
-                  icon={Camera}
+                  value={timeframeFilter}
+                  onChange={setTimeframeFilter}
+                  options={timeframeOptions}
+                  icon={CalendarDays}
                   popoverWidth="w-52"
                   align="right"
                 />
               </div>
-            )}
 
-            {/* Layout Toggle (List vs Grid) */}
-            <div className="flex items-center rounded-xl bg-neutral-100 p-0.5 border border-neutral-200/80 shrink-0">
-              <button
-                type="button"
-                onClick={() => setViewMode('detailed')}
-                className={`p-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  viewMode === 'detailed'
-                    ? 'bg-white text-primary shadow-2xs'
-                    : 'text-neutral-500 hover:text-primary'
-                }`}
-                title="List View"
-              >
-                <LayoutList size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  viewMode === 'grid'
-                    ? 'bg-white text-primary shadow-2xs'
-                    : 'text-neutral-500 hover:text-primary'
-                }`}
-                title="Grid View"
-              >
-                <LayoutGrid size={14} />
-              </button>
-            </div>
-          </div>
-        </div>
+              {/* Service Dropdown (shown when multiple services exist) */}
+              {serviceOptions.length > 0 && (
+                <div className="w-38 sm:w-42 shrink-0">
+                  <CustomDropdown
+                    value={serviceFilter}
+                    onChange={setServiceFilter}
+                    options={serviceOptions}
+                    icon={Camera}
+                    popoverWidth="w-52"
+                    align="right"
+                  />
+                </div>
+              )}
 
-        {/* Box Body: Bookings List OR Integrated Empty State */}
-        <div className="p-4 sm:p-6">
-          {loading && bookings.length === 0 ? (
-            <div className="py-20 text-center">
-              <Loader2 size={30} className="animate-spin text-gold mx-auto mb-3" />
-              <p className="text-xs text-neutral-400 font-body">Synchronizing assigned shoot records…</p>
-            </div>
-          ) : filteredBookings.length === 0 ? (
-            <div className="py-16 sm:py-20 text-center max-w-md mx-auto">
-              <div className="w-14 h-14 rounded-2xl bg-gold/10 ring-6 ring-gold/5 flex items-center justify-center text-gold mx-auto mb-3.5 shadow-2xs">
-                <Camera size={26} />
-              </div>
-              <h4 className="font-heading text-lg font-bold text-neutral-900">
-                No Matching Bookings Found
-              </h4>
-              <p className="text-xs text-neutral-500 mt-1.5 leading-relaxed font-body">
-                {search || statusFilter !== 'all' || timeframeFilter !== 'all' || serviceFilter !== 'all'
-                  ? 'No shoots match your current combination of filters. Try adjusting or clearing them.'
-                  : 'There are currently no photoshoot orders assigned to your bay under this filter. New bookings will appear here once scheduled by studio administration.'}
-              </p>
-              {(search || statusFilter !== 'all' || timeframeFilter !== 'all' || serviceFilter !== 'all') && (
+              {/* Layout Toggle (List vs Grid) */}
+              <div className="flex items-center rounded-xl bg-neutral-100 p-0.5 border border-neutral-200/80 shrink-0">
                 <button
                   type="button"
-                  onClick={() => {
-                    setSearch('');
-                    setStatusFilter('all');
-                    setTimeframeFilter('all');
-                    setServiceFilter('all');
-                  }}
-                  className="mt-4 px-4 py-2 rounded-xl bg-neutral-900 hover:bg-black text-gold text-xs font-bold transition-all shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+                  onClick={() => setViewMode('detailed')}
+                  className={`p-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${viewMode === 'detailed'
+                    ? 'bg-white text-primary shadow-2xs'
+                    : 'text-neutral-500 hover:text-primary'
+                    }`}
+                  title="List View"
                 >
-                  <RefreshCw size={12} />
-                  <span>Reset All Filters</span>
+                  <LayoutList size={14} />
                 </button>
-              )}
+                <button
+                  type="button"
+                  onClick={() => setViewMode('grid')}
+                  className={`p-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${viewMode === 'grid'
+                    ? 'bg-white text-primary shadow-2xs'
+                    : 'text-neutral-500 hover:text-primary'
+                    }`}
+                  title="Grid View"
+                >
+                  <LayoutGrid size={14} />
+                </button>
+              </div>
             </div>
-          ) : (
-            <div className={`${viewMode === 'grid' ? 'grid grid-cols-1 lg:grid-cols-2 gap-4' : 'space-y-4'} ${isRefreshing ? 'opacity-70 transition-opacity' : 'opacity-100 transition-opacity'}`}>
-              {filteredBookings.map(b => (
-                <PhotographerBookingCard
-                  key={b.id}
-                  booking={b}
-                  isExpanded={expandedIds.has(b.id)}
-                  onToggleExpand={() => handleToggleExpand(b.id)}
-                  updatingId={updatingId}
-                  onAccept={handleAccept}
-                  onDecline={(booking) => {
-                    setSelectedBooking(booking);
-                    setDeclineReason('');
-                    setDeclineModalOpen(true);
-                  }}
-                  onAdvanceStatus={(targetId, targetStatus) => handleAdvanceStatus(targetId, targetStatus)}
-                  onReschedule={(booking) => {
-                    setSelectedBooking(booking);
-                    setProposedDate(booking.event_date || '');
-                    setProposedTime(booking.preferred_time || '');
-                    setRescheduleReason('');
-                    setRescheduleModalOpen(true);
-                  }}
-                  onReportIssue={(booking) => {
-                    setSelectedBooking(booking);
-                    setIssueTitle(`Bay Issue - #${booking.booking_number}`);
-                    setIssueMessage('');
-                    setIssuePriority('HIGH');
-                    setIssueModalOpen(true);
-                  }}
-                />
-              ))}
-            </div>
-          )}
+          </div>
+
+          {/* Box Body: Bookings List OR Integrated Empty State */}
+          <div className="p-4 sm:p-6">
+            {loading && bookings.length === 0 ? (
+              <div className="py-20 text-center">
+                <Loader2 size={30} className="animate-spin text-gold mx-auto mb-3" />
+                <p className="text-xs text-neutral-400 font-body">Synchronizing assigned shoot records…</p>
+              </div>
+            ) : filteredBookings.length === 0 ? (
+              <div className="py-16 sm:py-20 text-center max-w-md mx-auto">
+                <div className="w-14 h-14 rounded-2xl bg-gold/10 ring-6 ring-gold/5 flex items-center justify-center text-gold mx-auto mb-3.5 shadow-2xs">
+                  <Camera size={26} />
+                </div>
+                <h4 className="font-heading text-lg font-bold text-neutral-900">
+                  No Matching Bookings Found
+                </h4>
+                <p className="text-xs text-neutral-500 mt-1.5 leading-relaxed font-body">
+                  {search || statusFilter !== 'all' || timeframeFilter !== 'all' || serviceFilter !== 'all'
+                    ? 'No shoots match your current combination of filters. Try adjusting or clearing them.'
+                    : 'There are currently no photoshoot orders assigned to your bay under this filter. New bookings will appear here once scheduled by studio administration.'}
+                </p>
+                {(search || statusFilter !== 'all' || timeframeFilter !== 'all' || serviceFilter !== 'all') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch('');
+                      setStatusFilter('all');
+                      setTimeframeFilter('all');
+                      setServiceFilter('all');
+                    }}
+                    className="mt-4 px-4 py-2 rounded-xl bg-neutral-900 hover:bg-black text-gold text-xs font-bold transition-all shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+                  >
+                    <RefreshCw size={12} />
+                    <span>Reset All Filters</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className={`${viewMode === 'grid' ? 'grid grid-cols-1 lg:grid-cols-2 gap-4' : 'space-y-4'} ${isRefreshing ? 'opacity-70 transition-opacity' : 'opacity-100 transition-opacity'}`}>
+                {filteredBookings.map(b => (
+                  <PhotographerBookingCard
+                    key={b.id}
+                    booking={b}
+                    conflictBooking={findConflictingBooking(b, bookings)}
+                    isExpanded={expandedIds.has(b.id)}
+                    onToggleExpand={() => handleToggleExpand(b.id)}
+                    updatingId={updatingId}
+                    onAdvanceStatus={(targetId, targetStatus, conflictBk) => handleAdvanceStatus(targetId, targetStatus, conflictBk)}
+                    onPhotosSubmitted={() => loadBookings(true)}
+                    onReschedule={(booking) => {
+                      setSelectedBooking(booking);
+                      setProposedDate(booking.event_date || '');
+                      setProposedTime(booking.preferred_time || '');
+                      setRescheduleReason('');
+                      setRescheduleModalOpen(true);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
       </div>
 
       {/* ── Decline Assignment Modal Dialog ─────────────────────────────────── */}
@@ -773,7 +753,7 @@ export default function PhotographerBookings() {
             </div>
 
             <p className="text-xs text-neutral-600 leading-relaxed">
-              Are you sure you want to decline booking <strong className="text-primary font-bold">#{selectedBooking.booking_number}</strong>? 
+              Are you sure you want to decline booking <strong className="text-primary font-bold">#{selectedBooking.booking_number}</strong>?
               This will unassign your bay and return the booking to the Admin dashboard for urgent reassignment.
             </p>
 

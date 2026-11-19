@@ -30,17 +30,15 @@ import {
   Phone,
   Camera,
   CheckCircle2,
-  XCircle,
   CalendarClock,
-  Sparkles,
-  FileText,
+  GraduationCap,
+  Eye,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 
 import { useTheme } from '../context/ThemeContext';
 import GlassCard from './GlassCard';
 import GoldButton from './GoldButton';
-import StatusBadge from './StatusBadge';
 import { formatReadableDate, formatTime12 } from '../services/photographerService';
 import { useResponsiveLayout } from '../utils/responsive';
 import { Typography, Spacing, Radius, Shadow } from '../theme';
@@ -56,13 +54,7 @@ function getNextStageAction(status) {
     return { nextStatus: 'CAPTURE', label: 'Start Pictorial Session', kind: 'advance' };
   }
   if (s === 'CAPTURE' || s === 'IN_PROGRESS') {
-    return { nextStatus: 'EDITING', label: 'Finish & Move to Editing', kind: 'advance' };
-  }
-  if (s === 'EDITING') {
-    return { nextStatus: 'RETOUCHING', label: 'Move to Retouching', kind: 'advance' };
-  }
-  if (s === 'RETOUCHING') {
-    return { nextStatus: 'FINALIZED', label: 'Mark Shoot Finalized', kind: 'advance' };
+    return { nextStatus: 'EDITING', label: 'Confirm Pictorial Done', kind: 'advance' };
   }
   return null;
 }
@@ -73,9 +65,9 @@ export default function ShootDetailModal({
   busy = false,
   onClose,
   onAccept,
-  onDecline,
   onAdvanceStatus,
   onRequestReschedule,
+  onViewSession,
 }) {
   const { isDark, isSage, colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -87,9 +79,8 @@ export default function ShootDetailModal({
   const [slideAnim] = useState(() => new Animated.Value(Math.min(height * 0.65, 480)));
   const latestVisibleRef = useRef(visible);
 
-  // Sub-panels: 'details' | 'decline' | 'reschedule'
+  // Sub-panels: 'details' | 'reschedule'
   const [panel, setPanel] = useState('details');
-  const [declineReason, setDeclineReason] = useState('');
   const [proposedDate, setProposedDate] = useState('');
   const [proposedTime, setProposedTime] = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
@@ -101,12 +92,12 @@ export default function ShootDetailModal({
   useEffect(() => {
     if (visible) {
       setPanel('details');
-      setDeclineReason('');
-      setProposedDate(booking?.session_date || '');
-      setProposedTime(booking?.session_time ? String(booking.session_time).slice(0, 5) : '09:00');
+      setProposedDate(booking?.session_date || booking?.shoot_date || '');
+      const rawTime = booking?.session_time || booking?.shoot_time || '';
+      setProposedTime(rawTime ? String(rawTime).slice(0, 5) : '09:00');
       setRescheduleReason('');
     }
-  }, [visible, booking?.id, booking?.session_date, booking?.session_time]);
+  }, [visible, booking?.id, booking?.session_date, booking?.shoot_date, booking?.session_time, booking?.shoot_time]);
 
   useEffect(() => {
     latestVisibleRef.current = visible;
@@ -159,21 +150,35 @@ export default function ShootDetailModal({
   if (!isMounted || !booking) return null;
 
   const nextAction = getNextStageAction(booking.status);
-  const inclusions = Array.isArray(booking.services?.inclusions)
-    ? booking.services.inclusions
-    : [];
-  const clientName = booking.profile?.full_name || 'Studio Client';
-  const clientPhone = booking.profile?.phone || '';
+  const parsed = booking.parsed_notes || {};
+  const sInfo = booking.student_info || {};
+  const clientName = booking.profile?.full_name || parsed['Participant / Adviser Name'] || 'Studio Client';
+  const clientPhone = booking.profile?.phone || parsed['Participant Phone'] || '';
   const packageTitle = booking.services?.name || 'Studio Session';
   const packageSubtitle = booking.tier_name ? `${packageTitle} • ${booking.tier_name}` : packageTitle;
+
+  const schoolName = sInfo.school || booking.school || parsed['School'] || '';
+  const schoolLocation = sInfo.school_location || booking.school_address || parsed['Campus / Address'] || '';
+  const sectionName = sInfo.section || booking.section || parsed['Section'] || '';
+  const batchName = sInfo.batch || booking.batch || parsed['Batch'] || '';
+  const studentIdNumber = sInfo.student_id || booking.student_id || parsed['Student ID'] || '';
+  const hasAcademicInfo = Boolean(
+    schoolName ||
+    schoolLocation ||
+    sectionName ||
+    batchName ||
+    studentIdNumber ||
+    /school|senior high|college|yearbook|grad/i.test(`${packageSubtitle} ${booking.notes || ''}`)
+  );
+
   const accentColor = isDark ? colors.gold.light : colors.gold.DEFAULT;
   const placeholderColor = isDark ? '#9BA4B5' : isSage ? '#6D7667' : '#7B7366';
 
   const handleCallClient = () => {
     const clean = String(clientPhone || '').replace(/[^\d+]/g, '');
     if (!clean) return;
-    Haptics.selectionAsync().catch(() => {});
-    Linking.openURL(`tel:${clean}`).catch(() => {});
+    Haptics.selectionAsync().catch(() => { });
+    Linking.openURL(`tel:${clean}`).catch(() => { });
   };
 
   return (
@@ -203,12 +208,6 @@ export default function ShootDetailModal({
           {/* Sheet Header */}
           <View style={styles.sheetHeader}>
             <View style={{ flex: 1, paddingRight: 10 }}>
-              <View style={styles.passHeaderRow}>
-                <Text style={styles.passCodeText}>
-                  #{booking.booking_number || 'SHOOT'}
-                </Text>
-                <StatusBadge status={booking.status} size="sm" />
-              </View>
               <Text style={styles.sheetTitle} numberOfLines={2}>
                 {packageSubtitle}
               </Text>
@@ -226,7 +225,7 @@ export default function ShootDetailModal({
           {panel === 'details' && (
             <ScrollView
               showsVerticalScrollIndicator={false}
-              style={{ maxHeight: height * 0.52 }}
+              style={{ maxHeight: height * 0.54 }}
             >
               <GlassCard opaque blurred={false} style={styles.infoCard}>
                 <View style={styles.infoRow}>
@@ -234,11 +233,11 @@ export default function ShootDetailModal({
                     <User size={16} color={accentColor} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.infoLabel}>CLIENT</Text>
+                    <Text style={styles.infoLabel}>CLIENT NAME</Text>
                     <Text style={styles.infoValue}>{clientName}</Text>
-                    {clientPhone ? (
-                      <Text style={styles.infoSub}>{clientPhone}</Text>
-                    ) : null}
+                    <Text style={styles.infoSub}>
+                      {clientPhone || 'No phone number provided'}
+                    </Text>
                   </View>
                   {clientPhone ? (
                     <TouchableOpacity
@@ -263,8 +262,8 @@ export default function ShootDetailModal({
                   <View style={{ flex: 1 }}>
                     <Text style={styles.infoLabel}>SCHEDULED SLOT</Text>
                     <Text style={styles.infoValue}>
-                      {formatReadableDate(booking.session_date)} •{' '}
-                      {formatTime12(booking.session_time)}
+                      {formatReadableDate(booking.session_date || booking.shoot_date)} •{' '}
+                      {formatTime12(booking.session_time || booking.shoot_time)}
                     </Text>
                   </View>
                 </View>
@@ -283,73 +282,44 @@ export default function ShootDetailModal({
                   </View>
                 </View>
 
-                {booking.notes ? (
+                {hasAcademicInfo && (
                   <>
                     <View style={styles.rowDivider} />
                     <View style={styles.infoRow}>
                       <View style={styles.iconCircle}>
-                        <FileText size={16} color={accentColor} />
+                        <GraduationCap size={16} color={accentColor} />
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.infoLabel}>SESSION NOTES</Text>
-                        <Text style={styles.infoNotes}>{booking.notes}</Text>
+                      <View style={{ flex: 1, gap: 10 }}>
+                        <View>
+                          <Text style={styles.infoLabel}>SCHOOL NAME</Text>
+                          <Text style={styles.infoValue}>{schoolName || '—'}</Text>
+                        </View>
+                        <View>
+                          <Text style={styles.infoLabel}>SCHOOL LOCATION</Text>
+                          <Text style={styles.infoValue}>{schoolLocation || '—'}</Text>
+                        </View>
+                        <View style={styles.metaGrid}>
+                          <View style={styles.metaGridItem}>
+                            <Text style={styles.infoLabel}>SECTION NAME</Text>
+                            <Text style={styles.infoValue}>{sectionName || '—'}</Text>
+                          </View>
+                          <View style={styles.metaGridItem}>
+                            <Text style={styles.infoLabel}>BATCH</Text>
+                            <Text style={styles.infoValue}>{batchName || '—'}</Text>
+                          </View>
+                        </View>
+                        <View>
+                          <Text style={styles.infoLabel}>ID NUMBER</Text>
+                          <Text style={styles.infoValue}>{studentIdNumber || '—'}</Text>
+                        </View>
                       </View>
                     </View>
                   </>
-                ) : null}
+                )}
               </GlassCard>
-
-              {inclusions.length > 0 && (
-                <GlassCard opaque blurred={false} style={styles.inclusionsCard}>
-                  <View style={styles.inclusionsHeader}>
-                    <Sparkles size={14} color={accentColor} />
-                    <Text style={styles.infoLabel}>PACKAGE DELIVERABLES</Text>
-                  </View>
-                  {inclusions.slice(0, 6).map((item, idx) => (
-                    <Text key={`${idx}-${item}`} style={styles.inclusionItem}>
-                      • {typeof item === 'string' ? item : item?.label || String(item)}
-                    </Text>
-                  ))}
-                </GlassCard>
-              )}
 
               <View style={{ height: 8 }} />
             </ScrollView>
-          )}
-
-          {panel === 'decline' && (
-            <View style={styles.subPanel}>
-              <Text style={styles.subPanelTitle}>Decline Shoot Assignment</Text>
-              <Text style={styles.subPanelSub}>
-                This shoot will return to the studio queue so admin can reassign another photographer.
-              </Text>
-              <TextInput
-                style={styles.textArea}
-                placeholder="Reason for declining (e.g. schedule conflict)..."
-                placeholderTextColor={placeholderColor}
-                value={declineReason}
-                onChangeText={setDeclineReason}
-                multiline
-                numberOfLines={3}
-              />
-              <View style={styles.dualRow}>
-                <GoldButton
-                  variant="outline"
-                  onPress={() => setPanel('details')}
-                  disabled={busy}
-                  style={{ flex: 1 }}
-                >
-                  Back
-                </GoldButton>
-                <GoldButton
-                  onPress={() => onDecline?.(booking, declineReason)}
-                  loading={busy}
-                  style={{ flex: 1 }}
-                >
-                  Confirm Decline
-                </GoldButton>
-              </View>
-            </View>
           )}
 
           {panel === 'reschedule' && (
@@ -437,28 +407,32 @@ export default function ShootDetailModal({
               {['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED'].includes(
                 String(booking.status || '').toUpperCase()
               ) && (
-                <View style={styles.secondaryActionRow}>
                   <TouchableOpacity
                     activeOpacity={0.82}
                     onPress={() => setPanel('reschedule')}
                     disabled={busy}
-                    style={styles.secondaryChipBtn}
+                    style={styles.rescheduleFullBtn}
                   >
                     <CalendarClock size={15} color={colors.text.primary} />
                     <Text style={styles.secondaryChipText}>Reschedule</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    activeOpacity={0.82}
-                    onPress={() => setPanel('decline')}
-                    disabled={busy}
-                    style={[styles.secondaryChipBtn, styles.declineChipBtn]}
-                  >
-                    <XCircle size={15} color="#EF4444" />
-                    <Text style={[styles.secondaryChipText, { color: '#EF4444' }]}>
-                      Decline
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                )}
+
+              {onViewSession && (
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    onViewSession(booking);
+                  }}
+                  disabled={busy}
+                  style={styles.viewSessionFullBtn}
+                >
+                  <Eye size={15} color={accentColor} />
+                  <Text style={[styles.secondaryChipText, { color: accentColor }]}>
+                    View Session
+                  </Text>
+                </TouchableOpacity>
               )}
 
               {!nextAction && (
@@ -501,24 +475,18 @@ const getStyles = (colors, isDark, isSage) =>
       justifyContent: 'space-between',
       marginBottom: Spacing[3],
     },
-    passHeaderRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      flexWrap: 'wrap',
-      gap: 8,
-      marginBottom: 6,
-    },
-    passCodeText: {
-      fontFamily: Typography.fontBodyBold,
-      fontSize: 12,
-      color: isDark ? colors.gold.light : colors.gold.DEFAULT,
-      letterSpacing: 0.6,
-    },
     sheetTitle: {
       fontFamily: Typography.fontHeading,
       fontSize: 20,
       lineHeight: 25,
       color: colors.text.primary,
+    },
+    metaGrid: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    metaGridItem: {
+      flex: 1,
     },
     closeBtn: {
       width: 34,
@@ -670,12 +638,8 @@ const getStyles = (colors, isDark, isSage) =>
       marginTop: 12,
       gap: 10,
     },
-    secondaryActionRow: {
-      flexDirection: 'row',
-      gap: 10,
-    },
-    secondaryChipBtn: {
-      flex: 1,
+    rescheduleFullBtn: {
+      width: '100%',
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
@@ -686,8 +650,17 @@ const getStyles = (colors, isDark, isSage) =>
       borderColor: isDark ? 'rgba(180,198,224,0.22)' : isSage ? '#D1D9C8' : '#D5DAE5',
       backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
     },
-    declineChipBtn: {
-      borderColor: 'rgba(239, 68, 68, 0.35)',
+    viewSessionFullBtn: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      height: 44,
+      borderRadius: Radius.full,
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(229, 193, 88, 0.36)' : isSage ? 'rgba(86, 106, 74, 0.34)' : 'rgba(184, 134, 34, 0.34)',
+      backgroundColor: colors.gold.bg,
     },
     secondaryChipText: {
       fontFamily: Typography.fontBodySemi,

@@ -14,6 +14,7 @@ export default function PhotographerQRPassCard({
   qrLoginToken = null,
   fullName = 'Photographer',
   variant = 'compact',
+  embedded = false,
   onOpenModal = null,
   onRegenerate = null,
   rotating = false,
@@ -55,7 +56,13 @@ export default function PhotographerQRPassCard({
   };
 
   return (
-    <div className="rounded-2xl p-5 bg-gradient-to-br from-white via-surface-warm to-amber-50/20 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 border border-neutral-200/90 dark:border-neutral-800 shadow-xs font-body transition-colors">
+    <div
+      className={
+        embedded
+          ? 'font-body'
+          : 'rounded-2xl p-5 bg-gradient-to-br from-white via-surface-warm to-amber-50/20 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 border border-neutral-200/90 dark:border-neutral-800 shadow-xs font-body transition-colors'
+      }
+    >
       {/* Header */}
       <div className="flex items-center gap-2.5 border-b border-neutral-200/70 dark:border-neutral-800 pb-3 mb-4">
         <div className="w-8 h-8 rounded-xl bg-gold/15 text-gold-dark dark:text-gold border border-gold/30 flex items-center justify-center shrink-0">

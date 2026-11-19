@@ -2884,7 +2884,6 @@ export default function AdminBookings({ initialSection }) {
                                     <th className="px-4 py-2.5">Pictorial Schedule</th>
                                     <th className="px-4 py-2.5">Shoot Location</th>
                                     <th className="px-4 py-2.5">Status</th>
-                                    <th className="px-4 py-2.5 text-right">Actions</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-neutral-100">
@@ -3031,6 +3030,7 @@ export default function AdminBookings({ initialSection }) {
                                               const nextAction = getNextBookingAction(b);
                                               const isAdvancing = advancingBookingId === b.id;
                                               if (!nextAction) return null;
+                                              const isGrayedOverride = Boolean(nextAction.isPhotographerAction);
                                               const ActionIcon =
                                                 nextAction.type === 'CONFIRM_PAYMENT' || nextAction.type === 'APPROVE_AND_RESERVE'
                                                   ? CheckCircle2
@@ -3042,13 +3042,21 @@ export default function AdminBookings({ initialSection }) {
                                                   type="button"
                                                   disabled={isAdvancing}
                                                   onClick={() => handleRowStageAction(b, nextAction)}
-                                                  title={nextAction.label}
-                                                  className="h-8 px-2 rounded-lg text-neutral-900 hover:text-amber-800 hover:bg-amber-50/80 text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                                                  title={
+                                                    isGrayedOverride
+                                                      ? `${nextAction.label} (${nextAction.overrideHint || 'Admin override'})`
+                                                      : nextAction.label
+                                                  }
+                                                  className={`h-8 px-2 rounded-lg text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 ${
+                                                    isGrayedOverride
+                                                      ? 'text-neutral-400 bg-neutral-100/80 border border-neutral-200/80 opacity-65 hover:opacity-100 hover:text-neutral-700 hover:bg-neutral-200/70'
+                                                      : 'text-neutral-900 hover:text-amber-800 hover:bg-amber-50/80'
+                                                  }`}
                                                 >
                                                   {isAdvancing ? (
-                                                    <Loader2 size={14} className="animate-spin shrink-0 text-gold-dark" />
+                                                    <Loader2 size={14} className={`animate-spin shrink-0 ${isGrayedOverride ? 'text-neutral-400' : 'text-gold-dark'}`} />
                                                   ) : (
-                                                    <ActionIcon size={14} className="shrink-0 text-gold-dark" />
+                                                    <ActionIcon size={14} className={`shrink-0 ${isGrayedOverride ? 'text-neutral-400' : 'text-gold-dark'}`} />
                                                   )}
                                                   <span>{isAdvancing ? 'Updating...' : nextAction.label}</span>
                                                 </button>
@@ -3133,21 +3141,21 @@ export default function AdminBookings({ initialSection }) {
                   </div>
                 </th>
                 <th className="px-4 py-3.5 whitespace-nowrap">Status</th>
-                <th className="px-4 py-3.5 whitespace-nowrap">Actions</th>
+                {isDeletedTab && <th className="px-4 py-3.5 whitespace-nowrap">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
               {loading ? (
                 [...Array(5)].map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    <td colSpan={6} className="px-5 sm:px-6 py-5">
+                    <td colSpan={isDeletedTab ? 6 : 5} className="px-5 sm:px-6 py-5">
                       <div className="h-6 bg-neutral-100 rounded-lg w-full" />
                     </td>
                   </tr>
                 ))
               ) : displayedBookings.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-16 text-center">
+                  <td colSpan={isDeletedTab ? 6 : 5} className="py-16 text-center">
                     {isDeletedTab ? (
                       <>
                         <Trash2 size={34} className="mx-auto text-neutral-300 mb-2.5" />
@@ -3312,12 +3320,12 @@ export default function AdminBookings({ initialSection }) {
                         </div>
                       </td>
 
-                      {/* Actions Column (Only Bold Text Column) */}
-                      <td
-                        className="px-4 py-3.5 whitespace-nowrap"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {isDeletedTab ? (
+                      {/* Trash Restore / Purge Column (only shown on Trash tab) */}
+                      {isDeletedTab && (
+                        <td
+                          className="px-4 py-3.5 whitespace-nowrap"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <div className="flex items-center gap-1.5">
                             <button
                               type="button"
@@ -3338,71 +3346,8 @@ export default function AdminBookings({ initialSection }) {
                               <span>Purge</span>
                             </button>
                           </div>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            {(() => {
-                              const nextAction = getNextBookingAction(b);
-                              const isAdvancing = advancingBookingId === b.id;
-
-                              if (!nextAction) {
-                                return (
-                                  <span className="h-9 px-1.5 text-neutral-900 text-xs sm:text-sm font-bold inline-flex items-center gap-1.5">
-                                    <CheckCircle2 size={14} className="text-neutral-900 shrink-0" aria-hidden="true" />
-                                    <span>{String(b.status || '').toUpperCase() === 'COMPLETED' ? 'Order Completed' : 'Closed'}</span>
-                                  </span>
-                                );
-                              }
-
-                              const ActionIcon =
-                                nextAction.type === 'CONFIRM_PAYMENT' || nextAction.type === 'APPROVE_AND_RESERVE'
-                                  ? CheckCircle2
-                                  : nextAction.type === 'ASSIGN_PHOTOGRAPHER'
-                                    ? Camera
-                                    : ArrowRight;
-
-                              return (
-                                <button
-                                  type="button"
-                                  disabled={isAdvancing}
-                                  onClick={() => handleRowStageAction(b, nextAction)}
-                                  title={`${nextAction.label} for booking #${b.booking_number}`}
-                                  className="h-9 px-2.5 rounded-lg text-neutral-900 hover:bg-neutral-100 text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                                >
-                                  {isAdvancing ? (
-                                    <Loader2 size={14} className="animate-spin shrink-0 text-neutral-900" aria-hidden="true" />
-                                  ) : (
-                                    <ActionIcon size={14} className="shrink-0 text-neutral-900" aria-hidden="true" />
-                                  )}
-                                  <span>{isAdvancing ? 'Updating...' : nextAction.label}</span>
-                                </button>
-                              );
-                            })()}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditModal(b)}
-                              title={`Edit booking #${b.booking_number}`}
-                              aria-label={`Edit booking #${b.booking_number}`}
-                              className="h-9 w-9 rounded-lg text-neutral-700 hover:text-neutral-900 hover:bg-neutral-100 inline-flex items-center justify-center transition-colors cursor-pointer"
-                            >
-                              <Edit3 size={15} aria-hidden="true" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setBookingToDelete(b);
-                                setDeleteReason('');
-                              }}
-                              title={`Delete booking #${b.booking_number}`}
-                              aria-label={`Delete booking #${b.booking_number}`}
-                              className="h-9 w-9 rounded-lg text-neutral-700 hover:text-neutral-900 hover:bg-neutral-100 inline-flex items-center justify-center transition-colors cursor-pointer"
-                            >
-                              <Trash2 size={15} aria-hidden="true" />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-
-
+                        </td>
+                      )}
                     </tr>
                   );
                 })

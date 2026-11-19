@@ -29,6 +29,17 @@ export async function getAssignedBookings(photographerId = null) {
         total_amount,
         down_payment_amount,
         remaining_balance,
+        booking_for,
+        participant_name,
+        participant_phone,
+        school,
+        school_address,
+        track,
+        batch,
+        section,
+        student_id,
+        student_details,
+        participant_details,
         created_at,
         updated_at,
         service:services!bookings_service_id_fkey(
@@ -58,6 +69,19 @@ export async function getAssignedBookings(photographerId = null) {
           payment_method,
           reference_number,
           payment_date,
+          created_at
+        ),
+        photo_outputs(
+          id,
+          file_name,
+          file_path,
+          file_type,
+          created_at
+        ),
+        booking_status_history(
+          id,
+          status,
+          remarks,
           created_at
         )
       `)
@@ -102,6 +126,17 @@ export async function getBookingDetails(bookingId) {
         total_amount,
         down_payment_amount,
         remaining_balance,
+        booking_for,
+        participant_name,
+        participant_phone,
+        school,
+        school_address,
+        track,
+        batch,
+        section,
+        student_id,
+        student_details,
+        participant_details,
         created_at,
         updated_at,
         service:services!bookings_service_id_fkey(
@@ -218,7 +253,7 @@ export async function recordPhotographerActivity({
       window.dispatchEvent(new CustomEvent('ekodak:logs-updated'));
       window.dispatchEvent(new CustomEvent('ekodak_audit_trail_updated'));
     }
-  } catch {}
+  } catch { }
 }
 
 /**
@@ -260,18 +295,47 @@ export async function updateBookingStatusByPhotographer(bookingIdOrOptions, mayb
       changed_by: photographerId,
     });
 
-    // Record photographer activity log
+    // Record photographer activity log & notify Admin on key custody transitions
     if (photographerId) {
       const bNum = updatedBooking?.booking_number || 'Booking';
+      const statusUpper = String(newStatus).toUpperCase();
       await recordPhotographerActivity({
         photographerId,
         actionType: 'STATUS_CHANGE',
         entityType: 'booking',
         entityId: bookingId,
         entityLabel: `#${bNum}`,
-        description: `Updated booking #${bNum} lifecycle status to ${newStatus}.`,
-        details: { booking_number: bNum, newStatus, remarks },
+        description: `Updated booking #${bNum} lifecycle status to ${statusUpper}.`,
+        details: { booking_number: bNum, newStatus: statusUpper, remarks },
       });
+
+      if (statusUpper === 'CAPTURE' || statusUpper === 'EDITING') {
+        try {
+          await createTransferLog({
+            bookingId,
+            senderId: photographerId,
+            senderRole: 'photographer',
+            targetRole: 'admin',
+            transferType: 'ORDER_HANDOFF',
+            priority: statusUpper === 'EDITING' ? 'HIGH' : 'NORMAL',
+            title:
+              statusUpper === 'EDITING'
+                ? `Pictorial Completed · Returned to Admin (#${bNum})`
+                : `Pictorial Started (#${bNum})`,
+            message:
+              statusUpper === 'EDITING'
+                ? `Photographer confirmed pictorial done for booking #${bNum} and moved the order back to Admin for editing & retouching.`
+                : `Photographer started the pictorial session for booking #${bNum}.`,
+            payload: {
+              booking_number: bNum,
+              new_status: statusUpper,
+              action: statusUpper === 'EDITING' ? 'RETURNED_TO_ADMIN' : 'PICTORIAL_STARTED',
+            },
+          });
+        } catch (transferErr) {
+          console.warn('Photographer handoff transfer log warning:', transferErr);
+        }
+      }
     }
 
     return { data: updatedBooking, error: null };
@@ -671,7 +735,7 @@ export async function setAvailability({
   if (!isSupabaseConfigured) return { data: null, error: null };
   try {
     const cleanDate = normalizeDateStr(date);
-    
+
     // Status normalization:
     // Schema CHECK constraint allows: AVAILABLE, UNAVAILABLE, BOOKED, BLOCKED.
     // 'is_available' column is GENERATED ALWAYS AS (status = 'AVAILABLE').
@@ -706,7 +770,7 @@ export async function setAvailability({
         .delete()
         .eq('photographer_id', photographer_id)
         .eq('availability_date', cleanDate);
-    } catch (_) {}
+    } catch (_) { }
 
     // CRITICAL: Insert only base physical columns.
     // NEVER include 'date' or 'is_available' because they are ALWAYS GENERATED columns!
@@ -1284,7 +1348,7 @@ export async function submitSamplesToAdmin({
     await supabase.from('booking_status_history').insert({
       booking_id: bookingId,
       status: 'EDITING',
-      remarks: `Photographer ${photographerName} submitted ${photoCount} sample photo(s) (${setsSummary || 'All Sets'}) for Admin Review.`,
+      remarks: `Photographer ${photographerName} sent edited photos to Admin (${photoCount} sample photo(s), ${setsSummary || 'All Sets'}) for Admin Review.`,
       changed_by: photographerId,
     });
 
@@ -1321,6 +1385,94 @@ export async function submitSamplesToAdmin({
     return { data: updatedBooking, transfer, error: transferError };
   } catch (err) {
     console.error('submitSamplesToAdmin error:', err);
+    return { data: null, error: err };
+  }
+}
+
+/**
+ * resolveEditingWorkflowState
+ * ---------------------------
+ * Determines whether an EDITING order is still with the photographer being edited,
+ * has been sent to Admin and awaits receipt, or has been received by Admin for review
+ * & retouching confirmation.
+ */
+export function resolveEditingWorkflowState(booking) {
+  const history = Array.isArray(booking?.booking_status_history)
+    ? [...booking.booking_status_history].sort(
+      (a, b) => new Date(a?.created_at || 0).getTime() - new Date(b?.created_at || 0).getTime()
+    )
+    : [];
+  const outputs = Array.isArray(booking?.photo_outputs) ? booking.photo_outputs : [];
+
+  let sentAt = 0;
+  let receivedAt = 0;
+  let returnedAt = 0;
+
+  history.forEach((h, idx) => {
+    const r = String(h?.remarks || '');
+    const ts = new Date(h?.created_at || 0).getTime() || idx + 1;
+    if (/sent\s+(?:edited\s+)?photos\s+to\s+admin|submitted\s+\d+\s+sample\s+photo/i.test(r)) {
+      sentAt = Math.max(sentAt, ts);
+    }
+    if (/admin\s+received\s+(?:edited\s+)?photos/i.test(r)) {
+      receivedAt = Math.max(receivedAt, ts);
+    }
+    if (/requested\s+sample\s+revisions|returned\s+to\s+photographer/i.test(r)) {
+      returnedAt = Math.max(returnedAt, ts);
+    }
+  });
+
+  const isSentToAdmin = Boolean(sentAt > 0 && sentAt >= returnedAt);
+  const isReceivedByAdmin = Boolean(isSentToAdmin && receivedAt >= sentAt);
+
+  return {
+    photoCount: outputs.length,
+    isSentToAdmin,
+    isReceivedByAdmin,
+    isEditingWithPhotographer: !isSentToAdmin,
+  };
+}
+
+/**
+ * receiveEditedPhotosByAdmin
+ * --------------------------
+ * Admin acknowledges receiving the edited photos sent by the photographer so the
+ * order can be reviewed and confirmed into Retouching.
+ */
+export async function receiveEditedPhotosByAdmin({
+  bookingId,
+  adminId = null,
+  adminName = 'Studio Admin',
+  bookingNumber = '',
+  photographerId = null,
+}) {
+  if (!isSupabaseConfigured || !bookingId) return { data: null, error: null };
+  try {
+    const remark = `Admin ${adminName} received edited photos from photographer for review.`;
+    const { data, error } = await supabase
+      .from('booking_status_history')
+      .insert({
+        booking_id: bookingId,
+        status: 'EDITING',
+        remarks: remark,
+        changed_by: adminId,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+
+    if (photographerId) {
+      await supabase.from('notifications').insert({
+        user_id: photographerId,
+        booking_id: bookingId,
+        title: 'Admin Received Your Edited Photos',
+        message: `Admin received your edited photos for booking #${bookingNumber} and is now reviewing the order for retouching.`,
+        notification_type: 'booking_status',
+      });
+    }
+    return { data, error: null };
+  } catch (err) {
+    console.error('receiveEditedPhotosByAdmin error:', err);
     return { data: null, error: err };
   }
 }
@@ -1476,9 +1628,9 @@ export function getCleanLocation(locStr) {
     cleanName = "E-Kodak Studio, 311 Rizal Street, City of Naga, Cebu";
   }
 
-  return { 
-    name: cleanName, 
-    mapUrl: mapUrl || "https://www.google.com/maps/search/?api=1&query=311+Rizal+Street,+City+of+Naga,+Cebu" 
+  return {
+    name: cleanName,
+    mapUrl: mapUrl || "https://www.google.com/maps/search/?api=1&query=311+Rizal+Street,+City+of+Naga,+Cebu"
   };
 }
 
@@ -1513,7 +1665,7 @@ export function parseBookingBrief(booking) {
   let studentData = parseStudentDetailsFromNotes(notes);
 
   const rawMode = studentData?.mode || booking?.student_details?.booking_mode || '';
-  const isSchoolPartner = rawMode.toUpperCase() === 'SCHOOL_PARTNER' || 
+  const isSchoolPartner = rawMode.toUpperCase() === 'SCHOOL_PARTNER' ||
     (rawMode.toLowerCase().includes('school') && !rawMode.toLowerCase().includes('individual')) ||
     notes.includes('School Pictorial') ||
     notes.includes('Official School Partner') ||
@@ -1589,7 +1741,7 @@ export function parseBookingBrief(booking) {
 
   // 6. Beneficiary / Participant extraction
   const participantMatch = notes.match(/\[BOOKING BENEFICIARY(?:\s*&\s*PARTICIPANT)?\]([\s\S]*?)(?=\n\n\[|$)/i) ||
-                           notes.match(/\[BOOKING PARTICIPANT(?:\s*\/\s*BENEFICIARY)?\]([\s\S]*?)(?=\n\n\[|$)/i);
+    notes.match(/\[BOOKING PARTICIPANT(?:\s*\/\s*BENEFICIARY)?\]([\s\S]*?)(?=\n\n\[|$)/i);
   let participantDetails = null;
   if (participantMatch) {
     const block = participantMatch[1];

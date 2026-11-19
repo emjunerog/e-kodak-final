@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -130,16 +131,21 @@ function EmptyState({ icon: Icon = BookOpen, message }) {
   );
 }
 
-// ── Row Action Dropdown ────────────────────────────────────────────────────────
+// ── Row Action Dropdown (Portal-rendered so table overflow never clips it) ──────
 function RowActionDropdown({ booking, onStageAction, isBusy = false }) {
   const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState(null);
   const ref = useRef(null);
+  const menuRef = useRef(null);
   const nextAction = getNextBookingAction(booking);
 
   useEffect(() => {
     if (!open) return;
     function handleClickOutside(e) {
-      if (ref.current && !ref.current.contains(e.target)) {
+      if (
+        ref.current && !ref.current.contains(e.target) &&
+        (!menuRef.current || !menuRef.current.contains(e.target))
+      ) {
         setOpen(false);
       }
     }
@@ -148,11 +154,18 @@ function RowActionDropdown({ booking, onStageAction, isBusy = false }) {
         setOpen(false);
       }
     }
+    function handleViewportChange() {
+      setOpen(false);
+    }
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('scroll', handleViewportChange, true);
+    window.addEventListener('resize', handleViewportChange);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('scroll', handleViewportChange, true);
+      window.removeEventListener('resize', handleViewportChange);
     };
   }, [open]);
 
@@ -177,15 +190,29 @@ function RowActionDropdown({ booking, onStageAction, isBusy = false }) {
         ? Camera
         : ArrowRight;
 
+  const handleToggle = (e) => {
+    e.stopPropagation();
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    if (ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      const openUpward = rect.bottom + 64 > window.innerHeight;
+      setMenuPos({
+        top: openUpward ? Math.max(8, rect.top - 52) : rect.bottom + 6,
+        right: Math.max(12, window.innerWidth - rect.right),
+      });
+    }
+    setOpen(true);
+  };
+
   return (
     <div className="relative inline-block text-left" ref={ref}>
       <button
         type="button"
         disabled={isBusy}
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((prev) => !prev);
-        }}
+        onClick={handleToggle}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Order progress action for booking #${booking.booking_number}`}
@@ -195,10 +222,13 @@ function RowActionDropdown({ booking, onStageAction, isBusy = false }) {
         {isBusy ? <Loader2 size={15} className="animate-spin text-amber-700" aria-hidden="true" /> : <MoreVertical size={15} aria-hidden="true" />}
       </button>
 
-      {open && (
+      {open && menuPos && typeof document !== 'undefined' && createPortal(
         <div
+          ref={menuRef}
           role="menu"
-          className="absolute right-0 mt-1 w-52 bg-white rounded-2xl shadow-xl border border-neutral-200/80 py-1.5 z-40 animate-in fade-in zoom-in-95 duration-100 font-body"
+          style={{ position: 'fixed', top: `${menuPos.top}px`, right: `${menuPos.right}px` }}
+          className="w-52 bg-white rounded-2xl shadow-xl border border-neutral-200/80 py-1.5 z-[9999] animate-in fade-in zoom-in-95 duration-100 font-body"
+          onClick={(e) => e.stopPropagation()}
         >
           <button
             type="button"
@@ -209,12 +239,25 @@ function RowActionDropdown({ booking, onStageAction, isBusy = false }) {
               setOpen(false);
               onStageAction?.(booking, nextAction);
             }}
-            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-neutral-800 hover:bg-amber-50/70 hover:text-amber-950 font-semibold text-left cursor-pointer disabled:opacity-50"
+            title={nextAction.overrideHint || nextAction.label}
+            className={`w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-left cursor-pointer disabled:opacity-50 ${
+              nextAction.isPhotographerAction
+                ? 'text-neutral-400 opacity-75 hover:opacity-100 hover:bg-neutral-100 hover:text-neutral-700'
+                : 'text-neutral-800 hover:bg-amber-50/70 hover:text-amber-950'
+            }`}
           >
-            <ActionIcon size={13} className="text-amber-700 shrink-0" aria-hidden="true" />
-            <span>{nextAction.label}</span>
+            <ActionIcon
+              size={13}
+              className={`shrink-0 ${nextAction.isPhotographerAction ? 'text-neutral-400' : 'text-amber-700'}`}
+              aria-hidden="true"
+            />
+            <span>
+              {nextAction.label}
+              {nextAction.isPhotographerAction ? ' (Override)' : ''}
+            </span>
           </button>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -27,7 +27,6 @@ import {
   Bell,
   Camera,
   CalendarDays,
-  MapPin,
   ChevronRight,
   Radio,
 } from 'lucide-react-native';
@@ -36,7 +35,6 @@ import GlassBackground from '../components/GlassBackground';
 import StudioMascotKit from '../components/StudioMascotKit';
 import CardDecorElements from '../components/CardDecorElements';
 import StudioShapeLoader from '../components/StudioShapeLoader';
-import StatusBadge from '../components/StatusBadge';
 import ShootDetailModal from '../components/ShootDetailModal';
 import NotificationsModal from '../components/NotificationsModal';
 import { verifyPhotographerSession } from '../services/bookingService';
@@ -47,7 +45,6 @@ import {
   calculatePhotographerStats,
   toggleGeneralDutyAvailability,
   acceptPhotographerAssignment,
-  declinePhotographerAssignment,
   updatePhotographerShootStatus,
   requestPhotographerReschedule,
   formatReadableDate,
@@ -224,27 +221,6 @@ export default function PhotographerHomeScreen({ navigation }) {
     await loadDashboard();
   };
 
-  const handleDecline = async (booking, reason) => {
-    if (!photographer?.id) return;
-    setShootBusy(true);
-    const { error } = await declinePhotographerAssignment({
-      bookingId: booking.id,
-      photographerId: photographer.id,
-      photographerName: photographer.full_name || 'Studio Photographer',
-      bookingNumber: booking.booking_number,
-      reason,
-    });
-    setShootBusy(false);
-    if (error) {
-      showAlert('Decline Failed', error.message || 'Could not decline shoot.', [{ text: 'OK' }], {
-        type: 'danger',
-      });
-      return;
-    }
-    setSelectedShoot(null);
-    await loadDashboard();
-  };
-
   const handleAdvanceStatus = async (booking, nextStatus) => {
     if (!photographer?.id) return;
     setShootBusy(true);
@@ -316,6 +292,13 @@ export default function PhotographerHomeScreen({ navigation }) {
   const goldPillColors = gradients?.goldPill || ['#EAD082', '#C7962D'];
   const accentIconColor = isSage ? colors.gold.DEFAULT : '#B88622';
   const onPrimaryColor = isSage ? '#FFFFFF' : '#181410';
+
+  const assignedCardColors = isDark
+    ? ['#22362C', '#16241D']
+    : isSage
+      ? ['#566A4A', '#3D4E33']
+      : ['#F6E6BC', '#E8CB85'];
+  const assignedCardLightText = isDark || isSage;
 
   const heroBodyCopy =
     stats.todayShoots > 0
@@ -612,48 +595,44 @@ export default function PhotographerHomeScreen({ navigation }) {
           ))}
         </View>
 
-        {/* Up Next Assigned Shoot */}
-        <Text style={styles.sectionLabel}>Up Next</Text>
+        {/* Your Assigned Sessions */}
+        <Text style={styles.sectionLabel}>Your assigned sessions</Text>
 
         {upNextBooking ? (
           <TouchableOpacity
             activeOpacity={0.88}
             onPress={() => setSelectedShoot(upNextBooking)}
-            style={styles.recentCard}
+            style={styles.assignedCard}
           >
             <LinearGradient
-              colors={cardGradientColors}
+              colors={assignedCardColors}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.recentCardGradient}
             >
-              <CardDecorElements variant="recent" isDark={isDark} />
+              <CardDecorElements variant="recent" isDark={assignedCardLightText} />
               <View style={styles.recentTopRow}>
-                <View style={styles.recentIconBox}>
-                  <Camera size={18} color={accentIconColor} strokeWidth={1.9} />
+                <View style={styles.assignedIconBox}>
+                  <Camera
+                    size={18}
+                    color={assignedCardLightText ? '#FFFFFF' : '#8B6212'}
+                    strokeWidth={1.9}
+                  />
                 </View>
                 <View style={styles.recentTopLeft}>
-                  <Text numberOfLines={1} style={styles.recentOrderTitle}>
-                    {upNextBooking.services?.name || 'Studio Session'} • #{upNextBooking.booking_number}
+                  <Text numberOfLines={2} style={styles.assignedOrderTitle}>
+                    {upNextBooking.package_name || upNextBooking.services?.name || 'Studio Session'}
                   </Text>
-                  <Text numberOfLines={1} style={styles.recentOrderMeta}>
-                    {upNextBooking.profile?.full_name || 'Client'} • {formatReadableDate(upNextBooking.session_date)} at {formatTime12(upNextBooking.session_time)}
+                  <Text numberOfLines={1} style={styles.assignedOrderMeta}>
+                    {formatReadableDate(upNextBooking.session_date)}
+                    {upNextBooking.session_time ? ` at ${formatTime12(upNextBooking.session_time)}` : ''}
                   </Text>
                 </View>
                 <ChevronRight
                   size={19}
-                  color={isDark ? colors.text.muted : '#4B4338'}
+                  color={assignedCardLightText ? 'rgba(255, 255, 255, 0.88)' : '#5A461C'}
                   strokeWidth={1.9}
                 />
-              </View>
-              <View style={styles.upNextMetaRow}>
-                <StatusBadge status={upNextBooking.status} size="sm" />
-                <View style={styles.upNextLocationRow}>
-                  <MapPin size={12} color={accentIconColor} />
-                  <Text style={styles.upNextLocationText} numberOfLines={1}>
-                    {upNextBooking.location_address || 'Studio Bay'}
-                  </Text>
-                </View>
               </View>
             </LinearGradient>
           </TouchableOpacity>
@@ -711,9 +690,12 @@ export default function PhotographerHomeScreen({ navigation }) {
         busy={shootBusy}
         onClose={() => setSelectedShoot(null)}
         onAccept={handleAccept}
-        onDecline={handleDecline}
         onAdvanceStatus={handleAdvanceStatus}
         onRequestReschedule={handleReschedule}
+        onViewSession={() => {
+          setSelectedShoot(null);
+          navigation.navigate('PhotographerShoots');
+        }}
       />
     </View>
   );
@@ -1027,7 +1009,59 @@ const getStyles = (colors, isDark, isSage, layout) =>
       includeFontPadding: false,
     },
 
-    // Up Next Card
+    // Your Assigned Sessions Colored Card
+    assignedCard: {
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: isDark
+        ? 'rgba(110, 231, 183, 0.34)'
+        : isSage
+          ? 'rgba(186, 210, 170, 0.45)'
+          : '#CFA64B',
+      marginBottom: 20,
+      overflow: 'hidden',
+      shadowColor: isDark ? '#000000' : isSage ? '#2A3821' : '#8B6212',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: isDark ? 0.28 : 0.16,
+      shadowRadius: 12,
+      elevation: isDark ? 0 : 4,
+    },
+    assignedIconBox: {
+      width: 44,
+      height: 44,
+      borderRadius: 13,
+      backgroundColor: isDark
+        ? 'rgba(52, 211, 153, 0.18)'
+        : isSage
+          ? 'rgba(255, 255, 255, 0.18)'
+          : 'rgba(255, 255, 255, 0.72)',
+      borderWidth: 1,
+      borderColor: isDark
+        ? 'rgba(110, 231, 183, 0.30)'
+        : isSage
+          ? 'rgba(255, 255, 255, 0.28)'
+          : 'rgba(255, 255, 255, 0.90)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    assignedOrderTitle: {
+      fontFamily: Typography.fontHeading,
+      fontSize: 15.5,
+      lineHeight: 20,
+      color: isDark || isSage ? '#FFFFFF' : '#181410',
+    },
+    assignedOrderMeta: {
+      fontFamily: Typography.fontBodyMedium,
+      fontSize: 12.5,
+      lineHeight: 17,
+      color: isDark
+        ? '#B7DFCB'
+        : isSage
+          ? 'rgba(255, 255, 255, 0.86)'
+          : '#5A461C',
+    },
+
+    // Up Next Card (Empty Fallback)
     recentCard: {
       borderRadius: 20,
       borderWidth: 1,
@@ -1041,7 +1075,8 @@ const getStyles = (colors, isDark, isSage, layout) =>
       elevation: isDark ? 0 : 2,
     },
     recentCardGradient: {
-      padding: 15,
+      paddingHorizontal: 16,
+      paddingVertical: 15,
       position: 'relative',
     },
     recentTopRow: {
@@ -1050,8 +1085,8 @@ const getStyles = (colors, isDark, isSage, layout) =>
       gap: 12,
     },
     recentIconBox: {
-      width: 42,
-      height: 42,
+      width: 44,
+      height: 44,
       borderRadius: 13,
       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#FFFFFF',
       borderWidth: 1,
@@ -1061,38 +1096,19 @@ const getStyles = (colors, isDark, isSage, layout) =>
     },
     recentTopLeft: {
       flex: 1,
+      justifyContent: 'center',
+      gap: 4,
     },
     recentOrderTitle: {
       fontFamily: Typography.fontHeading,
       fontSize: 15.5,
+      lineHeight: 20,
       color: isDark ? colors.text.primary : '#181410',
     },
     recentOrderMeta: {
       fontFamily: Typography.fontBodyMedium,
-      fontSize: 12,
-      color: isDark ? colors.text.secondary : '#6B6256',
-      marginTop: 3,
-    },
-    upNextMetaRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginTop: 12,
-      paddingTop: 10,
-      borderTopWidth: 1,
-      borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(24,20,16,0.07)',
-      gap: 10,
-    },
-    upNextLocationRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      flex: 1,
-      justifyContent: 'flex-end',
-    },
-    upNextLocationText: {
-      fontFamily: Typography.fontBodyMedium,
-      fontSize: 11.5,
+      fontSize: 12.5,
+      lineHeight: 17,
       color: isDark ? colors.text.secondary : '#6B6256',
     },
   });

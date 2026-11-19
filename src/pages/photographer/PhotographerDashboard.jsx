@@ -32,13 +32,13 @@ import {
   getAssignedBookings,
   calculatePhotographerStats,
   updateBookingStatusByPhotographer,
-  acceptAssignment,
   declineAssignment,
   requestRescheduleByPhotographer,
   toggleGeneralAvailability,
   getPhotographerProfileData,
   setAvailability,
 } from '../../services/photographerService';
+import { findConflictingBooking } from '../../lib/bookingUtils';
 
 const getTodayStr = () => {
   const d = new Date();
@@ -186,59 +186,21 @@ export default function PhotographerDashboard() {
     setTogglingAvailability(false);
   };
 
-  // Accept Assignment
-  const handleAcceptAssignment = async (booking) => {
-    setUpdatingId(booking.id);
-    setFeedback(null);
-    try {
-      const { error } = await acceptAssignment({
-        bookingId: booking.id,
-        photographerId: user.id,
-        photographerName: `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Photographer',
-        bookingNumber: booking.booking_number,
-      });
-
-      if (error) throw error;
-      setFeedback({ type: 'success', message: `Assignment accepted for #${booking.booking_number}! Session confirmed.` });
-      await loadData();
-    } catch (err) {
-      setFeedback({ type: 'error', message: err.message || 'Failed to accept assignment.' });
-    } finally {
-      setUpdatingId(null);
-    }
-  };
-
-  // Confirm Decline
-  const handleConfirmDecline = async (e) => {
-    e.preventDefault();
-    if (!declineModalBooking) return;
-    setIsDeclining(true);
-    setFeedback(null);
-    try {
-      const { error } = await declineAssignment({
-        bookingId: declineModalBooking.id,
-        photographerId: user.id,
-        photographerName: `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Photographer',
-        bookingNumber: declineModalBooking.booking_number,
-        reason: declineReason.trim() || 'Schedule conflict / Unavailable',
-      });
-
-      if (error) throw error;
-      setFeedback({ type: 'success', message: `Assignment declined. #${declineModalBooking.booking_number} returned to admin queue.` });
-      setDeclineModalBooking(null);
-      setDeclineReason('');
-      await loadData();
-    } catch (err) {
-      setFeedback({ type: 'error', message: err.message || 'Failed to decline assignment.' });
-    } finally {
-      setIsDeclining(false);
-    }
-  };
-
   // Request Reschedule
   const handleConfirmReschedule = async (e) => {
     e.preventDefault();
     if (!rescheduleModalBooking) return;
+    const conflict = findConflictingBooking(
+      { id: rescheduleModalBooking.id, event_date: proposedDate, preferred_time: proposedTime },
+      upcomingBookings
+    );
+    if (conflict) {
+      setFeedback({
+        type: 'error',
+        message: `Conflicting hours: you already have booking #${conflict.booking_number} on ${conflict.event_date}.`,
+      });
+      return;
+    }
     setIsRescheduling(true);
     setFeedback(null);
     try {
@@ -266,15 +228,48 @@ export default function PhotographerDashboard() {
     }
   };
 
-  // Advance Session Status
-  const handleAdvanceStatus = async (bookingId, targetStatus) => {
+  // Advance Session Status (with smart conflict auto-decline)
+  const handleAdvanceStatus = async (bookingId, targetStatus, explicitConflict = null) => {
     setUpdatingId(bookingId);
     setFeedback(null);
     try {
-      const remarks = `Status updated to ${targetStatus} by photographer.`;
+      const targetBk = upcomingBookings.find((b) => b.id === bookingId);
+      const conflict = explicitConflict || (targetStatus === 'CAPTURE' ? findConflictingBooking(targetBk, upcomingBookings) : null);
+
+      if (targetStatus === 'CAPTURE' && conflict && targetBk) {
+        const photographerName = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Photographer';
+        await declineAssignment({
+          bookingId: targetBk.id,
+          photographerId: user.id,
+          photographerName,
+          bookingNumber: targetBk.booking_number,
+          reason: `Auto-declined due to conflicting shoot hours with #${conflict.booking_number} on ${conflict.event_date}`,
+        });
+        setFeedback({
+          type: 'error',
+          message: `Smartly declined #${targetBk.booking_number}: conflicting hours with #${conflict.booking_number} — returned to Admin.`,
+        });
+        await loadData();
+        return;
+      }
+
+      const remarks =
+        targetStatus === 'CAPTURE'
+          ? 'Photographer started the pictorial session.'
+          : targetStatus === 'EDITING'
+            ? 'Photographer confirmed pictorial is done and started editing the photos.'
+            : `Status updated to ${targetStatus} by photographer.`;
       const { error } = await updateBookingStatusByPhotographer(bookingId, targetStatus, remarks, user.id);
       if (error) throw error;
-      setFeedback({ type: 'success', message: `Session status progressed to ${targetStatus}!` });
+      setFeedback({
+        type: 'success',
+        message:
+          targetStatus === 'CAPTURE'
+            ? 'Pictorial session started!'
+            : targetStatus === 'EDITING'
+              ? 'Pictorial confirmed done! Now edit the photos and send them to Admin when ready.'
+              : `Session status progressed to ${targetStatus}!`,
+      });
       await loadData();
     } catch (err) {
       setFeedback({ type: 'error', message: err.message || 'Failed to update session status.' });
@@ -373,8 +368,8 @@ export default function PhotographerDashboard() {
         {feedback && (
           <div
             className={`p-4 rounded-2xl flex items-center justify-between gap-3 text-xs font-semibold shadow-xs animate-in fade-in ${feedback.type === 'success'
-                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                : 'bg-rose-50 text-rose-800 border border-rose-200'
+              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+              : 'bg-rose-50 text-rose-800 border border-rose-200'
               }`}
           >
             <div className="flex items-center gap-2">
@@ -434,24 +429,18 @@ export default function PhotographerDashboard() {
         {/* ── 3. Main Schedule & Actions Section ───────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch">
 
-          {/* Left 7 Cols: Upcoming Assigned Shoots */}
-          <div className="lg:col-span-7 flex flex-col space-y-4">
-            {/* Header Box (enclosing section title and view-all link in a card) */}
-            <div className="bg-white rounded-2xl border border-neutral-200/80 p-4 sm:p-5 shadow-xs flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="font-heading text-lg sm:text-xl text-primary font-bold tracking-tight">
-                  Upcoming Assigned Shoots
-                </h2>
-                <p className="text-xs text-neutral-400 mt-0.5">
-                  Click any order to view specifications and shoot progression
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {upcomingBookings.length > 0 && (
-                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-gold/15 text-gold border border-gold/30">
-                    {upcomingBookings.length} Active
-                  </span>
-                )}
+          {/* Left 7 Cols: Unified Upcoming Assigned Shoots Card */}
+          <div className="lg:col-span-7 flex flex-col">
+            <div className="flex-1 flex flex-col rounded-2xl bg-white border border-neutral-200/80 shadow-xs overflow-hidden">
+              <div className="p-4 sm:p-5 border-b border-neutral-100 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-heading text-lg sm:text-xl text-primary font-bold tracking-tight">
+                    Upcoming Assigned Shoots
+                  </h2>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    Click any order to view specifications and shoot progression
+                  </p>
+                </div>
                 <Link
                   to="/photographer/bookings"
                   className="text-xs font-semibold text-neutral-700 hover:text-primary transition-colors flex items-center gap-1.5 group bg-neutral-50 hover:bg-neutral-100 border border-neutral-200/90 px-3.5 py-2 rounded-xl shadow-2xs"
@@ -460,73 +449,72 @@ export default function PhotographerDashboard() {
                   <ArrowRight size={13} className="text-gold group-hover:translate-x-0.5 transition-transform" />
                 </Link>
               </div>
-            </div>
 
-            {loading && upcomingBookings.length === 0 ? (
-              <div className="flex-1 min-h-[360px] flex flex-col items-center justify-center py-16 text-center bg-white rounded-2xl border border-neutral-200/80 shadow-xs">
-                <Loader2 size={28} className="animate-spin text-gold mx-auto mb-2" />
-                <p className="text-xs text-neutral-400">Loading assigned sessions…</p>
-              </div>
-            ) : upcomingBookings.length === 0 ? (
-              <div className="flex-1 min-h-[380px] flex flex-col items-center justify-center relative overflow-hidden bg-white rounded-2xl border border-neutral-200/80 shadow-xs p-8 sm:p-10 text-center">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-gold/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4 pointer-events-none" />
+              {loading && upcomingBookings.length === 0 ? (
+                <div className="flex-1 min-h-[360px] flex flex-col items-center justify-center py-16 text-center">
+                  <Loader2 size={28} className="animate-spin text-gold mx-auto mb-2" />
+                  <p className="text-xs text-neutral-400">Loading assigned sessions…</p>
+                </div>
+              ) : upcomingBookings.length === 0 ? (
+                <div className="flex-1 min-h-[360px] flex flex-col items-center justify-center relative overflow-hidden p-8 sm:p-10 text-center">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-gold/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4 pointer-events-none" />
 
-                <div className="relative z-10 max-w-md mx-auto space-y-4">
-                  <div className="w-16 h-16 rounded-2xl bg-gold/10 ring-8 ring-gold/5 flex items-center justify-center text-gold mx-auto shadow-xs">
-                    <Camera size={28} />
-                  </div>
-                  <div>
-                    <h3 className="font-heading text-lg text-primary font-bold">
-                      No Active Shoots Assigned
-                    </h3>
-                    <p className="text-xs text-neutral-500 mt-1.5 leading-relaxed">
-                      No active shoots are assigned to you right now. When the studio assigns appointments, your lineup will appear here automatically.
-                    </p>
-                  </div>
+                  <div className="relative z-10 max-w-md mx-auto space-y-4">
+                    <div className="w-16 h-16 rounded-2xl bg-gold/10 ring-8 ring-gold/5 flex items-center justify-center text-gold mx-auto shadow-xs">
+                      <Camera size={28} />
+                    </div>
+                    <div>
+                      <h3 className="font-heading text-lg text-primary font-bold">
+                        No Active Shoots Assigned
+                      </h3>
+                      <p className="text-xs text-neutral-500 mt-1.5 leading-relaxed">
+                        No active shoots are assigned to you right now. When the studio assigns appointments, your lineup will appear here automatically.
+                      </p>
+                    </div>
 
-                  <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
-                    <Link
-                      to="/photographer/availability"
-                      className="h-9 px-4 rounded-xl border border-neutral-200 hover:border-gold bg-white hover:bg-neutral-50 text-neutral-700 hover:text-primary text-xs font-semibold transition-all flex items-center gap-1.5 shadow-2xs"
-                    >
-                      <CalendarClock size={13} className="text-gold" />
-                      <span>Check Working Schedule</span>
-                    </Link>
-                    <Link
-                      to="/photographer/uploads"
-                      className="h-9 px-4 rounded-xl bg-neutral-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
-                    >
-                      <Upload size={13} className="text-gold" />
-                      <span>Upload Session Output</span>
-                    </Link>
+                    <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+                      <Link
+                        to="/photographer/availability"
+                        className="h-9 px-4 rounded-xl border border-neutral-200 hover:border-gold bg-white hover:bg-neutral-50 text-neutral-700 hover:text-primary text-xs font-semibold transition-all flex items-center gap-1.5 shadow-2xs"
+                      >
+                        <CalendarClock size={13} className="text-gold" />
+                        <span>Check Working Schedule</span>
+                      </Link>
+                      <Link
+                        to="/photographer/uploads"
+                        className="h-9 px-4 rounded-xl bg-neutral-900 hover:bg-black text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+                      >
+                        <Upload size={13} className="text-gold" />
+                        <span>Upload Session Output</span>
+                      </Link>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className={`space-y-4 ${isRefreshing ? 'opacity-70 transition-opacity' : 'opacity-100 transition-opacity'}`}>
-                {upcomingBookings.map(b => (
-                  <PhotographerBookingCard
-                    key={b.id}
-                    booking={b}
-                    isExpanded={expandedBookingId === b.id}
-                    onToggleExpand={() => setExpandedBookingId(expandedBookingId === b.id ? null : b.id)}
-                    updatingId={updatingId}
-                    onAccept={handleAcceptAssignment}
-                    onDecline={(booking) => {
-                      setDeclineModalBooking(booking);
-                      setDeclineReason('');
-                    }}
-                    onAdvanceStatus={handleAdvanceStatus}
-                    onReschedule={(booking) => {
-                      setRescheduleModalBooking(booking);
-                      setProposedDate(booking.event_date || '');
-                      setProposedTime(booking.preferred_time || '');
-                      setRescheduleReason('');
-                    }}
-                  />
-                ))}
-              </div>
-            )}
+              ) : (
+                <div className={`divide-y divide-neutral-100 flex-1 flex flex-col ${isRefreshing ? 'opacity-70 transition-opacity' : 'opacity-100 transition-opacity'}`}>
+                  {upcomingBookings.map(b => (
+                    <PhotographerBookingCard
+                      key={b.id}
+                      booking={b}
+                      embedded={true}
+                      fillHeight={upcomingBookings.length === 1}
+                      conflictBooking={findConflictingBooking(b, upcomingBookings)}
+                      isExpanded={expandedBookingId === b.id}
+                      onToggleExpand={() => setExpandedBookingId(expandedBookingId === b.id ? null : b.id)}
+                      updatingId={updatingId}
+                      onAdvanceStatus={handleAdvanceStatus}
+                      onPhotosSubmitted={() => loadData(true)}
+                      onReschedule={(booking) => {
+                        setRescheduleModalBooking(booking);
+                        setProposedDate(booking.event_date || '');
+                        setProposedTime(booking.preferred_time || '');
+                        setRescheduleReason('');
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Right 5 Cols: Clean Station Boxes & Cards */}
@@ -558,8 +546,8 @@ export default function PhotographerDashboard() {
                     </p>
                     <span
                       className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold tracking-wide border shadow-2xs ${todayStatus === 'AVAILABLE'
-                          ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
-                          : 'bg-rose-950/80 text-rose-300 border-rose-500/40'
+                        ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                        : 'bg-rose-950/80 text-rose-300 border-rose-500/40'
                         }`}
                     >
                       <span
@@ -644,8 +632,8 @@ export default function PhotographerDashboard() {
                     {/* Live Status Pill */}
                     <span
                       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition-colors shadow-2xs ${todayStatus === 'AVAILABLE'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                          : 'bg-neutral-100 text-neutral-600 border-neutral-200'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                        : 'bg-neutral-100 text-neutral-600 border-neutral-200'
                         }`}
                     >
                       <span
@@ -663,8 +651,8 @@ export default function PhotographerDashboard() {
                       type="button"
                       onClick={() => setTodayStatus('AVAILABLE')}
                       className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between group ${todayStatus === 'AVAILABLE'
-                          ? 'border-emerald-500 bg-gradient-to-br from-emerald-50/90 via-white to-emerald-50/30 ring-2 ring-emerald-500/20 shadow-xs'
-                          : 'border-neutral-200/80 bg-white/90 hover:bg-neutral-50 text-neutral-600 shadow-2xs'
+                        ? 'border-emerald-500 bg-gradient-to-br from-emerald-50/90 via-white to-emerald-50/30 ring-2 ring-emerald-500/20 shadow-xs'
+                        : 'border-neutral-200/80 bg-white/90 hover:bg-neutral-50 text-neutral-600 shadow-2xs'
                         }`}
                     >
                       <div className="flex items-center justify-between mb-2">
@@ -691,8 +679,8 @@ export default function PhotographerDashboard() {
                       type="button"
                       onClick={() => setTodayStatus('UNAVAILABLE')}
                       className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between group ${todayStatus === 'UNAVAILABLE'
-                          ? 'border-rose-400 bg-gradient-to-br from-rose-50/90 via-white to-amber-50/30 ring-2 ring-rose-400/20 shadow-xs'
-                          : 'border-neutral-200/80 bg-white/90 hover:bg-neutral-50 text-neutral-600 shadow-2xs'
+                        ? 'border-rose-400 bg-gradient-to-br from-rose-50/90 via-white to-amber-50/30 ring-2 ring-rose-400/20 shadow-xs'
+                        : 'border-neutral-200/80 bg-white/90 hover:bg-neutral-50 text-neutral-600 shadow-2xs'
                         }`}
                     >
                       <div className="flex items-center justify-between mb-2">
@@ -751,16 +739,20 @@ export default function PhotographerDashboard() {
               )}
             </AnimatePresence>
 
-            {/* Card 2: Mobile App Login QR Pass (Astryx Redesign) */}
-            <PhotographerQRPassCard
-              qrLoginToken={qrLoginToken}
-              fullName={`${phMeta?.first_name || profile?.first_name || ''} ${phMeta?.last_name || profile?.last_name || ''}`.trim() || 'Photographer'}
-              variant="compact"
-              onOpenModal={() => setQrModalOpen(true)}
-            />
-
-            {/* Card 3: Station Shortcuts (Astryx List Redesign) */}
-            <StationShortcutsCard />
+            {/* Card 2: Unified Mobile QR Pass & Station Shortcuts Hub */}
+            <div className="relative overflow-hidden rounded-2xl p-5 bg-gradient-to-br from-white via-surface-warm to-amber-50/20 border border-neutral-200/90 shadow-xs space-y-5 flex-1">
+              <div className="absolute -bottom-10 -right-10 w-36 h-36 bg-gradient-to-tl from-gold/15 via-amber-500/5 to-transparent rounded-full blur-2xl pointer-events-none" />
+              <PhotographerQRPassCard
+                embedded={true}
+                qrLoginToken={qrLoginToken}
+                fullName={`${phMeta?.first_name || profile?.first_name || ''} ${phMeta?.last_name || profile?.last_name || ''}`.trim() || 'Photographer'}
+                variant="compact"
+                onOpenModal={() => setQrModalOpen(true)}
+              />
+              <div className="relative z-10 border-t border-neutral-200/70 pt-4">
+                <StationShortcutsCard embedded={true} />
+              </div>
+            </div>
 
           </div>
 

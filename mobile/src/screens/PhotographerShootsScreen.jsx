@@ -13,6 +13,7 @@ import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -20,6 +21,8 @@ import {
   RefreshControl,
   StatusBar,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -30,7 +33,6 @@ import {
   Check,
   X,
   CalendarDays,
-  Clock,
   MapPin,
   ChevronRight,
   Sparkles,
@@ -42,14 +44,12 @@ import GlassHeader from '../components/GlassHeader';
 import GlassCard from '../components/GlassCard';
 import GoldButton from '../components/GoldButton';
 import CardDecorElements from '../components/CardDecorElements';
-import StatusBadge from '../components/StatusBadge';
 import StudioShapeLoader from '../components/StudioShapeLoader';
 import ShootDetailModal from '../components/ShootDetailModal';
 import { verifyPhotographerSession } from '../services/bookingService';
 import {
   fetchAllAssignedShoots,
   acceptPhotographerAssignment,
-  declinePhotographerAssignment,
   updatePhotographerShootStatus,
   requestPhotographerReschedule,
   formatReadableDate,
@@ -62,6 +62,8 @@ import { Typography } from '../theme';
 const DONE_STATUSES = new Set(['FINALIZED', 'DELIVERED', 'COMPLETED', 'CANCELLED', 'REJECTED']);
 const PENDING_STATUSES = new Set(['CONFIRMED']);
 const ACTIVE_STATUSES = new Set(['PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING']);
+const SHOOT_SCENERY_LIGHT = require('../../assets/cover-atelier-gold.jpg');
+const SHOOT_SCENERY_DARK = require('../../assets/cover-velvet-twilight.jpg');
 
 function getQuickStageAction(status) {
   const s = String(status || '').toUpperCase();
@@ -72,13 +74,7 @@ function getQuickStageAction(status) {
     return { nextStatus: 'CAPTURE', label: 'Start Pictorial', kind: 'advance' };
   }
   if (s === 'CAPTURE' || s === 'IN_PROGRESS') {
-    return { nextStatus: 'EDITING', label: 'Finish & Edit', kind: 'advance' };
-  }
-  if (s === 'EDITING') {
-    return { nextStatus: 'RETOUCHING', label: 'Move to Retouching', kind: 'advance' };
-  }
-  if (s === 'RETOUCHING') {
-    return { nextStatus: 'FINALIZED', label: 'Mark Finalized', kind: 'advance' };
+    return { nextStatus: 'EDITING', label: 'Confirm Pictorial Done', kind: 'advance' };
   }
   return null;
 }
@@ -226,28 +222,6 @@ export default function PhotographerShootsScreen({ navigation }) {
     }
   };
 
-  const handleDeclineModal = async (booking, reason) => {
-    if (!photographer?.id) return;
-    setShootBusy(true);
-    try {
-      const res = await declinePhotographerAssignment({
-        bookingId: booking.id,
-        photographerId: photographer.id,
-        photographerName: photographer.full_name || photographer.email,
-        bookingNumber: booking.booking_number,
-        reason,
-      });
-      if (res.error) {
-        showAlert('Decline Failed', res.error.message || 'Could not decline assignment.');
-        return;
-      }
-      setSelectedShoot(null);
-      await loadShoots();
-    } finally {
-      setShootBusy(false);
-    }
-  };
-
   const handleAdvanceModal = async (booking, nextStatus) => {
     if (!photographer?.id) return;
     setShootBusy(true);
@@ -302,9 +276,6 @@ export default function PhotographerShootsScreen({ navigation }) {
     { key: 'done', title: 'Done', count: counts.done },
   ];
 
-  const activeFilterOption =
-    filterOptions.find((f) => f.key === filterKey) || filterOptions[0];
-
   return (
     <View style={styles.root}>
       <StatusBar
@@ -350,7 +321,7 @@ export default function PhotographerShootsScreen({ navigation }) {
             />
           }
         >
-          {/* Header Card: Your Shoots */}
+          {/* Unified Card: Your Shoots + Search Bar + Filter */}
           <GlassCard style={styles.heroHeaderCard}>
             <CardDecorElements variant="hero" isDark={isDark} />
             <View style={styles.heroHeaderRow}>
@@ -368,120 +339,119 @@ export default function PhotographerShootsScreen({ navigation }) {
                 </Text>
               </View>
             </View>
-          </GlassCard>
 
-          {/* Search Bar & Filter Icon Row */}
-          <View style={styles.searchFilterRow}>
-            <View style={styles.searchPill}>
-              <Search size={17} color={colors.text.muted} strokeWidth={2} />
-              <TextInput
-                style={styles.searchInput}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholder="Search pass #, client, or package"
-                placeholderTextColor={colors.text.muted}
-                returnKeyType="search"
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity
-                  onPress={() => setSearchQuery('')}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <X size={16} color={colors.text.muted} strokeWidth={2.2} />
-                </TouchableOpacity>
-              )}
+            <View style={styles.unifiedDivider} />
+
+            {/* Search Bar & Filter Icon Row */}
+            <View style={styles.searchFilterRow}>
+              <View style={styles.searchPill}>
+                <Search size={17} color={colors.text.muted} strokeWidth={2} />
+                <TextInput
+                  style={styles.searchInput}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Search client or package"
+                  placeholderTextColor={colors.text.muted}
+                  returnKeyType="search"
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => setSearchQuery('')}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <X size={16} color={colors.text.muted} strokeWidth={2.2} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.filterIconBtn,
+                  (filterMenuOpen || filterKey !== 'all') && styles.filterIconBtnActive,
+                ]}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  setFilterMenuOpen((prev) => !prev);
+                }}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Filter shoots by status"
+              >
+                <SlidersHorizontal
+                  size={18}
+                  color={
+                    filterKey !== 'all' || filterMenuOpen
+                      ? colors.gold.DEFAULT
+                      : colors.text.primary
+                  }
+                  strokeWidth={2.1}
+                />
+                {filterKey !== 'all' && <View style={styles.filterActiveDot} />}
+              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              style={[
-                styles.filterIconBtn,
-                (filterMenuOpen || filterKey !== 'all') && styles.filterIconBtnActive,
-              ]}
-              onPress={() => {
-                Haptics.selectionAsync().catch(() => {});
-                setFilterMenuOpen((prev) => !prev);
-              }}
-              activeOpacity={0.8}
-              accessibilityRole="button"
-              accessibilityLabel="Filter shoots by status"
-            >
-              <SlidersHorizontal
-                size={18}
-                color={
-                  filterKey !== 'all' || filterMenuOpen
-                    ? colors.gold.DEFAULT
-                    : colors.text.primary
-                }
-                strokeWidth={2.1}
-              />
-              {filterKey !== 'all' && <View style={styles.filterActiveDot} />}
-            </TouchableOpacity>
-          </View>
-
-          {/* Filter Menu Dropdown: All, Pending, Active, Done */}
-          {filterMenuOpen && (
-            <GlassCard style={styles.filterDropdownCard}>
-              <Text style={styles.filterMenuTitle}>FILTER BY STATUS</Text>
-              <View style={styles.filterMenuGrid}>
-                {filterOptions.map((opt) => {
-                  const active = filterKey === opt.key;
-                  return (
-                    <TouchableOpacity
-                      key={opt.key}
-                      style={[
-                        styles.filterMenuItem,
-                        active && styles.filterMenuItemActive,
-                      ]}
-                      onPress={() => {
-                        Haptics.selectionAsync().catch(() => {});
-                        setFilterKey(opt.key);
-                        setFilterMenuOpen(false);
-                      }}
-                      activeOpacity={0.82}
-                    >
-                      <View style={styles.filterMenuItemLeft}>
-                        <Text
-                          style={[
-                            styles.filterMenuItemText,
-                            active && styles.filterMenuItemTextActive,
-                          ]}
-                        >
-                          {opt.title}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.filterMenuItemCount,
-                            active && styles.filterMenuItemCountActive,
-                          ]}
-                        >
-                          ({opt.count})
-                        </Text>
-                      </View>
-                      {active && (
-                        <Check
-                          size={15}
-                          color={colors.gold.DEFAULT}
-                          strokeWidth={2.4}
-                        />
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
+            {/* Filter Menu Dropdown inside same card */}
+            {filterMenuOpen && (
+              <View style={styles.filterDropdownInner}>
+                <Text style={styles.filterMenuTitle}>FILTER BY STATUS</Text>
+                <View style={styles.filterMenuGrid}>
+                  {filterOptions.map((opt) => {
+                    const active = filterKey === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        style={[
+                          styles.filterMenuItem,
+                          active && styles.filterMenuItemActive,
+                        ]}
+                        onPress={() => {
+                          Haptics.selectionAsync().catch(() => {});
+                          setFilterKey(opt.key);
+                          setFilterMenuOpen(false);
+                        }}
+                        activeOpacity={0.82}
+                      >
+                        <View style={styles.filterMenuItemLeft}>
+                          <Text
+                            style={[
+                              styles.filterMenuItemText,
+                              active && styles.filterMenuItemTextActive,
+                            ]}
+                          >
+                            {opt.title}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.filterMenuItemCount,
+                              active && styles.filterMenuItemCountActive,
+                            ]}
+                          >
+                            ({opt.count})
+                          </Text>
+                        </View>
+                        {active && (
+                          <Check
+                            size={15}
+                            color={colors.gold.DEFAULT}
+                            strokeWidth={2.4}
+                          />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
-            </GlassCard>
-          )}
+            )}
+          </GlassCard>
 
-          {/* Text Header Before Matching Shoots */}
+          {/* Bigger Header Before Matching Shoots (Filter text removed) */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionHeading}>
               Matching Shoots ({filteredBookings.length})
             </Text>
-            <Text style={styles.sectionMeta}>
-              Filter: {activeFilterOption.title}
-            </Text>
           </View>
 
-          {/* Shoot Cards */}
+          {/* Shoot Cards with Scenery & Frosty Blur */}
           {filteredBookings.length === 0 ? (
             <GlassCard style={styles.emptyCard}>
               <CardDecorElements variant="corner" isDark={isDark} />
@@ -491,7 +461,7 @@ export default function PhotographerShootsScreen({ navigation }) {
               <Text style={styles.emptyTitle}>No Matching Shoots</Text>
               <Text style={styles.emptySub}>
                 {searchQuery.trim()
-                  ? 'Try another pass number, client name, or clear the filter.'
+                  ? 'Try another client name, package, or clear the filter.'
                   : 'Assigned shoots will appear here as soon as studio dispatch assigns them.'}
               </Text>
             </GlassCard>
@@ -499,86 +469,126 @@ export default function PhotographerShootsScreen({ navigation }) {
             filteredBookings.map((shoot) => {
               const quickAction = getQuickStageAction(shoot.status);
               const isBusy = quickBusyId === shoot.id;
+              const shootClient =
+                shoot.profile?.full_name || shoot.client_name || 'Studio Client';
+              const shootPackage =
+                shoot.package_name || shoot.services?.name || 'Studio Session';
+              const shootDateLabel = formatReadableDate(
+                shoot.session_date || shoot.shoot_date || shoot.booking_date,
+              );
+              const shootTimeLabel = formatTime12(
+                shoot.session_time || shoot.shoot_time || shoot.preferred_time,
+              );
+              const shootLocation =
+                shoot.location_address || shoot.location || 'Main Studio Bay';
+              const frostScrimColors = isDark
+                ? ['rgba(16, 23, 20, 0.74)', 'rgba(18, 28, 24, 0.56)', 'rgba(14, 20, 17, 0.82)']
+                : isSage
+                  ? ['rgba(255, 255, 255, 0.74)', 'rgba(244, 248, 242, 0.52)', 'rgba(232, 240, 228, 0.74)']
+                  : ['rgba(255, 252, 246, 0.78)', 'rgba(250, 243, 230, 0.54)', 'rgba(244, 234, 214, 0.78)'];
+
               return (
-                <GlassCard key={shoot.id} style={styles.shootCard}>
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    onPress={() => {
-                      Haptics.selectionAsync().catch(() => {});
-                      setSelectedShoot(shoot);
-                    }}
-                  >
-                    <View style={styles.shootTopRow}>
-                      <View style={styles.passBadge}>
-                        <Text style={styles.passBadgeText}>
-                          {shoot.booking_number || 'PASS'}
+                <View key={shoot.id} style={styles.shootSceneryCardWrap}>
+                  <View style={styles.shootSceneryCard}>
+                    <Image
+                      source={isDark ? SHOOT_SCENERY_DARK : SHOOT_SCENERY_LIGHT}
+                      style={StyleSheet.absoluteFill}
+                      resizeMode="cover"
+                    />
+                    <BlurView
+                      intensity={isDark ? 36 : 30}
+                      tint={isDark ? 'dark' : 'light'}
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <LinearGradient
+                      colors={frostScrimColors}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+
+                    <View style={styles.shootCardContent}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => {
+                          Haptics.selectionAsync().catch(() => {});
+                          setSelectedShoot(shoot);
+                        }}
+                      >
+                        <Text style={styles.clientName} numberOfLines={1}>
+                          {shootClient}
                         </Text>
-                      </View>
-                      <StatusBadge status={shoot.status} />
-                    </View>
 
-                    <Text style={styles.clientName} numberOfLines={1}>
-                      {shoot.client_name || 'Studio Client'}
-                    </Text>
-
-                    <Text style={styles.packageLabel} numberOfLines={1}>
-                      {shoot.package_name || 'Studio Session'}
-                    </Text>
-
-                    <View style={styles.metaGrid}>
-                      <View style={styles.metaRow}>
-                        <CalendarDays size={14} color={colors.gold.DEFAULT} strokeWidth={2} />
-                        <Text style={styles.metaText}>
-                          {formatReadableDate(shoot.shoot_date || shoot.booking_date)}
+                        <Text style={styles.packageLabel} numberOfLines={1}>
+                          {shootPackage}
                         </Text>
-                      </View>
-                      <View style={styles.metaRow}>
-                        <Clock size={14} color={colors.gold.DEFAULT} strokeWidth={2} />
-                        <Text style={styles.metaText}>
-                          {formatTime12(shoot.shoot_time)}
-                        </Text>
-                      </View>
-                      <View style={styles.metaRow}>
-                        <MapPin size={14} color={colors.text.muted} strokeWidth={2} />
-                        <Text style={styles.metaText} numberOfLines={1}>
-                          {shoot.location || 'Main Studio Bay'}
-                        </Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
 
-                  <View style={styles.cardDivider} />
+                        <View style={styles.shootFrostSchedulePill}>
+                          <CalendarDays
+                            size={15}
+                            color={isDark ? colors.gold.light : colors.gold.DEFAULT}
+                            strokeWidth={2.1}
+                          />
+                          <Text style={styles.shootScheduleText} numberOfLines={1}>
+                            {shootDateLabel}
+                            {shootTimeLabel ? ` • ${shootTimeLabel}` : ''}
+                          </Text>
+                        </View>
 
-                  <View style={styles.cardFooterRow}>
-                    {quickAction ? (
-                      <View style={{ flex: 1 }}>
-                        <GoldButton
-                          loading={isBusy}
-                          onPress={() => handleQuickAction(shoot, quickAction)}
+                        <View style={styles.metaRow}>
+                          <MapPin
+                            size={14}
+                            color={isDark ? 'rgba(255,255,255,0.72)' : '#574E42'}
+                            strokeWidth={2}
+                          />
+                          <Text style={styles.metaText} numberOfLines={1}>
+                            {shootLocation}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+
+                      <View style={styles.cardDivider} />
+
+                      <View style={styles.cardFooterRow}>
+                        {quickAction ? (
+                          <View style={{ flex: 1 }}>
+                            <GoldButton
+                              loading={isBusy}
+                              onPress={() => handleQuickAction(shoot, quickAction)}
+                            >
+                              {isBusy ? 'Updating...' : quickAction.label}
+                            </GoldButton>
+                          </View>
+                        ) : (
+                          <View style={styles.donePill}>
+                            <CheckCircle2
+                              size={15}
+                              color={colors.gold.DEFAULT}
+                              strokeWidth={2.2}
+                            />
+                            <Text style={styles.donePillText}>Workflow Complete</Text>
+                          </View>
+                        )}
+
+                        <TouchableOpacity
+                          style={styles.dossierBtn}
+                          onPress={() => {
+                            Haptics.selectionAsync().catch(() => {});
+                            setSelectedShoot(shoot);
+                          }}
+                          activeOpacity={0.8}
                         >
-                          {isBusy ? 'Updating...' : quickAction.label}
-                        </GoldButton>
+                          <Text style={styles.dossierBtnText}>Details</Text>
+                          <ChevronRight
+                            size={15}
+                            color={isDark ? '#FFFFFF' : colors.text.primary}
+                            strokeWidth={2.2}
+                          />
+                        </TouchableOpacity>
                       </View>
-                    ) : (
-                      <View style={styles.donePill}>
-                        <CheckCircle2 size={15} color={colors.gold.DEFAULT} strokeWidth={2.2} />
-                        <Text style={styles.donePillText}>Workflow Complete</Text>
-                      </View>
-                    )}
-
-                    <TouchableOpacity
-                      style={styles.dossierBtn}
-                      onPress={() => {
-                        Haptics.selectionAsync().catch(() => {});
-                        setSelectedShoot(shoot);
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.dossierBtnText}>Details</Text>
-                      <ChevronRight size={15} color={colors.text.primary} strokeWidth={2.2} />
-                    </TouchableOpacity>
+                    </View>
                   </View>
-                </GlassCard>
+                </View>
               );
             })
           )}
@@ -591,9 +601,13 @@ export default function PhotographerShootsScreen({ navigation }) {
         busy={shootBusy}
         onClose={() => setSelectedShoot(null)}
         onAccept={handleAcceptModal}
-        onDecline={handleDeclineModal}
         onAdvanceStatus={handleAdvanceModal}
         onRequestReschedule={handleRescheduleModal}
+        onViewSession={(booking) => {
+          setSelectedShoot(null);
+          setFilterKey('all');
+          setSearchQuery(booking.booking_number || '');
+        }}
       />
     </View>
   );
@@ -674,11 +688,15 @@ const getStyles = (colors, isDark, isSage) =>
       color: colors.text.secondary,
       marginTop: 2,
     },
+    unifiedDivider: {
+      height: 1,
+      marginVertical: 14,
+      backgroundColor: colors.surface.divider,
+    },
     searchFilterRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 10,
-      marginBottom: 14,
     },
     searchPill: {
       flex: 1,
@@ -739,10 +757,11 @@ const getStyles = (colors, isDark, isSage) =>
       borderRadius: 3.5,
       backgroundColor: colors.gold.DEFAULT,
     },
-    filterDropdownCard: {
-      padding: 14,
-      marginBottom: 14,
-      overflow: 'hidden',
+    filterDropdownInner: {
+      marginTop: 14,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: colors.surface.divider,
     },
     filterMenuTitle: {
       fontFamily: Typography.fontBodySemi,
@@ -804,18 +823,15 @@ const getStyles = (colors, isDark, isSage) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      marginBottom: 10,
+      marginTop: 4,
+      marginBottom: 12,
       paddingHorizontal: 2,
     },
     sectionHeading: {
       fontFamily: Typography.fontHeading,
-      fontSize: 17,
+      fontSize: 21,
+      lineHeight: 26,
       color: colors.text.primary,
-    },
-    sectionMeta: {
-      fontFamily: Typography.fontBodyMedium,
-      fontSize: 12.5,
-      color: colors.text.muted,
     },
     emptyCard: {
       padding: 28,
@@ -844,57 +860,71 @@ const getStyles = (colors, isDark, isSage) =>
       textAlign: 'center',
       lineHeight: 19,
     },
-    shootCard: {
-      padding: 16,
-      marginBottom: 13,
+    shootSceneryCardWrap: {
+      marginBottom: 14,
+      borderRadius: 24,
+      shadowColor: isDark ? '#000000' : '#4E4332',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: isDark ? 0.34 : 0.12,
+      shadowRadius: 16,
+      elevation: isDark ? 0 : 4,
     },
-    shootTopRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 10,
+    shootSceneryCard: {
+      borderRadius: 24,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(255, 255, 255, 0.78)',
+      position: 'relative',
     },
-    passBadge: {
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: 10,
-      backgroundColor: colors.gold.bg,
-    },
-    passBadgeText: {
-      fontFamily: Typography.fontBodyBold,
-      fontSize: 11.5,
-      color: colors.gold.DEFAULT,
+    shootCardContent: {
+      padding: 18,
     },
     clientName: {
       fontFamily: Typography.fontHeading,
-      fontSize: 17.5,
-      color: colors.text.primary,
-      marginBottom: 2,
+      fontSize: 19,
+      color: isDark ? '#F8FAFC' : '#181410',
+      marginBottom: 3,
     },
     packageLabel: {
-      fontFamily: Typography.fontBody,
-      fontSize: 13,
-      color: colors.text.muted,
+      fontFamily: Typography.fontBodyMedium,
+      fontSize: 13.5,
+      color: isDark ? 'rgba(255, 255, 255, 0.78)' : '#574E42',
+      marginBottom: 12,
+    },
+    shootFrostSchedulePill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      borderRadius: 14,
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(255, 255, 255, 0.62)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(255, 255, 255, 0.85)',
       marginBottom: 10,
     },
-    metaGrid: {
-      gap: 6,
+    shootScheduleText: {
+      fontFamily: Typography.fontBodySemi,
+      fontSize: 13.5,
+      color: isDark ? '#FFFFFF' : '#181410',
+      flex: 1,
     },
     metaRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
+      paddingHorizontal: 2,
     },
     metaText: {
       fontFamily: Typography.fontBodyMedium,
       fontSize: 13.5,
-      color: colors.text.secondary,
+      color: isDark ? 'rgba(255, 255, 255, 0.80)' : '#4B4338',
       flex: 1,
     },
     cardDivider: {
       height: 1,
       marginVertical: 12,
-      backgroundColor: colors.surface.divider,
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(24, 20, 16, 0.10)',
     },
     cardFooterRow: {
       flexDirection: 'row',
@@ -910,13 +940,13 @@ const getStyles = (colors, isDark, isSage) =>
       paddingVertical: 10,
       borderRadius: 14,
       backgroundColor: isDark
-        ? 'rgba(255,255,255,0.05)'
-        : 'rgba(15, 23, 42, 0.04)',
+        ? 'rgba(255,255,255,0.10)'
+        : 'rgba(255, 255, 255, 0.65)',
     },
     donePillText: {
       fontFamily: Typography.fontBodySemi,
       fontSize: 13,
-      color: colors.text.secondary,
+      color: isDark ? '#F8FAFC' : colors.text.secondary,
     },
     dossierBtn: {
       flexDirection: 'row',
@@ -926,14 +956,16 @@ const getStyles = (colors, isDark, isSage) =>
       paddingVertical: 12,
       borderRadius: 16,
       backgroundColor: isDark
-        ? 'rgba(255, 255, 255, 0.09)'
-        : isSage
-          ? 'rgba(79, 104, 70, 0.10)'
-          : 'rgba(15, 23, 42, 0.06)',
+        ? 'rgba(255, 255, 255, 0.14)'
+        : 'rgba(255, 255, 255, 0.72)',
+      borderWidth: 1,
+      borderColor: isDark
+        ? 'rgba(255, 255, 255, 0.18)'
+        : 'rgba(255, 255, 255, 0.88)',
     },
     dossierBtnText: {
       fontFamily: Typography.fontBodySemi,
       fontSize: 13,
-      color: colors.text.primary,
+      color: isDark ? '#FFFFFF' : colors.text.primary,
     },
   });
