@@ -522,11 +522,7 @@ export default function Login() {
           .maybeSingle();
         if (profileData) {
           try {
-            const serialized = JSON.stringify(profileData);
-            sessionStorage.setItem("ekodak_user_profile", serialized);
-            if (!sessionStorage.getItem("ekodak_isolated_session")) {
-              localStorage.setItem("ekodak_user_profile", serialized);
-            }
+            sessionStorage.setItem("ekodak_user_profile", JSON.stringify(profileData));
           } catch {}
           role = profileData.role || role;
         }

@@ -1,5 +1,11 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
-import { supabase, isSupabaseConfigured, buildAppRedirectUrl, isIsolatedTabSession } from "../lib/supabase";
+import {
+  supabase,
+  isSupabaseConfigured,
+  buildAppRedirectUrl,
+  persistTabRoleSnapshot,
+  clearPersistentRoleSnapshot,
+} from "../lib/supabase";
 
 /** Extract first_name, last_name, and avatar_url from Supabase auth metadata (supports Google OAuth). */
 function extractAuthMetadataProfile(authUser) {
@@ -27,16 +33,8 @@ export const AuthProvider = ({ children }) => {
   const [profile, setProfile] = useState(() => {
     try {
       if (typeof window === 'undefined') return null;
-      const isolated = isIsolatedTabSession();
       const sessionCached = sessionStorage.getItem('ekodak_user_profile');
       if (sessionCached) return JSON.parse(sessionCached);
-      if (!isolated) {
-        const persistentCached = localStorage.getItem('ekodak_user_profile');
-        if (persistentCached) {
-          sessionStorage.setItem('ekodak_user_profile', persistentCached);
-          return JSON.parse(persistentCached);
-        }
-      }
       return null;
     } catch {
       return null;
@@ -46,30 +44,18 @@ export const AuthProvider = ({ children }) => {
 
   const saveProfileCache = (data) => {
     try {
-      const isolated = isIsolatedTabSession();
       if (data) {
-        const serialized = JSON.stringify(data);
-        sessionStorage.setItem('ekodak_user_profile', serialized);
-        if (!isolated) {
-          localStorage.setItem('ekodak_user_profile', serialized);
-        }
+        persistTabRoleSnapshot(data);
       } else {
         sessionStorage.removeItem('ekodak_user_profile');
-        if (!isolated) {
-          localStorage.removeItem('ekodak_user_profile');
-        }
       }
     } catch {}
   };
 
-  const startIsolatedSession = useCallback(() => {
+  const startIsolatedSession = useCallback(async () => {
     try {
-      sessionStorage.setItem('ekodak_isolated_session', 'true');
-      sessionStorage.setItem(
-        'ekodak_tab_storage_key',
-        `ekodak-auth-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      );
       sessionStorage.removeItem('ekodak_user_profile');
+      sessionStorage.removeItem('ekodak_tab_role');
       Object.keys(sessionStorage).forEach((key) => {
         if (key.startsWith('sb-') || key.startsWith('ekodak-auth-')) {
           sessionStorage.removeItem(key);
@@ -80,6 +66,9 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setProfile(null);
       setLoading(false);
+      if (isSupabaseConfigured) {
+        await supabase.auth.signOut({ scope: 'local' });
+      }
     } catch {}
   }, []);
 
@@ -165,10 +154,8 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       console.error("Unexpected error fetching profile:", err);
       try {
-        const cached =
-          sessionStorage.getItem('ekodak_user_profile') ||
-          (!isIsolatedTabSession() ? localStorage.getItem('ekodak_user_profile') : null);
-        if (cached) setProfile(JSON.parse(cached));
+        const sessionCached = sessionStorage.getItem('ekodak_user_profile');
+        if (sessionCached) setProfile(JSON.parse(sessionCached));
       } catch {}
     }
   }, []);
@@ -371,9 +358,10 @@ export const AuthProvider = ({ children }) => {
   };
 
   const signOut = async () => {
+    const activeRole = profile?.role;
     loadedUserIdRef.current = null;
     setIsPasswordRecovery(false);
-    saveProfileCache(null);
+    clearPersistentRoleSnapshot(activeRole);
     setProfile(null);
     setUser(null);
     try {
@@ -390,8 +378,7 @@ export const AuthProvider = ({ children }) => {
       });
     } catch {}
     if (!isSupabaseConfigured) return;
-    const isolated = isIsolatedTabSession();
-    const { error } = await supabase.auth.signOut(isolated ? { scope: 'local' } : undefined);
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
     if (error) throw error;
   };
 

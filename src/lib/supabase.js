@@ -55,93 +55,153 @@ export function buildAppRedirectUrl(subpath) {
   return `${window.location.origin}${basePath}${cleanSub}`;
 }
 
-const PERSISTENT_STORAGE_KEY = 'ekodak-supabase-auth';
-const ISOLATED_FLAG_KEY = 'ekodak_isolated_session';
-const ISOLATED_TAB_KEY_ID = 'ekodak_tab_storage_key';
+const PERSISTENT_AUTH_PREFIX = 'ekodak_persist_auth_';
+const PERSISTENT_PROFILE_PREFIX = 'ekodak_persist_profile_';
+const TAB_KEY_ID = 'ekodak_tab_storage_key';
+const TAB_ROLE_ID = 'ekodak_tab_role';
 
-/**
- * Returns true only when this tab was explicitly isolated (e.g. multi-portal
- * admin tab via `?new_session=true` or "Different Account in this Tab").
- */
-export function isIsolatedTabSession() {
-  if (typeof window === 'undefined') return false;
-  try {
-    if (window.location.search.includes('new_session=true')) {
-      window.sessionStorage.setItem(ISOLATED_FLAG_KEY, 'true');
-      return true;
-    }
-    return window.sessionStorage.getItem(ISOLATED_FLAG_KEY) === 'true';
-  } catch {
-    return false;
-  }
+function getAppRelativePath() {
+  if (typeof window === 'undefined') return '/';
+  const rawBase = (import.meta.env?.BASE_URL || '/').replace(/\/+$/, '');
+  const pathname = window.location.pathname || '/';
+  const stripped = rawBase && pathname.startsWith(rawBase)
+    ? pathname.slice(rawBase.length) || '/'
+    : pathname;
+  return stripped.startsWith('/') ? stripped : `/${stripped}`;
 }
 
-function getIsolatedStorageKey() {
-  if (typeof window === 'undefined') return PERSISTENT_STORAGE_KEY;
+/**
+ * Determines which role snapshot (if any) a brand-new tab should restore on boot.
+ * Auth entry routes (/login, /register, /auth/callback, /reset-password, ?new_session=true)
+ * intentionally start clean so opening a 2nd tab to sign into another account never
+ * inherits an existing account from another tab.
+ */
+function getRestoreRoleForRoute() {
+  if (typeof window === 'undefined') return null;
+  if (window.location.search.includes('new_session=true')) return null;
+
+  const rel = getAppRelativePath();
+  if (
+    rel.startsWith('/login') ||
+    rel.startsWith('/register') ||
+    rel.startsWith('/auth/callback') ||
+    rel.startsWith('/reset-password')
+  ) {
+    return null;
+  }
+  if (rel.startsWith('/admin')) return 'admin';
+  if (rel.startsWith('/photographer')) return 'photographer';
+  return 'customer';
+}
+
+function getTabStorageKey() {
+  if (typeof window === 'undefined') return 'ekodak-supabase-auth';
   try {
-    let tabKey = window.sessionStorage.getItem(ISOLATED_TAB_KEY_ID);
+    let tabKey = window.sessionStorage.getItem(TAB_KEY_ID);
+
     if (!tabKey) {
+      // Fresh tab (after browser restart OR opening a new tab alongside an existing one).
+      const inherited = Object.keys(window.sessionStorage).filter(
+        (k) => k.startsWith('sb-') || k.startsWith('supabase') || k === 'ekodak_user_profile'
+      );
+      inherited.forEach((k) => window.sessionStorage.removeItem(k));
+
       tabKey = `ekodak-auth-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      window.sessionStorage.setItem(ISOLATED_TAB_KEY_ID, tabKey);
+      window.sessionStorage.setItem(TAB_KEY_ID, tabKey);
+
+      const restoreRole = getRestoreRoleForRoute();
+      if (restoreRole) {
+        const savedSession = window.localStorage.getItem(`${PERSISTENT_AUTH_PREFIX}${restoreRole}`);
+        const savedProfile = window.localStorage.getItem(`${PERSISTENT_PROFILE_PREFIX}${restoreRole}`);
+        if (savedSession) {
+          window.sessionStorage.setItem(tabKey, savedSession);
+          window.sessionStorage.setItem(TAB_ROLE_ID, restoreRole);
+          if (savedProfile) {
+            window.sessionStorage.setItem('ekodak_user_profile', savedProfile);
+          }
+        }
+      }
     }
+
     return tabKey;
   } catch {
-    return PERSISTENT_STORAGE_KEY;
+    return 'ekodak-supabase-auth';
   }
 }
 
-/**
- * Adaptive Supabase storage:
- * - Normal users / customers: uses window.localStorage so sessions survive
- *   closing the browser, opening new tabs/windows, or device power-off.
- * - Explicitly isolated multi-portal tabs: uses per-tab window.sessionStorage
- *   so logging into another role does not disconnect existing open tabs.
- */
-const adaptiveAuthStorage = typeof window !== 'undefined'
+const TAB_STORAGE_KEY = getTabStorageKey();
+
+/** Save current tab's active session & profile under its role in localStorage so restarts keep it signed in. */
+export function persistTabRoleSnapshot(profileData) {
+  if (typeof window === 'undefined') return;
+  const role = String(profileData?.role || '').toLowerCase() || 'customer';
+  try {
+    window.sessionStorage.setItem(TAB_ROLE_ID, role);
+    window.sessionStorage.setItem('ekodak_user_profile', JSON.stringify(profileData));
+    const currentAuth = window.sessionStorage.getItem(TAB_STORAGE_KEY);
+    if (currentAuth) {
+      window.localStorage.setItem(`${PERSISTENT_AUTH_PREFIX}${role}`, currentAuth);
+    }
+    window.localStorage.setItem(`${PERSISTENT_PROFILE_PREFIX}${role}`, JSON.stringify(profileData));
+  } catch {}
+}
+
+/** Clear only the current tab/role persistent snapshot on explicit sign-out without disturbing other role tabs. */
+export function clearPersistentRoleSnapshot(explicitRole) {
+  if (typeof window === 'undefined') return;
+  try {
+    const role = String(
+      explicitRole || window.sessionStorage.getItem(TAB_ROLE_ID) || ''
+    ).toLowerCase();
+    window.sessionStorage.removeItem(TAB_ROLE_ID);
+    window.sessionStorage.removeItem('ekodak_user_profile');
+    if (role) {
+      window.localStorage.removeItem(`${PERSISTENT_AUTH_PREFIX}${role}`);
+      window.localStorage.removeItem(`${PERSISTENT_PROFILE_PREFIX}${role}`);
+    }
+  } catch {}
+}
+
+const tabAuthStorage = typeof window !== 'undefined'
   ? {
       getItem: (key) => {
         try {
-          if (isIsolatedTabSession()) {
-            const tabKey = `${getIsolatedStorageKey()}:${key}`;
-            return window.sessionStorage.getItem(tabKey);
-          }
-          return window.localStorage.getItem(key);
+          return window.sessionStorage.getItem(key);
         } catch {
           return null;
         }
       },
       setItem: (key, value) => {
         try {
-          if (isIsolatedTabSession()) {
-            const tabKey = `${getIsolatedStorageKey()}:${key}`;
-            window.sessionStorage.setItem(tabKey, value);
-          } else {
-            window.localStorage.setItem(key, value);
+          window.sessionStorage.setItem(key, value);
+          if (key === TAB_STORAGE_KEY) {
+            const role = window.sessionStorage.getItem(TAB_ROLE_ID);
+            if (role) {
+              window.localStorage.setItem(`${PERSISTENT_AUTH_PREFIX}${role}`, value);
+            }
           }
         } catch {}
       },
       removeItem: (key) => {
         try {
-          if (isIsolatedTabSession()) {
-            const tabKey = `${getIsolatedStorageKey()}:${key}`;
-            window.sessionStorage.removeItem(tabKey);
-          } else {
-            window.localStorage.removeItem(key);
-          }
+          window.sessionStorage.removeItem(key);
         } catch {}
       },
     }
   : undefined;
 
 /**
- * Supabase client: persistent across browser restarts by default,
- * with opt-in per-tab isolation for multi-portal admin switching.
+ * Supabase client:
+ * - Fully isolated per browser tab (unique storageKey in sessionStorage), so Admin,
+ *   Photographer, and Client accounts can stay open simultaneously in separate tabs.
+ * - Role-scoped persistent snapshots in localStorage keep users signed in across
+ *   browser restarts and device power-offs without cross-tab interference.
  */
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseKey, {
       auth: {
-        storage: adaptiveAuthStorage,
-        storageKey: PERSISTENT_STORAGE_KEY,
+        storage: tabAuthStorage,
+        storageKey: TAB_STORAGE_KEY,
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
