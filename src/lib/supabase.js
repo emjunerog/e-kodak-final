@@ -100,6 +100,12 @@ function getTabStorageKey() {
     let tabKey = window.sessionStorage.getItem(TAB_KEY_ID);
 
     if (!tabKey) {
+      // Remove legacy shared-localStorage keys so old sessions never bleed across tabs
+      try {
+        window.localStorage.removeItem('ekodak-supabase-auth');
+        window.localStorage.removeItem('ekodak_user_profile');
+      } catch {}
+
       // Fresh tab (after browser restart OR opening a new tab alongside an existing one).
       const inherited = Object.keys(window.sessionStorage).filter(
         (k) => k.startsWith('sb-') || k.startsWith('supabase') || k === 'ekodak_user_profile'

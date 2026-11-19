@@ -7,6 +7,15 @@ export default function ProtectedRoute({ children }) {
   const { user, profile, loading } = useAuth();
   const location = useLocation();
 
+  const cachedRole = (() => {
+    try {
+      const raw = sessionStorage.getItem('ekodak_user_profile');
+      return raw ? JSON.parse(raw)?.role : null;
+    } catch {
+      return null;
+    }
+  })();
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-neutral-50">
@@ -20,8 +29,22 @@ export default function ProtectedRoute({ children }) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // If user is photographer, send them to photographer portal
-  if (profile?.role === 'photographer') {
+  if (!profile) {
+    if (cachedRole) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-neutral-50">
+          <Loader2 className="animate-spin text-gold" size={32} />
+        </div>
+      );
+    }
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Strictly enforce role separation: admin and photographer stay in their own portals
+  if (profile.role === 'admin' || profile.role === 'staff') {
+    return <Navigate to="/admin" replace />;
+  }
+  if (profile.role === 'photographer') {
     return <Navigate to="/photographer" replace />;
   }
 
