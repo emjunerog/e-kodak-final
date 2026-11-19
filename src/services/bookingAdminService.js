@@ -18,6 +18,8 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { generateAndStoreQRCode } from './qrService';
 import { parseStudentDetailsFromNotes, parseAddOnsFromNotes, parseParticipantDetailsFromNotes, toDatabaseTime } from './bookingService';
 import { createTransferLog, recordAdminActivity } from './workstationService';
+import { resolvePhotoOutputUrls } from './photographerService';
+import { notifyBookingProgressUpdate, notifyMajorBookingMilestone } from './orderLifecycleNotificationService';
 import { doBookingTimesConflict } from '../lib/bookingUtils';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -39,17 +41,17 @@ export const CONFIRMED_ACTIONS = ['PHOTOGRAPHER_ASSIGNED'];
 // The DB constraint (bookings_status_check) guards the values, but ordering
 // is an application-level rule — not a DB-enforced trigger in the current schema.
 export const NEXT_STATUS_MAP = {
-  PENDING:               'CONFIRMED',
-  CONFIRMED:             'PHOTOGRAPHER_ASSIGNED',
+  PENDING: 'CONFIRMED',
+  CONFIRMED: 'PHOTOGRAPHER_ASSIGNED',
   PHOTOGRAPHER_ASSIGNED: 'CAPTURE',
-  CAPTURE:               'EDITING',
-  IN_PROGRESS:           'EDITING',
-  EDITING:               'RETOUCHING',
-  RETOUCHING:            'FINALIZED',
-  FINALIZED:             'PRINTING',
-  PRINTING:              'READY',
-  READY:                 'COMPLETED',
-  UNDER_DELIVERY:        'COMPLETED',
+  CAPTURE: 'EDITING',
+  IN_PROGRESS: 'EDITING',
+  EDITING: 'RETOUCHING',
+  RETOUCHING: 'FINALIZED',
+  FINALIZED: 'READY',
+  PRINTING: 'READY',
+  READY: 'COMPLETED',
+  UNDER_DELIVERY: 'COMPLETED',
 };
 
 // ── List Queries ───────────────────────────────────────────────────────────────
@@ -374,14 +376,14 @@ export async function getBookingDetail(id) {
       booking.booking_status_history = [];
     }
 
-    // 4. Fetch photo_outputs deliverables separately
+    // 4. Fetch photo_outputs deliverables separately & resolve private Storage signed URLs
     try {
       const { data: outputs } = await supabase
         .from('photo_outputs')
         .select('id, file_name, file_path, file_type, status, created_at')
         .eq('booking_id', id)
         .order('created_at', { ascending: false });
-      booking.photo_outputs = outputs || [];
+      booking.photo_outputs = await resolvePhotoOutputUrls(outputs || []);
     } catch {
       booking.photo_outputs = [];
     }
@@ -447,21 +449,31 @@ export async function updateBookingStatus(bookingId, newStatus, remarks = '', ch
 
     if (historyError) throw historyError;
 
-    // 4. Generate QR code on confirmation
+    // 4. Generate QR code on confirmation, or notify customer on completion (ready to receive)
     if (newStatus === 'CONFIRMED' && bookingToken) {
       await generateAndStoreQRCode(bookingId, bookingToken);
     }
 
-    // 5. Detect and log movement to admin_activity_logs
+    // 5. Detect and log movement to admin_activity_logs & emit ready-to-receive notification on completion
     try {
       const { data: bInfo } = await supabase
         .from('bookings')
-        .select('booking_number, customer:customer_id(first_name, last_name)')
+        .select('booking_number, customer_id, customer:customer_id(first_name, last_name)')
         .eq('id', bookingId)
         .maybeSingle();
 
       const bNum = bInfo?.booking_number || 'Order';
       const cName = bInfo?.customer ? `${bInfo.customer.first_name || ''} ${bInfo.customer.last_name || ''}`.trim() : '';
+
+      if (newStatus === 'COMPLETED' && bInfo?.customer_id) {
+        await createNotification({
+          userId: bInfo.customer_id,
+          bookingId,
+          title: `Order Ready to Receive (#${bNum})`,
+          message: `Your order #${bNum} is completed and ready to receive! Visit E-Kodak Studio Counter (Walk-In) or open your portal to view your soft copies.`,
+          notificationType: 'ORDER_READY_TO_RECEIVE',
+        }).catch(() => {});
+      }
 
       let actType = 'STATUS_CHANGE';
       let cleanDesc = `Updated status of #${bNum} to ${newStatus.replace(/_/g, ' ')}`;
@@ -499,6 +511,7 @@ export async function updateBookingStatus(bookingId, newStatus, remarks = '', ch
     }
 
     broadcastAvailabilityChange();
+    notifyBookingProgressUpdate({ bookingId, newStatus, remarks }).catch(() => {});
     return { error: null };
   } catch (error) {
     console.error('updateBookingStatus error:', error);
@@ -625,6 +638,15 @@ export async function recordPayment({
     }
 
     broadcastAvailabilityChange();
+    notifyMajorBookingMilestone({
+      bookingId,
+      milestoneType:
+        String(paymentType || '').toUpperCase() === 'DOWN_PAYMENT'
+          ? 'DOWNPAYMENT_RECEIVED'
+          : 'PAYMENT_RECEIVED',
+      amount: Number(amount),
+      paymentMethod,
+    }).catch(() => {});
     return { data, error: null };
   } catch (error) {
     console.error('recordPayment error:', error);
@@ -684,7 +706,7 @@ export async function confirmAndScheduleBooking({
 
     // 4. Generate & store QR pass in background
     if (booking?.booking_token) {
-      generateAndStoreQRCode(bookingId, booking?.booking_token).catch(() => {});
+      generateAndStoreQRCode(bookingId, booking?.booking_token).catch(() => { });
     }
 
     // 5. Create customer notification
@@ -697,6 +719,12 @@ export async function confirmAndScheduleBooking({
         notificationType: 'booking_confirmed',
       });
     }
+
+    notifyBookingProgressUpdate({
+      bookingId,
+      newStatus: 'CONFIRMED',
+      remarks,
+    }).catch(() => {});
 
     // 6. Detect and log movement to admin_activity_logs
     try {
@@ -843,7 +871,7 @@ export async function getPhotographersWithWorkloadAndAvailability(
       const { data: avData, error: avError } = await supabase
         .from('photographer_availability')
         .select('*');
-      
+
       if (!avError && avData) {
         availabilityRecords = avData.filter(r => {
           const dStr = normalizeDateStr(r.availability_date || r.date);
@@ -1159,6 +1187,13 @@ export async function assignPhotographerToBooking({
       console.warn('assignPhotographerToBooking recordAdminActivity error:', assignLogErr);
     }
 
+    notifyBookingProgressUpdate({
+      bookingId,
+      newStatus: 'PHOTOGRAPHER_ASSIGNED',
+      remarks: histRemarks,
+      skipSms: true,
+    }).catch(() => {});
+
     return { data: updatedBooking, error: null };
   } catch (error) {
     console.error('assignPhotographerToBooking error:', error);
@@ -1251,6 +1286,13 @@ export async function reassignPhotographer({
         notificationType: 'booking_status',
       });
     }
+
+    notifyBookingProgressUpdate({
+      bookingId,
+      newStatus: 'PHOTOGRAPHER_ASSIGNED',
+      remarks: histRemarks,
+      skipSms: true,
+    }).catch(() => {});
 
     return { data: updatedBooking, error: null };
   } catch (error) {
@@ -1411,7 +1453,7 @@ export async function softDeleteBooking({
       const existingLogs = JSON.parse(localStorage.getItem('ekodak_admin_activity_logs') || '[]');
       existingLogs.unshift(logEntry);
       localStorage.setItem('ekodak_admin_activity_logs', JSON.stringify(existingLogs.slice(0, 200)));
-    } catch {}
+    } catch { }
 
     // 5. Persist to database admin_activity_logs
     try {
@@ -1520,7 +1562,7 @@ export async function restoreBooking({
       const existingLogs = JSON.parse(localStorage.getItem('ekodak_admin_activity_logs') || '[]');
       existingLogs.unshift(logEntry);
       localStorage.setItem('ekodak_admin_activity_logs', JSON.stringify(existingLogs.slice(0, 200)));
-    } catch {}
+    } catch { }
 
     // Persist to database admin_activity_logs
     try {
@@ -2280,7 +2322,7 @@ export async function rescheduleStudentBooking({
 
     return {
       success: true,
-      message: newDate 
+      message: newDate
         ? `Successfully rescheduled student to ${newDate} makeup session.`
         : `Successfully placed student into pending makeup rollover batch.`,
     };

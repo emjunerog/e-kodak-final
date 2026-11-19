@@ -247,11 +247,8 @@ export default function BookingDetailsPage() {
       !specs.shipping_address.startsWith('Studio Counter')
     );
 
-    // Default fulfillment mode is Home Delivery ('STUDIO_DELIVERY') unless Studio Pick-up is explicitly selected
-    const mode = parsedFromBooking?.fulfillment_mode
-      || (specs.fulfillment_mode === 'STUDIO_PICKUP' || specs.preferred_courier === 'studio_pickup'
-        ? 'STUDIO_PICKUP'
-        : 'STUDIO_DELIVERY');
+    // Studio walk-in claiming is the sole fulfillment workflow
+    const mode = 'STUDIO_PICKUP';
 
     const recipient_name = parsedFromBooking?.recipient_name
       || specs.courier_recipient_name
@@ -1901,19 +1898,7 @@ export default function BookingDetailsPage() {
 
                   {/* Receipt Bottom Actions */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-                    {canSwitchFulfillment ? (
-                      <button
-                        type="button"
-                        disabled={savingDelivery}
-                        onClick={() => handleSwitchFulfillmentMode('STUDIO_DELIVERY')}
-                        className="text-xs font-semibold text-neutral-500 hover:text-[#c77826] dark:text-neutral-400 dark:hover:text-amber-400 transition-colors inline-flex items-center gap-1.5 cursor-pointer w-fit"
-                      >
-                        <Truck size={13} className="text-[#c77826] dark:text-amber-500" />
-                        <span>Use Home Delivery instead &rarr;</span>
-                      </button>
-                    ) : (
-                      <div />
-                    )}
+                    <div />
 
                     <button
                       type="button"

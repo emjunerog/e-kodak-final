@@ -17,6 +17,7 @@ Focused documentation suite for the **E-Kodak** Capstone / Research Defense.
 | **[`system-flowcharts.md`](file:///d:/E-kodak%20Final/docs/system-flowcharts.md)** | **System Flowcharts & Database Processes** | Comprehensive decomposition into Master Flowchart, Dashboard Hubs, Sub-processes, and Database ERD/Process mapping. |
 | **[`organizational-chart.md`](file:///d:/E-kodak%20Final/docs/organizational-chart.md)** | **Figure 1: Organizational Chart** | Studio organizational structure and operational management hierarchy from Manager and OJT Trainer to production and account roles. |
 | **[`studio-operations-flowchart.md`](file:///d:/E-kodak%20Final/docs/studio-operations-flowchart.md)** | **Figure: Studio Operations Flowchart** | Exact studio operations flowchart containing client acquisition, service offerings, order processing, production, and final release. |
+| **[`DEPLOYMENT.md`](file:///d:/E-kodak%20Final/docs/DEPLOYMENT.md)** | **GitHub Deployment, PWA & Mobile Install Guide** | GitHub Pages CI/CD, mobile PWA installation (Android/iOS), native Android APK builds (`mobile/eas.json` & GitHub Actions), and notification/Supabase checklist. |
 | **[`figures/xp-model-framework.svg`](file:///d:/E-kodak%20Final/docs/figures/xp-model-framework.svg)** | **XP Model Architecture Diagram (SVG)** | Standalone vector graphic matching the instructor's layout, ready for direct insertion into thesis documents. |
 
 ---

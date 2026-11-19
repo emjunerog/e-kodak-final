@@ -322,6 +322,33 @@ export default function ShootDetailModal({
             </ScrollView>
           )}
 
+          {panel === 'confirm_editing' && (
+            <View style={styles.subPanel}>
+              <Text style={styles.subPanelTitle}>Finish Pictorial & Start Editing?</Text>
+              <Text style={styles.subPanelSub}>
+                Confirm that this order has finished the pictorial session. You will then start editing the photos before sending them to Admin.
+              </Text>
+              <View style={styles.dualRow}>
+                <GoldButton
+                  variant="outline"
+                  onPress={() => setPanel('details')}
+                  disabled={busy}
+                  style={{ flex: 1 }}
+                >
+                  Not Yet
+                </GoldButton>
+                <GoldButton
+                  onPress={() => onAdvanceStatus?.(booking, 'EDITING')}
+                  loading={busy}
+                  icon={CheckCircle2}
+                  style={{ flex: 1 }}
+                >
+                  Start Editing
+                </GoldButton>
+              </View>
+            </View>
+          )}
+
           {panel === 'reschedule' && (
             <View style={styles.subPanel}>
               <Text style={styles.subPanelTitle}>Request Schedule Adjustment</Text>
@@ -394,6 +421,8 @@ export default function ShootDetailModal({
                   onPress={() => {
                     if (nextAction.kind === 'accept') {
                       onAccept?.(booking);
+                    } else if (nextAction.nextStatus === 'EDITING') {
+                      setPanel('confirm_editing');
                     } else {
                       onAdvanceStatus?.(booking, nextAction.nextStatus);
                     }

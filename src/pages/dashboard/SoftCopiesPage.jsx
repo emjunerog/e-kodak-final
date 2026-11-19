@@ -291,6 +291,7 @@ export default function SoftCopiesPage() {
         .from('photo_outputs')
         .select('*')
         .eq('booking_id', activeBookingId)
+        .eq('status', 'RELEASED')
         .order('created_at', { ascending: false });
 
       if (outErr) {
@@ -320,6 +321,7 @@ export default function SoftCopiesPage() {
           .from('photo_outputs')
           .select('*')
           .eq('booking_id', activeBookingId)
+          .eq('status', 'RELEASED')
           .order('created_at', { ascending: false });
 
         if (isCurrent) {

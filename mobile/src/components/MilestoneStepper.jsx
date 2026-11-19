@@ -37,8 +37,8 @@ const CONCISE_STEP_SUBTITLES = [
   'Shoot day in the studio',
   'Developing & toning portraits',
   'Fine-art retouch & color grading',
-  'Prints & frames assembled',
-  'Ready for pickup or delivery',
+  'Digital soft copies prepared',
+  'Ready to receive (Walk-In)',
 ];
 
 const NEXT_UP_SUBTITLES = [
@@ -48,8 +48,8 @@ const NEXT_UP_SUBTITLES = [
   'Shoot day in the studio',
   'Darkroom developing & toning',
   'Fine-art retouch & proofing',
-  'Prints & luxury framing',
-  'Studio pickup or direct dispatch',
+  'Preparing digital soft copies',
+  'Walk-in studio pickup',
 ];
 
 const STEP_POPUP_DESCRIPTIONS = [
@@ -59,8 +59,8 @@ const STEP_POPUP_DESCRIPTIONS = [
   "Lights, camera, and your moment. We'll guide poses, styling, and expressions so every frame feels natural and confident.",
   'Our darkroom team reviews all captures carefully, curating the strongest shots and balancing studio lighting and exposure.',
   'Selected portraits receive fine-art skin polishing, subtle blemish cleanup, and warm, timeless color grading.',
-  'Your final portraits are printed in museum-grade color, quality-inspected by hand, and packaged for safekeeping.',
-  'Your finished prints and digital gallery are complete. Claim them at E-Kodak Studio or await direct courier delivery.',
+  'Your final digital soft copies are prepared and verified for release in your client portal.',
+  'Your order is ready to receive! Claim via walk-in at E-Kodak Studio or open your digital gallery.',
 ];
 
 function buildPineTreePath(cx, topY, baseY, halfW) {

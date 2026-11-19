@@ -33,9 +33,9 @@ const STATUS_META = {
   // Stage 6: Booking Finalized / Print Lab
   FINALIZED:            { tier: 'primary', badge: 'bg-primary/10 text-primary border-primary/30',         label: 'Booking Finalized' },
   PRINTING:             { tier: 'primary', badge: 'bg-primary/10 text-primary border-primary/30',         label: 'In Print Lab' },
-  // Stage 7: Fulfillment (Pickup vs Delivery)
-  READY:                { tier: 'gold',   badge: 'bg-gold/10 text-gold-dark border-gold/30',            label: 'Ready for Pickup' },
-  UNDER_DELIVERY:       { tier: 'primary', badge: 'bg-primary/10 text-primary border-primary/30',        label: 'Under Delivery' },
+  // Stage 7: Walk-In Studio Claiming
+  READY:                { tier: 'gold',   badge: 'bg-gold/10 text-gold-dark border-gold/30',            label: 'Ready to Receive' },
+  UNDER_DELIVERY:       { tier: 'gold',   badge: 'bg-gold/10 text-gold-dark border-gold/30',            label: 'Ready to Receive' },
   // Terminals
   COMPLETED:            { tier: 'neutral', badge: 'bg-neutral-100 text-neutral-700 border-neutral-200',  label: 'Completed' },
   REJECTED:             { tier: 'neutral', badge: 'bg-neutral-100 text-neutral-500 border-neutral-200',  label: 'Rejected' },
@@ -55,10 +55,10 @@ export function getStatusTier(status) {
 }
 
 /** Normalize a raw status to its human-readable label. */
-export function getStatusLabel(status, isDelivery = false) {
+export function getStatusLabel(status) {
   const key = String(status || 'PENDING').toUpperCase();
-  if (key === 'READY' && isDelivery) {
-    return 'Booking under delivery';
+  if (key === 'UNDER_DELIVERY') {
+    return 'Ready to Receive';
   }
   return (STATUS_META[key] || STATUS_META.PENDING).label;
 }
@@ -197,15 +197,11 @@ export const DELIVERY_SUBPHASES = [
  * @param {boolean} [isDelivery=false] - whether order is for delivery instead of pickup
  * @returns {Array<{label: string, done: boolean, active: boolean, step: number, isAwaitingSchedule?: boolean}>}
  */
-export function getProgressSteps(bookingOrStatus, isDelivery = false) {
+export function getProgressSteps(bookingOrStatus) {
   let key = 'PENDING';
-  let deliveryFlag = isDelivery;
 
   if (typeof bookingOrStatus === 'object' && bookingOrStatus !== null) {
     key = String(bookingOrStatus.status || 'PENDING').toUpperCase();
-    if (bookingOrStatus.delivery_address || bookingOrStatus.fulfillment_type === 'DELIVERY' || key === 'UNDER_DELIVERY') {
-      deliveryFlag = true;
-    }
   } else {
     key = String(bookingOrStatus || 'PENDING').toUpperCase();
   }
@@ -213,12 +209,7 @@ export function getProgressSteps(bookingOrStatus, isDelivery = false) {
   const doneIdx = STEP_INDEX_8[key] ?? 0;
   const terminal = key === 'CANCELLED' || key === 'COMPLETED' || key === 'REJECTED';
 
-  const stage8Label =
-    key === 'COMPLETED'
-      ? 'Completed'
-      : deliveryFlag
-        ? 'Under Delivery'
-        : 'Ready for Pickup';
+  const stage8Label = key === 'COMPLETED' ? 'Completed' : 'Ready to Receive';
 
   const steps = [
     'Booking Received',
@@ -323,11 +314,6 @@ export function getNextBookingAction(booking) {
   const hasDownpaymentOnFile =
     Number(booking.down_payment_amount || 0) > 0 ||
     ['PAID', 'DOWNPAYMENT'].includes(getEffectivePaymentStatus(booking));
-  const isDelivery = Boolean(
-    booking.delivery_address ||
-    booking.fulfillment_type === 'DELIVERY' ||
-    status === 'UNDER_DELIVERY'
-  );
 
   if (['COMPLETED', 'CANCELLED', 'REJECTED'].includes(status)) {
     return null;
@@ -403,12 +389,11 @@ export function getNextBookingAction(booking) {
   }
 
   if (status === 'FINALIZED' || status === 'PRINTING') {
-    const nextStatus = isDelivery ? 'UNDER_DELIVERY' : 'READY';
     return {
       type: 'ADVANCE_STAGE',
-      label: isDelivery ? 'Move to Under Delivery' : 'Mark Ready for Pickup',
-      nextStatus,
-      nextLabel: getStatusLabel(nextStatus, isDelivery),
+      label: 'Mark Ready to Receive',
+      nextStatus: 'READY',
+      nextLabel: getStatusLabel('READY'),
     };
   }
 

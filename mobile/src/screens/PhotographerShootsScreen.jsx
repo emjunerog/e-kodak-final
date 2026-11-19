@@ -170,8 +170,7 @@ export default function PhotographerShootsScreen({ navigation }) {
     });
   }, [bookings, filterKey, searchQuery]);
 
-  const handleQuickAction = async (booking, quickAction) => {
-    if (!photographer?.id || !quickAction || quickBusyId) return;
+  const executeQuickAction = async (booking, quickAction) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setQuickBusyId(booking.id);
     try {
@@ -199,6 +198,27 @@ export default function PhotographerShootsScreen({ navigation }) {
     } finally {
       setQuickBusyId(null);
     }
+  };
+
+  const handleQuickAction = async (booking, quickAction) => {
+    if (!photographer?.id || !quickAction || quickBusyId) return;
+    if (quickAction.nextStatus === 'EDITING') {
+      showAlert(
+        'Finish Pictorial & Start Editing?',
+        'Confirm that this order has finished the pictorial session. You will now start editing the photos before sending them to Admin.',
+        [
+          { text: 'Not Yet', style: 'cancel' },
+          {
+            text: 'Confirm & Start Editing',
+            onPress: () => {
+              executeQuickAction(booking, quickAction);
+            },
+          },
+        ],
+      );
+      return;
+    }
+    await executeQuickAction(booking, quickAction);
   };
 
   const handleAcceptModal = async (booking) => {

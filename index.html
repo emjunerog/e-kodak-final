@@ -7,13 +7,13 @@
         try {
           const path = window.location.pathname;
           // Admin portal is strictly light theme — never affected by photographer station
-          if (path.startsWith('/admin')) {
+          if (path.includes('/admin')) {
             document.documentElement.classList.remove('dark');
             return;
           }
 
           // Photographer station portal
-          if (path.startsWith('/photographer')) {
+          if (path.includes('/photographer')) {
             const photoTheme = localStorage.getItem('ekodak_photographer_theme_mode');
             if (photoTheme === 'system') {
               const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -56,9 +56,15 @@
         }
       })();
     </script>
-    <link rel="icon" type="image/png" href="/logo-mark.png" />
-    <link rel="apple-touch-icon" href="/logo-mark.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="%BASE_URL%logo-mark.png" />
+    <link rel="apple-touch-icon" href="%BASE_URL%logo-mark.png" />
+    <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d2a1c" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="E-Kodak Studio" />
 
     <!-- SEO Meta Tags -->
     <meta

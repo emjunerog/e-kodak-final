@@ -118,21 +118,16 @@ function getOrderStatusCopy(statusRaw, serviceName) {
         tone: 'confirmed',
       };
     case 'READY':
-      return {
-        title: 'Your order is ready for studio pickup',
-        message: `Your order for ${pkg} is now ready for studio pickup at E-Kodak.`,
-        tone: 'ready',
-      };
     case 'UNDER_DELIVERY':
       return {
-        title: 'Your order is out for delivery',
-        message: `Your order for ${pkg} is now out for delivery to your address.`,
-        tone: 'inProgress',
+        title: 'Your order is ready to receive (Walk-In)',
+        message: `Your order for ${pkg} is ready to receive via walk-in at E-Kodak Studio Counter.`,
+        tone: 'ready',
       };
     case 'COMPLETED':
       return {
-        title: 'Your order is completed',
-        message: `Your order for ${pkg} is now completed. Thank you for choosing E-Kodak!`,
+        title: 'Order Completed · Ready to Receive',
+        message: `Your order for ${pkg} is completed and ready to receive! Claim at E-Kodak Studio (Walk-In) or view your soft copies.`,
         tone: 'completed',
       };
     case 'CANCELLED':
@@ -163,9 +158,9 @@ export async function fetchCustomerNotificationsFeed({ syncLive = true } = {}) {
   let latestBookings = savedList;
   const liveBookingsMap = new Map();
 
-  // Refresh the latest 3 saved bookings so order statuses match the studio database
+  // Refresh saved bookings so completed order notifications stay in sync with the studio database
   if (syncLive && Array.isArray(savedList) && savedList.length > 0) {
-    const toRefresh = savedList.slice(0, 3);
+    const toRefresh = savedList.slice(0, 8);
     const refreshed = await Promise.all(
       toRefresh.map(async (b) => {
         try {

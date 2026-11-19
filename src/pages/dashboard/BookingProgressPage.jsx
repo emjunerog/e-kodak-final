@@ -240,12 +240,6 @@ export default function BookingProgressPage() {
     }
 
     const s = (activeBooking.status || 'PENDING').toUpperCase();
-    const isDelivery = Boolean(
-      activeBooking.delivery_address ||
-      activeBooking.fulfillment_type === 'DELIVERY' ||
-      s === 'UNDER_DELIVERY' ||
-      profile?.studio_specs?.fulfillment_mode === 'DELIVERY'
-    );
     const photographerName = activeBooking.photographer?.profile
       ? `${activeBooking.photographer.profile.first_name || ''} ${activeBooking.photographer.profile.last_name || ''}`.trim()
       : (activeBooking.photographer?.name || '');
@@ -320,30 +314,22 @@ export default function BookingProgressPage() {
       };
     }
 
-    // 8. Stage 8: Ready / Under Delivery / Completed
+    // 8. Stage 8: Walk-In Ready to Receive / Completed
     if (s === 'COMPLETED') {
       return {
         badge: '08',
-        headline: <>Your order is<br className="hidden sm:inline" /> complete!</>,
-        title: 'Order fulfilled & completed',
-        desc: 'Your portraits and studio deliverables have been handed over. Thank you for celebrating your milestone with E-Kodak Studio!',
+        headline: <>Your order is<br className="hidden sm:inline" /> ready to receive!</>,
+        title: 'Order completed · Ready to receive',
+        desc: 'Your order is completed and ready to receive via walk-in at E-Kodak Studio or in your Soft Copies vault. Thank you for celebrating your milestone with us!',
       };
     }
 
     if (s === 'READY' || s === 'UNDER_DELIVERY') {
-      if (isDelivery) {
-        return {
-          badge: '08',
-          headline: <>Your order is<br className="hidden sm:inline" /> on its way.</>,
-          title: 'Booking under direct delivery',
-          desc: 'Your packaged prints are in transit to your registered address. Keep your phone handy for courier updates.',
-        };
-      }
       return {
         badge: '08',
-        headline: <>Your package is<br className="hidden sm:inline" /> ready for pickup!</>,
-        title: 'Ready for studio pickup',
-        desc: 'Your photo package is complete and waiting for you at our City of Naga studio counter. Present your QR pass to claim.',
+        headline: <>Your order is<br className="hidden sm:inline" /> ready for walk-in pickup!</>,
+        title: 'Ready to receive (Walk-In)',
+        desc: 'Your photo package and digital deliverables are ready for claiming at our City of Naga studio counter. Present your QR pass on arrival.',
       };
     }
 

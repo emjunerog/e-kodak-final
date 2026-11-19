@@ -3,6 +3,7 @@ import { getEffectivePaymentStatus } from '../lib/bookingUtils';
 import { ADD_ONS } from '../data/servicesData';
 import { sendTextBeeSms } from './textbeeService';
 import { sendCustomerDeletionNoticeEmail } from './emailService';
+import { notifyMajorBookingMilestone } from './orderLifecycleNotificationService';
 
 // ── In-Memory Fast Cache with TTL ───────────────────────────────────────────
 const serviceCache = new Map();
@@ -100,7 +101,7 @@ export async function getDashboardStats({ forceFresh = false } = {}) {
     data.forEach(({ status, payment_status }) => {
       const key = status?.toLowerCase();
       if (key && key in counts) counts[key]++;
-      
+
       // Calculate active jobs (assigned -> ready)
       if (['PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING', 'FINALIZED', 'PRINTING', 'READY', 'UNDER_DELIVERY'].includes(status)) {
         counts.active_jobs++;
@@ -482,7 +483,7 @@ export async function getPhotographers() {
       .eq('role', 'photographer')
       .order('created_at', { ascending: false });
     if (error) throw error;
-    
+
     // Map to the expected format
     const mapped = data.map(p => ({
       id: p.id,
@@ -499,7 +500,7 @@ export async function getPhotographers() {
         is_active: p.is_active
       }
     }));
-    
+
     return { data: mapped, error: null };
   } catch (error) {
     console.error('getPhotographers error:', error);
@@ -540,7 +541,7 @@ export async function approvePhotographer(id) {
       .from('profiles')
       .update({ is_active: true, updated_at: new Date().toISOString() })
       .eq('id', id);
-    
+
     if (profileError) throw profileError;
 
     // 2. Ensure photographer_profiles record exists
@@ -943,7 +944,7 @@ export async function dispatchManualSms({
     const localLogs = JSON.parse(localStorage.getItem('ekodak_local_sms_logs') || '[]');
     localLogs.unshift(finalRecord);
     localStorage.setItem('ekodak_local_sms_logs', JSON.stringify(localLogs.slice(0, 200)));
-  } catch {}
+  } catch { }
 
   window.dispatchEvent(new CustomEvent('ekodak:sms_logs_updated'));
   return finalRecord;
@@ -966,7 +967,7 @@ export async function deleteSmsLog(id) {
     const localLogs = JSON.parse(localStorage.getItem('ekodak_local_sms_logs') || '[]');
     const filtered = localLogs.filter(l => String(l.id) !== String(id));
     localStorage.setItem('ekodak_local_sms_logs', JSON.stringify(filtered));
-  } catch {}
+  } catch { }
   window.dispatchEvent(new CustomEvent('ekodak:sms_logs_updated'));
 }
 
@@ -1074,14 +1075,23 @@ export async function updatePhotoOutputStatus(outputId, newStatus) {
   try {
     const { data, error } = await supabase
       .from('photo_outputs')
-      .update({ 
-        status: newStatus, 
-        updated_at: new Date().toISOString() 
+      .update({
+        status: newStatus,
+        updated_at: new Date().toISOString()
       })
       .eq('id', outputId)
       .select()
       .single();
     if (error) throw error;
+
+    if (String(newStatus || '').toUpperCase() === 'RELEASED' && data?.booking_id) {
+      notifyMajorBookingMilestone({
+        bookingId: data.booking_id,
+        milestoneType: 'DIGITAL_COPIES_SENT',
+        deliverableName: data.file_name || '',
+      }).catch(() => {});
+    }
+
     return { data, error: null };
   } catch (error) {
     console.error('updatePhotoOutputStatus error:', error);
@@ -1372,14 +1382,14 @@ export async function getCompletedBookingsAwaitingOutputs() {
  * Allows studio administrators or photographers to upload edited package deliverable photos
  * or link a Google Drive folder containing all soft copies without exhausting Supabase storage.
  */
-export async function uploadAdminPhotoOutput({ 
-  bookingId, 
-  file = null, 
-  deliverableType = 'Soft Copies (Google Drive Folder)', 
-  filePathOrUrl = '', 
+export async function uploadAdminPhotoOutput({
+  bookingId,
+  file = null,
+  deliverableType = 'Soft Copies (Google Drive Folder)',
+  filePathOrUrl = '',
   customFileName = '',
   isGoogleDrive = false,
-  uploadedBy = null 
+  uploadedBy = null
 }) {
   if (!isSupabaseConfigured) return { data: null, error: new Error('Supabase not configured') };
   try {
@@ -1439,8 +1449,15 @@ export async function uploadAdminPhotoOutput({
 
     if (error) throw error;
 
-    // Auto-Handoff from Photo Upload to Print Queue (FINALIZED) & Workstation Transfer
+    // Log soft-copy deliverable attachment without skipping RETOUCHING -> FINALIZED;
+    // admin explicitly clicks "Finalize Booking Order" in the inspector stage card.
     if (bookingId) {
+      notifyMajorBookingMilestone({
+        bookingId,
+        milestoneType: 'DIGITAL_COPIES_SENT',
+        deliverableName: fileName,
+      }).catch(() => {});
+
       try {
         const { data: currentBooking } = await supabase
           .from('bookings')
@@ -1448,39 +1465,20 @@ export async function uploadAdminPhotoOutput({
           .eq('id', bookingId)
           .maybeSingle();
 
-        const preFinalStatuses = ['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING'];
-        if (currentBooking && preFinalStatuses.includes(String(currentBooking.status || '').toUpperCase())) {
-          await supabase
-            .from('bookings')
-            .update({
-              status: 'FINALIZED',
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', bookingId);
-
-          await supabase.from('booking_status_history').insert({
-            booking_id: bookingId,
-            status: 'FINALIZED',
-            remarks: `Auto-Handoff: Digital soft copies (${fileName}) uploaded — advanced to Finalized / Print Queue.`,
-            changed_by: uploadedBy || null,
-          });
-        }
-
-        // Log departmental handoff to Print Lab / Front Desk in workstation_transfers
         await supabase.from('workstation_transfers').insert({
           booking_id: bookingId,
           sender_id: uploadedBy || null,
-          sender_role: 'photographer',
+          sender_role: 'admin',
           target_role: 'admin',
           transfer_type: 'OUTPUT_SUBMISSION',
           priority: 'NORMAL',
-          title: `Soft Copies Released → Print Queue (#${currentBooking?.booking_number || 'Order'})`,
-          message: `${fileName} attached and released to client gallery. Ready for print assembly / final release.`,
+          title: `Soft Copies Added (#${currentBooking?.booking_number || 'Order'})`,
+          message: `${fileName} attached in Photo Outputs. Ready for Admin to finalize the booking order.`,
           payload: { output_id: data?.id, file_path: resolvedPath, file_type: fileType },
           status: 'PENDING',
         });
       } catch (handoffErr) {
-        console.warn('Auto-handoff on photo output upload notice:', handoffErr);
+        console.warn('Transfer log on photo output upload notice:', handoffErr);
       }
     }
 
@@ -1558,27 +1556,27 @@ export async function getAllWorkers({ forceFresh = false } = {}) {
     const mapped = (data || [])
       .filter(w => w && w.email && w.email.trim() !== '')
       .map(w => {
-      const ph = Array.isArray(w.photographer_profile)
-        ? w.photographer_profile[0]
-        : (w.photographer_profile || null);
+        const ph = Array.isArray(w.photographer_profile)
+          ? w.photographer_profile[0]
+          : (w.photographer_profile || null);
 
-      return {
-        id: w.id,
-        first_name: w.first_name || '',
-        last_name: w.last_name || '',
-        email: w.email || '',
-        phone: w.phone || '',
-        avatar_url: w.avatar_url || null,
-        role: w.role || 'photographer',
-        is_active: w.is_active !== false,
-        bio: w.bio || ph?.bio || '',
-        specialization: ph?.specialization || null,
-        is_available: ph?.is_available ?? true,
-        qr_login_token: ph?.qr_login_token || null,
-        created_at: w.created_at,
-        updated_at: w.updated_at
-      };
-    });
+        return {
+          id: w.id,
+          first_name: w.first_name || '',
+          last_name: w.last_name || '',
+          email: w.email || '',
+          phone: w.phone || '',
+          avatar_url: w.avatar_url || null,
+          role: w.role || 'photographer',
+          is_active: w.is_active !== false,
+          bio: w.bio || ph?.bio || '',
+          specialization: ph?.specialization || null,
+          is_available: ph?.is_available ?? true,
+          qr_login_token: ph?.qr_login_token || null,
+          created_at: w.created_at,
+          updated_at: w.updated_at
+        };
+      });
 
     setCachedAdminData(cacheKey, mapped, 25000);
     return { data: mapped, error: null };

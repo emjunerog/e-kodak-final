@@ -62,6 +62,7 @@ import {
   getCompletedBookingsAwaitingOutputs
 } from '../../services/adminService';
 import { extractSetName, getCleanFileName } from '../../services/photographerService';
+import { notifyMajorBookingMilestone } from '../../services/orderLifecycleNotificationService';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { getEffectivePaymentStatus } from '../../lib/bookingUtils';
@@ -521,6 +522,8 @@ export default function AdminPhotos() {
     load();
   }, [load]);
 
+  const handledSearchRef = useRef('');
+
   const handleOpenUploadModal = useCallback((preselectedBookingId = null) => {
     if (preselectedBookingId) {
       setSelectedBookingId(preselectedBookingId);
@@ -538,15 +541,22 @@ export default function AdminPhotos() {
   }, [bookings, selectedBookingId]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    const search = window.location.search || '';
+    if (!search || handledSearchRef.current === search) return;
+    const params = new URLSearchParams(search);
     const bookingParam = params.get('bookingId') || params.get('booking_id');
     const openUpload = params.get('openUpload') === 'true';
-    if (bookingParam) {
+    if (!bookingParam && !openUpload) return;
+
+    handledSearchRef.current = search;
+    if (bookingParam && openUpload) {
       handleOpenUploadModal(bookingParam);
+    } else if (bookingParam) {
+      setSelectedBookingId(bookingParam);
     } else if (openUpload) {
       handleOpenUploadModal();
     }
-  }, [bookings, handleOpenUploadModal]);
+  }, [handleOpenUploadModal]);
 
   // Dropdown options for booking selection modal
   const bookingDropdownOptions = useMemo(() => {
@@ -709,6 +719,12 @@ export default function AdminPhotos() {
       // Ensure deliverable is marked as RELEASED so customer RLS policy allows viewing
       if (item.status !== 'RELEASED') {
         await updatePhotoOutputStatus(item.id, 'RELEASED');
+      } else if (item.booking?.id || item.booking_id) {
+        notifyMajorBookingMilestone({
+          bookingId: item.booking?.id || item.booking_id,
+          milestoneType: 'DIGITAL_COPIES_SENT',
+          deliverableName: item.file_name || '',
+        }).catch(() => {});
       }
 
       if (targetUserId) {
@@ -785,8 +801,41 @@ export default function AdminPhotos() {
           showToast('Failed to delete output', 'error');
         } else {
           showToast('Photo deliverable removed', 'success');
+          setSelectedIds((prev) => {
+            if (!prev.has(id)) return prev;
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
           if (inspectItem?.id === id) setInspectItem(null);
+          window.dispatchEvent(new CustomEvent('ekodak_bookings_updated'));
           load();
+        }
+      },
+    });
+  };
+
+  const handleBatchDeleteSelected = () => {
+    if (selectedIds.size === 0) return;
+    const idsToDelete = Array.from(selectedIds);
+    setConfirmDialog({
+      title: `Delete ${idsToDelete.length} Photo Deliverable${idsToDelete.length > 1 ? 's' : ''}?`,
+      message: `Permanently remove ${idsToDelete.length} selected deliverable(s) from this queue? This action cannot be reversed.`,
+      confirmLabel: `Delete (${idsToDelete.length})`,
+      onConfirm: async () => {
+        try {
+          for (const id of idsToDelete) {
+            const { error: dErr } = await deleteAdminPhotoOutput(id);
+            if (dErr) throw dErr;
+          }
+          showToast(`Deleted ${idsToDelete.length} photo deliverable(s)`, 'success');
+          if (inspectItem && selectedIds.has(inspectItem.id)) setInspectItem(null);
+          setSelectedIds(new Set());
+          window.dispatchEvent(new CustomEvent('ekodak_bookings_updated'));
+          load();
+        } catch (err) {
+          console.error('Batch delete error:', err);
+          showToast('Failed to delete some deliverables', 'error');
         }
       },
     });
@@ -1256,6 +1305,14 @@ export default function AdminPhotos() {
                 </button>
                 <button
                   type="button"
+                  onClick={handleBatchDeleteSelected}
+                  className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <Trash2 size={12} />
+                  <span>Delete Selected</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setSelectedIds(new Set())}
                   className="px-2.5 py-1.5 rounded-lg border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 font-medium text-xs transition-colors cursor-pointer"
                 >
@@ -1575,6 +1632,17 @@ export default function AdminPhotos() {
                                 <FolderPlus size={14} />
                               </button>
 
+                              {/* Quick Delete Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteOutput(item.id, cleanTitle || item.file_name)}
+                                className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-all cursor-pointer"
+                                title="Delete Deliverable"
+                                aria-label="Delete Deliverable"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+
                               {/* More Action Menu */}
                               <DeliverableActionDropdown
                                 item={item}
@@ -1636,7 +1704,16 @@ export default function AdminPhotos() {
                           </div>
                         </div>
 
-                        <div onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteOutput(item.id, cleanTitle || item.file_name)}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-neutral-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                            title="Delete Deliverable"
+                            aria-label="Delete Deliverable"
+                          >
+                            <Trash2 size={13} />
+                          </button>
                           <DeliverableActionDropdown
                             item={item}
                             onInspect={(i) => setInspectItem(i)}

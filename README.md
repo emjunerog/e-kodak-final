@@ -12,7 +12,9 @@
 - **Admin Management Console**: Full administrative controls for services, pricing, booking calendar, team members, announcements, financial overview, and audit activity logs.
 - **AI Studio Assistant**: Embedded Gemini-powered assistant to help clients explore packages, ask studio questions, and select services.
 - **Role-Based Access Control**: Granular Row Level Security (RLS) in PostgreSQL protecting client profiles, bookings, photographer schedules, and administrative logs.
-- **Automated Notifications**: Supabase Edge Functions with SMTP / email dispatch for booking confirmations, reminders, and status updates.
+- **Automated Notifications & SMS**: Branded editorial HTML emails via Supabase Edge Functions (`send-email`) on every booking progress update, plus automatic TextBee Android SMS gateway alerts for downpayment verification, soft-copy release, and order completion.
+- **Walk-In Claiming & Soft Copy Release Workflow**: Photo Outputs soft-copy release gate, lightbox review for signed Supabase/Drive outputs, Admin Quick Inspector Undo/Redo stage controls, and persistent mobile/web **"Ready to Receive"** notifications on completion.
+- **Installable Mobile Experience**: Installable Web App (PWA with `manifest.webmanifest`, offline-safe Service Worker, and iOS/Android install banner) plus a native React Native / Expo Android Companion app (`mobile/`) ready for APK builds.
 
 ### 📅 Photographer Scheduling — Feature Roadmap
 
@@ -60,7 +62,7 @@
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/your-username/e-kodak-final.git
+git clone https://github.com/emjunerog/e-kodak-final.git
 cd e-kodak-final
 npm install
 ```
@@ -136,6 +138,15 @@ Open your browser at `http://localhost:5173`.
 | `npm run build` | Compiles and bundles production-ready assets into `dist/` |
 | `npm run preview` | Locally previews the production build output |
 | `npm run lint` | Runs Oxlint to inspect codebase quality and syntax rules |
+
+---
+
+## 📦 Deployment & Mobile Installation
+
+See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for complete instructions covering:
+- **GitHub Pages Web PWA Auto-Deploy** ([`.github/workflows/deploy-web.yml`](.github/workflows/deploy-web.yml))
+- **Installing the Web App on Android & iOS Phones** (PWA Add to Home Screen)
+- **Building & Installing the Android Companion APK** ([`.github/workflows/build-mobile-apk.yml`](.github/workflows/build-mobile-apk.yml) & [`mobile/eas.json`](mobile/eas.json))
 
 ---
 

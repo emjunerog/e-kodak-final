@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { validateUploadFile, sanitizeFileName } from '../lib/securityValidator';
 import { createTransferLog } from './workstationService';
+import { notifyBookingProgressUpdate } from './orderLifecycleNotificationService';
 
 // ── Bookings ─────────────────────────────────────────────────────────────────
 
@@ -18,6 +19,7 @@ export async function getAssignedBookings(photographerId = null) {
       .select(`
         id,
         booking_number,
+        photographer_id,
         status,
         payment_status,
         event_date,
@@ -115,6 +117,7 @@ export async function getBookingDetails(bookingId) {
       .select(`
         id,
         booking_number,
+        photographer_id,
         status,
         payment_status,
         event_date,
@@ -337,6 +340,12 @@ export async function updateBookingStatusByPhotographer(bookingIdOrOptions, mayb
         }
       }
     }
+
+    notifyBookingProgressUpdate({
+      bookingId,
+      newStatus: String(newStatus).toUpperCase(),
+      remarks,
+    }).catch(() => {});
 
     return { data: updatedBooking, error: null };
   } catch (err) {
@@ -1139,20 +1148,42 @@ export async function uploadPhotoOutput(file, bookingId, setName = 'Main Set') {
     const taggedName = setName ? `[${setName.trim()}] ${safeName}` : safeName;
     const filePath = `outputs/${bookingId}/${Date.now()}_${safeName}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from('outputs')
+    // Prefer public 'studio-assets' bucket so uploaded batch thumbnails/files are immediately viewable
+    // across Admin & Photographer portals; fall back to 'outputs' (with a signed URL) if needed.
+    let activeBucket = 'studio-assets';
+    let { error: uploadError } = await supabase.storage
+      .from(activeBucket)
       .upload(filePath, file, {
         contentType: file.type,
-        upsert: false
+        upsert: false,
       });
+
+    if (uploadError) {
+      activeBucket = 'outputs';
+      const retry = await supabase.storage
+        .from(activeBucket)
+        .upload(filePath, file, {
+          contentType: file.type,
+          upsert: false,
+        });
+      uploadError = retry.error;
+    }
 
     if (uploadError) return { data: null, error: uploadError };
 
     const { data: urlData } = supabase.storage
-      .from('outputs')
+      .from(activeBucket)
       .getPublicUrl(filePath);
 
-    const publicUrl = urlData?.publicUrl || filePath;
+    let publicUrl = urlData?.publicUrl || filePath;
+    if (activeBucket !== 'studio-assets') {
+      const { data: signedData } = await supabase.storage
+        .from(activeBucket)
+        .createSignedUrl(filePath, 60 * 60 * 24 * 7);
+      if (signedData?.signedUrl) {
+        publicUrl = signedData.signedUrl;
+      }
+    }
 
     const { data, error } = await supabase
       .from('photo_outputs')
@@ -1167,7 +1198,8 @@ export async function uploadPhotoOutput(file, bookingId, setName = 'Main Set') {
       .select()
       .single();
 
-    const resultData = data || fallback;
+    if (error) return { data: null, error };
+    const resultData = data || null;
 
     // Notify Admin / Print Lab via Workstation Hub
     if (resultData) {
@@ -1199,6 +1231,265 @@ export async function uploadPhotoOutput(file, bookingId, setName = 'Main Set') {
     return { data: resultData, error: null };
   } catch (err) {
     console.error('uploadPhotoOutput error:', err);
+    return { data: null, error: err };
+  }
+}
+
+/**
+ * parseGoogleDriveFolderUrl
+ * -------------------------
+ * Validates a Google Drive folder URL and extracts its canonical Folder ID and
+ * official embed/view URLs so photographers & admins can verify folder contents.
+ */
+export function parseGoogleDriveFolderUrl(rawUrl) {
+  const cleanUrl = String(rawUrl || '').trim();
+  if (!cleanUrl) {
+    return { valid: false, reason: 'Please paste a Google Drive folder link.' };
+  }
+  let parsed;
+  try {
+    parsed = new URL(cleanUrl);
+  } catch {
+    return { valid: false, reason: 'Please enter a valid URL starting with https://.' };
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (!host.includes('drive.google.com')) {
+    return { valid: false, reason: 'URL must be a Google Drive folder link (drive.google.com).' };
+  }
+
+  if (/\/file\/d\//i.test(parsed.pathname)) {
+    return {
+      valid: false,
+      reason: 'This is a single-file link. Please share the Google Drive folder link (/drive/folders/...).',
+    };
+  }
+
+  const folderMatch =
+    parsed.pathname.match(/\/folders\/([a-zA-Z0-9_-]{10,})/) ||
+    cleanUrl.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+
+  const folderId = folderMatch?.[1] || '';
+  if (!folderId) {
+    return {
+      valid: false,
+      reason: 'Could not find a valid Google Drive folder ID (/drive/folders/...).',
+    };
+  }
+
+  return {
+    valid: true,
+    folderId,
+    cleanUrl,
+    hasSharingParam: /usp=(sharing|drive_link)/i.test(parsed.search),
+    embedUrl: `https://drive.google.com/embeddedfolderview?id=${folderId}#grid`,
+    openUrl: `https://drive.google.com/drive/folders/${folderId}`,
+  };
+}
+
+/**
+ * resolvePhotoOutputDisplay
+ * -------------------------
+ * Synchronously normalizes a `photo_outputs` row so UI components know whether it is
+ * a Drive folder, a single Drive file, a PDF, or a Supabase Storage / external image.
+ */
+export function resolvePhotoOutputDisplay(item) {
+  const rawPath = String(item?.file_path || '').trim();
+  const rawName = String(item?.file_name || '');
+  const cleanName = getCleanFileName(rawName) || 'Photo Output';
+  const fileType = String(item?.file_type || '').toLowerCase();
+
+  const parsedFolder = parseGoogleDriveFolderUrl(rawPath);
+  if (fileType === 'gdrive_folder' || parsedFolder.valid) {
+    return {
+      ...item,
+      cleanName,
+      isDriveFolder: true,
+      isDriveFile: false,
+      isPdf: false,
+      driveMeta: parsedFolder.valid ? parsedFolder : null,
+      resolvedUrl: parsedFolder.openUrl || rawPath,
+      openUrl: parsedFolder.openUrl || rawPath,
+      storageBucket: null,
+      storageObjectPath: null,
+    };
+  }
+
+  // Single Google Drive file links (e.g. drive.google.com/file/d/<id>/view)
+  const driveFileMatch =
+    rawPath.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]{10,})/i) ||
+    rawPath.match(/drive\.google\.com\/(?:open|uc)\?[^#]*\bid=([a-zA-Z0-9_-]{10,})/i);
+  if (fileType === 'gdrive_link' || driveFileMatch) {
+    const fileId = driveFileMatch?.[1] || '';
+    const thumbUrl = fileId
+      ? `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`
+      : rawPath;
+    const previewUrl = fileId
+      ? `https://drive.google.com/file/d/${fileId}/preview`
+      : rawPath;
+    return {
+      ...item,
+      cleanName,
+      isDriveFolder: false,
+      isDriveFile: true,
+      isPdf: false,
+      driveFileId: fileId,
+      resolvedUrl: thumbUrl,
+      previewUrl,
+      openUrl: rawPath,
+      storageBucket: null,
+      storageObjectPath: null,
+    };
+  }
+
+  const isPdf =
+    fileType === 'application/pdf' ||
+    /\.pdf(\?|$)/i.test(rawPath) ||
+    /\.pdf$/i.test(cleanName);
+
+  // Extract Supabase Storage bucket & object path from public/sign URLs or relative keys
+  let storageBucket = null;
+  let storageObjectPath = null;
+  const supaMatch = rawPath.match(
+    /\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/]+)\/([^?#]+)/i
+  );
+  if (supaMatch) {
+    storageBucket = decodeURIComponent(supaMatch[1]);
+    storageObjectPath = decodeURIComponent(supaMatch[2]);
+  } else if (rawPath && !/^(https?:|data:|blob:)/i.test(rawPath)) {
+    storageObjectPath = rawPath.replace(/^\/+/, '');
+    if (storageObjectPath.startsWith('deliverables/')) {
+      storageBucket = 'studio-assets';
+    } else if (storageObjectPath.startsWith('outputs/')) {
+      storageBucket = 'outputs';
+    } else {
+      storageBucket = 'photo-outputs';
+    }
+  }
+
+  return {
+    ...item,
+    cleanName,
+    isDriveFolder: false,
+    isDriveFile: false,
+    isPdf,
+    resolvedUrl: rawPath,
+    openUrl: rawPath,
+    storageBucket,
+    storageObjectPath,
+  };
+}
+
+const SIGNED_BUCKETS = new Set(['outputs', 'photo-outputs', 'booking-references']);
+
+/**
+ * resolvePhotoOutputUrls
+ * ----------------------
+ * Generates fresh viewable signed URLs for private Supabase Storage objects ('outputs',
+ * 'photo-outputs', 'booking-references') while preserving public/Drive/external links.
+ */
+export async function resolvePhotoOutputUrls(outputs = []) {
+  const list = Array.isArray(outputs) ? outputs : [];
+  if (list.length === 0) return [];
+
+  return Promise.all(
+    list.map(async (item) => {
+      const base = resolvePhotoOutputDisplay(item);
+      if (base.isDriveFolder || base.isDriveFile || !base.storageBucket || !base.storageObjectPath) {
+        return base;
+      }
+
+      const needsSign =
+        SIGNED_BUCKETS.has(base.storageBucket) ||
+        !/^https?:\/\//i.test(String(base.resolvedUrl || ''));
+
+      if (!needsSign || !isSupabaseConfigured) {
+        return base;
+      }
+
+      try {
+        const { data, error } = await supabase.storage
+          .from(base.storageBucket)
+          .createSignedUrl(base.storageObjectPath, 3600);
+        if (!error && data?.signedUrl) {
+          return {
+            ...base,
+            resolvedUrl: data.signedUrl,
+            openUrl: data.signedUrl,
+          };
+        }
+
+        // Fallback: if relative 'outputs/...' actually lives in 'studio-assets'
+        if (base.storageBucket === 'outputs') {
+          const { data: pubData } = supabase.storage
+            .from('studio-assets')
+            .getPublicUrl(base.storageObjectPath);
+          if (pubData?.publicUrl && !/^https?:\/\//i.test(base.resolvedUrl)) {
+            return {
+              ...base,
+              resolvedUrl: pubData.publicUrl,
+              openUrl: pubData.publicUrl,
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('resolvePhotoOutputUrls signing fallback:', err?.message);
+      }
+
+      return base;
+    })
+  );
+}
+
+/**
+ * submitDriveFolderOutput
+ * -----------------------
+ * Attaches a Google Drive folder URL to photo_outputs during the photographer's
+ * editing stage without prematurely changing booking status past EDITING.
+ */
+export async function submitDriveFolderOutput({
+  bookingId,
+  folderUrl,
+  label = 'Edited Photos Drive Folder',
+}) {
+  if (!isSupabaseConfigured || !bookingId) return { data: null, error: null };
+  const parsedDrive = parseGoogleDriveFolderUrl(folderUrl);
+  if (!parsedDrive.valid) {
+    return { data: null, error: new Error(parsedDrive.reason) };
+  }
+  try {
+    // Prevent duplicate rows for the same Google Drive folder ID on this booking
+    const { data: existingRows } = await supabase
+      .from('photo_outputs')
+      .select('id, booking_id, file_path, file_name, file_type, file_size, status, created_at')
+      .eq('booking_id', bookingId)
+      .order('created_at', { ascending: false });
+
+    const matchedExisting = (existingRows || []).find((row) => {
+      const parsedExisting = parseGoogleDriveFolderUrl(row.file_path);
+      return parsedExisting.valid && parsedExisting.folderId === parsedDrive.folderId;
+    });
+    if (matchedExisting) {
+      return { data: matchedExisting, error: null, deduplicated: true };
+    }
+
+    const { data, error } = await supabase
+      .from('photo_outputs')
+      .insert([{
+        booking_id: bookingId,
+        file_path: parsedDrive.cleanUrl,
+        file_name: `[Edited Batch · ${parsedDrive.folderId.slice(0, 8)}] ${label}`,
+        file_type: 'gdrive_folder',
+        file_size: 0,
+        status: 'UPLOADED',
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (err) {
+    console.error('submitDriveFolderOutput error:', err);
     return { data: null, error: err };
   }
 }
@@ -1322,7 +1613,7 @@ export function getRequiredSetsForBooking(booking) {
  */
 export async function submitSamplesToAdmin({
   bookingId,
-  photographerId,
+  photographerId = null,
   photographerName = 'Photographer',
   bookingNumber = '',
   photoCount = 0,
@@ -1330,6 +1621,12 @@ export async function submitSamplesToAdmin({
 }) {
   if (!isSupabaseConfigured || !bookingId) return { data: null, error: null };
   try {
+    let resolvedPhotographerId = photographerId;
+    if (!resolvedPhotographerId) {
+      const { data: authData } = await supabase.auth.getUser();
+      resolvedPhotographerId = authData?.user?.id || null;
+    }
+
     const { data: updatedBooking, error: updateError } = await supabase
       .from('bookings')
       .update({
@@ -1343,46 +1640,62 @@ export async function submitSamplesToAdmin({
     if (updateError) console.warn('Status update note:', updateError);
 
     const bNum = bookingNumber || updatedBooking?.booking_number || '';
+    if (!resolvedPhotographerId && updatedBooking?.photographer_id) {
+      resolvedPhotographerId = updatedBooking.photographer_id;
+    }
 
-    // Record in booking_status_history
-    await supabase.from('booking_status_history').insert({
+    // Record in booking_status_history (authoritative source of truth for sent state)
+    const { error: historyError } = await supabase.from('booking_status_history').insert({
       booking_id: bookingId,
       status: 'EDITING',
-      remarks: `Photographer ${photographerName} sent edited photos to Admin (${photoCount} sample photo(s), ${setsSummary || 'All Sets'}) for Admin Review.`,
-      changed_by: photographerId,
+      remarks: `Photographer ${photographerName} sent edited photos to Admin (${photoCount} batch item(s), ${setsSummary || 'All Sets'}) for Admin Review.`,
+      changed_by: resolvedPhotographerId,
     });
+    if (historyError) throw historyError;
 
-    // Create Workstation Transfer to Admin
-    const { data: transfer, error: transferError } = await createTransferLog({
-      bookingId,
-      senderId: photographerId,
-      senderRole: 'photographer',
-      targetRole: 'admin',
-      transferType: 'OUTPUT_SUBMISSION',
-      priority: 'HIGH',
-      title: `Sample Photos Submitted for Review: #${bNum}`,
-      message: `Photographer ${photographerName} uploaded ${photoCount} sample photo(s) (${setsSummary || 'Sets'}) for booking #${bNum}. Pending Admin review and confirmation.`,
-      payload: {
-        booking_number: bNum,
-        photo_count: photoCount,
-        sets_summary: setsSummary,
-        stage: 'PENDING_ADMIN_REVIEW'
+    // Create Workstation Transfer to Admin (non-blocking if RLS differs for QR/proxy roles)
+    let transfer = null;
+    if (resolvedPhotographerId) {
+      const { data: transferData, error: transferError } = await createTransferLog({
+        bookingId,
+        senderId: resolvedPhotographerId,
+        senderRole: 'photographer',
+        targetRole: 'admin',
+        transferType: 'OUTPUT_SUBMISSION',
+        priority: 'HIGH',
+        title: `Edited Photos Submitted for Review: #${bNum}`,
+        message: `Photographer ${photographerName} sent ${photoCount} edited batch item(s) (${setsSummary || 'Folder'}) for booking #${bNum}. Pending Admin receipt and review.`,
+        payload: {
+          booking_number: bNum,
+          photo_count: photoCount,
+          sets_summary: setsSummary,
+          stage: 'PENDING_ADMIN_REVIEW',
+        },
+      });
+      if (transferError) {
+        console.warn('Non-blocking workstation_transfers log notice:', transferError);
+      } else {
+        transfer = transferData;
       }
-    });
+    }
 
-    // Record photographer activity log
-    await recordPhotographerActivity({
-      photographerId,
-      photographerName,
-      actionType: 'OUTPUT_SUBMISSION',
-      entityType: 'photo_outputs',
-      entityId: bookingId,
-      entityLabel: `#${bNum}`,
-      description: `Submitted ${photoCount} sample photo(s) (${setsSummary || 'Sets'}) for booking #${bNum} for Admin Quality Review.`,
-      details: { booking_number: bNum, photo_count: photoCount, sets_summary: setsSummary, stage: 'EDITING' },
-    });
+    // Record photographer activity log (non-blocking)
+    try {
+      await recordPhotographerActivity({
+        photographerId: resolvedPhotographerId,
+        photographerName,
+        actionType: 'OUTPUT_SUBMISSION',
+        entityType: 'photo_outputs',
+        entityId: bookingId,
+        entityLabel: `#${bNum}`,
+        description: `Sent ${photoCount} edited batch item(s) (${setsSummary || 'Folder'}) for booking #${bNum} to Admin Review.`,
+        details: { booking_number: bNum, photo_count: photoCount, sets_summary: setsSummary, stage: 'EDITING' },
+      });
+    } catch (actErr) {
+      console.warn('Non-blocking activity log notice:', actErr);
+    }
 
-    return { data: updatedBooking, transfer, error: transferError };
+    return { data: updatedBooking, transfer, error: null };
   } catch (err) {
     console.error('submitSamplesToAdmin error:', err);
     return { data: null, error: err };
@@ -1470,6 +1783,14 @@ export async function receiveEditedPhotosByAdmin({
         notification_type: 'booking_status',
       });
     }
+
+    notifyBookingProgressUpdate({
+      bookingId,
+      newStatus: 'EDITING',
+      remarks: 'Studio received your edited photos for quality review.',
+      skipSms: true,
+    }).catch(() => {});
+
     return { data, error: null };
   } catch (err) {
     console.error('receiveEditedPhotosByAdmin error:', err);
@@ -1595,6 +1916,13 @@ export async function returnSamplesToPhotographer({
         notes
       }
     });
+
+    notifyBookingProgressUpdate({
+      bookingId,
+      newStatus: 'CAPTURE',
+      remarks: 'Studio requested additional edit revisions on your session.',
+      skipSms: true,
+    }).catch(() => {});
 
     return { data: updatedBooking, transfer, error: transferError };
   } catch (err) {

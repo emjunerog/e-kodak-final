@@ -461,9 +461,9 @@ export const STATUS_META = {
   RETOUCHING: { color: Colors.status.editing, label: 'Retouching', step: 5 },
   FINALIZED: { color: Colors.status.confirmed, label: 'Booking Finalized', step: 6 },
   PRINTING: { color: Colors.status.confirmed, label: 'Booking Finalized', step: 6 },
-  READY: { color: Colors.status.ready, label: 'Ready for Pickup', step: 7 },
-  UNDER_DELIVERY: { color: Colors.status.inProgress, label: 'Under Delivery', step: 7 },
-  COMPLETED: { color: Colors.status.completed, label: 'Completed', step: 8 },
+  READY: { color: Colors.status.ready, label: 'Ready to Receive (Walk-In)', step: 7 },
+  UNDER_DELIVERY: { color: Colors.status.ready, label: 'Ready to Receive (Walk-In)', step: 7 },
+  COMPLETED: { color: Colors.status.completed, label: 'Completed · Ready to Receive', step: 8 },
   CANCELLED: { color: Colors.status.cancelled, label: 'Cancelled', step: -1 },
   REJECTED: { color: Colors.status.rejected, label: 'Rejected', step: -1 },
 };
@@ -477,7 +477,7 @@ export const MILESTONE_STEPS = [
   { label: 'Editing', icon: 'Sparkles', desc: 'Darkroom processing — handled with meticulous craftsmanship.' },
   { label: 'Retouching', icon: 'Wand2', desc: 'Color grading and fine-art beauty proofing.' },
   { label: 'Booking Finalized', icon: 'Printer', desc: 'Museum-grade prints assembled and encased.' },
-  { label: 'Ready for Release', icon: 'Package', desc: 'Ready for studio pickup or direct dispatch.' },
+  { label: 'Ready to Receive', icon: 'Package', desc: 'Ready for walk-in studio claiming & soft copies.' },
 ];
 
 // -- Motion (additive, UI-only) --

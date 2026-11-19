@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
 import {
   AlertCircle,
@@ -6,20 +7,22 @@ import {
   Camera,
   Check,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Copy,
   CreditCard,
   ExternalLink,
+  Eye,
+  FileText,
   FolderOpen,
-  Link2,
+  Image as ImageIcon,
   Loader2,
   PackageCheck,
-  Printer,
   Receipt,
   RotateCcw,
   Send,
   Sparkles,
-  Truck,
   UserCheck,
   X,
 } from 'lucide-react';
@@ -35,8 +38,10 @@ import {
   returnSamplesToPhotographer,
   resolveEditingWorkflowState,
   receiveEditedPhotosByAdmin,
+  parseGoogleDriveFolderUrl,
+  resolvePhotoOutputDisplay,
+  resolvePhotoOutputUrls,
 } from '../../services/photographerService';
-import { uploadAdminPhotoOutput } from '../../services/adminService';
 import { createTransferLog } from '../../services/workstationService';
 import { supabase } from '../../lib/supabase';
 import { getStatusLabel } from '../../lib/bookingUtils';
@@ -72,7 +77,7 @@ export default function InspectorStageCard({
   active,
   profile,
   currentStatusUpper,
-  nextStatus,
+  nextStatus: _nextStatus,
   hasPhotographer,
   hasPaymentConfirmed,
   needsDownpaymentConfirmation,
@@ -104,20 +109,43 @@ export default function InspectorStageCard({
   const [revisionNote, setRevisionNote] = useState('');
   const [sendingRevision, setSendingRevision] = useState(false);
 
-  const [driveUrl, setDriveUrl] = useState('');
-  const [savingDrive, setSavingDrive] = useState(false);
-
   const [dispatchingCrew, setDispatchingCrew] = useState(false);
   const [movedLocally, setMovedLocally] = useState(false);
   const [receivedLocally, setReceivedLocally] = useState(false);
   const [receivingPhotos, setReceivingPhotos] = useState(false);
+  const [previewDriveId, setPreviewDriveId] = useState(null);
   const [copiedToken, setCopiedToken] = useState(false);
+  const [signedOutputsState, setSignedOutputsState] = useState({ key: '', items: [] });
+  const [failedThumbKeys, setFailedThumbKeys] = useState({});
+  const [lightboxIndex, setLightboxIndex] = useState(null);
 
   const assignedPhotographerName = resolvePhotographerName(active);
   const photoOutputs = useMemo(
     () => (Array.isArray(active?.photo_outputs) ? active.photo_outputs : []),
     [active]
   );
+  const photoOutputsKey = useMemo(
+    () => photoOutputs.map((p) => `${p?.id || ''}:${p?.file_path || ''}`).join('|'),
+    [photoOutputs]
+  );
+  const syncDisplayOutputs = useMemo(
+    () => photoOutputs.map(resolvePhotoOutputDisplay),
+    [photoOutputs]
+  );
+  const displayOutputs =
+    signedOutputsState.key === photoOutputsKey ? signedOutputsState.items : syncDisplayOutputs;
+
+  useEffect(() => {
+    if (!photoOutputsKey) return undefined;
+    let mounted = true;
+    resolvePhotoOutputUrls(photoOutputs).then((resolved) => {
+      if (!mounted) return;
+      setSignedOutputsState({ key: photoOutputsKey, items: resolved });
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [photoOutputs, photoOutputsKey]);
 
   const isClosedStage = currentStatusUpper === 'CANCELLED' || currentStatusUpper === 'REJECTED';
   const isPaymentStage = !isClosedStage && !hasPaymentConfirmed && !isPaid;
@@ -267,38 +295,6 @@ export default function InspectorStageCard({
     }
   };
 
-  const handleAttachDriveAndRelease = async () => {
-    const cleanUrl = driveUrl.trim();
-    if (!cleanUrl || savingDrive) {
-      onShowToast?.('Paste a Google Drive folder or file link first.', 'error');
-      return;
-    }
-    setSavingDrive(true);
-    try {
-      const { data, error } = await uploadAdminPhotoOutput({
-        bookingId: active.id,
-        deliverableType: 'Soft Copies (Google Drive Folder)',
-        filePathOrUrl: cleanUrl,
-        isGoogleDrive: true,
-        uploadedBy: profile?.id || null,
-      });
-      if (error) throw error;
-      setDriveUrl('');
-      onBookingMutated?.({
-        nextStatus: 'FINALIZED',
-        patch: {
-          status: 'FINALIZED',
-          photo_outputs: data ? [data, ...photoOutputs] : photoOutputs,
-        },
-        toastMessage: 'Soft-copy Drive folder released & moved to Finalized.',
-      });
-    } catch (err) {
-      onShowToast?.(err?.message || 'Failed to attach Google Drive link.', 'error');
-    } finally {
-      setSavingDrive(false);
-    }
-  };
-
   const handleCopyToken = async (value) => {
     if (!value) return;
     try {
@@ -428,22 +424,35 @@ export default function InspectorStageCard({
   };
 
   const accountSpecs = active?.customer?.studio_specs || {};
-  const isDeliveryOrder =
-    accountSpecs.fulfillment_mode === 'STUDIO_DELIVERY' ||
-    active?.fulfillment_type === 'DELIVERY' ||
-    Boolean(active?.delivery_address || accountSpecs.shipping_address) ||
-    currentStatusUpper === 'UNDER_DELIVERY';
 
-  const driveOutputs = useMemo(
+  const { driveOutputs, fileOutputs } = useMemo(() => {
+    const seenFolderIds = new Set();
+    const folders = [];
+    const files = [];
+    displayOutputs.forEach((p) => {
+      if (p.isDriveFolder) {
+        const key = p.driveMeta?.folderId || p.file_path || p.id;
+        if (key && seenFolderIds.has(key)) return;
+        if (key) seenFolderIds.add(key);
+        folders.push(p);
+      } else {
+        files.push(p);
+      }
+    });
+    return { driveOutputs: folders, fileOutputs: files };
+  }, [displayOutputs]);
+
+  const activeLightboxItem =
+    lightboxIndex !== null && lightboxIndex >= 0 && lightboxIndex < fileOutputs.length
+      ? fileOutputs[lightboxIndex]
+      : null;
+
+  const releasedSoftCopyOutputs = useMemo(
     () =>
-      photoOutputs.filter(
-        (p) =>
-          p.file_type === 'gdrive_folder' ||
-          p.file_type === 'gdrive_link' ||
-          String(p.file_path || '').includes('drive.google.com')
-      ),
-    [photoOutputs]
+      displayOutputs.filter((o) => String(o.status || '').toUpperCase() === 'RELEASED'),
+    [displayOutputs]
   );
+  const hasReleasedSoftCopyLinks = releasedSoftCopyOutputs.length > 0;
 
   const editingWorkflow = useMemo(() => resolveEditingWorkflowState(active), [active]);
   const isPhotosSentToAdmin = editingWorkflow.isSentToAdmin;
@@ -471,18 +480,20 @@ export default function InspectorStageCard({
       : !isPhotosReceivedByAdmin
         ? 'EDITED PHOTOS SENT · AWAITING RECEIPT'
         : 'PHOTOS RECEIVED · REVIEW FOR RETOUCHING';
-  else if (currentStatusUpper === 'RETOUCHING') headerEyebrow = 'RETOUCHING & SOFT COPIES';
-  else if (currentStatusUpper === 'FINALIZED' || currentStatusUpper === 'PRINTING') headerEyebrow = 'PRINT LAB & PACKAGING';
+  else if (currentStatusUpper === 'RETOUCHING') headerEyebrow = 'SOFT COPIES · PHOTO OUTPUTS';
+  else if (currentStatusUpper === 'FINALIZED' || currentStatusUpper === 'PRINTING') headerEyebrow = 'SOFT COPY RELEASE · FINALIZED';
   else if (currentStatusUpper === 'READY' || currentStatusUpper === 'UNDER_DELIVERY') headerEyebrow = 'FULFILLMENT & HANDOVER';
   else if (currentStatusUpper === 'COMPLETED') headerEyebrow = 'ORDER COMPLETED';
 
-  const nextLabel = nextStatus ? getStatusLabel(nextStatus) : 'Next Stage';
   const isPictorialActive = currentStatusUpper === 'CAPTURE' || currentStatusUpper === 'IN_PROGRESS';
   const showTopStageBadge = !(
     !isClosedStage &&
     !isPaymentStage &&
     !isAssignStage &&
-    (currentStatusUpper === 'PHOTOGRAPHER_ASSIGNED' || isPictorialActive)
+    (currentStatusUpper === 'PHOTOGRAPHER_ASSIGNED' ||
+      isPictorialActive ||
+      currentStatusUpper === 'FINALIZED' ||
+      currentStatusUpper === 'PRINTING')
   );
 
   return (
@@ -769,26 +780,103 @@ export default function InspectorStageCard({
                   </p>
 
                   {photoOutputs.length > 0 && (
-                    <div className="grid grid-cols-4 gap-1.5 pt-1">
-                      {photoOutputs.slice(0, 4).map((p) => (
-                        <a
-                          key={p.id}
-                          href={p.file_path}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="group relative aspect-square rounded-lg overflow-hidden border border-white/15 bg-neutral-900"
-                          title={p.file_name}
-                        >
-                          <img
-                            src={p.file_path}
-                            alt={p.file_name || 'Sample'}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        </a>
-                      ))}
+                    <div className="space-y-2 pt-1">
+                      {driveOutputs.length > 0 && (
+                        <div className="space-y-1.5">
+                          {driveOutputs.map((d) => {
+                            const parsedDrive = parseGoogleDriveFolderUrl(d.file_path);
+                            const fid = parsedDrive?.folderId || d.id;
+                            const isPreviewOpen = previewDriveId === fid;
+                            return (
+                              <div key={d.id} className="rounded-lg border border-emerald-400/25 bg-emerald-500/10 overflow-hidden">
+                                <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-emerald-200">
+                                  <a
+                                    href={d.file_path}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="truncate flex items-center gap-1.5 hover:underline min-w-0 flex-1"
+                                  >
+                                    <FolderOpen size={12} className="text-emerald-400 shrink-0" />
+                                    <span className="truncate">{d.file_name || 'Google Drive Photo Batch Folder'}</span>
+                                    <ExternalLink size={10} className="shrink-0" />
+                                  </a>
+                                  {parsedDrive?.valid && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewDriveId(isPreviewOpen ? null : fid)}
+                                      className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px] font-bold text-white cursor-pointer shrink-0"
+                                    >
+                                      {isPreviewOpen ? 'Hide' : 'Verify Folder'}
+                                    </button>
+                                  )}
+                                </div>
+                                {isPreviewOpen && parsedDrive?.valid && (
+                                  <div className="border-t border-emerald-400/20 bg-white p-1.5">
+                                    <iframe
+                                      title={`Admin Drive Verify ${parsedDrive.folderId}`}
+                                      src={parsedDrive.embedUrl}
+                                      className="w-full h-40 rounded border border-neutral-200"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {fileOutputs.length > 0 && (
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {fileOutputs.slice(0, 8).map((p, idx) => {
+                            const thumbKey = p.id || `${idx}:${p.resolvedUrl}`;
+                            const isFailed = Boolean(failedThumbKeys[thumbKey]);
+                            const isOverflowTile = idx === 7 && fileOutputs.length > 8;
+                            const showFallback = p.isPdf || isFailed || !p.resolvedUrl;
+
+                            return (
+                              <button
+                                key={thumbKey}
+                                type="button"
+                                onClick={() => setLightboxIndex(idx)}
+                                className="group relative aspect-square rounded-lg overflow-hidden border border-white/15 bg-neutral-900 text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#c9a96e]"
+                                title={p.cleanName || p.file_name || 'Inspect edited photo'}
+                              >
+                                {showFallback ? (
+                                  <div className="w-full h-full flex flex-col items-center justify-center p-1.5 text-center bg-white/[0.04]">
+                                    {p.isPdf ? (
+                                      <FileText size={16} className="text-[#e8cf9d] mb-1 shrink-0" />
+                                    ) : (
+                                      <ImageIcon size={16} className="text-neutral-400 mb-1 shrink-0" />
+                                    )}
+                                    <span className="text-[9px] text-neutral-300 leading-tight line-clamp-2 break-all">
+                                      {p.cleanName || 'View File'}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <img
+                                    src={p.resolvedUrl}
+                                    alt={p.cleanName || 'Edited sample'}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                    onError={() =>
+                                      setFailedThumbKeys((prev) =>
+                                        prev[thumbKey] ? prev : { ...prev, [thumbKey]: true }
+                                      )
+                                    }
+                                  />
+                                )}
+                                <span className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <Eye size={14} className="text-white" />
+                                </span>
+                                {isOverflowTile && (
+                                  <span className="absolute inset-0 bg-black/70 flex items-center justify-center text-xs font-bold text-white">
+                                    +{fileOutputs.length - 7}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -829,42 +917,41 @@ export default function InspectorStageCard({
 
         {!isClosedStage && !isPaymentStage && !isAssignStage && currentStatusUpper === 'RETOUCHING' && (
           <div className="flex-1 flex flex-col justify-between gap-3">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 space-y-2">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-[#e8cf9d] flex items-center gap-1.5">
-                <FolderOpen size={12} /> Soft Copies &amp; Client Drive Release
+            <div className="rounded-2xl border border-[#c9a96e]/25 bg-[#c9a96e]/10 p-3.5 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[#e8cf9d] flex items-center gap-1.5">
+                  <FolderOpen size={12} /> Soft Copies &amp; Photo Outputs
+                </p>
+                <span className="text-[10px] font-bold text-neutral-300">
+                  {hasReleasedSoftCopyLinks
+                    ? `${releasedSoftCopyOutputs.length} Released`
+                    : 'Awaiting Photo Outputs'}
+                </span>
+              </div>
+              <p className="text-xs text-neutral-200 leading-snug">
+                {hasReleasedSoftCopyLinks
+                  ? 'Client digital copies are attached in Photo Outputs. You can now finalize this booking order.'
+                  : 'Photographer files stay internal. Move this order to Photo Outputs first to give the client’s digital copies before finalizing.'}
               </p>
-              {driveOutputs.length > 0 && (
+              {releasedSoftCopyOutputs.length > 0 && (
                 <div className="space-y-1 pt-0.5">
-                  {driveOutputs.slice(0, 2).map((d) => (
+                  {releasedSoftCopyOutputs.slice(0, 2).map((d) => (
                     <a
                       key={d.id}
-                      href={d.file_path}
+                      href={d.openUrl || d.file_path}
                       target="_blank"
                       rel="noreferrer"
                       className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-400/25 text-xs text-emerald-200 hover:bg-emerald-500/20"
                     >
                       <span className="truncate flex items-center gap-1.5">
                         <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
-                        Drive Soft Copies Linked
+                        <span className="truncate">{d.cleanName || 'Client Soft Copy Deliverable'}</span>
                       </span>
                       <ExternalLink size={11} className="shrink-0" />
                     </a>
                   ))}
                 </div>
               )}
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
-                <Link2 size={11} className="text-[#c9a96e]" /> Google Drive Folder URL
-              </label>
-              <input
-                type="url"
-                value={driveUrl}
-                onChange={(e) => setDriveUrl(e.target.value)}
-                placeholder="https://drive.google.com/drive/folders/..."
-                className="w-full h-9 px-3 rounded-xl bg-white/[0.06] border border-white/15 text-xs text-white placeholder:text-neutral-500 focus:outline-none focus:border-[#c9a96e]"
-              />
             </div>
           </div>
         )}
@@ -875,20 +962,42 @@ export default function InspectorStageCard({
           (currentStatusUpper === 'FINALIZED' || currentStatusUpper === 'PRINTING') && (
             <div className="flex-1 flex flex-col justify-between gap-3">
               <div className="rounded-2xl border border-[#c9a96e]/25 bg-[#c9a96e]/10 p-3.5 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-[#e8cf9d] flex items-center gap-1.5">
-                  <Printer size={12} /> Print Production &amp; Packaging
-                </p>
-                <p className="text-sm font-semibold text-white">
-                  {active.tier_name || active.service?.name || 'Studio Print Set'}
-                </p>
-                <div className="flex flex-wrap items-center gap-2 pt-0.5 text-[11px]">
-                  <span className="px-2 py-0.5 rounded-md bg-white/[0.08] border border-white/15 text-neutral-200">
-                    {isDeliveryOrder ? 'Fulfillment: Delivery' : 'Fulfillment: Studio Pickup'}
-                  </span>
-                  <span className="px-2 py-0.5 rounded-md bg-white/[0.08] border border-white/15 text-neutral-200">
-                    {photoOutputs.length} Output File{photoOutputs.length === 1 ? '' : 's'}
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-[#e8cf9d] flex items-center gap-1.5">
+                    <FolderOpen size={12} /> Digital Soft Copy Release
+                  </p>
+                  <span className="text-[10px] font-bold text-neutral-300">
+                    {hasReleasedSoftCopyLinks
+                      ? `${releasedSoftCopyOutputs.length} Released`
+                      : 'Needs Photo Outputs'}
                   </span>
                 </div>
+                <p className="text-sm font-semibold text-white">
+                  {active.tier_name || active.service?.name || 'Digital Soft Copy Set'}
+                </p>
+                {releasedSoftCopyOutputs.length > 0 ? (
+                  <div className="space-y-1 pt-1">
+                    {releasedSoftCopyOutputs.slice(0, 2).map((d) => (
+                      <a
+                        key={d.id}
+                        href={d.openUrl || d.file_path}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-400/25 text-xs text-emerald-200 hover:bg-emerald-500/20"
+                      >
+                        <span className="truncate flex items-center gap-1.5">
+                          <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
+                          <span className="truncate">{d.cleanName || 'Client Soft Copy Deliverable'}</span>
+                        </span>
+                        <ExternalLink size={11} className="shrink-0" />
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-amber-200/90 leading-snug pt-0.5">
+                    Photographer files are not sent directly. Move this process to Photo Outputs first to give the client&apos;s digital copies.
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -901,10 +1010,8 @@ export default function InspectorStageCard({
               <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-[#e8cf9d] flex items-center gap-1.5 shrink-0">
-                    {currentStatusUpper === 'UNDER_DELIVERY' ? <Truck size={12} /> : <PackageCheck size={12} />}
-                    <span>
-                      {currentStatusUpper === 'UNDER_DELIVERY' ? 'Courier Dispatch' : 'Studio Pickup'}
-                    </span>
+                    <PackageCheck size={12} />
+                    <span>Walk-In Claiming · Ready to Receive</span>
                   </p>
                   {active.booking_token && (
                     <button
@@ -918,11 +1025,11 @@ export default function InspectorStageCard({
                   )}
                 </div>
                 <p className="text-xs text-neutral-200 font-medium">
-                  Recipient: {accountSpecs.courier_recipient_name || `${active.customer?.first_name || ''} ${active.customer?.last_name || ''}`.trim() || 'Client'}
+                  Claimant: {accountSpecs.courier_recipient_name || `${active.customer?.first_name || ''} ${active.customer?.last_name || ''}`.trim() || 'Client'}
                 </p>
-                {accountSpecs.shipping_address && (
-                  <p className="text-[11px] text-neutral-400 truncate">{accountSpecs.shipping_address}</p>
-                )}
+                <p className="text-[11px] text-neutral-400 truncate">
+                  Walk-In Studio Counter · 311 Rizal St., City of Naga, Cebu
+                </p>
               </div>
 
               {remainingBal > 0 ? (
@@ -949,9 +1056,9 @@ export default function InspectorStageCard({
           <div className="flex-1 flex flex-col justify-between gap-3">
             <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 p-4 space-y-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
-                <CheckCircle2 size={12} /> Production &amp; Delivery Complete
+                <CheckCircle2 size={12} /> Walk-In Order Completed
               </p>
-              <p className="text-sm font-semibold text-white">Order Delivered &amp; Archived</p>
+              <p className="text-sm font-semibold text-white">Ready to Receive · Walk-In &amp; Soft Copies Active</p>
               <p className="text-xs text-neutral-300 leading-relaxed">
                 {assignedPhotographerName ? `Shot by ${assignedPhotographerName} · ` : ''}
                 {photoOutputs.length > 0
@@ -1159,31 +1266,48 @@ export default function InspectorStageCard({
 
           {!isClosedStage && !isPaymentStage && !isAssignStage && currentStatusUpper === 'RETOUCHING' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
-              <button
-                type="button"
-                onClick={driveUrl.trim() ? handleAttachDriveAndRelease : onAdvanceStage}
-                disabled={savingDrive || advancingStage}
-                className="w-full h-9 px-3 rounded-xl bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all whitespace-nowrap disabled:opacity-60"
-              >
-                {savingDrive || advancingStage ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                <span>
-                  {driveUrl.trim()
-                    ? savingDrive
-                      ? 'Saving…'
-                      : 'Release & Finalize'
-                    : advancingStage
-                      ? 'Updating…'
-                      : `Move to ${nextLabel}`}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={onOpenPhotosPage}
-                className="w-full h-9 px-3 rounded-xl border border-white/20 hover:bg-white/10 text-white font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
-              >
-                <FolderOpen size={12} className="shrink-0" />
-                <span>Photo Studio</span>
-              </button>
+              {hasReleasedSoftCopyLinks ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={onAdvanceStage}
+                    disabled={advancingStage}
+                    className="w-full h-9 px-3 rounded-xl bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all whitespace-nowrap disabled:opacity-60"
+                  >
+                    {advancingStage ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                    <span>{advancingStage ? 'Finalizing…' : 'Finalize Booking Order'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenPhotosPage(true)}
+                    className="w-full h-9 px-3 rounded-xl border border-white/20 hover:bg-white/10 text-white font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
+                  >
+                    <FolderOpen size={12} className="shrink-0" />
+                    <span>Photo Outputs</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onOpenPhotosPage(true)}
+                    className="w-full h-9 px-3 rounded-xl bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all whitespace-nowrap"
+                  >
+                    <FolderOpen size={13} className="shrink-0" />
+                    <span>Move to Photo Outputs</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onAdvanceStage}
+                    disabled={advancingStage || !hasReleasedSoftCopyLinks}
+                    title="Move to Photo Outputs and attach client digital copies before finalizing"
+                    className="w-full h-9 px-3 rounded-xl border border-white/15 bg-white/[0.03] text-neutral-400 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap opacity-60 cursor-not-allowed"
+                  >
+                    <Sparkles size={12} className="shrink-0" />
+                    <span>Finalize Order</span>
+                  </button>
+                </>
+              )}
             </div>
           )}
 
@@ -1192,51 +1316,48 @@ export default function InspectorStageCard({
             !isAssignStage &&
             (currentStatusUpper === 'FINALIZED' || currentStatusUpper === 'PRINTING') && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
-                {currentStatusUpper === 'FINALIZED' ? (
+                {!hasReleasedSoftCopyLinks ? (
                   <>
                     <button
                       type="button"
-                      onClick={() => onSetStage('PRINTING')}
-                      disabled={advancingStage}
-                      className="w-full h-9 px-3 rounded-xl bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all whitespace-nowrap disabled:opacity-60"
+                      onClick={() => onOpenPhotosPage(true)}
+                      className="w-full h-9 px-3 rounded-xl bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all whitespace-nowrap"
                     >
-                      {advancingStage ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
-                      <span>{advancingStage ? 'Updating…' : 'Start Print Lab'}</span>
+                      <FolderOpen size={13} className="shrink-0" />
+                      <span>Move to Photo Outputs</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => onSetStage(isDeliveryOrder ? 'UNDER_DELIVERY' : 'READY')}
-                      disabled={advancingStage}
-                      className="w-full h-9 px-3 rounded-xl border border-white/20 hover:bg-white/10 text-white font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap disabled:opacity-60"
+                      disabled
+                      title="Move to Photo Outputs and give client digital copies before releasing"
+                      className="w-full h-9 px-3 rounded-xl border border-white/15 bg-white/[0.03] text-neutral-400 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap opacity-60 cursor-not-allowed"
                     >
-                      {isDeliveryOrder ? <Truck size={12} /> : <PackageCheck size={12} />}
-                      <span>{isDeliveryOrder ? 'Under Delivery' : 'Ready for Pickup'}</span>
+                      <PackageCheck size={12} />
+                      <span>Release Soft Copy</span>
                     </button>
                   </>
                 ) : (
                   <>
                     <button
                       type="button"
-                      onClick={() => onSetStage(isDeliveryOrder ? 'UNDER_DELIVERY' : 'READY')}
+                      onClick={() => onSetStage('READY')}
                       disabled={advancingStage}
                       className="w-full h-9 px-3 rounded-xl bg-[#c9a96e] hover:bg-[#d8b87a] text-neutral-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all whitespace-nowrap disabled:opacity-60"
                     >
                       {advancingStage ? (
                         <Loader2 size={13} className="animate-spin" />
-                      ) : isDeliveryOrder ? (
-                        <Truck size={13} />
                       ) : (
                         <PackageCheck size={13} />
                       )}
-                      <span>{isDeliveryOrder ? 'Dispatch Delivery' : 'Ready for Pickup'}</span>
+                      <span>{advancingStage ? 'Releasing…' : 'Release Soft Copy'}</span>
                     </button>
                     <button
                       type="button"
-                      onClick={onOpenPhotosPage}
+                      onClick={() => onOpenPhotosPage(true)}
                       className="w-full h-9 px-3 rounded-xl border border-white/20 hover:bg-white/10 text-white font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
                     >
                       <FolderOpen size={12} className="shrink-0" />
-                      <span>Deliverables</span>
+                      <span>Photo Outputs</span>
                     </button>
                   </>
                 )}
@@ -1334,6 +1455,130 @@ export default function InspectorStageCard({
           </button>
         </div>
       </div>
+
+      {activeLightboxItem &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[10050] bg-black/85 backdrop-blur-xs flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Inspect edited photo"
+            onClick={() => setLightboxIndex(null)}
+          >
+            <div
+              className="relative w-full max-w-3xl rounded-2xl bg-[#0e131d] border border-white/15 shadow-2xl overflow-hidden text-white"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-white/10">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-[#e8cf9d]">
+                    Edited Photo Review · {lightboxIndex + 1} of {fileOutputs.length}
+                  </p>
+                  <p className="text-xs font-semibold text-white truncate">
+                    {activeLightboxItem.cleanName || activeLightboxItem.file_name || 'Edited Output'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {activeLightboxItem.openUrl && (
+                    <a
+                      href={activeLightboxItem.openUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="h-8 px-2.5 rounded-lg border border-white/20 hover:bg-white/10 text-[11px] font-semibold text-white inline-flex items-center gap-1.5"
+                    >
+                      <span>Open Original</span>
+                      <ExternalLink size={11} />
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setLightboxIndex(null)}
+                    className="w-8 h-8 rounded-lg border border-white/15 hover:bg-white/10 flex items-center justify-center cursor-pointer"
+                    aria-label="Close photo preview"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative bg-black flex items-center justify-center min-h-[280px] max-h-[72vh] p-4">
+                {activeLightboxItem.isDriveFile && activeLightboxItem.previewUrl ? (
+                  <iframe
+                    title={activeLightboxItem.cleanName || 'Drive File Preview'}
+                    src={activeLightboxItem.previewUrl}
+                    className="w-full h-[60vh] rounded-lg border border-white/10 bg-white"
+                  />
+                ) : activeLightboxItem.isPdf && activeLightboxItem.resolvedUrl ? (
+                  <iframe
+                    title={activeLightboxItem.cleanName || 'PDF Deliverable'}
+                    src={activeLightboxItem.resolvedUrl}
+                    className="w-full h-[60vh] rounded-lg border border-white/10 bg-white"
+                  />
+                ) : activeLightboxItem.resolvedUrl &&
+                  !failedThumbKeys[
+                    activeLightboxItem.id || `${lightboxIndex}:${activeLightboxItem.resolvedUrl}`
+                  ] ? (
+                  <img
+                    src={activeLightboxItem.resolvedUrl}
+                    alt={activeLightboxItem.cleanName || 'Edited output preview'}
+                    className="max-h-[66vh] w-auto object-contain rounded-lg"
+                    onError={() => {
+                      const k =
+                        activeLightboxItem.id ||
+                        `${lightboxIndex}:${activeLightboxItem.resolvedUrl}`;
+                      setFailedThumbKeys((prev) => (prev[k] ? prev : { ...prev, [k]: true }));
+                    }}
+                  />
+                ) : (
+                  <div className="text-center space-y-2 py-8 px-4">
+                    <ImageIcon size={28} className="text-neutral-500 mx-auto" />
+                    <p className="text-xs font-semibold text-neutral-200">
+                      Preview unavailable inline for this file.
+                    </p>
+                    {activeLightboxItem.openUrl && (
+                      <a
+                        href={activeLightboxItem.openUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#c9a96e] text-neutral-950 text-xs font-bold"
+                      >
+                        <span>Open in New Tab</span>
+                        <ExternalLink size={12} />
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {fileOutputs.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLightboxIndex((prev) => (prev > 0 ? prev - 1 : fileOutputs.length - 1))
+                      }
+                      className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/70 border border-white/20 hover:bg-white/20 flex items-center justify-center cursor-pointer"
+                      aria-label="Previous photo"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLightboxIndex((prev) => (prev < fileOutputs.length - 1 ? prev + 1 : 0))
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/70 border border-white/20 hover:bg-white/20 flex items-center justify-center cursor-pointer"
+                      aria-label="Next photo"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </aside>
   );
 }

@@ -29,7 +29,7 @@ import {
   QrCode, RefreshCw, Bookmark, BookmarkCheck,
   ChevronDown, ChevronUp, Sparkles, List, GitBranch,
   Phone, Mail, CheckCircle2, User, School, GraduationCap,
-  Award, Tag, CreditCard, Compass, Info, X, Building2, Truck,
+  Award, Tag, CreditCard, Compass, Info, X, Building2,
 } from 'lucide-react-native';
 
 import {
@@ -276,7 +276,7 @@ export const STEP_COLOR_HIERARCHY = {
     step: 8,
     total: 8,
     code: 'READY',
-    label: 'Booking ready to pick-up (studio)',
+    label: 'Ready to Receive (Walk-In)',
     tone: 'gold',
     dot: '#EAB308',
     accent: '#CA8A04',
@@ -284,27 +284,27 @@ export const STEP_COLOR_HIERARCHY = {
     bg: 'rgba(234, 179, 8, 0.14)',
     border: 'rgba(234, 179, 8, 0.40)',
     glow: 'rgba(234, 179, 8, 0.30)',
-    description: 'Packaged prints framed and ready for studio counter collection',
+    description: 'Order prepared and ready to receive via walk-in at E-Kodak Studio counter',
   },
   UNDER_DELIVERY: {
     step: 8,
     total: 8,
     code: 'UNDER_DELIVERY',
-    label: 'Booking under delivery',
-    tone: 'sky',
-    dot: '#38BDF8',
-    accent: '#0284C7',
-    text: '#38BDF8',
-    bg: 'rgba(56, 189, 248, 0.12)',
-    border: 'rgba(56, 189, 248, 0.35)',
-    glow: 'rgba(56, 189, 248, 0.25)',
-    description: 'Direct courier delivery dispatch and tracking active',
+    label: 'Ready to Receive (Walk-In)',
+    tone: 'gold',
+    dot: '#EAB308',
+    accent: '#CA8A04',
+    text: '#FACC15',
+    bg: 'rgba(234, 179, 8, 0.14)',
+    border: 'rgba(234, 179, 8, 0.40)',
+    glow: 'rgba(234, 179, 8, 0.30)',
+    description: 'Order prepared and ready to receive via walk-in at E-Kodak Studio counter',
   },
   COMPLETED: {
     step: 8,
     total: 8,
     code: 'COMPLETED',
-    label: 'Completed',
+    label: 'Completed · Ready to Receive',
     tone: 'emerald',
     dot: '#10B981',
     accent: '#059669',
@@ -312,7 +312,7 @@ export const STEP_COLOR_HIERARCHY = {
     bg: 'rgba(16, 185, 129, 0.12)',
     border: 'rgba(16, 185, 129, 0.35)',
     glow: 'rgba(16, 185, 129, 0.25)',
-    description: 'Order fulfilled and digital gallery access active',
+    description: 'Order completed and ready to receive via walk-in or digital soft copies vault',
   },
   CANCELLED: {
     step: 0,
@@ -545,133 +545,34 @@ function LiveTrackingRadarSign({ size = 52, isDark, colors }) {
   );
 }
 
-// ── Delivery Panel (4-Phase Tracking & Studio Pickup) ────────────────────────
+// ── Walk-In Studio Claiming Panel ────────────────────────────────────────────
 
-function DeliveryPanel({ booking, deliveries, colors, isDark, styles }) {
-  const isDelivery = Boolean(
-    booking?.delivery_address ||
-    booking?.fulfillment_type === 'DELIVERY' ||
-    booking?.status === 'UNDER_DELIVERY' ||
-    deliveries?.length > 0
-  );
+function DeliveryPanel({ booking, colors, styles }) {
   const isReadyOrCompleted = ['READY', 'UNDER_DELIVERY', 'COMPLETED', 'FINALIZED', 'PRINTING'].includes(booking?.status);
 
-  if (!isDelivery && !isReadyOrCompleted && !deliveries?.length) return null;
+  if (!isReadyOrCompleted) return null;
   const s = styles;
+  const isCompleted = String(booking?.status || '').toUpperCase() === 'COMPLETED';
 
-  const rawDelStatus = (booking?.delivery_status || deliveries?.[0]?.status || 'PREPARING').toUpperCase();
-  const subPhaseIndex =
-    ['DELIVERED', 'CONFIRMED'].includes(rawDelStatus) ? 3 :
-      ['NEAR', 'OUT_FOR_DELIVERY'].includes(rawDelStatus) ? 2 :
-        ['DISPATCHED', 'ONGOING'].includes(rawDelStatus) ? 1 : 0;
-
-  const SUB_PHASES = [
-    { key: 'preparing delivery', title: 'preparing delivery', desc: 'Outputs packaged and sealed' },
-    { key: 'ongoing delivery', title: 'ongoing delivery', desc: 'Courier transit in progress' },
-    { key: 'delivery is near', title: 'delivery is near', desc: 'Courier arriving at destination' },
-    { key: 'delivery confirmed', title: 'delivery confirmed', desc: 'Safely handed over and completed' },
-  ];
-
-  if (isDelivery) {
-    return (
-      <GlassCard highlight style={s.section}>
-        <View style={s.sectionHeader}>
-          <View style={s.sectionHeaderLeft}>
-            <Truck size={17} color={colors.gold.DEFAULT} />
-            <Text style={[s.sectionTitle, { color: colors.text.primary }]}>Booking under delivery</Text>
-          </View>
-          <View style={[styles.categoryPill, { backgroundColor: colors.gold.bg, borderColor: colors.gold.borderLight }]}>
-            <Text style={[styles.categoryPillText, { color: colors.gold.DEFAULT }]}>
-              {SUB_PHASES[subPhaseIndex].title}
-            </Text>
-          </View>
-        </View>
-
-        {/* 4 Delivery Tracking Sub-Phases */}
-        <View style={{ gap: 8, marginTop: 12, marginBottom: 8 }}>
-          {SUB_PHASES.map((p, idx) => {
-            const isDone = idx < subPhaseIndex;
-            const isCurrent = idx === subPhaseIndex;
-            return (
-              <View
-                key={p.key}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingVertical: 8,
-                  paddingHorizontal: 12,
-                  borderRadius: 12,
-                  backgroundColor: isCurrent
-                    ? (isDark ? 'rgba(217, 180, 108, 0.14)' : 'rgba(176, 125, 30, 0.10)')
-                    : isDone
-                      ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.05)')
-                      : 'transparent',
-                  borderWidth: 1,
-                  borderColor: isCurrent
-                    ? colors.gold.borderLight
-                    : isDone
-                      ? 'rgba(16, 185, 129, 0.25)'
-                      : colors.surface.hairline,
-                }}
-              >
-                <View style={{ marginRight: 10 }}>
-                  {isDone ? (
-                    <CheckCircle2 size={16} color="#10B981" />
-                  ) : isCurrent ? (
-                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.gold.DEFAULT }} />
-                  ) : (
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.text.muted }} />
-                  )}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontWeight: '700',
-                      textTransform: 'capitalize',
-                      color: isCurrent ? colors.gold.DEFAULT : isDone ? (isDark ? '#34D399' : '#059669') : colors.text.muted,
-                    }}
-                  >
-                    {p.title}
-                  </Text>
-                  <Text style={{ fontSize: 10, color: colors.text.muted, marginTop: 1 }}>
-                    {p.desc}
-                  </Text>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-
-        {booking?.delivery_address && (
-          <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.surface.divider }}>
-            <Text style={{ fontSize: 10, color: colors.text.muted, textTransform: 'uppercase', fontWeight: '700' }}>
-              Delivery Destination
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.text.primary, marginTop: 2, fontWeight: '500' }}>
-              {booking.delivery_address}
-            </Text>
-          </View>
-        )}
-      </GlassCard>
-    );
-  }
-
-  // Studio Pickup
+  // Walk-In Studio Claiming
   return (
     <GlassCard highlight style={s.section}>
       <View style={s.sectionHeader}>
         <View style={s.sectionHeaderLeft}>
           <Package size={17} color={colors.gold.DEFAULT} />
-          <Text style={[s.sectionTitle, { color: colors.text.primary }]}>Booking ready to pick-up (studio)</Text>
+          <Text style={[s.sectionTitle, { color: colors.text.primary }]}>
+            {isCompleted ? 'Order Completed · Ready to Receive (Walk-In)' : 'Ready to Receive · Walk-In Studio Claiming'}
+          </Text>
         </View>
       </View>
       <View style={{ paddingVertical: 6 }}>
         <Text style={{ fontSize: 12, color: colors.text.secondary, lineHeight: 18 }}>
-          Your physical portrait package and frames are packaged and awaiting pickup at the E-Kodak Studio reception counter.
+          {isCompleted
+            ? 'Your order is completed and ready to receive! Claim in person at E-Kodak Studio reception counter (Walk-In) or open your Soft Copies.'
+            : 'Your order is prepared and ready for walk-in pickup at the E-Kodak Studio reception counter.'}
         </Text>
         <Text style={{ fontSize: 11, color: colors.gold.light, marginTop: 6, fontWeight: '600' }}>
-          📍 311 Rizal Street, City of Naga, Cebu · Present QR Studio Pass
+          📍 311 Rizal Street, City of Naga, Cebu · Walk-In Claiming &amp; QR Pass
         </Text>
       </View>
     </GlassCard>
@@ -870,9 +771,9 @@ export default function BookingTrackerScreen({ route, navigation }) {
     RETOUCHING: 'Fine-art retouching is now in progress',
     FINALIZED: 'Your prints & package are finalized',
     PRINTING: 'Your prints & package are finalized',
-    READY: 'Your order is ready for studio pickup',
-    UNDER_DELIVERY: 'Your order is now out for delivery',
-    COMPLETED: 'Your order is now complete',
+    READY: 'Your order is ready to receive (Walk-In)',
+    UNDER_DELIVERY: 'Your order is ready to receive (Walk-In)',
+    COMPLETED: 'Order completed · Ready to receive',
     CANCELLED: 'This booking has been cancelled',
     REJECTED: 'This booking request was declined',
   };
@@ -1642,7 +1543,7 @@ export default function BookingTrackerScreen({ route, navigation }) {
         </GlassCard>
 
         {/* ── Delivery & Prints Panel ── */}
-        <DeliveryPanel booking={booking} deliveries={booking.booking_deliveries} colors={colors} isDark={isDark} styles={styles} />
+        <DeliveryPanel booking={booking} colors={colors} styles={styles} />
 
         <View style={{ height: 24 }} />
       </ScrollView>

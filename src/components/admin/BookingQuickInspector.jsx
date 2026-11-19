@@ -6,6 +6,7 @@ import {
   X, Mail, Calendar, CreditCard,
   GraduationCap, ChevronRight, ArrowRight, User,
   Loader2, Banknote, Wallet, Receipt, Building, CheckCircle2, AlertCircle,
+  Undo2, Redo2,
 } from 'lucide-react';
 import {
   parseStudentDetailsFromNotes,
@@ -24,6 +25,7 @@ import {
 } from '../../lib/bookingUtils';
 import { supabase } from '../../lib/supabase';
 import { createTransferLog, recordAdminActivity } from '../../services/workstationService';
+import { notifyMajorBookingMilestone } from '../../services/orderLifecycleNotificationService';
 import { useAuth } from '../../context/AuthContext';
 import InspectorStageCard from './InspectorStageCard';
 
@@ -33,6 +35,51 @@ const peso = (n, d = 0) =>
   `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: d, maximumFractionDigits: 2 })}`;
 
 const GATEWAY_METHODS = ['E_WALLET', 'BANK_TRANSFER', 'CREDIT_CARD', 'GCASH', 'MAYA', 'PAYMAYA', 'ONLINE'];
+
+const PREV_STATUS_MAP = {
+  CONFIRMED: 'PENDING',
+  PHOTOGRAPHER_ASSIGNED: 'CONFIRMED',
+  CAPTURE: 'PHOTOGRAPHER_ASSIGNED',
+  IN_PROGRESS: 'PHOTOGRAPHER_ASSIGNED',
+  EDITING: 'CAPTURE',
+  RETOUCHING: 'EDITING',
+  FINALIZED: 'RETOUCHING',
+  PRINTING: 'FINALIZED',
+  READY: 'FINALIZED',
+  UNDER_DELIVERY: 'FINALIZED',
+  COMPLETED: 'READY',
+};
+
+const STAGE_RANK = {
+  PENDING: 0,
+  RESERVED: 0,
+  CONFIRMED: 1,
+  PHOTOGRAPHER_ASSIGNED: 2,
+  CAPTURE: 3,
+  IN_PROGRESS: 3,
+  EDITING: 4,
+  RETOUCHING: 5,
+  FINALIZED: 6,
+  PRINTING: 6,
+  READY: 7,
+  UNDER_DELIVERY: 7,
+  COMPLETED: 8,
+};
+
+function resolvePreviousStageFallback(currentStatusUpper, booking) {
+  const currentRank = STAGE_RANK[currentStatusUpper];
+  const history = Array.isArray(booking?.booking_status_history) ? booking.booking_status_history : [];
+  if (typeof currentRank === 'number') {
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+      const candidate = String(history[i]?.status || '').toUpperCase();
+      const candRank = STAGE_RANK[candidate];
+      if (candidate && candidate !== currentStatusUpper && typeof candRank === 'number' && candRank < currentRank) {
+        return candidate;
+      }
+    }
+  }
+  return PREV_STATUS_MAP[currentStatusUpper] || null;
+}
 
 function formatGatewayLabel(rawMethod) {
   const m = String(rawMethod || '').toUpperCase().trim();
@@ -187,11 +234,15 @@ export default function BookingQuickInspector({
 
   // Sync state when incoming booking changes
   const [currentBookingId, setCurrentBookingId] = useState(booking?.id);
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
   if (booking?.id !== currentBookingId) {
     setCurrentBookingId(booking?.id);
     setAdditionalPaid(0);
     setDetailedBooking(null);
     setDownpaymentConfirmedLocal(false);
+    setUndoStack([]);
+    setRedoStack([]);
   }
 
   // Inline Stage Advance State
@@ -282,9 +333,13 @@ export default function BookingQuickInspector({
     navigate(`/admin/payments?booking_id=${active.id}&search=${active.booking_number}`);
   };
 
-  const goPhotos = () => {
+  const goPhotos = (openUpload = false) => {
     onClose();
-    navigate('/admin/photos');
+    const qs = new URLSearchParams();
+    if (active?.id) qs.set('bookingId', active.id);
+    if (openUpload === true) qs.set('openUpload', 'true');
+    const query = qs.toString();
+    navigate(query ? `/admin/photos?${query}` : '/admin/photos');
   };
 
   const openRecordPayment = (e) => {
@@ -385,6 +440,13 @@ export default function BookingQuickInspector({
           notificationType: 'booking_approved',
         }).catch(() => {});
       }
+
+      notifyMajorBookingMilestone({
+        bookingId: active.id,
+        milestoneType: 'DOWNPAYMENT_RECEIVED',
+        amount: gatewayStatus.gatewayAmountPaid,
+        paymentMethod: gatewayStatus.channelLabel,
+      }).catch(() => {});
 
       setDownpaymentConfirmedLocal(true);
       setDetailedBooking((prev) => ({
@@ -509,27 +571,62 @@ export default function BookingQuickInspector({
     return missing;
   };
 
-  const handleSetStage = async (targetStatus) => {
+  const fallbackPrevStatus = resolvePreviousStageFallback(currentStatusUpper, active);
+  const undoTargetStatus = undoStack.length > 0 ? undoStack[undoStack.length - 1] : fallbackPrevStatus;
+  const redoTargetStatus = redoStack.length > 0 ? redoStack[redoStack.length - 1] : null;
+  const canUndoStage = Boolean(undoTargetStatus && undoTargetStatus !== currentStatusUpper);
+  const canRedoStage = Boolean(redoTargetStatus && redoTargetStatus !== currentStatusUpper);
+
+  const handleSetStage = async (targetStatus, { skipMissingCheck = false, historyMode = 'forward' } = {}) => {
     if (!targetStatus || targetStatus === currentStatusUpper || advancingStage) return;
-    const missing = getMissingVerifications(targetStatus);
-    if (missing.length > 0) {
-      showInspectorToast(
-        `Cannot proceed: missing ${missing.join(' and ')}.`,
-        'error'
-      );
-      return;
+    if (!skipMissingCheck) {
+      const missing = getMissingVerifications(targetStatus);
+      if (missing.length > 0) {
+        showInspectorToast(
+          `Cannot proceed: missing ${missing.join(' and ')}.`,
+          'error'
+        );
+        return;
+      }
     }
+    const previousStatus = currentStatusUpper;
     setAdvancingStage(true);
     try {
+      const remarkPrefix =
+        historyMode === 'undo'
+          ? 'Admin Undo:'
+          : historyMode === 'redo'
+            ? 'Admin Redo:'
+            : 'Updated to';
       const { error } = await updateBookingStatus(
         active.id,
         targetStatus,
-        `Updated to ${getStatusLabel(targetStatus)}`,
+        historyMode === 'forward'
+          ? `Updated to ${getStatusLabel(targetStatus)}`
+          : `${remarkPrefix} ${getStatusLabel(previousStatus)} → ${getStatusLabel(targetStatus)}`,
         profile?.id || null
       );
       if (error) throw error;
+
+      if (historyMode === 'undo') {
+        setUndoStack((prev) => (prev.length > 0 ? prev.slice(0, -1) : prev));
+        setRedoStack((prev) => [...prev, previousStatus]);
+      } else if (historyMode === 'redo') {
+        setRedoStack((prev) => (prev.length > 0 ? prev.slice(0, -1) : prev));
+        setUndoStack((prev) => [...prev, previousStatus]);
+      } else {
+        setUndoStack((prev) => [...prev, previousStatus]);
+        setRedoStack([]);
+      }
+
       setDetailedBooking((prev) => ({ ...(prev || active), status: targetStatus, updated_at: new Date().toISOString() }));
-      showInspectorToast(`Moved to ${getStatusLabel(targetStatus)}`);
+      showInspectorToast(
+        historyMode === 'undo'
+          ? `Undid step · Back to ${getStatusLabel(targetStatus)}`
+          : historyMode === 'redo'
+            ? `Redid step · Restored ${getStatusLabel(targetStatus)}`
+            : `Moved to ${getStatusLabel(targetStatus)}`
+      );
       if (onStatusUpdated) onStatusUpdated(active.id, targetStatus);
     } catch (err) {
       console.error('Stage update failed:', err);
@@ -541,7 +638,22 @@ export default function BookingQuickInspector({
 
   const handleAdvanceStage = () => handleSetStage(nextStatus);
 
+  const handleUndoStage = () => {
+    if (!canUndoStage) return;
+    handleSetStage(undoTargetStatus, { skipMissingCheck: true, historyMode: 'undo' });
+  };
+
+  const handleRedoStage = () => {
+    if (!canRedoStage) return;
+    handleSetStage(redoTargetStatus, { historyMode: 'redo' });
+  };
+
   const handleBookingMutated = async ({ nextStatus: updatedStatus, patch, toastMessage }) => {
+    const normalizedNext = updatedStatus ? String(updatedStatus).toUpperCase() : null;
+    if (normalizedNext && normalizedNext !== currentStatusUpper) {
+      setUndoStack((prev) => [...prev, currentStatusUpper]);
+      setRedoStack([]);
+    }
     if (patch) {
       setDetailedBooking((prev) => ({
         ...(prev || active),
@@ -662,7 +774,42 @@ export default function BookingQuickInspector({
             </div>
 
             {/* Header Right Actions */}
-            <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Admin Undo / Redo Stage Controls */}
+              <div className="flex items-center gap-1 rounded-xl border border-white/15 bg-white/[0.04] p-1">
+                <button
+                  type="button"
+                  onClick={handleUndoStage}
+                  disabled={!canUndoStage || advancingStage}
+                  title={
+                    canUndoStage
+                      ? `Undo last stage change (back to ${getStatusLabel(undoTargetStatus)})`
+                      : 'Nothing to undo'
+                  }
+                  aria-label="Undo last stage change"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-neutral-200 hover:bg-white/10 hover:text-white transition-colors cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed"
+                >
+                  <Undo2 size={13} className="text-[#c9a96e] shrink-0" />
+                  <span className="hidden sm:inline">Undo</span>
+                </button>
+                <div className="w-px h-4 bg-white/10" aria-hidden="true" />
+                <button
+                  type="button"
+                  onClick={handleRedoStage}
+                  disabled={!canRedoStage || advancingStage}
+                  title={
+                    canRedoStage
+                      ? `Redo stage change (forward to ${getStatusLabel(redoTargetStatus)})`
+                      : 'Nothing to redo'
+                  }
+                  aria-label="Redo stage change"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-neutral-200 hover:bg-white/10 hover:text-white transition-colors cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed"
+                >
+                  <Redo2 size={13} className="text-[#c9a96e] shrink-0" />
+                  <span className="hidden sm:inline">Redo</span>
+                </button>
+              </div>
+
               {/* Session Date Card */}
               <button
                 type="button"

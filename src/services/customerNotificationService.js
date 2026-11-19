@@ -211,7 +211,7 @@ export function generateSystematicNotifications(bookings = [], user = null) {
       }
     }
 
-    // 6. Photographs & Deliverables Ready
+    // 6. Order Completed — Ready to Receive (Walk-In & Soft Copies)
     if (b.status === 'COMPLETED') {
       const compId = `gallery_ready_${b.id}`;
       if (!clearedIds.includes(compId)) {
@@ -219,14 +219,14 @@ export function generateSystematicNotifications(bookings = [], user = null) {
           id: compId,
           booking_id: b.id,
           booking: { id: b.id, booking_number: bNumber },
-          notification_type: 'booking_status',
-          title: `Your Studio Photographs are Ready! · #${bNumber}`,
-          message: `Wonderful news, ${firstName}! Your high-resolution proofs and edited photos for order #${bNumber} are now available for viewing and download in your deliverables gallery. Enjoy!`,
+          notification_type: 'ORDER_READY_TO_RECEIVE',
+          title: `Order Ready to Receive · #${bNumber}`,
+          message: `Great news, ${firstName}! Your order #${bNumber} is completed and ready to receive (Walk-In at E-Kodak Studio Counter or via your Soft Copies vault).`,
           created_at: b.updated_at || new Date().toISOString(),
           is_read: readIds.includes(compId),
-          category: 'GALLERY',
+          category: 'BOOKINGS',
           priority: 'high',
-          action_url: '/dashboard/gallery'
+          action_url: '/dashboard/soft-copies'
         });
       }
     }
