@@ -2,7 +2,7 @@ const CACHE_NAME = 'ekodak-shell-v1';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(['./', './logo-mark.png', './manifest.webmanifest']))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(['./', './pwa-192.png', './pwa-512.png', './manifest.webmanifest']))
   );
   self.skipWaiting();
 });
