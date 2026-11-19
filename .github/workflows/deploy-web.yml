@@ -37,8 +37,11 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+          VITE_GROQ_API_KEY: ${{ secrets.VITE_GROQ_API_KEY }}
+          VITE_GROQ_MODEL: ${{ secrets.VITE_GROQ_MODEL }}
           VITE_TEXTBEE_API_KEY: ${{ secrets.VITE_TEXTBEE_API_KEY }}
           VITE_TEXTBEE_DEVICE_ID: ${{ secrets.VITE_TEXTBEE_DEVICE_ID }}
+          VITE_XENDIT_SECRET_KEY: ${{ secrets.VITE_XENDIT_SECRET_KEY }}
         run: |
           npm run build
           cp dist/index.html dist/404.html
