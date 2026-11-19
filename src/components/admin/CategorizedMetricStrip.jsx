@@ -166,7 +166,7 @@ export default function CategorizedMetricStrip({
                     ? 'text-2xl sm:text-3xl' 
                     : isStringVal 
                       ? 'text-3xl sm:text-4xl' 
-                      : 'text-3xl sm:text-[38px] lg:text-[42px]'
+                      : 'text-4xl sm:text-[44px] lg:text-[48px]'
                 }`}>
                   {isNumeric ? (
                     <AnimatedCounter value={Number(rawVal)} />

@@ -66,6 +66,7 @@ import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { getEffectivePaymentStatus } from '../../lib/bookingUtils';
 import Toast from '../../components/ui/Toast';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import BookingLifecycleBadge from '../../components/admin/BookingLifecycleBadge';
@@ -733,50 +734,62 @@ export default function AdminPhotos() {
   };
 
   // ── Batch Release Selected Deliverables ───────────────────────────────────
-  const handleBatchReleaseSelected = async () => {
+  const [confirmDialog, setConfirmDialog] = useState(null);
+
+  const handleBatchReleaseSelected = () => {
     if (selectedIds.size === 0) return;
     const selectedItems = rows.filter(r => selectedIds.has(r.id));
-    if (!window.confirm(`Release ${selectedItems.length} selected deliverable(s) to client galleries? Clients will receive instant access.`)) {
-      return;
-    }
-
-    try {
-      for (const item of selectedItems) {
-        await updatePhotoOutputStatus(item.id, 'RELEASED');
-        const targetUserId = item.booking?.customer?.id || item.booking?.customer_id;
-        if (targetUserId) {
-          await supabase.from('notifications').insert({
-            user_id: targetUserId,
-            booking_id: item.booking?.id || item.booking_id,
-            title: `Graduation Deliverables Released: #${item.booking?.booking_number || 'Session'}`,
-            message: `Your final graduation photo outputs are now live and available for download!`,
-            notification_type: 'PHOTO_RELEASED',
-            is_read: false,
-            created_at: new Date().toISOString()
-          });
+    setConfirmDialog({
+      title: 'Release Deliverables to Clients?',
+      message: `Release ${selectedItems.length} selected deliverable(s) to client galleries? Clients will receive instant access.`,
+      confirmLabel: `Release (${selectedItems.length})`,
+      confirmClass: 'bg-emerald-600 text-white hover:bg-emerald-700',
+      onConfirm: async () => {
+        try {
+          for (const item of selectedItems) {
+            await updatePhotoOutputStatus(item.id, 'RELEASED');
+            const targetUserId = item.booking?.customer?.id || item.booking?.customer_id;
+            if (targetUserId) {
+              await supabase.from('notifications').insert({
+                user_id: targetUserId,
+                booking_id: item.booking?.id || item.booking_id,
+                title: `Graduation Deliverables Released: #${item.booking?.booking_number || 'Session'}`,
+                message: `Your final graduation photo outputs are now live and available for download!`,
+                notification_type: 'PHOTO_RELEASED',
+                is_read: false,
+                created_at: new Date().toISOString()
+              });
+            }
+          }
+          window.dispatchEvent(new CustomEvent('ekodak:customer_notifications_updated'));
+          window.dispatchEvent(new CustomEvent('ekodak_bookings_updated'));
+          showToast(`Successfully released ${selectedItems.length} deliverable(s) to client galleries!`, 'success');
+          setSelectedIds(new Set());
+          load();
+        } catch (err) {
+          console.error('Batch release error:', err);
+          showToast('Error executing batch release', 'error');
         }
-      }
-      window.dispatchEvent(new CustomEvent('ekodak:customer_notifications_updated'));
-      window.dispatchEvent(new CustomEvent('ekodak_bookings_updated'));
-      showToast(`Successfully released ${selectedItems.length} deliverable(s) to client galleries!`, 'success');
-      setSelectedIds(new Set());
-      load();
-    } catch (err) {
-      console.error('Batch release error:', err);
-      showToast('Error executing batch release', 'error');
-    }
+      },
+    });
   };
 
-  const handleDeleteOutput = async (id, fileName) => {
-    if (!window.confirm(`Delete photo deliverable "${fileName}"? This action cannot be reversed.`)) return;
-    const { error: dErr } = await deleteAdminPhotoOutput(id);
-    if (dErr) {
-      showToast('Failed to delete output', 'error');
-    } else {
-      showToast('Photo deliverable removed', 'success');
-      if (inspectItem?.id === id) setInspectItem(null);
-      load();
-    }
+  const handleDeleteOutput = (id, fileName) => {
+    setConfirmDialog({
+      title: 'Delete Photo Deliverable?',
+      message: `Delete photo deliverable "${fileName}"? This action cannot be reversed.`,
+      confirmLabel: 'Delete Output',
+      onConfirm: async () => {
+        const { error: dErr } = await deleteAdminPhotoOutput(id);
+        if (dErr) {
+          showToast('Failed to delete output', 'error');
+        } else {
+          showToast('Photo deliverable removed', 'success');
+          if (inspectItem?.id === id) setInspectItem(null);
+          load();
+        }
+      },
+    });
   };
 
   // ── Metrics Calculation (4 Actionable Real Metrics & Deliverable Counts) ───
@@ -2172,6 +2185,7 @@ export default function AdminPhotos() {
       )}
 
       {/* Local Studio Toast Component */}
+      <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
       <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   );

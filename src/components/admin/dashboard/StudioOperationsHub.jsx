@@ -41,15 +41,16 @@ const PALETTE = {
   neutralBorder: '#ede9e1',
 };
 
-/* ── Official 7 Studio Production Stages (Strictly mapped) ────────────────── */
-const OFFICIAL_7_TRACKER_STAGES = [
+/* ── Official 8 Studio Production Stages (Strictly mapped) ────────────────── */
+const OFFICIAL_8_TRACKER_STAGES = [
   { step: 1, key: 'PENDING', label: 'Received', fullLabel: 'Booking Received', statuses: ['PENDING', 'RESERVED'] },
-  { step: 2, key: 'CONFIRMED', label: 'Approved', fullLabel: 'Approved & Reserved', statuses: ['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED'] },
-  { step: 3, key: 'CAPTURE', label: 'Pictorial', fullLabel: 'Ongoing Pictorial', statuses: ['CAPTURE', 'IN_PROGRESS'] },
-  { step: 4, key: 'EDITING', label: 'Editing', fullLabel: 'Editing', statuses: ['EDITING'] },
-  { step: 5, key: 'RETOUCHING', label: 'Retouch', fullLabel: 'Retouching', statuses: ['RETOUCHING'] },
-  { step: 6, key: 'FINALIZED', label: 'Finalized', fullLabel: 'Booking Finalized', statuses: ['FINALIZED', 'PRINTING'] },
-  { step: 7, key: 'READY', label: 'Ready', fullLabel: 'Ready for Pickup', statuses: ['READY', 'UNDER_DELIVERY'] },
+  { step: 2, key: 'CONFIRMED', label: 'Approved', fullLabel: 'Approved & Reserved', statuses: ['CONFIRMED'] },
+  { step: 3, key: 'PHOTOGRAPHER_ASSIGNED', label: 'Assigned', fullLabel: 'Photographer Assigned', statuses: ['PHOTOGRAPHER_ASSIGNED'] },
+  { step: 4, key: 'CAPTURE', label: 'Pictorial', fullLabel: 'Ongoing Pictorial', statuses: ['CAPTURE', 'IN_PROGRESS'] },
+  { step: 5, key: 'EDITING', label: 'Editing', fullLabel: 'Editing', statuses: ['EDITING'] },
+  { step: 6, key: 'RETOUCHING', label: 'Retouch', fullLabel: 'Retouching', statuses: ['RETOUCHING'] },
+  { step: 7, key: 'FINALIZED', label: 'Finalized', fullLabel: 'Booking Finalized', statuses: ['FINALIZED', 'PRINTING'] },
+  { step: 8, key: 'READY', label: 'Ready', fullLabel: 'Ready for Pickup', statuses: ['READY', 'UNDER_DELIVERY'] },
 ];
 
 /* ── Mini Circular Progress Ring for Collections Cards ───────────────────── */
@@ -256,21 +257,21 @@ export default function StudioOperationsHub({
     };
   }, [bookings]);
 
-  /* ── 2. Workflow Distribution Data (7 Production Stages Line Chart) ──────── */
+  /* ── 2. Workflow Distribution Data (8 Production Stages Line Chart) ──────── */
   const { workflowData, totalInPipeline, activeStages } = useMemo(() => {
     const counts = new Map();
     let total = 0;
 
     bookings.forEach((booking) => {
       const status = String(booking?.status || '').toUpperCase();
-      const matched = OFFICIAL_7_TRACKER_STAGES.find((s) => s.statuses.includes(status));
+      const matched = OFFICIAL_8_TRACKER_STAGES.find((s) => s.statuses.includes(status));
       if (matched) {
         counts.set(matched.step, (counts.get(matched.step) || 0) + 1);
         total += 1;
       }
     });
 
-    const list = OFFICIAL_7_TRACKER_STAGES.map((stage) => {
+    const list = OFFICIAL_8_TRACKER_STAGES.map((stage) => {
       const count = counts.get(stage.step) || 0;
       return {
         ...stage,

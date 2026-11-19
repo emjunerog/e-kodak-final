@@ -1,4 +1,11 @@
-import { broadcastAvailabilityChange } from './liveAvailabilityService';
+import {
+  broadcastAvailabilityChange,
+  checkBookingTimeConflict,
+  fetchDateBookingRecords,
+  planDayReorganization,
+  formatTime24To12,
+  getLocalAdminBlocks,
+} from './liveAvailabilityService';
 /**
  * bookingAdminService.js
  * ======================
@@ -9,7 +16,7 @@ import { broadcastAvailabilityChange } from './liveAvailabilityService';
 
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { generateAndStoreQRCode } from './qrService';
-import { parseStudentDetailsFromNotes, parseAddOnsFromNotes, parseParticipantDetailsFromNotes } from './bookingService';
+import { parseStudentDetailsFromNotes, parseAddOnsFromNotes, parseParticipantDetailsFromNotes, toDatabaseTime } from './bookingService';
 import { recordAdminActivity } from './workstationService';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -101,10 +108,25 @@ export async function getAdminBookings({
          created_at,
          updated_at,
          confirmed_at,
+         down_payment_confirmed,
          payment_confirmed_at,
          total_amount,
          down_payment_amount,
          remaining_balance,
+         booking_for,
+         participant_name,
+         participant_phone,
+         participant_email,
+         participant_relationship,
+         participant_details,
+         student_details,
+         school,
+         school_address,
+         track,
+         batch,
+         section,
+         student_id,
+         yearbook_motto,
          service:services(id, name, category, base_price, tiers, inclusions),
          customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, email, phone, address, studio_specs),
          photographer:photographer_profiles!bookings_photographer_id_fkey(
@@ -123,7 +145,21 @@ export async function getAdminBookings({
       query = query.or('is_deleted.is.null,is_deleted.eq.false');
     }
 
-    if (statusFilter)  query = query.eq('status', statusFilter);
+    if (statusFilter) {
+      if (statusFilter === 'PENDING') {
+        query = query.in('status', ['PENDING', 'RESERVED']);
+      } else if (statusFilter === 'CAPTURE') {
+        query = query.in('status', ['CAPTURE', 'IN_PROGRESS']);
+      } else if (statusFilter === 'FINALIZED') {
+        query = query.in('status', ['FINALIZED', 'PRINTING']);
+      } else if (statusFilter === 'READY') {
+        query = query.in('status', ['READY', 'UNDER_DELIVERY']);
+      } else if (statusFilter === 'PRODUCTION') {
+        query = query.in('status', ['PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING', 'FINALIZED', 'PRINTING']);
+      } else {
+        query = query.eq('status', statusFilter);
+      }
+    }
     if (paymentFilter) query = query.eq('payment_status', paymentFilter);
 
     if (search.trim()) {
@@ -137,9 +173,9 @@ export async function getAdminBookings({
 
           const profileIds = (matchedProfiles || []).map(p => p.id);
           if (profileIds.length > 0) {
-            query = query.or(`booking_number.ilike.%${term}%,notes.ilike.%${term}%,customer_id.in.(${profileIds.join(',')})`);
+            query = query.or(`booking_number.ilike.%${term}%,notes.ilike.%${term}%,school.ilike.%${term}%,section.ilike.%${term}%,customer_id.in.(${profileIds.join(',')})`);
           } else {
-            query = query.or(`booking_number.ilike.%${term}%,notes.ilike.%${term}%`);
+            query = query.or(`booking_number.ilike.%${term}%,notes.ilike.%${term}%,school.ilike.%${term}%,section.ilike.%${term}%`);
           }
         } catch {
           query = query.or(`booking_number.ilike.%${term}%,notes.ilike.%${term}%`);
@@ -152,9 +188,32 @@ export async function getAdminBookings({
 
     if (Array.isArray(data)) {
       data.forEach(b => {
-        b.student_details = parseStudentDetailsFromNotes(b.notes);
+        const parsedStudent = parseStudentDetailsFromNotes(b.notes) || {};
+        const dbStudent = (b.student_details && typeof b.student_details === 'object') ? b.student_details : {};
+        b.student_details = {
+          ...parsedStudent,
+          ...dbStudent,
+          school: b.school || dbStudent.school || parsedStudent.school || '',
+          school_address: b.school_address || dbStudent.school_address || parsedStudent.school_address || '',
+          course: b.track || dbStudent.course || dbStudent.track || parsedStudent.course || '',
+          track: b.track || dbStudent.track || dbStudent.course || parsedStudent.course || '',
+          batch: b.batch || dbStudent.batch || parsedStudent.batch || '',
+          section: b.section || dbStudent.section || parsedStudent.section || '',
+          student_id: b.student_id || dbStudent.student_id || parsedStudent.student_id || '',
+          yearbook_motto: b.yearbook_motto || dbStudent.yearbook_motto || parsedStudent.yearbook_motto || '',
+        };
         b.selected_add_ons = parseAddOnsFromNotes(b.notes);
-        b.participant_details = parseParticipantDetailsFromNotes(b.notes);
+        const parsedParticipant = parseParticipantDetailsFromNotes(b.notes) || {};
+        const dbParticipant = (b.participant_details && typeof b.participant_details === 'object') ? b.participant_details : {};
+        b.participant_details = {
+          ...parsedParticipant,
+          ...dbParticipant,
+          booking_for: b.booking_for || dbParticipant.booking_for || parsedParticipant.booking_for || 'myself',
+          full_name: b.participant_name || dbParticipant.full_name || parsedParticipant.full_name || '',
+          phone: b.participant_phone || dbParticipant.phone || parsedParticipant.phone || '',
+          email: b.participant_email || dbParticipant.email || parsedParticipant.email || '',
+          relationship: b.participant_relationship || dbParticipant.relationship || parsedParticipant.relationship || '',
+        };
         if (b.photographer) {
           b.photographer.first_name = b.photographer.first_name || b.photographer.profile?.first_name || '';
           b.photographer.last_name = b.photographer.last_name || b.photographer.profile?.last_name || '';
@@ -193,6 +252,9 @@ export async function getBookingDetail(id) {
         id,
         booking_number,
         booking_token,
+        customer_id,
+        service_id,
+        photographer_id,
         status,
         payment_status,
         event_date,
@@ -203,12 +265,27 @@ export async function getBookingDetail(id) {
         total_amount,
         down_payment_amount,
         remaining_balance,
+        down_payment_confirmed,
         qr_code_path,
         created_at,
         updated_at,
         tier_name,
         confirmed_at,
         payment_confirmed_at,
+        booking_for,
+        participant_name,
+        participant_phone,
+        participant_email,
+        participant_relationship,
+        participant_details,
+        student_details,
+        school,
+        school_address,
+        track,
+        batch,
+        section,
+        student_id,
+        yearbook_motto,
         customer:profiles!bookings_customer_id_fkey(
           id, first_name, last_name, email, phone, address, studio_specs, avatar_url, bio, is_active, created_at
         ),
@@ -546,6 +623,7 @@ export async function recordPayment({
       console.warn('recordPayment recordAdminActivity error:', payLogErr);
     }
 
+    broadcastAvailabilityChange();
     return { data, error: null };
   } catch (error) {
     console.error('recordPayment error:', error);
@@ -1585,6 +1663,17 @@ export async function adminCreateBooking(bookingData) {
   }
 
   try {
+    if (bookingData.event_date && bookingData.preferred_time) {
+      const conflict = await checkBookingTimeConflict({
+        dateStr: String(bookingData.event_date).split('T')[0],
+        startTime: bookingData.preferred_time,
+        durationMinutes: bookingData.duration_minutes || 60,
+      });
+      if (conflict.hasConflict) {
+        return { data: null, error: new Error(conflict.reason) };
+      }
+    }
+
     const year = new Date().getFullYear();
     const { count } = await supabase
       .from('bookings')
@@ -1652,6 +1741,7 @@ export async function adminCreateBooking(bookingData) {
         .eq('id', data.id);
     }
 
+    broadcastAvailabilityChange();
     return { data, error: null };
   } catch (error) {
     console.error('adminCreateBooking error:', error);
@@ -1678,10 +1768,184 @@ export async function adminUpdateBooking(bookingId, updates) {
       .single();
 
     if (error) throw error;
+    broadcastAvailabilityChange();
     return { data, error: null };
   } catch (error) {
     console.error('adminUpdateBooking error:', error);
     return { data: null, error };
+  }
+}
+
+/**
+ * reorganizeDayScheduleWithAdjustment
+ * -----------------------------------
+ * Adjusts a booking's time window within its scheduled day (up to 3 hrs max)
+ * and automatically reorganizes any overlapped bookings into the remaining
+ * available open studio slots on that same day.
+ */
+export async function reorganizeDayScheduleWithAdjustment({
+  targetBooking,
+  startTime,
+  endTime,
+  note = '',
+  adminId = null,
+  adminName = 'Studio Admin',
+}) {
+  if (!isSupabaseConfigured) {
+    return { success: false, error: new Error('Database connection is not configured.') };
+  }
+  const cleanDate = targetBooking?.event_date ? String(targetBooking.event_date).split('T')[0] : '';
+  if (!cleanDate) {
+    return { success: false, error: new Error('Booking does not have a scheduled date.') };
+  }
+
+  const blackout = getLocalAdminBlocks().find((blk) => blk.date === cleanDate);
+  if (blackout) {
+    return {
+      success: false,
+      error: new Error(`Date ${cleanDate} is blacked out (${blackout.reason || 'Studio Maintenance'}).`),
+    };
+  }
+
+  try {
+    const dayBookings = await fetchDateBookingRecords(cleanDate);
+    const plan = planDayReorganization({
+      targetBooking,
+      startTime,
+      endTime,
+      dayBookings,
+    });
+
+    if (plan.exceedsMaxHours) {
+      return {
+        success: false,
+        error: new Error('Hour adjustments are limited to a maximum of 3 hours within the same day.'),
+      };
+    }
+    if (plan.unplaced.length > 0) {
+      return {
+        success: false,
+        error: new Error('Not enough available time slots left on this day to organize all affected bookings.'),
+      };
+    }
+    if (!plan.isValid) {
+      return {
+        success: false,
+        error: new Error('Invalid schedule adjustment window.'),
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+    const updatedMap = {};
+
+    // 1. Update target booking
+    const isBackToStandardOneHour = plan.durationMinutes === 60 && !String(note || '').trim();
+    const targetStudentDetails =
+      targetBooking.student_details && typeof targetBooking.student_details === 'object'
+        ? { ...targetBooking.student_details }
+        : {};
+
+    if (isBackToStandardOneHour && targetStudentDetails.schedule_adjustment) {
+      delete targetStudentDetails.schedule_adjustment;
+    } else {
+      targetStudentDetails.schedule_adjustment = {
+        start_time: startTime,
+        end_time: endTime,
+        duration_minutes: plan.durationMinutes,
+        note: String(note || '').trim() || null,
+        updated_at: nowIso,
+      };
+    }
+
+    const targetUpdates = {
+      preferred_time: toDatabaseTime(startTime),
+      student_details: Object.keys(targetStudentDetails).length > 0 ? targetStudentDetails : null,
+      updated_at: nowIso,
+    };
+
+    const { data: updatedTarget, error: targetErr } = await supabase
+      .from('bookings')
+      .update(targetUpdates)
+      .eq('id', targetBooking.id)
+      .select()
+      .single();
+
+    if (targetErr) throw targetErr;
+    updatedMap[targetBooking.id] = { ...targetBooking, ...targetUpdates, ...(updatedTarget || {}) };
+
+    // 2. Reorganize each affected booking into its newly assigned open slot on the same day
+    const historyRows = [];
+    const notifRows = [];
+
+    for (const move of plan.reorganized) {
+      const aff = move.booking;
+      const affStudentDetails =
+        aff.student_details && typeof aff.student_details === 'object'
+          ? { ...aff.student_details }
+          : {};
+
+      if (affStudentDetails.schedule_adjustment || move.durationMinutes !== 60) {
+        affStudentDetails.schedule_adjustment = {
+          ...(affStudentDetails.schedule_adjustment || {}),
+          start_time: move.newStartTime,
+          end_time: move.newEndTime,
+          duration_minutes: move.durationMinutes,
+          note: `Auto-organized into open slot (was ${formatTime24To12(move.oldWindow.startTime)})`,
+          updated_at: nowIso,
+        };
+      }
+
+      const affUpdates = {
+        preferred_time: toDatabaseTime(move.newStartTime),
+        student_details: Object.keys(affStudentDetails).length > 0 ? affStudentDetails : null,
+        updated_at: nowIso,
+      };
+
+      const { error: moveErr } = await supabase
+        .from('bookings')
+        .update(affUpdates)
+        .eq('id', aff.id);
+
+      if (moveErr) throw moveErr;
+
+      updatedMap[aff.id] = { ...aff, ...affUpdates };
+
+      historyRows.push({
+        booking_id: aff.id,
+        status: aff.status || 'CONFIRMED',
+        remarks: `Schedule automatically organized on ${cleanDate} from ${formatTime24To12(move.oldWindow.startTime)} to ${formatTime24To12(move.newStartTime)} – ${formatTime24To12(move.newEndTime)} following session time adjustment on #${targetBooking.booking_number || ''} by ${adminName}.`,
+        changed_by: adminId,
+      });
+
+      if (aff.customer_id) {
+        notifRows.push({
+          user_id: aff.customer_id,
+          booking_id: aff.id,
+          title: `Schedule Time Updated (#${aff.booking_number || ''})`,
+          message: `Your session on ${cleanDate} has been organized to ${formatTime24To12(move.newStartTime)} – ${formatTime24To12(move.newEndTime)} to accommodate studio bay scheduling.`,
+          notification_type: 'SCHEDULE_UPDATED',
+          is_read: false,
+        });
+      }
+    }
+
+    if (historyRows.length > 0) {
+      await supabase.from('booking_status_history').insert(historyRows);
+    }
+    if (notifRows.length > 0) {
+      await supabase.from('notifications').insert(notifRows);
+    }
+
+    broadcastAvailabilityChange();
+    return {
+      success: true,
+      plan,
+      updatedMap,
+      error: null,
+    };
+  } catch (error) {
+    console.error('reorganizeDayScheduleWithAdjustment error:', error);
+    return { success: false, error };
   }
 }
 

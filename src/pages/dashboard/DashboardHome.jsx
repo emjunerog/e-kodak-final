@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getCustomerBookings, getCachedCustomerBookings } from '../../services/bookingService';
 import {
-  CreditCard, Camera, Images, ClipboardList, ArrowUpRight,
+  CreditCard, Camera, Images, ClipboardList, ArrowUpRight, Clock,
 } from 'lucide-react';
 import { Link, useOutletContext } from 'react-router-dom';
 import ClientHeroBanner from '../../components/dashboard/ClientHeroBanner';
@@ -76,25 +76,47 @@ export default function DashboardHome() {
     loadData();
   }, [user?.id, loadData]);
 
-  const activeBookings = useMemo(
-    () => bookings.filter((b) => !['COMPLETED', 'CANCELLED', 'REJECTED'].includes(b.status)),
+  const pendingApprovalBookings = useMemo(
+    () =>
+      bookings.filter((b) => {
+        const st = String(b.status || '').toUpperCase();
+        return st === 'PENDING' || st === 'RESERVED';
+      }),
     [bookings]
   );
-  const completedCount = bookings.filter((b) => b.status === 'COMPLETED').length;
 
-  // Orders shown in the tracker: active ones first, else most recent
-  const trackerSessions = activeBookings.length > 0 ? activeBookings : bookings.slice(0, 1);
-
-  // Outstanding balance across live orders
-  const outstanding = useMemo(
-    () => activeBookings.reduce((sum, b) => sum + Math.max(0, Number(b.remaining_balance ?? 0)), 0),
-    [activeBookings]
+  const approvedBookings = useMemo(
+    () =>
+      bookings.filter((b) => {
+        const st = String(b.status || '').toUpperCase();
+        return !['PENDING', 'RESERVED'].includes(st);
+      }),
+    [bookings]
   );
 
-  // Downpayment still required
+  const activeBookings = useMemo(
+    () => approvedBookings.filter((b) => !['COMPLETED', 'CANCELLED', 'REJECTED'].includes(String(b.status || '').toUpperCase())),
+    [approvedBookings]
+  );
+  const completedCount = approvedBookings.filter((b) => String(b.status || '').toUpperCase() === 'COMPLETED').length;
+
+  // Orders shown in the tracker: admin-approved active ones first, else most recent approved
+  const trackerSessions = activeBookings.length > 0 ? activeBookings : approvedBookings.slice(0, 1);
+
+  // Outstanding balance across live orders (approved + pending)
+  const outstanding = useMemo(
+    () =>
+      bookings
+        .filter((b) => !['COMPLETED', 'CANCELLED', 'REJECTED'].includes(String(b.status || '').toUpperCase()))
+        .reduce((sum, b) => sum + Math.max(0, Number(b.remaining_balance ?? 0)), 0),
+    [bookings]
+  );
+
+  // Downpayment still required (only when customer has NOT paid yet)
   const pendingDownpaymentBooking = useMemo(() => {
     return bookings.find((b) => {
-      if (b.status === 'CANCELLED' || b.status === 'REJECTED') return false;
+      const st = String(b.status || '').toUpperCase();
+      if (st === 'CANCELLED' || st === 'REJECTED') return false;
       const rem = Number(b.remaining_balance ?? b.total_amount ?? 0);
       const downPaid = Number(b.down_payment_amount || 0);
       return rem > 0 && !b.down_payment_confirmed && downPaid === 0;
@@ -147,6 +169,34 @@ export default function DashboardHome() {
 
         <div className="w-full px-4 sm:px-6 lg:px-8 space-y-6 pt-3 animate-fade-in">
 
+          {/* Pending Admin Approval Notice (customer paid, awaiting studio admin approval) */}
+          {pendingApprovalBookings.length > 0 && (
+            <div
+              role="status"
+              className="rounded-2xl px-4 py-3.5 bg-[#fdfaf3] dark:bg-amber-950/30 border border-[#e2cfa7] dark:border-amber-700/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
+            >
+              <div className="flex items-start gap-3 min-w-0">
+                <span className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                  <Clock size={17} aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                    Pending Studio Approval ({pendingApprovalBookings.map((b) => `#${b.booking_number}`).join(', ')})
+                  </p>
+                  <p className="text-xs text-neutral-600 dark:text-neutral-300 mt-0.5 leading-relaxed">
+                    Your booking and payment have been received by the studio. Once an administrator approves it, your confirmed order, schedule, and QR pass will update here automatically.
+                  </p>
+                </div>
+              </div>
+              <Link
+                to={`/dashboard/bookings/${pendingApprovalBookings[0].id}`}
+                className="px-4 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-[#e8cf9d] dark:text-neutral-950 text-xs font-semibold transition-colors shrink-0 text-center"
+              >
+                View submission
+              </Link>
+            </div>
+          )}
+
           {/* Payment reminder */}
           {pendingDownpaymentBooking && pendingDownpaymentAmount > 0 && (
             <div
@@ -194,10 +244,10 @@ export default function DashboardHome() {
                 ))}
               </nav>
 
-              <StudioExperienceBanner bookings={bookings} className="shrink-0" />
+              <StudioExperienceBanner bookings={approvedBookings} className="shrink-0" />
 
               <SessionCredentialsCard
-                bookings={bookings}
+                bookings={approvedBookings}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 className="lg:h-[660px] mt-auto shrink-0"
@@ -206,7 +256,7 @@ export default function DashboardHome() {
 
             {/* ── Side column ─────────────────────────────────────────── */}
             <aside className="lg:col-span-4 flex flex-col gap-6 h-full min-w-0">
-              <UpcomingDatesCard bookings={bookings} className="shrink-0" />
+              <UpcomingDatesCard bookings={approvedBookings} className="shrink-0" />
 
               <LookbookAppReminder className="flex-1 min-h-[260px]" />
 

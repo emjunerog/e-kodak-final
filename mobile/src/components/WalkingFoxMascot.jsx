@@ -27,12 +27,14 @@ export default function WalkingFoxMascot({
   size = 78,
   gait = 'auto', // 'auto' | 'idle' | 'walk' | 'run'
   direction = 'right', // 'right' | 'left'
+  anchorSide = null, // 'left' | 'right' | 'center' (overrides bubble side so it never clips off-screen)
+  maxBubbleWidth = 248,
   message = null,
   emoji = null,
   onMascotPress,
   style,
 }) {
-  const { isDark, colors } = useTheme();
+  const { isDark, isSage, colors } = useTheme();
 
   // Internal gait state for auto-cycling
   const [activeGait, setActiveGait] = useState(gait === 'auto' ? 'walk' : gait);
@@ -71,11 +73,42 @@ export default function WalkingFoxMascot({
   const armVestOpacity = useRef(new Animated.Value(0)).current; // 0 = not on vest
   const tailBaseAngle  = useRef(new Animated.Value(34)).current; // 34 = cozy low tail when sitting, 26 = standing stroll, 0 = perky wave
 
-  // ── Contextual Speech Bubble Auto-Hide with Touch Protection ──
+  // ── Contextual Speech Bubble & "Say hi to E-Kodak" Auto-Hide (3s) ──
   const [bubbleVisible, setBubbleVisible] = useState(Boolean(message));
+  const [whisperVisible, setWhisperVisible] = useState(false);
   const bubbleAnim = useRef(new Animated.Value(Boolean(message) ? 1 : 0)).current;
+  const whisperAnim = useRef(new Animated.Value(0)).current;
   const autoHideTimer = useRef(null);
+  const whisperTimer = useRef(null);
   const isInteractingWithBubble = useRef(false);
+
+  const hideWhisper = () => {
+    if (whisperTimer.current) clearTimeout(whisperTimer.current);
+    Animated.timing(whisperAnim, {
+      toValue: 0,
+      duration: 240,
+      easing: Easing.inOut(Easing.quad),
+      useNativeDriver: true,
+    }).start(() => {
+      setWhisperVisible(false);
+    });
+  };
+
+  const showWhisper = (duration = 3000) => {
+    if (whisperTimer.current) clearTimeout(whisperTimer.current);
+    setWhisperVisible(true);
+    whisperAnim.setValue(0);
+    Animated.spring(whisperAnim, {
+      toValue: 1,
+      friction: 7,
+      tension: 130,
+      useNativeDriver: true,
+    }).start();
+
+    whisperTimer.current = setTimeout(() => {
+      hideWhisper();
+    }, duration);
+  };
 
   const hideBubble = () => {
     Animated.timing(bubbleAnim, {
@@ -85,10 +118,16 @@ export default function WalkingFoxMascot({
       useNativeDriver: true,
     }).start(() => {
       setBubbleVisible(false);
+      if (message) {
+        showWhisper(3000);
+      }
     });
   };
 
-  const showBubble = (stayDuration = 6500) => {
+  const showBubble = (stayDuration = 4500) => {
+    if (whisperTimer.current) clearTimeout(whisperTimer.current);
+    setWhisperVisible(false);
+    whisperAnim.setValue(0);
     setBubbleVisible(true);
     Animated.spring(bubbleAnim, {
       toValue: 1,
@@ -104,6 +143,20 @@ export default function WalkingFoxMascot({
       }
     }, stayDuration);
   };
+
+  // Start bubble auto-hide whenever a message arrives (then whisper shows & disappears after 3s)
+  useEffect(() => {
+    if (!message) {
+      setBubbleVisible(false);
+      setWhisperVisible(false);
+      return;
+    }
+    showBubble(4500);
+    return () => {
+      if (autoHideTimer.current) clearTimeout(autoHideTimer.current);
+      if (whisperTimer.current) clearTimeout(whisperTimer.current);
+    };
+  }, [message]);
 
   // Smooth transition between mascot poses ('sit' | 'wave' | 'vest' | 'down')
   const transitionToPose = (newPose, isTailPerky = false) => {
@@ -439,7 +492,7 @@ export default function WalkingFoxMascot({
 
   // Tap handler with subtle cushion, friendly wave response, and chatter
   const handlePress = () => {
-    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); } catch {}
     headTilt.setValue(0);
     sniffLoop.setValue(0);
     Animated.sequence([
@@ -627,6 +680,36 @@ export default function WalkingFoxMascot({
     outputRange: [0, -2.2],
   });
 
+  const resolvedAnchor = anchorSide || (direction === 'right' ? 'left' : 'right');
+  const clampedBubbleWidth = Math.min(252, Math.max(180, maxBubbleWidth || 248));
+  const bubblePosStyle =
+    resolvedAnchor === 'center'
+      ? {
+          width: clampedBubbleWidth,
+          left: (width - clampedBubbleWidth) / 2,
+        }
+      : resolvedAnchor === 'right'
+        ? {
+            right: -6,
+            maxWidth: clampedBubbleWidth,
+          }
+        : {
+            left: -6,
+            maxWidth: clampedBubbleWidth,
+          };
+  const bubbleArrowPosStyle =
+    resolvedAnchor === 'center'
+      ? { left: clampedBubbleWidth / 2 - 4.5 }
+      : resolvedAnchor === 'right'
+        ? { right: 32 }
+        : { left: 32 };
+  const whisperPosStyle =
+    resolvedAnchor === 'center'
+      ? { left: -50, right: -50, alignItems: 'center' }
+      : resolvedAnchor === 'right'
+        ? { right: 2 }
+        : { left: 2 };
+
   return (
     <View style={[styles.root, style]}>
       {/* ── Contextual Speech Bubble (Auto-hiding with touch protection) ── */}
@@ -634,9 +717,9 @@ export default function WalkingFoxMascot({
         <Animated.View
           style={[
             styles.bubble,
-            direction === 'right' ? { left: -6 } : { right: -6 },
+            bubblePosStyle,
             {
-              backgroundColor: isDark ? 'rgba(24, 21, 28, 0.97)' : 'rgba(255, 255, 255, 0.98)',
+              backgroundColor: isDark ? '#1B1E29' : isSage ? '#FCFDFB' : '#FFFFFF',
               borderColor: colors.gold.borderLight,
               shadowColor: colors.gold.DEFAULT,
               opacity: bubbleAnim,
@@ -675,9 +758,9 @@ export default function WalkingFoxMascot({
           <View
             style={[
               styles.bubbleArrow,
-              direction === 'right' ? { left: 32 } : { right: 32 },
+              bubbleArrowPosStyle,
               {
-                backgroundColor: isDark ? 'rgba(24, 21, 28, 0.97)' : 'rgba(255, 255, 255, 0.98)',
+                backgroundColor: isDark ? '#1B1E29' : isSage ? '#FCFDFB' : '#FFFFFF',
                 borderColor: colors.gold.borderLight,
               },
             ]}
@@ -685,28 +768,40 @@ export default function WalkingFoxMascot({
         </Animated.View>
       )}
 
-      {/* ── Compact Whisper Chip when Speech Bubble is Auto-Hidden ── */}
-      {Boolean(message) && !bubbleVisible && (
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => {
-            showBubble(7500);
-            handlePress();
-          }}
+      {/* ── Compact Whisper Chip (Disappears after 3 seconds) ── */}
+      {Boolean(message) && !bubbleVisible && whisperVisible && (
+        <Animated.View
           style={[
-            styles.whisperChip,
-            direction === 'right' ? { left: 2 } : { right: 2 },
+            styles.whisperChipWrap,
+            whisperPosStyle,
             {
-              backgroundColor: isDark ? 'rgba(24, 21, 28, 0.92)' : 'rgba(255, 252, 244, 0.96)',
-              borderColor: colors.gold.DEFAULT,
+              opacity: whisperAnim,
+              transform: [
+                { scale: whisperAnim.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] }) },
+              ],
             },
           ]}
         >
-          <Text style={styles.whisperEmoji}>👋</Text>
-          <Text style={[styles.whisperText, { color: isDark ? colors.gold.light : colors.gold.dark }]}>
-            Say hi to E-Kodak
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => {
+              showBubble(5000);
+              handlePress();
+            }}
+            style={[
+              styles.whisperChip,
+              {
+                backgroundColor: isDark ? '#1B1E29' : isSage ? '#F7FAF5' : '#FFFCF4',
+                borderColor: colors.gold.DEFAULT,
+              },
+            ]}
+          >
+            <Text style={styles.whisperEmoji}>👋</Text>
+            <Text style={[styles.whisperText, { color: isDark ? colors.gold.light : colors.gold.dark }]}>
+              Say hi to E-Kodak
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
       )}
 
       {/* ── Floating Waving Sparkles (Only twinkle when waving paw is raised) ── */}
@@ -1373,8 +1468,8 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 12,
     zIndex: 30,
-    minWidth: 190,
-    maxWidth: 275,
+    minWidth: 140,
+    maxWidth: 248,
   },
   bubbleRow: {
     flexDirection: 'row',
@@ -1403,9 +1498,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1.2,
     borderRightWidth: 1.2,
   },
-  whisperChip: {
+  whisperChipWrap: {
     position: 'absolute',
     bottom: '102%',
+    zIndex: 25,
+  },
+  whisperChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -1417,7 +1515,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 5,
     elevation: 6,
-    zIndex: 25,
   },
   whisperEmoji: {
     fontSize: 12,

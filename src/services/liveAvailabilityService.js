@@ -86,6 +86,120 @@ export function normalizeSlotTime(str) {
 }
 
 /**
+ * Parses a 24h/12h time string ("10:00", "10:00:00", "10:00 AM") into minutes since midnight.
+ */
+export function parseTimeToMinutes(str) {
+  if (!str) return null;
+  const trimmed = String(str).trim();
+  const m = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?/i);
+  if (!m) {
+    const slotKey = normalizeSlotTime(trimmed);
+    if (!slotKey) return null;
+    const [sh, sm] = slotKey.split(':').map(Number);
+    return Number.isFinite(sh) && Number.isFinite(sm) ? sh * 60 + sm : null;
+  }
+  let hours = parseInt(m[1], 10);
+  const mins = parseInt(m[2], 10);
+  const mod = m[3]?.toLowerCase();
+  if (mod === 'pm' && hours < 12) hours += 12;
+  if (mod === 'am' && hours === 12) hours = 0;
+  if (Number.isNaN(hours) || Number.isNaN(mins) || hours < 0 || hours > 23 || mins < 0 || mins > 59) {
+    return null;
+  }
+  return hours * 60 + mins;
+}
+
+export function minutesToHHMM(totalMinutes) {
+  if (totalMinutes == null || Number.isNaN(totalMinutes)) return '';
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, Math.round(totalMinutes)));
+  const h = Math.floor(clamped / 60);
+  const m = clamped % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+export function formatTime24To12(hhmm) {
+  const mins = parseTimeToMinutes(hhmm);
+  if (mins == null) return hhmm || '';
+  const h24 = Math.floor(mins / 60);
+  const m = mins % 60;
+  const period = h24 >= 12 ? 'PM' : 'AM';
+  const h12 = h24 % 12 || 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+/**
+ * Extracts the active schedule window for a booking, honoring admin time/duration adjustments
+ * saved in student_details.schedule_adjustment (or participant_details.schedule_adjustment).
+ */
+export function getBookingTimeWindow(booking) {
+  const adj = booking?.student_details?.schedule_adjustment || booking?.participant_details?.schedule_adjustment || null;
+  const rawStart = adj?.start_time || booking?.preferred_time || '';
+  const startMinutes = parseTimeToMinutes(rawStart);
+  if (startMinutes == null) {
+    return {
+      startTime: '',
+      endTime: '',
+      startMinutes: null,
+      endMinutes: null,
+      durationMinutes: 60,
+      isAdjusted: false,
+      note: adj?.note || '',
+    };
+  }
+
+  let endMinutes = adj?.end_time ? parseTimeToMinutes(adj.end_time) : null;
+  if (endMinutes == null || endMinutes <= startMinutes) {
+    const dur = Number(adj?.duration_minutes) > 0 ? Number(adj.duration_minutes) : 60;
+    endMinutes = Math.min(23 * 60 + 59, startMinutes + dur);
+  }
+
+  const durationMinutes = Math.max(15, endMinutes - startMinutes);
+  const isAdjusted = Boolean(
+    adj && (
+      adj.end_time ||
+      (Number(adj.duration_minutes) && Number(adj.duration_minutes) !== 60) ||
+      adj.note ||
+      adj.updated_at
+    )
+  );
+
+  return {
+    startTime: minutesToHHMM(startMinutes),
+    endTime: minutesToHHMM(endMinutes),
+    startMinutes,
+    endMinutes,
+    durationMinutes,
+    isAdjusted,
+    note: adj?.note || '',
+  };
+}
+
+/**
+ * Returns all STUDIO_HOURLY_SLOTS keys overlapped by a booking's time window.
+ */
+export function getBookingOccupiedSlotKeys(booking) {
+  const windowInfo = getBookingTimeWindow(booking);
+  if (windowInfo.startMinutes == null || windowInfo.endMinutes == null) {
+    const fallback = normalizeSlotTime(booking?.preferred_time);
+    return fallback ? [fallback] : [];
+  }
+  const overlapped = [];
+  for (const slot of STUDIO_HOURLY_SLOTS) {
+    const [sh, sm] = slot.time.split(':').map(Number);
+    const slotStart = sh * 60 + sm;
+    const slotEnd = slotStart + 60;
+    if (windowInfo.startMinutes < slotEnd && windowInfo.endMinutes > slotStart) {
+      overlapped.push(slot.time);
+    }
+  }
+  if (overlapped.length === 0) {
+    const fallback = normalizeSlotTime(booking?.preferred_time);
+    if (fallback) overlapped.push(fallback);
+  }
+  return overlapped;
+}
+
+/**
  * Reads local admin blocks from storage
  */
 export function getLocalAdminBlocks() {
@@ -270,12 +384,15 @@ export async function fetchDateAvailability(dateStr, context = {}) {
         .from("bookings")
         .select(`
           id,
+          booking_number,
           event_date,
           preferred_time,
           status,
           notes,
           tier_name,
           service_id,
+          student_details,
+          participant_details,
           service:services(id, name, slug)
         `)
         .eq("event_date", dateStr)
@@ -290,10 +407,11 @@ export async function fetchDateAvailability(dateStr, context = {}) {
     }
   }
 
-  // 4. Analyze DB bookings for full-day locks & booked hourly slots
+  // 4. Analyze DB bookings for full-day locks, occupied time windows, & booked hourly slots
   let fullDayLock = null;
   const bookedSlotsSet = new Set();
   const bookedSlotDetails = {};
+  const occupiedWindows = [];
 
   for (const b of dbBookings) {
     // If order was cancelled, rejected, or deleted by admin or user, skip it so the slot opens up
@@ -305,12 +423,30 @@ export async function fetchDateAvailability(dateStr, context = {}) {
       break;
     }
 
-    // Hourly slot check
-    const slotKey = normalizeSlotTime(b.preferred_time);
-    if (slotKey) {
+    const win = getBookingTimeWindow(b);
+    if (win.startMinutes != null && win.endMinutes != null) {
+      occupiedWindows.push({
+        id: b.id,
+        booking_number: b.booking_number || '',
+        startTime: win.startTime,
+        endTime: win.endTime,
+        startMinutes: win.startMinutes,
+        endMinutes: win.endMinutes,
+        durationMinutes: win.durationMinutes,
+        isAdjusted: win.isAdjusted,
+      });
+    }
+
+    // Hourly slot check (supports extended / adjusted multi-hour sessions)
+    const occupiedKeys = getBookingOccupiedSlotKeys(b);
+    for (const slotKey of occupiedKeys) {
       bookedSlotsSet.add(slotKey);
       bookedSlotDetails[slotKey] = {
         isBooked: true,
+        isAdjusted: win.isAdjusted,
+        windowLabel: win.startTime && win.endTime
+          ? `${formatTime24To12(win.startTime)} – ${formatTime24To12(win.endTime)}`
+          : null,
       };
     }
   }
@@ -321,6 +457,8 @@ export async function fetchDateAvailability(dateStr, context = {}) {
       isFullDayBlocked: true,
       fullDayReason: fullDayLock,
       bookedSlots: STUDIO_HOURLY_SLOTS.map(s => s.time),
+      bookedSlotDetails,
+      occupiedWindows,
       availableSlots: [],
       totalAvailable: 0,
       totalSlots: STUDIO_HOURLY_SLOTS.length,
@@ -340,12 +478,253 @@ export async function fetchDateAvailability(dateStr, context = {}) {
     fullDayReason: null,
     bookedSlots,
     bookedSlotDetails,
+    occupiedWindows,
     availableSlots,
     totalAvailable: availableSlots.length,
     totalSlots: STUDIO_HOURLY_SLOTS.length,
     isSchoolBatchDay: false,
     isWeddingDay: false,
   };
+}
+
+/**
+ * Synchronous interval-overlap check against preloaded bookings or occupiedWindows on a date.
+ */
+export function findTimeWindowOverlap({
+  dateStr,
+  startTime,
+  endTime = null,
+  durationMinutes = 60,
+  excludeBookingId = null,
+  bookingsOrWindows = [],
+}) {
+  if (!dateStr) return { hasConflict: false, conflictType: null, reason: null };
+
+  const adminBlock = getLocalAdminBlocks().find((b) => b.date === dateStr);
+  if (adminBlock) {
+    return {
+      hasConflict: true,
+      conflictType: 'blackout',
+      reason: `Date ${dateStr} is blacked out (${adminBlock.reason || 'Studio Maintenance'}).`,
+    };
+  }
+
+  const multiDay = getLocalMultiDayBookings().find(
+    (m) => dateStr >= m.startDate && dateStr <= m.endDate
+  );
+  if (multiDay) {
+    return {
+      hasConflict: true,
+      conflictType: 'full_day',
+      reason: `Date ${dateStr} is reserved for School Batch (${multiDay.schoolName || 'Partner Campus'}).`,
+    };
+  }
+
+  const reqStart = parseTimeToMinutes(startTime);
+  if (reqStart == null) {
+    return { hasConflict: false, conflictType: null, reason: null };
+  }
+
+  let reqEnd = endTime ? parseTimeToMinutes(endTime) : null;
+  if (reqEnd == null || reqEnd <= reqStart) {
+    reqEnd = reqStart + (Number(durationMinutes) > 0 ? Number(durationMinutes) : 60);
+  }
+
+  for (const item of bookingsOrWindows || []) {
+    if (!item) continue;
+    if (excludeBookingId && item.id === excludeBookingId) continue;
+
+    // Support both raw booking records and pre-extracted occupiedWindow objects
+    const isWindowObj = typeof item.startMinutes === 'number' && typeof item.endMinutes === 'number';
+    if (!isWindowObj) {
+      if (isOrderCancelledOrDeleted(item)) continue;
+      const itemDate = item.event_date ? String(item.event_date).split('T')[0] : '';
+      if (itemDate && itemDate !== dateStr) continue;
+      const fullCheck = isFullDayBooking(item);
+      if (fullCheck.isBlocked) {
+        return {
+          hasConflict: true,
+          conflictType: 'full_day',
+          conflictingBooking: item,
+          reason: fullCheck.reason || 'This date has a full-day reservation.',
+        };
+      }
+    }
+
+    const win = isWindowObj ? item : getBookingTimeWindow(item);
+    if (win.startMinutes == null || win.endMinutes == null) continue;
+
+    if (reqStart < win.endMinutes && reqEnd > win.startMinutes) {
+      const ref = item.booking_number ? `#${item.booking_number}` : 'an existing booking';
+      return {
+        hasConflict: true,
+        conflictType: 'time_overlap',
+        conflictingBooking: item,
+        window: win,
+        reason: `Time conflicts with ${ref} (${formatTime24To12(win.startTime)} – ${formatTime24To12(win.endTime)}) and cannot be booked.`,
+      };
+    }
+  }
+
+  return { hasConflict: false, conflictType: null, reason: null };
+}
+
+/**
+ * Queries active non-cancelled/non-deleted bookings on a specific date regardless of past/weekend cutoff.
+ */
+export async function fetchDateBookingRecords(dateStr) {
+  if (!dateStr || !isSupabaseConfigured || !supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('id, booking_number, customer_id, event_date, preferred_time, status, notes, tier_name, service_id, student_details, participant_details, service:services(id, name, slug)')
+      .eq('event_date', dateStr)
+      .not('status', 'in', '("CANCELLED","cancelled","CANCELED","canceled","REJECTED","rejected","DECLINED","declined","DELETED","deleted")')
+      .or('is_deleted.is.null,is_deleted.eq.false');
+
+    if (!error && Array.isArray(data)) {
+      return data.filter((b) => !isOrderCancelledOrDeleted(b));
+    }
+  } catch (err) {
+    console.warn('[LiveAvailability] Booking records query error:', err);
+  }
+  return [];
+}
+
+export const MAX_SAME_DAY_ADJUSTMENT_MINUTES = 180;
+
+/**
+ * Plans within-the-day schedule reorganization when adjusting a booking's duration/time (up to 3 hrs).
+ * Any existing bookings overlapped by the new window are automatically assigned into the next available
+ * studio bay slots on the same date without colliding with unaffected bookings.
+ */
+export function planDayReorganization({
+  targetBooking,
+  startTime,
+  endTime,
+  dayBookings = [],
+}) {
+  const startMins = parseTimeToMinutes(startTime);
+  const endMins = parseTimeToMinutes(endTime);
+  if (startMins == null || endMins == null || endMins <= startMins) {
+    return {
+      isValid: false,
+      durationMinutes: 0,
+      maxMinutes: MAX_SAME_DAY_ADJUSTMENT_MINUTES,
+      exceedsMaxHours: false,
+      affected: [],
+      reorganized: [],
+      unplaced: [],
+    };
+  }
+
+  const durationMinutes = endMins - startMins;
+  const exceedsMaxHours = durationMinutes > MAX_SAME_DAY_ADJUSTMENT_MINUTES;
+
+  const otherBookings = (dayBookings || []).filter(
+    (b) => b && b.id !== targetBooking?.id && !isOrderCancelledOrDeleted(b) && !isFullDayBooking(b).isBlocked
+  );
+
+  const affected = [];
+  const occupiedIntervals = [{ start: startMins, end: endMins }];
+
+  for (const b of otherBookings) {
+    const ow = getBookingTimeWindow(b);
+    if (ow.startMinutes == null || ow.endMinutes == null) continue;
+    if (startMins < ow.endMinutes && endMins > ow.startMinutes) {
+      affected.push({ booking: b, oldWindow: ow });
+    } else {
+      occupiedIntervals.push({ start: ow.startMinutes, end: ow.endMinutes });
+    }
+  }
+
+  affected.sort((a, b) => a.oldWindow.startMinutes - b.oldWindow.startMinutes);
+
+  // Build ordered candidate start minutes within studio operating day (prefer after adjusted end, then earlier open bays)
+  const slotStarts = STUDIO_HOURLY_SLOTS.map((s) => {
+    const [h, m] = s.time.split(':').map(Number);
+    return h * 60 + m;
+  });
+  const candidateStarts = [
+    ...slotStarts.filter((m) => m >= endMins),
+    ...slotStarts.filter((m) => m < startMins),
+  ];
+
+  const reorganized = [];
+  const unplaced = [];
+
+  for (const { booking: affBooking, oldWindow } of affected) {
+    const dur = Math.min(
+      MAX_SAME_DAY_ADJUSTMENT_MINUTES,
+      Math.max(30, oldWindow.durationMinutes || 60)
+    );
+
+    let chosenStart = null;
+    for (const candStart of candidateStarts) {
+      const candEnd = candStart + dur;
+      if (candEnd > 17 * 60) continue; // Keep within 5:00 PM studio hours
+      if (candStart < 12 * 60 && candEnd > 12 * 60 && candStart !== 12 * 60) continue; // Avoid crossing 12-1 PM lunch break
+      const overlaps = occupiedIntervals.some(
+        (iv) => candStart < iv.end && candEnd > iv.start
+      );
+      if (!overlaps) {
+        chosenStart = candStart;
+        break;
+      }
+    }
+
+    if (chosenStart != null) {
+      const chosenEnd = chosenStart + dur;
+      occupiedIntervals.push({ start: chosenStart, end: chosenEnd });
+      reorganized.push({
+        booking: affBooking,
+        oldWindow,
+        newStartTime: minutesToHHMM(chosenStart),
+        newEndTime: minutesToHHMM(chosenEnd),
+        durationMinutes: dur,
+      });
+    } else {
+      unplaced.push({ booking: affBooking, oldWindow, durationMinutes: dur });
+    }
+  }
+
+  return {
+    isValid: !exceedsMaxHours && unplaced.length === 0,
+    durationMinutes,
+    maxMinutes: MAX_SAME_DAY_ADJUSTMENT_MINUTES,
+    exceedsMaxHours,
+    affected,
+    reorganized,
+    unplaced,
+  };
+}
+
+/**
+ * Fetches occupied booking time windows for a specific date (regardless of past/weekend cutoff)
+ * and checks whether a requested time window conflicts with any existing booking or blackout.
+ */
+export async function checkBookingTimeConflict({
+  dateStr,
+  startTime,
+  endTime = null,
+  durationMinutes = 60,
+  excludeBookingId = null,
+  existingBookings = null,
+}) {
+  if (!dateStr) return { hasConflict: false, conflictType: null, reason: null };
+
+  const records = Array.isArray(existingBookings)
+    ? existingBookings
+    : await fetchDateBookingRecords(dateStr);
+
+  return findTimeWindowOverlap({
+    dateStr,
+    startTime,
+    endTime,
+    durationMinutes,
+    excludeBookingId,
+    bookingsOrWindows: records || [],
+  });
 }
 
 /**
@@ -425,6 +804,8 @@ export async function fetchMonthBlockoutMap(year, month) {
           status,
           notes,
           tier_name,
+          student_details,
+          participant_details,
           service:services(id, name, slug)
         `)
         .gte("event_date", startStr)
@@ -456,8 +837,10 @@ export async function fetchMonthBlockoutMap(year, month) {
           // Check if all 8 slots are occupied
           const slotSet = new Set();
           for (const b of list) {
-            const slotKey = normalizeSlotTime(b.preferred_time);
-            if (slotKey) slotSet.add(slotKey);
+            const occupiedKeys = getBookingOccupiedSlotKeys(b);
+            for (const slotKey of occupiedKeys) {
+              slotSet.add(slotKey);
+            }
           }
           if (slotSet.size >= STUDIO_HOURLY_SLOTS.length) {
             blockMap[dStr] = {

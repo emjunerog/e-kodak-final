@@ -132,10 +132,10 @@ export default function BookingDetailsPage() {
         if (bErr) setError(bErr.message || 'Error loading booking');
         else if (data) setBooking(data);
 
-        const bRes = await getCustomerBookings(user.id);
+        const bRes = await getCustomerBookings(user.id, { forceRefresh: true });
         if (bRes?.data) setAllUserBookings(bRes.data.filter(b => !b.is_deleted));
       } else {
-        const { data, error: bErr } = await getCustomerBookings(user.id);
+        const { data, error: bErr } = await getCustomerBookings(user.id, { forceRefresh: true });
         if (bErr) {
           setError(bErr.message || 'Error loading bookings');
           return;
@@ -168,7 +168,26 @@ export default function BookingDetailsPage() {
       setLoading(false);
     }
     loadData();
+
+    const handleBookingsUpdated = () => loadData();
+    window.addEventListener('ekodak_bookings_updated', handleBookingsUpdated);
+    return () => {
+      window.removeEventListener('ekodak_bookings_updated', handleBookingsUpdated);
+    };
   }, [user?.id, id, loadData]);
+
+  // Sync live status updates from DashboardLayout Realtime context
+  useEffect(() => {
+    if (!outletContext?.bookings || !Array.isArray(outletContext.bookings)) return;
+    const activeList = outletContext.bookings.filter(b => !b.is_deleted);
+    setAllUserBookings(activeList);
+    if (booking?.id) {
+      const updated = activeList.find(b => String(b.id) === String(booking.id));
+      if (updated) {
+        setBooking(prev => ({ ...prev, ...updated }));
+      }
+    }
+  }, [outletContext?.bookings]);
 
   // Structured Student Dossier parsing
   const studentDossier = useMemo(() => {
@@ -450,14 +469,30 @@ export default function BookingDetailsPage() {
 
   // Status badge display label (pure calculation, no hooks after early returns)
   let statusDisplay = 'APPROVED & RESERVED';
-  if (status === 'CONFIRMED' || status === 'PHOTOGRAPHER_ASSIGNED') {
+  if (status === 'PENDING' || status === 'RESERVED') {
+    statusDisplay = 'BOOKING RECEIVED';
+  } else if (status === 'CONFIRMED') {
     statusDisplay = 'APPROVED & RESERVED';
-  } else if (status === 'READY' || status === 'COMPLETED') {
-    statusDisplay = 'COMPLETED & READY';
-  } else if (status === 'IN_PROGRESS' || status === 'CAPTURE' || status === 'EDITING') {
-    statusDisplay = 'IN PRODUCTION';
+  } else if (status === 'PHOTOGRAPHER_ASSIGNED') {
+    statusDisplay = 'PHOTOGRAPHER ASSIGNED';
+  } else if (status === 'IN_PROGRESS' || status === 'CAPTURE') {
+    statusDisplay = 'ONGOING PICTORIAL';
+  } else if (status === 'EDITING') {
+    statusDisplay = 'EDITING';
+  } else if (status === 'RETOUCHING') {
+    statusDisplay = 'RETOUCHING';
+  } else if (status === 'FINALIZED' || status === 'PRINTING') {
+    statusDisplay = 'BOOKING FINALIZED';
+  } else if (status === 'READY') {
+    statusDisplay = 'READY FOR PICKUP';
+  } else if (status === 'UNDER_DELIVERY') {
+    statusDisplay = 'UNDER DELIVERY';
+  } else if (status === 'COMPLETED') {
+    statusDisplay = 'COMPLETED';
   } else if (status === 'CANCELLED') {
     statusDisplay = 'CANCELLED';
+  } else if (status === 'REJECTED') {
+    statusDisplay = 'REJECTED';
   }
 
   // Package & Tier
@@ -663,11 +698,21 @@ export default function BookingDetailsPage() {
       setBooking((prev) => ({
         ...prev,
         notes: updatedNotes || prev.notes,
+        school: payload.school || prev.school,
+        school_address: payload.school_address || prev.school_address,
+        track: payload.course || prev.track,
+        batch: payload.batch || prev.batch,
+        section: payload.section || prev.section,
+        student_id: payload.student_id || prev.student_id,
+        yearbook_motto: payload.yearbook_motto || prev.yearbook_motto,
         student_details: {
           ...(prev.student_details || {}),
           ...payload,
         },
       }));
+      try {
+        window.dispatchEvent(new Event('ekodak_bookings_updated'));
+      } catch {}
       setIsEditingAcademic(false);
       setToast({
         type: 'success',

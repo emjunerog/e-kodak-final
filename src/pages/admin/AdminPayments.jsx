@@ -36,6 +36,7 @@ import { recordAdminActivity } from '../../services/workstationService';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import CustomDropdown from '../../components/ui/CustomDropdown';
+import Toast from '../../components/ui/Toast';
 
 const PAGE_SIZE = 20;
 
@@ -128,9 +129,13 @@ export default function AdminPayments() {
   const [isDeleting, setIsDeleting]           = useState(false);
 
   // Action notice helper
+  const [toast, setToast] = useState(null);
   const notifySuccess = (msg) => {
     setActionNotice({ type: 'success', message: msg });
     setTimeout(() => setActionNotice(null), 3500);
+  };
+  const notifyError = (msg) => {
+    setToast({ type: 'error', message: msg });
   };
 
   // Load payments, database financial values, and all active bookings
@@ -150,12 +155,22 @@ export default function AdminPayments() {
             remaining_balance,
             down_payment_amount,
             down_payment_confirmed,
+            payment_confirmed_at,
             payment_status,
             event_date,
             preferred_time,
             status,
+            booking_for,
+            participant_name,
+            participant_phone,
+            participant_email,
+            school,
+            track,
+            section,
+            batch,
+            student_id,
             service:services(name),
-            customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, phone)
+            customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, email, phone)
           `)
           .or('is_deleted.is.null,is_deleted.eq.false')
           .order('created_at', { ascending: false })
@@ -321,7 +336,7 @@ export default function AdminPayments() {
   const handleSavePayment = async (e) => {
     e.preventDefault();
     if (!selectedBookingId || !amount || Number(amount) <= 0) {
-      alert('Please select a booking and enter a valid payment amount.');
+      notifyError('Please select a booking and enter a valid payment amount.');
       return;
     }
 
@@ -381,7 +396,7 @@ export default function AdminPayments() {
       await load();
     } catch (err) {
       console.error('Error recording payment:', err);
-      alert('Failed to record payment: ' + err.message);
+      notifyError('Failed to record payment: ' + err.message);
     } finally {
       setSavingPayment(false);
     }
@@ -412,7 +427,7 @@ export default function AdminPayments() {
       if (res.error) throw res.error;
       notifySuccess(`Clearance notice logged for #${bNum}!`);
     } catch (err) {
-      alert('Failed to dispatch clearance log: ' + err.message);
+      notifyError('Failed to dispatch clearance log: ' + err.message);
     }
   };
 
@@ -432,7 +447,7 @@ export default function AdminPayments() {
       await load();
     } catch (err) {
       console.error('Delete payment error:', err);
-      alert('Failed to void payment transaction: ' + err.message);
+      notifyError('Failed to void payment transaction: ' + err.message);
     } finally {
       setIsDeleting(false);
     }
@@ -452,7 +467,7 @@ export default function AdminPayments() {
 
     if (activeLedgerTab === 'pending_receivables') {
       if (filteredUnsettled.length === 0) {
-        alert('No remaining balance records to export.');
+        notifyError('No remaining balance records to export.');
         return;
       }
 
@@ -509,7 +524,7 @@ export default function AdminPayments() {
       notifySuccess(`Exported ${filteredUnsettled.length} remaining balance record(s) to Excel successfully.`);
     } else {
       if (filteredRows.length === 0) {
-        alert('No confirmed receipt records to export.');
+        notifyError('No confirmed receipt records to export.');
         return;
       }
 
@@ -986,6 +1001,16 @@ export default function AdminPayments() {
                           <div className="flex items-center justify-end gap-2">
                             <button
                               type="button"
+                              onClick={() => openRecordModal(b)}
+                              className="h-8 px-3 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-[#c9a96e] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                              title={isUnpaid ? 'Record payment for this booking' : 'Update remaining balance payment record'}
+                            >
+                              <CreditCard size={12} />
+                              <span>{isUnpaid ? 'Record Payment' : 'Update'}</span>
+                            </button>
+
+                            <button
+                              type="button"
                               onClick={() => handleSendReminder(b)}
                               className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-400 hover:text-amber-700 hover:bg-amber-50/80 transition-colors border border-neutral-200/90 hover:border-amber-400/70 cursor-pointer shadow-2xs"
                               title="Send payment reminder to client"
@@ -1099,10 +1124,10 @@ export default function AdminPayments() {
                         type="button"
                         onClick={() => openRecordModal(b)}
                         className="flex-1 px-3 py-2 text-xs font-semibold text-white bg-gradient-to-r from-[#c9a96e] to-[#b8985d] hover:from-[#d4b479] hover:to-[#c9a96e] rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
-                        title="Record payment receipt for this booking"
+                        title={isUnpaid ? 'Record payment receipt for this booking' : 'Update remaining balance record'}
                       >
                         <Plus size={13} />
-                        <span>Record Payment</span>
+                        <span>{isUnpaid ? 'Record Payment' : 'Update'}</span>
                       </button>
 
                       <button
@@ -1674,6 +1699,7 @@ export default function AdminPayments() {
           </div>
         </div>
       )}
+      <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   );
 }

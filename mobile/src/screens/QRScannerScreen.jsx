@@ -45,6 +45,7 @@ import {
   Camera as CameraIcon,
   Flashlight,
   FlashlightOff,
+  Sun,
   RotateCcw,
   Check,
   Search,
@@ -68,6 +69,10 @@ import GlassBackground from '../components/GlassBackground';
 import CardDecorElements from '../components/CardDecorElements';
 import StudioShapeLoader from '../components/StudioShapeLoader';
 import StudioMascotKit from '../components/StudioMascotKit';
+import {
+  CameraBrightnessOverlay,
+  CameraBrightnessControl,
+} from '../components/CameraBrightnessTool';
 import { useTheme } from '../context/ThemeContext';
 import { Typography, Spacing, Radius, Shadow } from '../theme';
 
@@ -260,6 +265,8 @@ export default function QRScannerScreen({ navigation }) {
   const permission = hookPermission || osPermission;
 
   const [torch, setTorch] = useState(false);
+  const [camBrightness, setCamBrightness] = useState(0);
+  const [showBrightnessBar, setShowBrightnessBar] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [showConnectingOverlay, setShowConnectingOverlay] = useState(false);
   const [cameraError, setCameraError] = useState(null);
@@ -509,7 +516,7 @@ export default function QRScannerScreen({ navigation }) {
 
   // Handle "Open Camera" tap: requests real OS permission if needed, never auto-toggles torch
   const handleOpenCamera = useCallback(async (openFullAfter = false) => {
-    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { }
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); } catch { }
     setTorch(false);
 
     const current = (await refreshOsCameraPermission()) || permission;
@@ -564,6 +571,8 @@ export default function QRScannerScreen({ navigation }) {
       setManualErrorSource(false);
       setManualLoading(false);
       setTorch(false);
+      setCamBrightness(0);
+      setShowBrightnessBar(false);
       setCameraError(null);
       resetReticle(false, isFullScannerRef.current);
 
@@ -753,7 +762,7 @@ export default function QRScannerScreen({ navigation }) {
 
   // Scan Again: instant unlock & re-center WITHOUT tearing down camera stream
   const handleScanAgain = () => {
-    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch { }
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {}); } catch { }
     if (!permission?.granted || !isCameraActive) {
       handleOpenCamera(isFullScannerRef.current);
       return;
@@ -764,7 +773,7 @@ export default function QRScannerScreen({ navigation }) {
 
   // Header Refresh icon: spins icon cleanly and reconnects camera or triggers Open Camera flow
   const handleRestartCamera = () => {
-    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch { }
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {}); } catch { }
     triggerRefreshSpin();
     if (!permission?.granted || !isCameraActive) {
       handleOpenCamera(isFullScannerRef.current);
@@ -785,7 +794,7 @@ export default function QRScannerScreen({ navigation }) {
   };
 
   const handleToggleFullScanner = async (nextFull, focusManualAfter = false) => {
-    try { Haptics.selectionAsync(); } catch { }
+    try { Haptics.selectionAsync().catch(() => {}); } catch { }
 
     if (nextFull && (!permission?.granted || !isCameraActive)) {
       await handleOpenCamera(true);
@@ -837,7 +846,7 @@ export default function QRScannerScreen({ navigation }) {
       if (epoch !== lookupEpochRef.current) return;
 
       if (phAuth.authorized && phAuth.profile) {
-        try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch { }
+        try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {}); } catch { }
         setManualLoading(false);
         setManualErrorSource(false);
         syncScanState('SUCCESS');
@@ -855,7 +864,7 @@ export default function QRScannerScreen({ navigation }) {
         return;
       }
 
-      try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); } catch { }
+      try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}); } catch { }
       setManualLoading(false);
       syncScanState('ERROR');
       setStatusCaption('Photographer pass rejected');
@@ -883,7 +892,7 @@ export default function QRScannerScreen({ navigation }) {
           const phFallback = await loginPhotographerWithQRToken(token);
           if (epoch !== lookupEpochRef.current) return;
           if (phFallback.authorized && phFallback.profile) {
-            try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch { }
+            try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {}); } catch { }
             setManualLoading(false);
             setManualErrorSource(false);
             syncScanState('SUCCESS');
@@ -901,7 +910,7 @@ export default function QRScannerScreen({ navigation }) {
           }
         }
 
-        try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); } catch { }
+        try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}); } catch { }
         setManualLoading(false);
         syncScanState('ERROR');
         setStatusCaption(
@@ -925,7 +934,7 @@ export default function QRScannerScreen({ navigation }) {
       if (epoch !== lookupEpochRef.current) return;
 
       if (fromManual) {
-        try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch { }
+        try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {}); } catch { }
       }
 
       setManualLoading(false);
@@ -943,7 +952,7 @@ export default function QRScannerScreen({ navigation }) {
       timersRef.current.push(navTimer);
     } catch (err) {
       if (epoch !== lookupEpochRef.current) return;
-      try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); } catch { }
+      try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}); } catch { }
       setManualLoading(false);
       syncScanState('ERROR');
       setStatusCaption(
@@ -963,7 +972,7 @@ export default function QRScannerScreen({ navigation }) {
       setManualErrorSource(false);
       syncScanState('LOCKING');
 
-      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch { }
+      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {}); } catch { }
 
       const stageW = isFullScannerRef.current ? SCREEN_WIDTH : dashLayoutRef.current.width;
       const stageH = isFullScannerRef.current ? SCREEN_HEIGHT : dashLayoutRef.current.height;
@@ -1036,7 +1045,7 @@ export default function QRScannerScreen({ navigation }) {
         const epoch = lookupEpochRef.current;
         minLockPromise.then(async () => {
           if (epoch !== lookupEpochRef.current || !scanLockRef.current) return;
-          try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); } catch { }
+          try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}); } catch { }
           syncScanState('ERROR');
           setStatusCaption('Invalid studio QR code');
           setMascotMessage(error || 'This QR code is not a valid E-Kodak booking pass.');
@@ -1053,7 +1062,7 @@ export default function QRScannerScreen({ navigation }) {
   const handleManualLookup = () => {
     const trimmed = manualToken.trim();
     if (!trimmed || manualLoading) return;
-    try { Haptics.selectionAsync(); } catch { }
+    try { Haptics.selectionAsync().catch(() => {}); } catch { }
     RNKeyboard.dismiss();
     const parsed = parseQRPayload(trimmed);
     const tokenToLookup = parsed.valid && parsed.token ? parsed.token : trimmed;
@@ -1273,6 +1282,7 @@ export default function QRScannerScreen({ navigation }) {
             facing="back"
             autofocus="on"
             flash="off"
+            exposure={camBrightness}
             enableTorch={cameraLive && torch}
             barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
             onBarcodeScanned={handleScanned}
@@ -1286,6 +1296,14 @@ export default function QRScannerScreen({ navigation }) {
             }}
           />
         ) : null}
+
+        {cameraLive && (
+          <CameraBrightnessOverlay
+            brightness={camBrightness}
+            width={SCREEN_WIDTH}
+            height={SCREEN_HEIGHT}
+          />
+        )}
 
         {/* Subtle 4-piece mask framing adjusted full scanner width */}
         <View
@@ -1346,7 +1364,29 @@ export default function QRScannerScreen({ navigation }) {
 
             <SmoothPressable
               onPress={() => {
-                try { Haptics.selectionAsync(); } catch { }
+                try { Haptics.selectionAsync().catch(() => {}); } catch { }
+                setShowBrightnessBar((prev) => !prev);
+              }}
+              accessibilityLabel="Adjust camera brightness"
+              style={[
+                styles.fullTopIconBtn,
+                (showBrightnessBar || camBrightness !== 0) && {
+                  borderColor: colors.gold.DEFAULT,
+                  backgroundColor: 'rgba(212,175,55,0.22)',
+                },
+              ]}
+              pressScale={0.9}
+              activeOpacity={0.75}
+            >
+              <Sun
+                size={18}
+                color={showBrightnessBar || camBrightness !== 0 ? colors.gold.light : '#FFFFFF'}
+              />
+            </SmoothPressable>
+
+            <SmoothPressable
+              onPress={() => {
+                try { Haptics.selectionAsync().catch(() => {}); } catch { }
                 setTorch((prev) => !prev);
               }}
               accessibilityLabel={torch ? 'Turn flashlight off' : 'Turn flashlight on'}
@@ -1375,6 +1415,19 @@ export default function QRScannerScreen({ navigation }) {
             </SmoothPressable>
           </View>
         </Animated.View>
+
+        {cameraLive && (
+          <CameraBrightnessControl
+            brightness={camBrightness}
+            onChange={setCamBrightness}
+            visible={showBrightnessBar}
+            style={{
+              bottom: Math.max(insets.bottom + 112, 120),
+              left: 18,
+              right: 18,
+            }}
+          />
+        )}
 
         {/* Bottom Controls Bar (Navbar is hidden in Full Mode) */}
         <Animated.View
@@ -1502,7 +1555,47 @@ export default function QRScannerScreen({ navigation }) {
                   disabled={!cameraLive}
                   onPress={() => {
                     if (!cameraLive) return;
-                    try { Haptics.selectionAsync(); } catch { }
+                    try { Haptics.selectionAsync().catch(() => {}); } catch { }
+                    setShowBrightnessBar((prev) => !prev);
+                  }}
+                  accessibilityLabel="Adjust camera brightness"
+                  style={[
+                    styles.headerIconBtn,
+                    {
+                      backgroundColor:
+                        (showBrightnessBar || camBrightness !== 0) && cameraLive
+                          ? colors.gold.bg
+                          : isDark
+                            ? 'rgba(255, 255, 255, 0.08)'
+                            : '#EFECE6',
+                      borderColor:
+                        (showBrightnessBar || camBrightness !== 0) && cameraLive
+                          ? colors.gold.DEFAULT
+                          : isDark
+                            ? 'rgba(255, 255, 255, 0.14)'
+                            : 'rgba(218, 214, 206, 0.85)',
+                      opacity: cameraLive ? 1 : 0.62,
+                    },
+                  ]}
+                  pressScale={0.9}
+                  activeOpacity={0.75}
+                >
+                  <Sun
+                    size={18}
+                    color={
+                      (showBrightnessBar || camBrightness !== 0) && cameraLive
+                        ? colors.gold.DEFAULT
+                        : colors.text.secondary
+                    }
+                    strokeWidth={2}
+                  />
+                </SmoothPressable>
+
+                <SmoothPressable
+                  disabled={!cameraLive}
+                  onPress={() => {
+                    if (!cameraLive) return;
+                    try { Haptics.selectionAsync().catch(() => {}); } catch { }
                     setTorch((prev) => !prev);
                   }}
                   accessibilityLabel={torch ? 'Turn flashlight off' : 'Turn flashlight on'}
@@ -1611,6 +1704,7 @@ export default function QRScannerScreen({ navigation }) {
                       facing="back"
                       autofocus="on"
                       flash="off"
+                      exposure={camBrightness}
                       enableTorch={cameraLive && torch}
                       barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                       onBarcodeScanned={handleScanned}
@@ -1668,6 +1762,11 @@ export default function QRScannerScreen({ navigation }) {
 
                   {cameraLive && (
                     <>
+                      <CameraBrightnessOverlay
+                        brightness={camBrightness}
+                        width={activeStageW}
+                        height={DASH_STAGE_HEIGHT}
+                      />
                       {CAMERA_CORNER_MASKS.map(({ key, pos, d }) => (
                         <View
                           key={key}
@@ -1694,6 +1793,14 @@ export default function QRScannerScreen({ navigation }) {
                   )}
 
                   {cameraLive && renderReticleOverlay()}
+
+                  {cameraLive && (
+                    <CameraBrightnessControl
+                      brightness={camBrightness}
+                      onChange={setCamBrightness}
+                      visible={showBrightnessBar}
+                    />
+                  )}
 
                   {renderCameraStatusOverlay('Starting camera preview…', 26)}
                 </View>
@@ -2138,13 +2245,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: CAMERA_CORNER_RADIUS,
     height: CAMERA_CORNER_RADIUS,
-    zIndex: 2,
+    zIndex: 5,
+    elevation: 5,
   },
   windowHairlineBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: CAMERA_CORNER_RADIUS,
     borderWidth: 1,
-    zIndex: 3,
+    zIndex: 6,
+    elevation: 6,
   },
   bezelBottom: {
     overflow: 'hidden',
@@ -2207,7 +2316,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   smartGrid: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   gridLineV: {
     position: 'absolute',
@@ -2286,7 +2395,7 @@ const styles = StyleSheet.create({
 
   // Camera connecting/error status inside stage
   cameraStatusOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 5,

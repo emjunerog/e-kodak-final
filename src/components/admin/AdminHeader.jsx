@@ -12,6 +12,7 @@ import {
   LogOut,
   ChevronDown,
   QrCode,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -58,28 +59,38 @@ function Breadcrumb() {
 
 // ── Header ────────────────────────────────────────────────────────────────────
 export default function AdminHeader({ onMenuClick, onOpenProfile }) {
-  const { user, profile, logout } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
 
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const [headerSearch, setHeaderSearch] = useState('');
   const profileMenuRef = useRef(null);
 
-  // Close profile dropdown when clicking outside
+  // Close profile dropdown when clicking outside or pressing Escape
   useEffect(() => {
     function handleClickOutside(event) {
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
         setProfileMenuOpen(false);
       }
     }
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') {
+        setProfileMenuOpen(false);
+      }
+    }
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   const handleLogout = async () => {
     setProfileMenuOpen(false);
     try {
-      await logout();
+      await signOut();
       navigate('/login');
     } catch (err) {
       console.error('Logout failed:', err);
@@ -141,23 +152,42 @@ export default function AdminHeader({ onMenuClick, onOpenProfile }) {
       <div className="flex items-center gap-2.5">
 
         {/* Global Search Input */}
-        <div className="hidden sm:flex items-center relative">
-          <Search size={14} className="absolute left-3 text-neutral-400 pointer-events-none" />
+        <form
+          role="search"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const q = headerSearch.trim();
+            if (q) {
+              navigate(`/admin/bookings?search=${encodeURIComponent(q)}`);
+            }
+          }}
+          className="hidden sm:flex items-center relative"
+        >
+          <Search size={14} className="absolute left-3 text-neutral-400 pointer-events-none" aria-hidden="true" />
           <input
             type="search"
             name="admin_record_search"
+            aria-label="Search booking records"
+            value={headerSearch}
+            onChange={(e) => setHeaderSearch(e.target.value)}
             autoComplete="off"
             autoCorrect="off"
             spellCheck="false"
+            enterKeyHint="search"
             placeholder="Search records..."
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && e.target.value.trim()) {
-                navigate(`/admin/bookings?search=${encodeURIComponent(e.target.value.trim())}`);
-              }
-            }}
-            className="pl-8 pr-3 h-9 bg-white/[0.06] border border-white/[0.08] hover:border-white/[0.15] rounded-full text-xs font-body text-white placeholder:text-neutral-400 focus:bg-white/[0.1] focus:border-gold/50 focus:ring-2 focus:ring-gold/15 transition-all outline-none w-44 md:w-52"
+            className="pl-8 pr-7 h-9 bg-white/[0.06] border border-white/[0.08] hover:border-white/[0.15] rounded-full text-xs font-body text-white placeholder:text-neutral-400 focus:bg-white/[0.1] focus:border-gold/50 focus:ring-2 focus:ring-gold/15 transition-all outline-none w-44 md:w-52"
           />
-        </div>
+          {headerSearch && (
+            <button
+              type="button"
+              onClick={() => setHeaderSearch('')}
+              aria-label="Clear search"
+              className="absolute right-2.5 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </form>
 
         {/* Quick Staff / Admin QR Scanner Pass Verification */}
         <motion.button

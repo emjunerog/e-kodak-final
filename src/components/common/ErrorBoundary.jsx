@@ -26,6 +26,15 @@ export default class ErrorBoundary extends React.Component {
   }
 
   handleReset = () => {
+    const errMsg = String(this.state.error?.message || this.state.error || '');
+    if (
+      errMsg.includes('Failed to fetch dynamically imported module') ||
+      errMsg.includes('Importing a module script failed') ||
+      errMsg.includes('error loading dynamically imported module')
+    ) {
+      window.location.reload();
+      return;
+    }
     this.setState({ hasError: false, error: null, errorInfo: null });
     if (this.props.onReset) {
       this.props.onReset();

@@ -23,6 +23,7 @@ import { useAuth } from '../../context/AuthContext';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import CustomDropdown from '../../components/ui/CustomDropdown';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import SmsGatewayBanner from '../../components/admin/SmsGatewayBanner';
 import SmsCustomerDirectory from '../../components/admin/SmsCustomerDirectory';
 import SmsInboxFeed from '../../components/admin/SmsInboxFeed';
@@ -496,12 +497,20 @@ export default function AdminSmsLogs() {
     return filteredRows.slice(from, from + PAGE_SIZE);
   }, [filteredRows, safePage]);
 
-  const handleDeleteLog = async (id) => {
-    if (!window.confirm('Are you sure you want to remove this SMS transmission record?')) return;
-    await deleteSmsLog(id);
-    showSuccess('SMS transmission record removed.');
-    if (inspectModalLog?.id === id) setInspectModalLog(null);
-    loadAuditLogs();
+  const [confirmDialog, setConfirmDialog] = useState(null);
+
+  const handleDeleteLog = (id) => {
+    setConfirmDialog({
+      title: 'Delete SMS Record?',
+      message: 'Are you sure you want to remove this SMS transmission record?',
+      confirmLabel: 'Remove Record',
+      onConfirm: async () => {
+        await deleteSmsLog(id);
+        showSuccess('SMS transmission record removed.');
+        if (inspectModalLog?.id === id) setInspectModalLog(null);
+        loadAuditLogs();
+      },
+    });
   };
 
   const handleCopyText = async (text, id) => {
@@ -510,7 +519,7 @@ export default function AdminSmsLogs() {
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
     } catch {
-      alert('Copied: ' + text);
+      showError('Clipboard access blocked. Please copy manually.');
     }
   };
 
@@ -1291,6 +1300,7 @@ export default function AdminSmsLogs() {
           </div>
         </div>
       )}
+      <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
     </div>
   );
 }

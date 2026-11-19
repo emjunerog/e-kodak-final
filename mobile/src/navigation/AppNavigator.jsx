@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated, Easing } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -172,8 +172,6 @@ function DockTab({
   if (isCenterAction) {
     return (
       <Pressable
-        ref={tourRef}
-        collapsable={false}
         accessibilityRole="button"
         accessibilityState={focused ? { selected: true } : {}}
         accessibilityLabel={meta.label}
@@ -184,30 +182,36 @@ function DockTab({
         pressRetentionOffset={8}
         style={styles.centerTabSlot}
       >
-        <Animated.View
-          style={[
-            styles.centerScanButton,
-            {
-              backgroundColor: centerSolidBg,
-              borderWidth: focused ? 2 : 0,
-              borderColor: centerActiveRing,
-              transform: [{ scale: iconScale }],
-            },
-          ]}
+        <View
+          ref={tourRef}
+          collapsable={false}
+          style={styles.centerScanButtonWrap}
         >
-          <LinearGradient
-            colors={pillColors}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.centerGradientFill}
+          <Animated.View
+            style={[
+              styles.centerScanButton,
+              {
+                backgroundColor: centerSolidBg,
+                borderWidth: focused ? 2 : 0,
+                borderColor: centerActiveRing,
+                transform: [{ scale: iconScale }],
+              },
+            ]}
           >
-            <Icon
-              size={focused ? 27 : 25}
-              color={centerIconColor}
-              strokeWidth={focused ? 2.25 : 2.05}
-            />
-          </LinearGradient>
-        </Animated.View>
+            <LinearGradient
+              colors={pillColors}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.centerGradientFill}
+            >
+              <Icon
+                size={focused ? 27 : 25}
+                color={centerIconColor}
+                strokeWidth={focused ? 2.25 : 2.05}
+              />
+            </LinearGradient>
+          </Animated.View>
+        </View>
       </Pressable>
     );
   }
@@ -263,6 +267,19 @@ function FloatingDock({ state, navigation }) {
   const [pillX] = useState(() => new Animated.Value(0));
   const [pillStretch] = useState(() => new Animated.Value(1));
   const activeRoute = state.routes[state.index];
+  const visibleRoutes = useMemo(
+    () => state.routes.filter((r) => Boolean(TAB_META[r.name])),
+    [state.routes]
+  );
+  const activeTabIndex = useMemo(() => {
+    if (activeRoute?.name === 'BookingTracker') {
+      const bookingsIdx = visibleRoutes.findIndex((r) => r.name === 'Bookings');
+      return bookingsIdx >= 0 ? bookingsIdx : 0;
+    }
+    const idx = visibleRoutes.findIndex((r) => r.key === activeRoute?.key);
+    return idx >= 0 ? idx : 0;
+  }, [activeRoute?.key, activeRoute?.name, visibleRoutes]);
+
   const isCenterActive = Boolean(TAB_META[activeRoute?.name]?.isCenterAction);
   const [pillOpacity] = useState(() => new Animated.Value(isCenterActive ? 0 : 1));
   const [pillScale] = useState(() => new Animated.Value(isCenterActive ? 0.8 : 1));
@@ -271,7 +288,7 @@ function FloatingDock({ state, navigation }) {
 
   const hideDock = Boolean(activeRoute?.params?.fullScanner);
 
-  const tabCount = state.routes.length || 5;
+  const tabCount = visibleRoutes.length || 5;
   const slotWidth = rowWidth > 0 ? rowWidth / tabCount : 0;
   const pillColors = gradients?.goldPill || ['#EAD082', '#C7962D'];
 
@@ -295,7 +312,7 @@ function FloatingDock({ state, navigation }) {
 
   useEffect(() => {
     if (hideDock || slotWidth <= 0) return;
-    const targetX = state.index * slotWidth + (slotWidth - INDICATOR_WIDTH) / 2;
+    const targetX = activeTabIndex * slotWidth + (slotWidth - INDICATOR_WIDTH) / 2;
 
     if (!hasMeasuredRef.current) {
       pillX.setValue(targetX);
@@ -329,7 +346,7 @@ function FloatingDock({ state, navigation }) {
         }),
       ]),
     ]).start();
-  }, [hideDock, state.index, slotWidth, pillX, pillStretch]);
+  }, [hideDock, activeTabIndex, slotWidth, pillX, pillStretch]);
 
   if (hideDock) {
     return null;
@@ -389,12 +406,13 @@ function FloatingDock({ state, navigation }) {
             </Animated.View>
           )}
 
-          {state.routes.map((route, index) => {
-            const focused = state.index === index;
+          {visibleRoutes.map((route, index) => {
+            const focused = activeTabIndex === index;
+            const isExactRouteFocused = activeRoute?.key === route.key;
             const onPress = () => {
               const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-              if (!focused && !event.defaultPrevented) {
-                try { Haptics.selectionAsync(); } catch {}
+              if (!isExactRouteFocused && !event.defaultPrevented) {
+                try { Haptics.selectionAsync().catch(() => {}); } catch {}
                 navigation.navigate(route.name, route.params);
               }
             };
@@ -423,6 +441,7 @@ function FloatingDock({ state, navigation }) {
 function MainTabs() {
   return (
     <Tab.Navigator
+      backBehavior="history"
       tabBar={(props) => <FloatingDock {...props} />}
       screenOptions={{
         headerShown: false,
@@ -434,6 +453,7 @@ function MainTabs() {
       <Tab.Screen name="Scanner" component={QRScannerScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
+      <Tab.Screen name="BookingTracker" component={BookingTrackerScreen} />
     </Tab.Navigator>
   );
 }
@@ -479,11 +499,6 @@ export default function AppNavigator({ initialRouteName = 'Main' }) {
       />
 
       {/* Push Screens */}
-      <Stack.Screen
-        name="BookingTracker"
-        component={BookingTrackerScreen}
-        options={{ animation: 'slide_from_bottom' }}
-      />
       <Stack.Screen
         name="WelcomeTour"
         component={WelcomeTourRoute}
@@ -553,6 +568,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 3,
+  },
+  centerScanButtonWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
   },
   centerScanButton: {
     width: 56,

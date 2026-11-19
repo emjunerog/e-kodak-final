@@ -14,8 +14,8 @@ export default function CardDecorElements({ variant = 'tool', isDark = false }) 
   const colorGlaze = isDark
     ? ['rgba(217, 180, 108, 0.08)', 'rgba(122, 184, 255, 0.04)', 'rgba(15, 20, 30, 0.10)']
     : isSage
-      ? ['rgba(255, 255, 252, 0.18)', 'rgba(206, 222, 194, 0.18)', 'rgba(176, 198, 160, 0.24)']
-      : ['rgba(248, 228, 194, 0.24)', 'rgba(244, 246, 252, 0.12)', 'rgba(202, 220, 244, 0.26)'];
+      ? ['rgba(255, 255, 255, 0.16)', 'rgba(240, 246, 236, 0.10)', 'rgba(226, 236, 220, 0.14)']
+      : ['rgba(255, 251, 242, 0.14)', 'rgba(255, 255, 255, 0.12)', 'rgba(240, 245, 252, 0.14)'];
 
   const topSpecularColors = isDark
     ? ['rgba(255, 255, 255, 0.12)', 'rgba(255, 255, 255, 0.0)']

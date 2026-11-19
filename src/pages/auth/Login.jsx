@@ -6,10 +6,11 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useLocation, Navigate } from "react-router-dom";
-import { Camera, Mail, Lock, ArrowRight, Loader2, ShieldCheck, RefreshCw, AlertCircle, Eye, EyeOff, Sun, Moon } from "lucide-react";
+import { Camera, Mail, Lock, ArrowRight, ArrowLeft, Loader2, RefreshCw, AlertCircle, CheckCircle2, Eye, EyeOff, Sun, Moon } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import Toast from "../../components/ui/Toast";
+import OtpCodeInput from "../../components/auth/OtpCodeInput";
 
 // Google "G" SVG icon
 function GoogleIcon({ size = 19 }) {
@@ -105,7 +106,9 @@ export default function Login() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [resendStatus, setResendStatus] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [needsVerification, setNeedsVerification] = useState(false);
+  const [verificationMode, setVerificationMode] = useState("email"); // 'signup' | 'email'
   const [toast, setToast] = useState(null);
 
   // Camera Flash capture animation state & direction ('to-dark' | 'to-light')
@@ -166,9 +169,17 @@ export default function Login() {
     }
   }, [isDark]);
 
-  const { user, profile, loading, signInWithGoogle, verifyEmailCode, resendVerification, startIsolatedSession } = useAuth();
+  const { user, profile, loading, signInWithGoogle, verifyEmailCode, sendLoginCode, resendVerification, startIsolatedSession } = useAuth();
   const navigate  = useNavigate();
   const location  = useLocation();
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
 
   const isNewSessionRequest = location.search.includes('new_session=true');
 
@@ -331,7 +342,12 @@ export default function Login() {
     } catch (err) {
       const msg = err.message || "Failed to sign in.";
       setError(msg);
-      if (!isStaffOrAdminEmail && (msg.toLowerCase().includes("email not confirmed") || msg.toLowerCase().includes("invalid login"))) {
+      const lowerMsg = msg.toLowerCase();
+      if (!isStaffOrAdminEmail && lowerMsg.includes("email not confirmed")) {
+        setVerificationMode("signup");
+        setNeedsVerification(true);
+      } else if (!isStaffOrAdminEmail && lowerMsg.includes("invalid login")) {
+        setVerificationMode("email");
         setNeedsVerification(true);
       }
     } finally {
@@ -354,26 +370,66 @@ export default function Login() {
   const handleVerifySubmit = async (e) => {
     e.preventDefault();
     setError("");
+    const cleanEmail = email.trim().toLowerCase();
     if (!code || code.length !== 6) { setError("Please enter the 6-digit code."); return; }
     setIsSubmitting(true);
     try {
-      await verifyEmailCode(email, code);
-      navigate(from || '/dashboard', { replace: true });
+      const authData = await verifyEmailCode(cleanEmail, code, verificationMode);
+      const userId = authData?.user?.id;
+      let role = "customer";
+      if (userId) {
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", userId)
+          .single();
+        if (profileData) {
+          try {
+            sessionStorage.setItem("ekodak_user_profile", JSON.stringify(profileData));
+          } catch {}
+          role = profileData.role || "customer";
+        }
+      }
+      navigate(from || getDefaultRoute(role), { replace: true });
     } catch (err) {
-      setError(err.message || "Invalid or expired code.");
+      setError(err.message || "Invalid or expired code. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleResend = async () => {
-    setResendStatus(""); setError(""); setIsSubmitting(true);
+    if (resendCooldown > 0 || isSubmitting) return;
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      setError("Please enter your email address first.");
+      return;
+    }
+
+    setResendStatus("");
+    setError("");
+    setIsSubmitting(true);
     try {
-      await resendVerification(email);
-      setResendStatus("A new code has been sent to your email!");
-      setStep(2); setNeedsVerification(false);
+      if (verificationMode === "signup") {
+        await resendVerification(cleanEmail);
+      } else {
+        await sendLoginCode(cleanEmail);
+      }
+      setCode("");
+      setResendStatus(
+        step === 2
+          ? "A new verification code has been sent."
+          : "Verification code sent to your inbox."
+      );
+      setResendCooldown(60);
+      setStep(2);
+      setNeedsVerification(false);
     } catch (err) {
-      setError(err.message || "Failed to resend code.");
+      const msg = err.message || "Failed to send verification code.";
+      setError(msg);
+      if (step === 1 && msg.toLowerCase().includes("no account found")) {
+        setNeedsVerification(false);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -661,21 +717,43 @@ export default function Login() {
             {/* Gold Accent Bar above heading */}
             <div className="w-12 h-1 bg-gradient-to-r from-gold to-gold-light rounded-full mb-6" />
 
-            <div className="mb-7">
+            <div className="mb-6">
               <h1 className={`font-heading text-3xl sm:text-4xl font-semibold tracking-tight mb-2 ${
                 isDark ? 'text-white' : 'text-neutral-950'
               }`}>
-                Welcome <span className={`italic font-normal ${isDark ? 'text-gold' : 'text-[#87550e]'}`}>back</span>
+                {step === 1 ? (
+                  <>
+                    Welcome <span className={`italic font-normal ${isDark ? 'text-gold' : 'text-[#87550e]'}`}>back</span>
+                  </>
+                ) : (
+                  <>
+                    Verify your <span className={`italic font-normal ${isDark ? 'text-gold' : 'text-[#87550e]'}`}>email</span>
+                  </>
+                )}
               </h1>
-              <p className={`font-body text-sm ${isDark ? 'text-neutral-300' : 'text-neutral-700 font-medium'}`}>
-                {step === 1
-                  ? "Please enter your details to sign in."
-                  : `Enter the 6-digit code sent to ${email}.`}
-              </p>
+              {step === 1 ? (
+                <p className={`font-body text-sm ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
+                  Please enter your details to sign in.
+                </p>
+              ) : (
+                <div className="space-y-2.5">
+                  <p className={`font-body text-sm ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
+                    Enter the 6-digit code sent to your inbox.
+                  </p>
+                  <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border max-w-full ${
+                    isDark
+                      ? 'bg-white/[0.04] border-white/10 text-neutral-200'
+                      : 'bg-neutral-50 border-neutral-200 text-neutral-800'
+                  }`}>
+                    <Mail size={13} className="text-gold shrink-0" aria-hidden="true" />
+                    <span className="truncate">{email.trim().toLowerCase()}</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {error && (
-              <div className={`flex items-start gap-2.5 p-3.5 rounded-xl text-sm font-body mb-5 leading-snug border ${
+              <div className={`flex items-start gap-2.5 p-3.5 rounded-xl text-sm font-body mb-4 leading-snug border ${
                 isDark 
                   ? 'bg-red-950/60 border-red-500/40 text-red-200 backdrop-blur-sm' 
                   : 'bg-red-50 border-red-200 text-red-800'
@@ -685,12 +763,13 @@ export default function Login() {
               </div>
             )}
             {resendStatus && (
-              <div className={`p-3.5 rounded-xl text-sm font-body mb-5 border ${
+              <div className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-body mb-5 border ${
                 isDark 
                   ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200' 
                   : 'bg-emerald-50 border-emerald-200 text-emerald-800'
               }`}>
-                {resendStatus}
+                <CheckCircle2 size={15} className="text-emerald-500 shrink-0" aria-hidden="true" />
+                <span>{resendStatus}</span>
               </div>
             )}
 
@@ -842,21 +921,31 @@ export default function Login() {
                   </button>
 
                   {needsVerification && (
-                    <div className={`mt-4 p-4 rounded-xl border text-center animate-fade-in ${
+                    <div className={`mt-4 p-4 rounded-xl border text-left animate-fade-in space-y-3 ${
                       isDark 
-                        ? 'bg-amber-950/60 border-amber-500/40 text-amber-200 backdrop-blur-sm' 
-                        : 'bg-amber-50 border-amber-200 text-amber-900'
+                        ? 'bg-amber-950/50 border-amber-500/35 text-amber-100 backdrop-blur-sm' 
+                        : 'bg-[#fdfaf3] border-[#e6d7b8] text-neutral-800'
                     }`}>
-                      <p className="text-sm font-body mb-3">
-                        Your email may not be verified yet. Send a new verification code?
+                      <p className="text-xs sm:text-sm font-body leading-snug">
+                        {verificationMode === "signup"
+                          ? "Your email hasn't been confirmed yet. Send a 6-digit verification code to activate your account."
+                          : "Trouble signing in? If you already registered with this email, we can send a 6-digit sign-in code."}
                       </p>
                       <button
                         type="button"
                         onClick={handleResend}
-                        disabled={isSubmitting}
-                        className="w-full py-2.5 bg-amber-500/10 hover:bg-amber-500/20 text-gold-light text-sm font-medium border border-gold/30 rounded-lg transition-colors cursor-pointer"
+                        disabled={isSubmitting || resendCooldown > 0}
+                        className={`w-full h-10 rounded-lg text-xs sm:text-sm font-semibold transition-colors cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed ${
+                          isDark
+                            ? 'bg-gold/15 hover:bg-gold/25 text-gold-light border border-gold/35'
+                            : 'bg-neutral-900 hover:bg-neutral-800 text-[#e8cf9d]'
+                        }`}
                       >
-                        Send Verification Code
+                        {isSubmitting
+                          ? "Sending code…"
+                          : verificationMode === "signup"
+                            ? "Send Verification Code"
+                            : "Email Me a Sign-In Code"}
                       </button>
                     </div>
                   )}
@@ -878,55 +967,73 @@ export default function Login() {
 
             {/* ── STEP 2: OTP Verify ── */}
             {step === 2 && (
-              <div className="animate-fade-in text-center">
-                <div className="w-14 h-14 bg-gold/10 border border-gold/25 rounded-2xl flex items-center justify-center mx-auto mb-5 text-gold shadow-sm shadow-gold/10">
-                  <ShieldCheck size={28} strokeWidth={1.8} />
-                </div>
-                <form onSubmit={handleVerifySubmit} className="space-y-4">
-                  <input
-                    type="text"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
-                    className={`w-full text-center tracking-[0.5em] text-2xl py-3 border rounded-xl focus:ring-2 focus:ring-gold/30 focus:border-gold outline-none transition-all font-mono font-medium ${
-                      isDark 
-                        ? 'auth-input-dark bg-[#1a1c20] border-[#373b44] text-white' 
-                        : 'auth-input-light bg-white border-neutral-300 text-neutral-900'
-                    }`}
-                    placeholder="000000"
-                    maxLength={6}
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    disabled={isSubmitting}
-                  />
+              <div className="animate-fade-in">
+                <form onSubmit={handleVerifySubmit} className="space-y-5">
+                  <div>
+                    <label
+                      htmlFor="login-otp-0"
+                      className={`block text-xs font-semibold uppercase tracking-wider font-body mb-2.5 ${
+                        isDark ? 'text-neutral-300' : 'text-neutral-600'
+                      }`}
+                    >
+                      6-Digit Verification Code
+                    </label>
+                    <OtpCodeInput
+                      value={code}
+                      onChange={setCode}
+                      disabled={isSubmitting}
+                      isDark={isDark}
+                      idPrefix="login-otp"
+                    />
+                  </div>
+
                   <button
                     type="submit"
                     disabled={isSubmitting || code.length !== 6}
-                    className="w-full min-h-[52px] flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#e5be70] via-[#c9a96e] to-[#e8d5b0] hover:from-[#ecc77a] hover:to-[#f0ddbc] text-neutral-950 font-body font-semibold text-sm tracking-wide shadow-lg shadow-gold/20 hover:shadow-xl hover:shadow-gold/30 transition-all duration-200 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                    className="w-full min-h-[48px] flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#e5be70] via-[#c9a96e] to-[#e8d5b0] hover:from-[#ecc77a] hover:to-[#f0ddbc] text-neutral-950 font-body font-bold text-sm tracking-wide shadow-md shadow-gold/20 hover:shadow-lg hover:shadow-gold/30 transition-all duration-200 disabled:opacity-55 cursor-pointer disabled:cursor-not-allowed"
                   >
                     {isSubmitting ? (
-                      <><Loader2 size={17} className="animate-spin text-neutral-950" /> Verifying…</>
+                      <>
+                        <Loader2 size={17} className="animate-spin text-neutral-950" />
+                        <span>Verifying…</span>
+                      </>
                     ) : (
-                      <span>Verify & Sign In</span>
+                      <span>Verify &amp; Sign In</span>
                     )}
                   </button>
                 </form>
-                <div className="mt-5 flex flex-col gap-2">
-                  <button 
-                    onClick={handleResend} 
-                    disabled={isSubmitting} 
-                    className={`text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+
+                <div className={`mt-6 pt-4 border-t flex items-center justify-between gap-3 ${
+                  isDark ? 'border-white/10' : 'border-neutral-200/80'
+                }`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep(1);
+                      setError("");
+                      setResendStatus("");
+                      setCode("");
+                    }}
+                    className={`inline-flex items-center gap-1.5 text-xs font-semibold font-body transition-colors cursor-pointer ${
+                      isDark ? 'text-neutral-400 hover:text-neutral-200' : 'text-neutral-600 hover:text-neutral-900'
+                    }`}
+                  >
+                    <ArrowLeft size={13} />
+                    <span>Back to Login</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    disabled={isSubmitting || resendCooldown > 0}
+                    className={`inline-flex items-center gap-1.5 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                       isDark ? 'text-gold hover:text-gold-light' : 'text-[#87550e] hover:text-[#694206]'
                     }`}
                   >
-                    <RefreshCw size={13} /> Resend Code
-                  </button>
-                  <button 
-                    onClick={() => { setStep(1); setError(""); }} 
-                    className={`text-xs font-body transition-colors cursor-pointer mt-1 ${
-                      isDark ? 'text-neutral-400 hover:text-neutral-200' : 'text-neutral-600 hover:text-neutral-900 font-medium'
-                    }`}
-                  >
-                    ← Back to Login
+                    <RefreshCw size={12} className={isSubmitting ? 'animate-spin' : ''} />
+                    <span>
+                      {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
+                    </span>
                   </button>
                 </div>
               </div>

@@ -149,35 +149,38 @@ export function getPaymentTier(status) {
   return PAYMENT_META[eff]?.tier || PAYMENT_META.UNPAID.tier;
 }
 
-// ── 7-Stage Studio Production Pipeline ─────────────────────────────────────────
-export const PROGRESS_STEPS_7 = [
+// ── 8-Stage Studio Production Pipeline ─────────────────────────────────────────
+export const PROGRESS_STEPS_8 = [
   'Booking Received',
   'Approved & Reserved',
+  'Photographer Assigned',
   'Ongoing Pictorial',
   'Editing',
   'Retouching',
   'Booking Finalized',
   'Booking ready to pick-up (studio)',
 ];
+export const PROGRESS_STEPS_7 = PROGRESS_STEPS_8;
 
-// Map raw status to stage index (0 to 6)
-export const STEP_INDEX_7 = {
+// Map raw status to stage index (0 to 7; 8 = COMPLETED)
+export const STEP_INDEX_8 = {
   PENDING: 0,
   RESERVED: 0,
   CONFIRMED: 1,
-  PHOTOGRAPHER_ASSIGNED: 1,
-  CAPTURE: 2,
-  IN_PROGRESS: 2,
-  EDITING: 3,
-  RETOUCHING: 4,
-  FINALIZED: 5,
-  PRINTING: 5,
-  READY: 6,
-  UNDER_DELIVERY: 6,
-  COMPLETED: 7,
+  PHOTOGRAPHER_ASSIGNED: 2,
+  CAPTURE: 3,
+  IN_PROGRESS: 3,
+  EDITING: 4,
+  RETOUCHING: 5,
+  FINALIZED: 6,
+  PRINTING: 6,
+  READY: 7,
+  UNDER_DELIVERY: 7,
+  COMPLETED: 8,
   REJECTED: 0,
   CANCELLED: 0,
 };
+export const STEP_INDEX_7 = STEP_INDEX_8;
 
 // ── 4 Delivery Sub-Phases ──────────────────────────────────────────────────────
 export const DELIVERY_SUBPHASES = [
@@ -188,22 +191,18 @@ export const DELIVERY_SUBPHASES = [
 ];
 
 /**
- * Builds the progress step list for a booking status across the 7 stages.
- * If booking object is passed, verifies that admin has added schedule before advancing to stage 2.
+ * Builds the progress step list for a booking status across the 8 stages
+ * (including the dedicated Photographer Assigned milestone).
  * @param {string|object} bookingOrStatus - raw booking status or booking record object
  * @param {boolean} [isDelivery=false] - whether order is for delivery instead of pickup
  * @returns {Array<{label: string, done: boolean, active: boolean, step: number, isAwaitingSchedule?: boolean}>}
  */
 export function getProgressSteps(bookingOrStatus, isDelivery = false) {
   let key = 'PENDING';
-  let hasSchedule = true;
   let deliveryFlag = isDelivery;
 
   if (typeof bookingOrStatus === 'object' && bookingOrStatus !== null) {
     key = String(bookingOrStatus.status || 'PENDING').toUpperCase();
-    if ((key === 'CONFIRMED' || key === 'PHOTOGRAPHER_ASSIGNED') && (!bookingOrStatus.event_date || !bookingOrStatus.preferred_time)) {
-      hasSchedule = false;
-    }
     if (bookingOrStatus.delivery_address || bookingOrStatus.fulfillment_type === 'DELIVERY' || key === 'UNDER_DELIVERY') {
       deliveryFlag = true;
     }
@@ -211,21 +210,25 @@ export function getProgressSteps(bookingOrStatus, isDelivery = false) {
     key = String(bookingOrStatus || 'PENDING').toUpperCase();
   }
 
-  let doneIdx = STEP_INDEX_7[key] ?? 0;
-  // If status is CONFIRMED but admin hasn't added schedule yet, remain at stage 1 checkpoint
-  if (!hasSchedule && doneIdx === 1) {
-    doneIdx = 0;
-  }
+  const doneIdx = STEP_INDEX_8[key] ?? 0;
   const terminal = key === 'CANCELLED' || key === 'COMPLETED' || key === 'REJECTED';
+
+  const stage8Label =
+    key === 'COMPLETED'
+      ? 'Completed'
+      : deliveryFlag
+        ? 'Under Delivery'
+        : 'Ready for Pickup';
 
   const steps = [
     'Booking Received',
     'Approved & Reserved',
+    'Photographer Assigned',
     'Ongoing Pictorial',
     'Editing',
     'Retouching',
     'Booking Finalized',
-    deliveryFlag ? 'Booking under delivery' : 'Booking ready to pick-up (studio)',
+    stage8Label,
   ];
 
   return steps.map((label, i) => ({
@@ -233,7 +236,165 @@ export function getProgressSteps(bookingOrStatus, isDelivery = false) {
     step: i + 1,
     done: i < doneIdx,
     active: i === doneIdx && !terminal,
-    isAwaitingSchedule: i === 0 && !hasSchedule && (key === 'CONFIRMED' || key === 'PENDING' || key === 'RESERVED'),
+    isAwaitingSchedule: i === 0 && (key === 'PENDING' || key === 'RESERVED'),
   }));
+}
+
+/** Returns true if a booking already has an assigned photographer. */
+export function hasAssignedPhotographer(booking) {
+  return Boolean(booking?.photographer_id || booking?.photographer?.id);
+}
+
+/** Returns the assigned photographer's display name if available. */
+export function getPhotographerDisplayName(booking) {
+  if (!booking?.photographer) return '';
+  const first = booking.photographer.first_name || booking.photographer.profile?.first_name || '';
+  const last = booking.photographer.last_name || booking.photographer.profile?.last_name || '';
+  return `${first} ${last}`.trim();
+}
+
+/**
+ * Returns true once an admin has confirmed the booking's payment
+ * (payment_confirmed_at set, or stage has already moved beyond photographer assignment).
+ */
+export function isPaymentVerifiedByAdmin(booking) {
+  if (!booking) return false;
+  if (booking.payment_confirmed_at || booking.down_payment_confirmed) return true;
+  const status = String(booking.status || '').toUpperCase();
+  if (['CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING', 'FINALIZED', 'PRINTING', 'READY', 'UNDER_DELIVERY', 'COMPLETED'].includes(status)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Resolves the next direct Order Progress stage action for a booking row.
+ * Prioritizes payment confirmation BEFORE photographer assignment / pending steps:
+ *   1. Customer booked -> Booking Received (PENDING / RESERVED)
+ *   2. Payment submitted / detected -> Confirm Downpayment (CONFIRMED)
+ *   3. Approved & Reserved (CONFIRMED) / missing photographer -> Assign Photographer (PHOTOGRAPHER_ASSIGNED)
+ *   4. Photographer Assigned -> Start Pictorial (CAPTURE) -> Editing -> Retouching -> Finalized -> Ready -> Completed
+ *
+ * @param {object} booking
+ * @returns {null | { type: 'CONFIRM_PAYMENT' | 'APPROVE_AND_RESERVE' | 'ASSIGN_PHOTOGRAPHER' | 'ADVANCE_STAGE', label: string, nextStatus: string, nextLabel: string }}
+ */
+export function getNextBookingAction(booking) {
+  if (!booking) return null;
+  const status = String(booking.status || 'PENDING').toUpperCase();
+  const hasPhotog = hasAssignedPhotographer(booking);
+  const paymentVerified = isPaymentVerifiedByAdmin(booking);
+  const hasDownpaymentOnFile =
+    Number(booking.down_payment_amount || 0) > 0 ||
+    ['PAID', 'DOWNPAYMENT'].includes(getEffectivePaymentStatus(booking));
+  const isDelivery = Boolean(
+    booking.delivery_address ||
+    booking.fulfillment_type === 'DELIVERY' ||
+    status === 'UNDER_DELIVERY'
+  );
+
+  if (['COMPLETED', 'CANCELLED', 'REJECTED'].includes(status)) {
+    return null;
+  }
+
+  // Prioritize payment confirmation before photographer assignment / pending steps
+  if (['PENDING', 'RESERVED', 'CONFIRMED', 'PHOTOGRAPHER_ASSIGNED'].includes(status) && !paymentVerified) {
+    return {
+      type: 'CONFIRM_PAYMENT',
+      label: hasDownpaymentOnFile ? 'Confirm Downpayment' : 'Verify Payment',
+      nextStatus: status === 'PENDING' || status === 'RESERVED' ? 'CONFIRMED' : status,
+      nextLabel: getStatusLabel(status === 'PENDING' || status === 'RESERVED' ? 'CONFIRMED' : status),
+    };
+  }
+
+  if (status === 'PENDING' || status === 'RESERVED') {
+    return {
+      type: 'APPROVE_AND_RESERVE',
+      label: 'Confirm & Schedule',
+      nextStatus: 'CONFIRMED',
+      nextLabel: getStatusLabel('CONFIRMED'),
+    };
+  }
+
+  if (status === 'CONFIRMED') {
+    if (!hasPhotog) {
+      return {
+        type: 'ASSIGN_PHOTOGRAPHER',
+        label: 'Assign Photographer',
+        nextStatus: 'PHOTOGRAPHER_ASSIGNED',
+        nextLabel: getStatusLabel('PHOTOGRAPHER_ASSIGNED'),
+      };
+    }
+    return {
+      type: 'ADVANCE_STAGE',
+      label: 'Start Pictorial',
+      nextStatus: 'CAPTURE',
+      nextLabel: getStatusLabel('CAPTURE'),
+    };
+  }
+
+  if (status === 'PHOTOGRAPHER_ASSIGNED') {
+    if (!hasPhotog) {
+      return {
+        type: 'ASSIGN_PHOTOGRAPHER',
+        label: 'Assign Photographer',
+        nextStatus: 'PHOTOGRAPHER_ASSIGNED',
+        nextLabel: getStatusLabel('PHOTOGRAPHER_ASSIGNED'),
+      };
+    }
+    return {
+      type: 'ADVANCE_STAGE',
+      label: 'Start Pictorial',
+      nextStatus: 'CAPTURE',
+      nextLabel: getStatusLabel('CAPTURE'),
+    };
+  }
+
+  if (status === 'CAPTURE' || status === 'IN_PROGRESS') {
+    return {
+      type: 'ADVANCE_STAGE',
+      label: 'Move to Editing',
+      nextStatus: 'EDITING',
+      nextLabel: getStatusLabel('EDITING'),
+    };
+  }
+
+  if (status === 'EDITING') {
+    return {
+      type: 'ADVANCE_STAGE',
+      label: 'Move to Retouching',
+      nextStatus: 'RETOUCHING',
+      nextLabel: getStatusLabel('RETOUCHING'),
+    };
+  }
+
+  if (status === 'RETOUCHING') {
+    return {
+      type: 'ADVANCE_STAGE',
+      label: 'Finalize Order',
+      nextStatus: 'FINALIZED',
+      nextLabel: getStatusLabel('FINALIZED'),
+    };
+  }
+
+  if (status === 'FINALIZED' || status === 'PRINTING') {
+    const nextStatus = isDelivery ? 'UNDER_DELIVERY' : 'READY';
+    return {
+      type: 'ADVANCE_STAGE',
+      label: isDelivery ? 'Move to Under Delivery' : 'Mark Ready for Pickup',
+      nextStatus,
+      nextLabel: getStatusLabel(nextStatus, isDelivery),
+    };
+  }
+
+  if (status === 'READY' || status === 'UNDER_DELIVERY') {
+    return {
+      type: 'ADVANCE_STAGE',
+      label: 'Complete Order',
+      nextStatus: 'COMPLETED',
+      nextLabel: getStatusLabel('COMPLETED'),
+    };
+  }
+
+  return null;
 }
 

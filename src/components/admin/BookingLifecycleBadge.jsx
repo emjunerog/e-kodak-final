@@ -20,6 +20,7 @@ import {
   getPaymentLabel, 
   getPaymentTier,
   getEffectivePaymentStatus,
+  hasAssignedPhotographer,
 } from '../../lib/bookingUtils';
 
 /**
@@ -88,13 +89,17 @@ export default function BookingLifecycleBadge({
 
   const statusKey = String(rawStatus).toUpperCase();
   const paymentKey = String(effectivePayStatus).toUpperCase();
+  const isPhotographerPending =
+    statusKey === 'PHOTOGRAPHER_ASSIGNED' &&
+    Boolean(booking) &&
+    !hasAssignedPhotographer(booking);
 
-  const statusLabel = getStatusLabel(rawStatus);
-  const statusTier = getStatusTier(rawStatus);
+  const statusLabel = isPhotographerPending ? 'Photographer Pending' : getStatusLabel(rawStatus);
+  const statusTier = isPhotographerPending ? 'gold' : getStatusTier(rawStatus);
   const paymentLabel = getPaymentLabel(effectivePayStatus);
   const paymentTier = getPaymentTier(effectivePayStatus);
 
-  const StatusIcon = STATUS_ICONS[statusKey] || Clock;
+  const StatusIcon = isPhotographerPending ? Clock : (STATUS_ICONS[statusKey] || Clock);
   const PaymentIcon = PAYMENT_ICONS[paymentKey] || AlertCircle;
 
   const sTier = TIER_CLASSES[statusTier] || TIER_CLASSES.neutral;
@@ -107,18 +112,9 @@ export default function BookingLifecycleBadge({
 
     if (variant === 'text') {
       return (
-        <div className="inline-flex items-center gap-1.5 text-xs font-semibold font-body" title={statusLabel}>
-          <StatusIcon
-            size={13}
-            className={
-              isPrimary
-                ? 'text-neutral-900 shrink-0'
-                : isGold
-                  ? 'text-amber-700 shrink-0'
-                  : 'text-neutral-500 shrink-0'
-            }
-          />
-          <span className={isPrimary ? 'text-neutral-900 font-semibold' : isGold ? 'text-amber-900 font-semibold' : 'text-neutral-700 font-medium'}>
+        <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-normal text-neutral-900 font-body" title={statusLabel}>
+          <StatusIcon size={14} className="text-neutral-800 shrink-0" />
+          <span className="text-neutral-900 font-normal">
             {statusLabel}
           </span>
         </div>

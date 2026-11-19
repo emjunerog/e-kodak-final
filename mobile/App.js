@@ -7,7 +7,11 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AppState, BackHandler, StatusBar, View } from 'react-native';
+import { AppState, BackHandler, StatusBar, StyleSheet } from 'react-native';
+
+if (!StyleSheet.absoluteFillObject) {
+  StyleSheet.absoluteFillObject = StyleSheet.absoluteFill;
+}
 import {
   NavigationContainer,
   DefaultTheme,
@@ -35,6 +39,7 @@ import { TourProvider, useTour } from './src/context/TourContext';
 import TourSpotlightOverlay from './src/components/TourSpotlightOverlay';
 import { verifyPhotographerSession } from './src/services/bookingService';
 import { setUserRole, getSavedBookings } from './src/services/storageService';
+import { ResponsiveViewport } from './src/utils/responsive';
 import { Typography } from './src/theme';
 
 const navigationRef = createNavigationContainerRef();
@@ -51,7 +56,7 @@ function AppContent({
 }) {
   const { isDark, colors } = useTheme();
   const tour = useTour();
-  const [splashMode, setSplashMode] = useState('enter');
+  const [splashMode, setSplashMode] = useState(() => (showTutorial ? null : 'enter'));
   const [splashKey, setSplashKey] = useState(0);
   const appStateRef = useRef(AppState.currentState);
   const wentBackgroundAtRef = useRef(0);
@@ -161,7 +166,7 @@ function AppContent({
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg.base }}>
+    <ResponsiveViewport colors={colors} isDark={isDark}>
       <StatusBar
         barStyle={isDark ? 'light-content' : 'dark-content'}
         backgroundColor={colors.bg.base}
@@ -203,7 +208,7 @@ function AppContent({
           onComplete={handleSplashComplete}
         />
       )}
-    </View>
+    </ResponsiveViewport>
   );
 }
 

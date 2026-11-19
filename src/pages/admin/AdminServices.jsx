@@ -11,6 +11,8 @@ import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStri
 import StudioDropdown from '../../components/ui/StudioDropdown';
 import ImageDirectUploader from '../../components/ui/ImageDirectUploader';
 import Modal from '../../components/ui/Modal';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import Toast from '../../components/ui/Toast';
 import { 
   getAdminServices, 
   createService,
@@ -43,6 +45,14 @@ export default function AdminServices() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionSuccessMsg, setActionSuccessMsg] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null);
+
+  const notifyError = (msg) => setToast({ type: 'error', message: msg });
+  const notifySuccess = (msg) => {
+    setActionSuccessMsg(msg);
+    setTimeout(() => setActionSuccessMsg(null), 3500);
+  };
 
   // Filters & Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -196,7 +206,7 @@ export default function AdminServices() {
       loadData();
     } catch (err) {
       console.error('Toggle active error:', err);
-      alert('Failed to update service status: ' + err.message);
+      notifyError('Failed to update service status: ' + err.message);
     }
   };
 
@@ -418,6 +428,9 @@ export default function AdminServices() {
               allCategories={categories}
               onRefresh={loadData}
               onToggleActive={handleToggleServiceActive}
+              onError={notifyError}
+              onSuccess={notifySuccess}
+              onConfirm={setConfirmDialog}
             />
           )}
           {activeTab === 'categories' && (
@@ -425,17 +438,25 @@ export default function AdminServices() {
               categories={filteredCategories}
               services={services}
               onRefresh={loadData}
+              onError={notifyError}
+              onSuccess={notifySuccess}
+              onConfirm={setConfirmDialog}
             />
           )}
           {activeTab === 'addons' && (
             <AddOnsView
               addOns={filteredAddOns}
               onRefresh={loadData}
+              onError={notifyError}
+              onSuccess={notifySuccess}
+              onConfirm={setConfirmDialog}
             />
           )}
         </>
       )}
       </div>
+      <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
+      <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   );
 }
@@ -463,7 +484,7 @@ const SESSION_TYPE_PRESETS = [
   'Full Day Coverage'
 ];
 
-function ServicesView({ services, allCategories, onRefresh, onToggleActive }) {
+function ServicesView({ services, allCategories, onRefresh, onToggleActive, onError, onSuccess, onConfirm }) {
   // Main Package Modal state (Package-level details)
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -619,7 +640,7 @@ function ServicesView({ services, allCategories, onRefresh, onToggleActive }) {
       setExpandedServices(prev => ({ ...prev, [service.id]: true }));
       onRefresh();
     } catch (err) {
-      alert('Error updating set: ' + err.message);
+      onError?.('Error updating set: ' + err.message);
     } finally {
       setSavingQuickSet(false);
     }
@@ -679,7 +700,7 @@ function ServicesView({ services, allCategories, onRefresh, onToggleActive }) {
       await updateService(service.id, { tiers: currentTiers });
       onRefresh();
     } catch (err) {
-      alert('Failed to update popular status: ' + err.message);
+      onError?.('Failed to update popular status: ' + err.message);
     }
   };
 
@@ -700,7 +721,7 @@ function ServicesView({ services, allCategories, onRefresh, onToggleActive }) {
       setExpandedServices(prev => ({ ...prev, [service.id]: true }));
       onRefresh();
     } catch (err) {
-      alert('Failed to duplicate set: ' + err.message);
+      onError?.('Failed to duplicate set: ' + err.message);
     }
   };
 
@@ -718,28 +739,32 @@ function ServicesView({ services, allCategories, onRefresh, onToggleActive }) {
       await updateService(service.id, { tiers: currentTiers });
       onRefresh();
     } catch (err) {
-      alert('Failed to reorder sets: ' + err.message);
+      onError?.('Failed to reorder sets: ' + err.message);
     }
   };
 
   // 1-Click Delete Set
-  const handleDeleteSet = async (service, tierIndex, e) => {
+  const handleDeleteSet = (service, tierIndex, e) => {
     if (e) e.stopPropagation();
     const currentTiers = Array.isArray(service.tiers) ? JSON.parse(JSON.stringify(service.tiers)) : [];
     const target = currentTiers[tierIndex];
     if (!target) return;
 
-    if (!window.confirm(`Delete set "${target.name || 'Set ' + (tierIndex + 1)}" from "${service.name}"?`)) {
-      return;
-    }
-
-    currentTiers.splice(tierIndex, 1);
-    try {
-      await updateService(service.id, { tiers: currentTiers });
-      onRefresh();
-    } catch (err) {
-      alert('Failed to delete set: ' + err.message);
-    }
+    onConfirm?.({
+      title: 'Delete Set?',
+      message: `Delete set "${target.name || 'Set ' + (tierIndex + 1)}" from "${service.name}"?`,
+      confirmLabel: 'Delete Set',
+      onConfirm: async () => {
+        currentTiers.splice(tierIndex, 1);
+        try {
+          await updateService(service.id, { tiers: currentTiers });
+          onSuccess?.('Set removed from package.');
+          onRefresh();
+        } catch (err) {
+          onError?.('Failed to delete set: ' + err.message);
+        }
+      },
+    });
   };
 
   // Edit Package Details Modal Handlers
@@ -798,11 +823,17 @@ function ServicesView({ services, allCategories, onRefresh, onToggleActive }) {
     setModalOpen(true);
   };
 
-  const handleDelete = async (id, name) => {
-    if (window.confirm(`Are you sure you want to delete package "${name}"? This action cannot be undone.`)) {
-      await deleteService(id);
-      onRefresh();
-    }
+  const handleDelete = (id, name) => {
+    onConfirm?.({
+      title: 'Delete Package?',
+      message: `Are you sure you want to delete package "${name}"? This action cannot be undone.`,
+      confirmLabel: 'Delete Package',
+      onConfirm: async () => {
+        await deleteService(id);
+        onSuccess?.(`Package "${name}" deleted.`);
+        onRefresh();
+      },
+    });
   };
 
   const handlePackageSubmit = async (e) => {
@@ -829,7 +860,7 @@ function ServicesView({ services, allCategories, onRefresh, onToggleActive }) {
       setModalOpen(false);
       onRefresh();
     } catch (err) {
-      alert('Error saving package: ' + err.message);
+      onError?.('Error saving package: ' + err.message);
     } finally {
       setSaving(false);
     }
@@ -1860,7 +1891,7 @@ function ServicesView({ services, allCategories, onRefresh, onToggleActive }) {
 
 
 // ── 2. Categories View ────────────────────────────────────────────────────────
-function CategoriesView({ categories = [], services = [], onRefresh }) {
+function CategoriesView({ categories = [], services = [], onRefresh, onError, onSuccess, onConfirm }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState({ name: '', description: '', is_active: true });
@@ -1915,15 +1946,21 @@ function CategoriesView({ categories = [], services = [], onRefresh }) {
     setModalOpen(true);
   };
 
-  const handleDelete = async (id, name) => {
-    if (window.confirm(`Are you sure you want to delete category "${name}"?`)) {
-      if (String(id).startsWith('derived_')) {
-        alert('This category is actively mapped to existing packages in your database. To remove it, edit the packages or reassign their category.');
-        return;
-      }
-      await deleteServiceCategory(id);
-      onRefresh();
+  const handleDelete = (id, name) => {
+    if (String(id).startsWith('derived_')) {
+      onError?.('This category is actively mapped to existing packages in your database. Reassign those packages first.');
+      return;
     }
+    onConfirm?.({
+      title: 'Delete Category?',
+      message: `Are you sure you want to delete category "${name}"?`,
+      confirmLabel: 'Delete Category',
+      onConfirm: async () => {
+        await deleteServiceCategory(id);
+        onSuccess?.(`Category "${name}" deleted.`);
+        onRefresh();
+      },
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -1938,7 +1975,7 @@ function CategoriesView({ categories = [], services = [], onRefresh }) {
       setModalOpen(false);
       onRefresh();
     } catch (err) {
-      alert('Error saving category: ' + err.message);
+      onError?.('Error saving category: ' + err.message);
     } finally {
       setSaving(false);
     }
@@ -2093,7 +2130,7 @@ function CategoriesView({ categories = [], services = [], onRefresh }) {
 }
 
 // ── 3. Add-Ons View with Multi-Select Bulk Deletion ────────────────────────────
-function AddOnsView({ addOns = [], onRefresh }) {
+function AddOnsView({ addOns = [], onRefresh, onError, onSuccess, onConfirm }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState({ name: '', price: 0, category: 'prints', description: '', is_active: true });
@@ -2137,48 +2174,66 @@ function AddOnsView({ addOns = [], onRefresh }) {
     setModalOpen(true);
   };
 
-  const handleDelete = async (id, name) => {
-    if (window.confirm(`Are you sure you want to delete add-on "${name}"?`)) {
-      await deleteAddOn(id);
-      setSelectedIds(prev => prev.filter(x => x !== id));
-      onRefresh();
-    }
+  const handleDelete = (id, name) => {
+    onConfirm?.({
+      title: 'Delete Add-On?',
+      message: `Are you sure you want to delete add-on "${name}"?`,
+      confirmLabel: 'Delete Add-On',
+      onConfirm: async () => {
+        await deleteAddOn(id);
+        setSelectedIds(prev => prev.filter(x => x !== id));
+        onSuccess?.(`Add-on "${name}" removed.`);
+        onRefresh();
+      },
+    });
   };
 
   // Bulk Delete Selected Add-Ons
-  const handleDeleteBatch = async () => {
+  const handleDeleteBatch = () => {
     if (selectedIds.length === 0) return;
     const count = selectedIds.length;
-    if (window.confirm(`Are you sure you want to permanently delete all ${count} selected add-on items?`)) {
-      setDeletingBatch(true);
-      try {
-        await deleteAddOnsBatch(selectedIds);
-        setSelectedIds([]);
-        onRefresh();
-      } catch (err) {
-        alert('Failed to delete selected items: ' + err.message);
-      } finally {
-        setDeletingBatch(false);
-      }
-    }
+    onConfirm?.({
+      title: `Delete ${count} Selected Add-Ons?`,
+      message: `Are you sure you want to permanently delete all ${count} selected add-on items?`,
+      confirmLabel: `Delete (${count})`,
+      onConfirm: async () => {
+        setDeletingBatch(true);
+        try {
+          await deleteAddOnsBatch(selectedIds);
+          setSelectedIds([]);
+          onSuccess?.(`Deleted ${count} selected add-ons.`);
+          onRefresh();
+        } catch (err) {
+          onError?.('Failed to delete selected items: ' + err.message);
+        } finally {
+          setDeletingBatch(false);
+        }
+      },
+    });
   };
 
   // Wipe / Purge All Add-Ons from Table
-  const handleDeleteAll = async () => {
+  const handleDeleteAll = () => {
     if (addOns.length === 0) return;
-    if (window.confirm(`WARNING: Are you sure you want to delete ALL ${addOns.length} add-on items in this table? This cannot be undone.`)) {
-      setDeletingBatch(true);
-      try {
-        const allIds = addOns.map(a => a.id);
-        await deleteAddOnsBatch(allIds);
-        setSelectedIds([]);
-        onRefresh();
-      } catch (err) {
-        alert('Failed to clear add-ons table: ' + err.message);
-      } finally {
-        setDeletingBatch(false);
-      }
-    }
+    onConfirm?.({
+      title: 'Clear All Add-Ons?',
+      message: `WARNING: Are you sure you want to delete ALL ${addOns.length} add-on items in this table? This cannot be undone.`,
+      confirmLabel: 'Delete All',
+      onConfirm: async () => {
+        setDeletingBatch(true);
+        try {
+          const allIds = addOns.map(a => a.id);
+          await deleteAddOnsBatch(allIds);
+          setSelectedIds([]);
+          onSuccess?.('All add-ons removed.');
+          onRefresh();
+        } catch (err) {
+          onError?.('Failed to clear add-ons table: ' + err.message);
+        } finally {
+          setDeletingBatch(false);
+        }
+      },
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -2200,7 +2255,7 @@ function AddOnsView({ addOns = [], onRefresh }) {
       setModalOpen(false);
       onRefresh();
     } catch (err) {
-      alert('Error saving add-on: ' + err.message);
+      onError?.('Error saving add-on: ' + err.message);
     } finally {
       setSaving(false);
     }

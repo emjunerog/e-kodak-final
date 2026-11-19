@@ -15,8 +15,8 @@ import { BlurView } from 'expo-blur';
 import PremiumIcon from './PremiumIcon';
 import * as Haptics from 'expo-haptics';
 import {
-  QrCode, FileText, Sparkles, X, Camera,
-  ShieldCheck, ArrowRight, ArrowLeft
+  QrCode, FileText, Sparkles, X,
+  ArrowRight, ArrowLeft,
 } from 'lucide-react-native';
 
 import GlassCard from './GlassCard';
@@ -48,20 +48,20 @@ const GUIDE_STEPS = [
 ];
 
 export default function ScanInstructionsModal({ visible, onClose, onOpenScanner }) {
-  const { isDark, colors, gradients } = useTheme();
-  const styles = getStyles(colors, isDark);
+  const { isDark, colors } = useTheme();
+  const styles = getStyles(colors);
   const [currentStep, setCurrentStep] = useState(0);
 
   if (!visible) return null;
 
   const handleScanPress = () => {
-    try { Haptics.selectionAsync(); } catch {}
+    try { Haptics.selectionAsync().catch(() => {}); } catch {}
     onClose?.();
     onOpenScanner?.();
   };
 
   const handleNext = () => {
-    try { Haptics.selectionAsync(); } catch {}
+    try { Haptics.selectionAsync().catch(() => {}); } catch {}
     if (currentStep < GUIDE_STEPS.length - 1) {
       setCurrentStep(currentStep + 1);
     } else {
@@ -70,7 +70,7 @@ export default function ScanInstructionsModal({ visible, onClose, onOpenScanner 
   };
 
   const handlePrev = () => {
-    try { Haptics.selectionAsync(); } catch {}
+    try { Haptics.selectionAsync().catch(() => {}); } catch {}
     if (currentStep > 0) {
       setCurrentStep(currentStep - 1);
     }
@@ -102,13 +102,7 @@ export default function ScanInstructionsModal({ visible, onClose, onOpenScanner 
             {/* Header row */}
             <View style={styles.headerRow}>
               <View style={styles.headerLeft}>
-                <PremiumIcon icon={Camera} size={20} box={40} tone="soft" glow />
-                <View>
-                  <View style={styles.headerBadge}>
-                    <Text style={styles.headerBadgeText}>CLIENT QUICK GUIDE</Text>
-                  </View>
-                  <Text style={styles.headerTitle}>How to Track Session</Text>
-                </View>
+                <Text style={styles.headerTitle}>How to Track Session</Text>
               </View>
 
               <PremiumIcon
@@ -154,28 +148,15 @@ export default function ScanInstructionsModal({ visible, onClose, onOpenScanner 
             <View style={styles.stepContentBox}>
               <View style={styles.stepMetaRow}>
                 <Text style={styles.stepNumText}>STEP 0{currentStep + 1}</Text>
-                <View style={styles.tagPill}>
-                  <Text style={styles.tagPillText}>{stepData.tag}</Text>
-                </View>
               </View>
-              
+
               <View style={styles.stepTitleRow}>
                 <StepIcon size={20} color={colors.gold.DEFAULT} />
                 <Text style={styles.stepTitle}>{stepData.title}</Text>
               </View>
-              
+
               <Text style={styles.stepDesc}>{stepData.desc}</Text>
             </View>
-
-            {/* Studio Security Callout */}
-            {currentStep === 2 && (
-              <View style={styles.securityBox}>
-                <ShieldCheck size={16} color={colors.gold.light} />
-                <Text style={styles.securityText}>
-                  Your pass token is securely stored offline. Profile data synchronizes securely.
-                </Text>
-              </View>
-            )}
 
             {/* Bottom Actions */}
             <View style={styles.actionsGroup}>
@@ -207,7 +188,7 @@ export default function ScanInstructionsModal({ visible, onClose, onOpenScanner 
   );
 }
 
-const getStyles = (colors, isDark) => StyleSheet.create({
+const getStyles = (colors) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(8, 10, 14, 0.68)',
@@ -217,7 +198,7 @@ const getStyles = (colors, isDark) => StyleSheet.create({
   },
   modalCardWrapper: {
     width: '100%',
-    maxWidth: 440,
+    maxWidth: 420,
     maxHeight: height * 0.9,
   },
   modalCard: {
@@ -234,34 +215,8 @@ const getStyles = (colors, isDark) => StyleSheet.create({
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing[3],
     flex: 1,
-  },
-  headerIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: Radius.md,
-    backgroundColor: colors.gold.bg,
-    borderWidth: 1,
-    borderColor: colors.gold.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(212, 168, 83, 0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-    borderColor: colors.gold.border,
-    marginBottom: 3,
-  },
-  headerBadgeText: {
-    fontFamily: Typography.fontBodySemi,
-    fontSize: 9,
-    letterSpacing: 0.8,
-    color: colors.gold.light,
+    paddingRight: Spacing[2],
   },
   headerTitle: {
     fontFamily: Typography.fontHeadingSemi,
@@ -347,24 +302,6 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     fontSize: Typography.size.sm,
     color: colors.text.secondary,
     lineHeight: 20,
-  },
-  securityBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(212, 168, 83, 0.05)',
-    borderWidth: 1,
-    borderColor: colors.gold.border,
-    borderRadius: Radius.md,
-    padding: Spacing[3],
-    marginBottom: Spacing[4],
-  },
-  securityText: {
-    flex: 1,
-    fontFamily: Typography.fontBody,
-    fontSize: 11,
-    color: colors.text.muted,
-    lineHeight: 16,
   },
   actionsGroup: {
     flexDirection: 'row',

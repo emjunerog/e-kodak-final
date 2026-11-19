@@ -34,6 +34,8 @@ export async function saveBookingToken(token, bookingData = {}) {
     const updated = [
       {
         token,
+        bookingId:     bookingData.id || null,
+        customerId:    bookingData.customer_id || bookingData.profile?.id || null,
         bookingNumber: bookingData.booking_number || '',
         clientName:    bookingData.profile?.full_name || bookingData.client_name || '',
         clientEmail:   bookingData.profile?.email || '',
@@ -304,6 +306,7 @@ export async function getAppSettings() {
     sound: true,
     haptics: true,
     highContrast: false,
+    fontScale: 1,
   };
   try {
     const raw = await AsyncStorage.getItem(KEYS.SETTINGS);

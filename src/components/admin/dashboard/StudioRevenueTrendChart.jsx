@@ -28,35 +28,9 @@ import {
   compactNumber,
 } from './chartUtils';
 
-/**
- * Smooth an array of numbers using a Gaussian-like bell window.
- * Ensures the peak matches the true max, baseline stays at 0, and transitions are rounded and non-pointy.
- */
-function getSmoothedValues(rawNumbers = []) {
-  if (rawNumbers.length <= 2) return rawNumbers;
-  const max = Math.max(...rawNumbers, 0);
-  if (max === 0) return rawNumbers.map(() => 0);
-
-  // 5-point bell weights for natural curvature
-  const kernel = [0.15, 0.45, 1, 0.45, 0.15];
-  const mid = 2;
-
-  const smoothed = rawNumbers.map((_, i) => {
-    let sum = 0;
-    let weight = 0;
-    for (let k = 0; k < kernel.length; k++) {
-      const idx = i + (k - mid);
-      if (idx >= 0 && idx < rawNumbers.length) {
-        sum += rawNumbers[idx] * kernel[k];
-        weight += kernel[k];
-      }
-    }
-    return weight > 0 ? sum / weight : 0;
-  });
-
-  const maxSmoothed = Math.max(...smoothed, 0);
-  const scale = maxSmoothed > 0 ? max / maxSmoothed : 1;
-  return smoothed.map((v) => Math.max(0, Math.round(v * scale * 100) / 100));
+function usePrefersReducedMotion() {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 /**
@@ -93,13 +67,14 @@ function TrajectoryKpiCard({
         {/* Prioritized Sparkline Micro-graph */}
         <div className="flex-1 h-9 sm:h-10 min-w-[95px] max-w-[145px]">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={sparkData} margin={{ top: 2, right: 1, left: 1, bottom: 0 }}>
+            <AreaChart data={sparkData} margin={{ top: 4, right: 3, left: 3, bottom: 3 }}>
               <defs>
                 <linearGradient id={sparkId} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={strokeColor} stopOpacity={0.35} />
                   <stop offset="100%" stopColor={strokeColor} stopOpacity={0.02} />
                 </linearGradient>
               </defs>
+              <YAxis hide domain={[0, (dataMax) => Math.max(dataMax || 0, 1)]} />
               <Tooltip
                 content={({ active, payload }) => {
                   if (!active || !payload?.length) return null;
@@ -123,7 +98,7 @@ function TrajectoryKpiCard({
                 fill={`url(#${sparkId})`}
                 dot={false}
                 activeDot={{ r: 3.5, fill: strokeColor, stroke: '#ffffff', strokeWidth: 1.5 }}
-                isAnimationActive={true}
+                isAnimationActive={false}
               />
             </AreaChart>
           </ResponsiveContainer>
@@ -249,6 +224,7 @@ export default function StudioRevenueTrendChart({
   const [metric, setMetric] = useState('revenue');
   const [compare, setCompare] = useState(false);
   const gradientId = useId().replace(/:/g, '');
+  const reducedMotion = usePrefersReducedMotion();
 
   const timeline = useMemo(() => buildTimeline(bookings, range), [bookings, range]);
   const previous = useMemo(
@@ -276,25 +252,21 @@ export default function StudioRevenueTrendChart({
     return { gross, collected, rate, avg, count };
   }, [buckets]);
 
-  /* ── Chart data for Recharts with smooth, non-pointy curvature ─────────── */
+  /* ── Chart data for Recharts using exact bucket values (never synthetic smoothing) ── */
   const chartData = useMemo(() => {
     const rawValues = buckets.map((b) => (metric === 'revenue' ? b.revenue : b.count));
-    const smoothedValues = getSmoothedValues(rawValues);
 
     const rawCompareValues = previous?.values?.length
       ? previous.values.map((v) => (metric === 'revenue' ? v.revenue : v.count))
-      : [];
-    const smoothedCompare = rawCompareValues.length
-      ? getSmoothedValues(rawCompareValues)
       : [];
 
     return buckets.map((bucket, index) => {
       return {
         label: bucket.label,
         fullLabel: bucket.fullLabel,
-        value: smoothedValues[index],
+        value: rawValues[index],
         rawVal: rawValues[index],
-        compareValue: smoothedCompare.length ? smoothedCompare[index] : null,
+        compareValue: rawCompareValues.length ? rawCompareValues[index] : null,
         rawCompareVal: rawCompareValues[index] ?? null,
         revenue: bucket.revenue,
         count: bucket.count,
@@ -304,30 +276,30 @@ export default function StudioRevenueTrendChart({
     });
   }, [buckets, previous, metric]);
 
-  /* ── Sparkline series for KPI cards (smoothed for non-pointy look) ───── */
-  const sparkRevenue = useMemo(() => {
-    const raw = buckets.map((b) => b.revenue);
-    const smoothed = getSmoothedValues(raw);
-    return buckets.map((b, i) => ({ label: b.label, val: smoothed[i], rawVal: raw[i] }));
-  }, [buckets]);
+  /* ── Sparkline series for KPI cards using true bucket values ───── */
+  const sparkRevenue = useMemo(
+    () => buckets.map((b) => ({ label: b.label, val: b.revenue, rawVal: b.revenue })),
+    [buckets]
+  );
 
-  const sparkVolume = useMemo(() => {
-    const raw = buckets.map((b) => b.count);
-    const smoothed = getSmoothedValues(raw);
-    return buckets.map((b, i) => ({ label: b.label, val: smoothed[i], rawVal: raw[i] }));
-  }, [buckets]);
+  const sparkVolume = useMemo(
+    () => buckets.map((b) => ({ label: b.label, val: b.count, rawVal: b.count })),
+    [buckets]
+  );
 
-  const sparkAvg = useMemo(() => {
-    const raw = buckets.map((b) => (b.count > 0 ? Math.round(b.revenue / b.count) : 0));
-    const smoothed = getSmoothedValues(raw);
-    return buckets.map((b, i) => ({ label: b.label, val: smoothed[i], rawVal: raw[i] }));
-  }, [buckets]);
+  const sparkAvg = useMemo(
+    () =>
+      buckets.map((b) => {
+        const avg = b.count > 0 ? Math.round(b.revenue / b.count) : 0;
+        return { label: b.label, val: avg, rawVal: avg };
+      }),
+    [buckets]
+  );
 
-  const sparkClearance = useMemo(() => {
-    const raw = buckets.map((b) => b.collected);
-    const smoothed = getSmoothedValues(raw);
-    return buckets.map((b, i) => ({ label: b.label, val: smoothed[i], rawVal: raw[i] }));
-  }, [buckets]);
+  const sparkClearance = useMemo(
+    () => buckets.map((b) => ({ label: b.label, val: b.collected, rawVal: b.collected })),
+    [buckets]
+  );
 
   const formatTick = (val) => (metric === 'revenue' ? compactPeso(val) : compactNumber(val));
 
@@ -398,7 +370,7 @@ export default function StudioRevenueTrendChart({
       {/* ── Main Layout: Graph on Left, Dedicated KPI Cards Column on Right ── */}
       <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-4 pt-4 flex-1 items-stretch">
         {/* Left Column: Graph Area */}
-        <div className="lg:col-span-8 flex flex-col justify-between">
+        <div className="lg:col-span-8 min-w-0 flex flex-col justify-between">
           {/* Graph Subheader: Active Metric & In-Graph Revenue / Bookings Toggle */}
           <div className="flex items-center justify-between pb-2">
             <div className="flex items-center gap-2">
@@ -465,7 +437,7 @@ export default function StudioRevenueTrendChart({
             ) : (
               <div className="h-full w-full pt-1">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -18, bottom: 0 }}>
+                  <AreaChart data={chartData} margin={{ top: 10, right: 12, left: 2, bottom: 0 }}>
                     <defs>
                       <linearGradient id={`${gradientId}-rev`} x1="0" y1="0" x2="0" y2="1">
                         <stop
@@ -488,9 +460,11 @@ export default function StudioRevenueTrendChart({
                       tick={{ fontSize: 10, fill: '#78716c', fontWeight: 500 }}
                       axisLine={{ stroke: '#e7e5e4' }}
                       tickLine={false}
+                      minTickGap={16}
                     />
 
                     <YAxis
+                      width={52}
                       tickFormatter={formatTick}
                       tick={{ fontSize: 10, fill: '#78716c', fontWeight: 500 }}
                       axisLine={false}
@@ -506,7 +480,7 @@ export default function StudioRevenueTrendChart({
 
                     {compare && (
                       <Area
-                        type="monotone"
+                        type="linear"
                         dataKey="compareValue"
                         stroke="#a8a29e"
                         strokeWidth={1.5}
@@ -517,18 +491,19 @@ export default function StudioRevenueTrendChart({
                     )}
 
                     <Area
-                      type="monotone"
+                      type="linear"
                       dataKey="value"
                       stroke={metric === 'revenue' ? '#d97706' : '#4f46e5'}
                       strokeWidth={2.5}
                       fill={`url(#${gradientId}-rev)`}
+                      dot={chartData.length <= 31 ? { r: 2.5, fill: metric === 'revenue' ? '#d97706' : '#4f46e5', strokeWidth: 0 } : false}
                       activeDot={{
                         r: 5,
                         fill: metric === 'revenue' ? '#b45309' : '#4338ca',
                         stroke: '#ffffff',
                         strokeWidth: 2,
                       }}
-                      isAnimationActive={true}
+                      isAnimationActive={!reducedMotion}
                     />
                   </AreaChart>
                 </ResponsiveContainer>

@@ -168,7 +168,7 @@ export default function StudioMascotKit({
     if (!interactive) return;
 
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     } catch { }
 
     // Squash & stretch recoil

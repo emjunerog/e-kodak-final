@@ -145,7 +145,18 @@ export default function StaffQRScannerModal({ isOpen, onClose }) {
     return () => window.removeEventListener('paste', handlePaste);
   }, [isOpen]);
 
-  // ── Reset state on modal open/close ─────────────────────────────────────────
+  // ── Reset state on modal open/close & support Escape key ───────────────────
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose?.();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   useEffect(() => {
     if (isOpen) {
       setVerifiedResult(null);
@@ -345,13 +356,18 @@ export default function StaffQRScannerModal({ isOpen, onClose }) {
 
   // Render directly to document.body via Portal to eliminate parent stacking context trapping
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 bg-neutral-950/75 backdrop-blur-sm font-body animate-fade-in overflow-y-auto">
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 bg-neutral-950/75 backdrop-blur-sm font-body animate-fade-in overflow-y-auto overscroll-contain"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Studio QR Pass Scanner"
+    >
       
       {/* Click-outside backdrop */}
-      <div className="fixed inset-0" onClick={onClose} />
+      <div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
 
       {/* Modal Dialog Card */}
-      <div className="relative bg-white rounded-3xl border border-neutral-200 shadow-2xl max-w-lg w-full overflow-hidden flex flex-col my-auto z-10 animate-scale-in">
+      <div className="relative bg-white rounded-3xl border border-neutral-200 shadow-2xl max-w-lg w-full max-h-[92dvh] overflow-y-auto flex flex-col my-auto z-10 animate-scale-in overscroll-contain">
 
         {/* ── Modal Header: Clean, Justified Brand Bar ───────────────────── */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 bg-neutral-50/80">
@@ -384,16 +400,19 @@ export default function StaffQRScannerModal({ isOpen, onClose }) {
                   : 'bg-neutral-50 text-neutral-400 border-neutral-200'
               }`}
               title={soundEnabled ? 'Mute scanner beep' : 'Enable scanner beep'}
+              aria-label={soundEnabled ? 'Mute scanner beep' : 'Enable scanner beep'}
+              aria-pressed={soundEnabled}
             >
-              {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+              {soundEnabled ? <Volume2 size={16} aria-hidden="true" /> : <VolumeX size={16} aria-hidden="true" />}
             </button>
             <button
               type="button"
               onClick={onClose}
               className="p-2 text-neutral-400 hover:text-primary hover:bg-neutral-100 rounded-xl transition-colors cursor-pointer"
               title="Close modal"
+              aria-label="Close scanner modal"
             >
-              <X size={18} />
+              <X size={18} aria-hidden="true" />
             </button>
           </div>
         </div>

@@ -175,16 +175,25 @@ const ThemeContext = createContext({
   isSage: false,
   themeMode: 'dark',
   highContrast: false,
+  fontScale: 1,
   toggleTheme: () => {},
   setThemeMode: () => {},
   setHighContrast: () => {},
+  setFontScale: () => {},
   colors: DarkColors,
   gradients: DarkGradients,
 });
 
+function clampFontScale(val) {
+  const num = Number(val);
+  if (!Number.isFinite(num)) return 1;
+  return Math.min(1.28, Math.max(0.78, Math.round(num * 100) / 100));
+}
+
 export function ThemeProvider({ children }) {
   const [themeMode, setThemeModeState] = useState('light');
   const [highContrast, setHighContrastState] = useState(false);
+  const [fontScale, setFontScaleState] = useState(1);
 
   useEffect(() => {
     (async () => {
@@ -198,6 +207,9 @@ export function ThemeProvider({ children }) {
         }
         if (typeof appSettings?.highContrast === 'boolean') {
           setHighContrastState(appSettings.highContrast);
+        }
+        if (typeof appSettings?.fontScale === 'number') {
+          setFontScaleState(clampFontScale(appSettings.fontScale));
         }
       } catch (e) {
         console.warn('Failed to load theme preference', e);
@@ -227,6 +239,17 @@ export function ThemeProvider({ children }) {
     }
   }, []);
 
+  const setFontScale = useCallback(async (nextScale) => {
+    const clamped = clampFontScale(nextScale);
+    setFontScaleState(clamped);
+    try {
+      const current = await getAppSettings();
+      await saveAppSettings({ ...current, fontScale: clamped });
+    } catch (e) {
+      console.warn('Failed to persist font scale preference', e);
+    }
+  }, []);
+
   const isDark = themeMode === 'dark';
   const isSage = themeMode === 'sage';
 
@@ -251,13 +274,15 @@ export function ThemeProvider({ children }) {
       isSage,
       themeMode,
       highContrast,
+      fontScale,
       toggleTheme,
       setThemeMode,
       setHighContrast,
+      setFontScale,
       colors,
       gradients,
     }),
-    [isDark, isSage, themeMode, highContrast, toggleTheme, setThemeMode, setHighContrast, colors, gradients],
+    [isDark, isSage, themeMode, highContrast, fontScale, toggleTheme, setThemeMode, setHighContrast, setFontScale, colors, gradients],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
@@ -271,9 +296,11 @@ export function useTheme() {
       isSage: false,
       themeMode: 'dark',
       highContrast: false,
+      fontScale: 1,
       toggleTheme: () => {},
       setThemeMode: () => {},
       setHighContrast: () => {},
+      setFontScale: () => {},
       colors: DarkColors,
       gradients: DarkGradients,
     };

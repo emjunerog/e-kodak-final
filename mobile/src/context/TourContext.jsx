@@ -3,21 +3,21 @@ import React, { createContext, useContext, useRef, useState, useCallback } from 
 export const CUSTOMER_TOUR_STEPS = [
   {
     id: 'customer_btn_guide',
-    title: 'Scan Guide',
-    description: 'Tap here anytime for step-by-step help on finding and scanning your studio receipt QR code.',
-    borderRadius: 20,
+    title: 'Studio Guides',
+    description: 'Tap here anytime to replay this button-by-button app tour or open the How to Track Session guide.',
+    borderRadius: 999,
   },
   {
     id: 'customer_btn_notifications',
     title: 'Studio Updates',
     description: 'Check live alerts when your shoot progresses from Capture and Editing to Ready for Pickup.',
-    borderRadius: 20,
+    borderRadius: 999,
   },
   {
     id: 'customer_btn_hero_cta',
     title: 'Track Order',
     description: 'Tap this button to open your live shoot timeline, package inclusions, and delivery tracker.',
-    borderRadius: 16,
+    borderRadius: 999,
   },
   {
     id: 'customer_tab_bookings',
@@ -29,7 +29,7 @@ export const CUSTOMER_TOUR_STEPS = [
     id: 'customer_tab_scanner',
     title: 'Scan QR Button',
     description: 'Open the live QR camera anytime to link another booking receipt or scan a studio pass.',
-    borderRadius: 30,
+    borderRadius: 999,
   },
   {
     id: 'customer_tab_profile',
@@ -44,19 +44,19 @@ export const PHOTOGRAPHER_TOUR_STEPS = [
     id: 'ph_btn_duty',
     title: 'Studio Duty Toggle',
     description: 'Tap this status button to switch your general studio readiness between Available and Off Duty.',
-    borderRadius: 20,
+    borderRadius: 999,
   },
   {
     id: 'ph_btn_alerts',
     title: 'Workstation Alerts',
     description: 'Open urgent assignment handoffs, reschedule notices, and messages from Studio Admin.',
-    borderRadius: 20,
+    borderRadius: 999,
   },
   {
     id: 'ph_btn_hero_cta',
     title: 'View Shoots Queue',
     description: 'Jump directly to your assigned shoots to accept bookings and advance capture or editing stages.',
-    borderRadius: 16,
+    borderRadius: 999,
   },
   {
     id: 'ph_tab_schedule',
@@ -68,7 +68,7 @@ export const PHOTOGRAPHER_TOUR_STEPS = [
     id: 'ph_tab_shoots',
     title: 'Shoots Action Button',
     description: 'Quickly open your active shoot queue to update session status or request a reschedule.',
-    borderRadius: 30,
+    borderRadius: 999,
   },
   {
     id: 'ph_tab_profile',

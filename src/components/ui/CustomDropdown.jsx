@@ -20,7 +20,7 @@ export default function CustomDropdown({
   popoverWidth = 'w-56',
   align = 'left',
   direction = 'down', // 'down' | 'up'
-  size = 'md', // 'md' | 'sm'
+  size = 'md', // 'md' | 'sm' | 'form'
 }) {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -62,7 +62,13 @@ export default function CustomDropdown({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className={`w-full ${size === 'sm' ? 'h-8 px-2.5 text-xs' : 'h-9 px-3 text-xs sm:text-sm'} flex items-center justify-between gap-2 bg-white dark:bg-neutral-800 hover:bg-neutral-50/80 dark:hover:bg-neutral-750 text-neutral-800 dark:text-neutral-100 rounded-xl font-medium font-body border border-neutral-300/80 dark:border-neutral-700 hover:border-gold/60 focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all shadow-2xs cursor-pointer select-none ${
+        className={`w-full ${
+          size === 'sm'
+            ? 'h-8 px-2.5 text-xs'
+            : size === 'form'
+              ? 'h-9 px-3 text-xs'
+              : 'h-9 px-3 text-xs sm:text-sm'
+        } flex items-center justify-between gap-2 bg-white dark:bg-neutral-800 hover:bg-neutral-50/80 dark:hover:bg-neutral-750 text-neutral-800 dark:text-neutral-100 rounded-xl font-medium font-body border border-neutral-300/80 dark:border-neutral-700 hover:border-gold/60 focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all shadow-2xs cursor-pointer select-none ${
           open ? 'border-gold ring-2 ring-gold/20 bg-white dark:bg-neutral-800' : ''
         }`}
       >
@@ -119,7 +125,9 @@ export default function CustomDropdown({
                     onChange(option.value);
                     setOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between gap-2 ${size === 'sm' ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm'} rounded-xl text-left transition-all duration-150 font-body cursor-pointer ${
+                  className={`w-full flex items-center justify-between gap-2 ${
+                    size === 'sm' || size === 'form' ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm'
+                  } rounded-xl text-left transition-all duration-150 font-body cursor-pointer ${
                     isSelected
                       ? 'bg-gold/15 dark:bg-gold/20 font-semibold text-neutral-900 dark:text-gold shadow-2xs'
                       : 'text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100/90 dark:hover:bg-neutral-800/80 hover:text-neutral-950'
@@ -179,5 +187,5 @@ CustomDropdown.propTypes = {
   popoverWidth: PropTypes.string,
   align: PropTypes.oneOf(['left', 'right']),
   direction: PropTypes.oneOf(['down', 'up']),
-  size: PropTypes.oneOf(['md', 'sm']),
+  size: PropTypes.oneOf(['md', 'sm', 'form']),
 };

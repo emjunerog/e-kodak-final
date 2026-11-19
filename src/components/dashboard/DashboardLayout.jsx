@@ -5,7 +5,8 @@ import Header from './Header';
 import ScheduleProgressSidebar from './ScheduleProgressSidebar';
 import LogoutConfirmModal from './LogoutConfirmModal';
 import { useAuth } from '../../context/AuthContext';
-import { getCustomerBookings } from '../../services/bookingService';
+import { getCustomerBookings, invalidateCustomerBookingsCache } from '../../services/bookingService';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { getCustomerUnifiedNotifications } from '../../services/customerNotificationService';
 import { trackCustomerPresence } from '../../services/presenceService';
 import { subscribeCustomerRealtimeNotifications } from '../../services/notificationRealtimeService';
@@ -51,11 +52,14 @@ export default function DashboardLayout() {
     return cleanup;
   }, [user?.id]);
 
-  const loadLayoutData = React.useCallback(async () => {
+  const loadLayoutData = React.useCallback(async (forceRefresh = false) => {
     if (!user) return;
     try {
+      if (forceRefresh) {
+        invalidateCustomerBookingsCache(user.id);
+      }
       const [bookingsRes, notifsRes] = await Promise.all([
-        getCustomerBookings(user.id),
+        getCustomerBookings(user.id, { forceRefresh }),
         getCustomerUnifiedNotifications(user.id)
       ]);
 
@@ -67,9 +71,9 @@ export default function DashboardLayout() {
   }, [user?.id]);
 
   useEffect(() => {
-    loadLayoutData();
+    loadLayoutData(true);
 
-    const handleUpdate = () => loadLayoutData();
+    const handleUpdate = () => loadLayoutData(true);
     window.addEventListener('ekodak_bookings_updated', handleUpdate);
     window.addEventListener('ekodak:customer_notifications_updated', handleUpdate);
 
@@ -79,13 +83,33 @@ export default function DashboardLayout() {
     const handleOpenSchedule = () => setScheduleOpen(true);
     window.addEventListener('open-schedule-drawer', handleOpenSchedule);
 
-    // Supabase Realtime Channel for instant alerts
+    // Supabase Realtime Channel for instant alerts + live booking approval sync
     let unsubscribeRealtime = () => {};
+    let bookingChannel = null;
     if (user?.id) {
       unsubscribeRealtime = subscribeCustomerRealtimeNotifications(user.id, (newNotif) => {
         setUnreadCount(prev => prev + 1);
         setLiveToast(newNotif);
+        loadLayoutData(true);
       });
+
+      if (isSupabaseConfigured && supabase) {
+        bookingChannel = supabase
+          .channel(`customer-bookings-live-${user.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'bookings',
+              filter: `customer_id=eq.${user.id}`,
+            },
+            () => {
+              loadLayoutData(true);
+            }
+          )
+          .subscribe();
+      }
     }
 
     return () => {
@@ -94,6 +118,9 @@ export default function DashboardLayout() {
       window.removeEventListener('open-logout-confirm', handleLogoutTrigger);
       window.removeEventListener('open-schedule-drawer', handleOpenSchedule);
       unsubscribeRealtime();
+      if (bookingChannel) {
+        supabase.removeChannel(bookingChannel);
+      }
     };
   }, [loadLayoutData, user?.id]);
 

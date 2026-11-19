@@ -225,18 +225,20 @@ export const AuthProvider = ({ children }) => {
 
   const signIn = async (email, password) => {
     if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
     if (error) throw error;
     return data;
   };
 
   const signUp = async (email, password, firstName, lastName, role = 'customer') => {
     if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
+    const cleanEmail = String(email || "").trim().toLowerCase();
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: cleanEmail,
       password,
       options: {
-        data: { first_name: firstName, last_name: lastName, role },
+        data: { first_name: firstName.trim(), last_name: lastName.trim(), role },
         // emailRedirectTo is intentionally omitted so Supabase sends an OTP code
         // instead of a magic link. Make sure "Email OTP" is enabled in
         // Authentication → Email Settings in your Supabase project dashboard.
@@ -272,26 +274,90 @@ export const AuthProvider = ({ children }) => {
     saveProfileCache(null);
     setProfile(null);
     setUser(null);
+    try {
+      sessionStorage.removeItem('ekodak_active_confirmed_booking');
+      sessionStorage.removeItem('ekodak_active_receipt_data');
+      sessionStorage.removeItem('ekodak_pending_xendit_booking');
+      sessionStorage.removeItem('ekodak_booking_form_draft');
+      localStorage.removeItem('ekodak_pending_xendit_booking');
+      localStorage.removeItem('ekodak_booking_form_draft');
+      Object.keys(sessionStorage).forEach((k) => {
+        if (k.startsWith('ekodak_processed_xendit_tx_') || k.startsWith('ekodak_fulfilled_ref_')) {
+          sessionStorage.removeItem(k);
+        }
+      });
+    } catch {}
     if (!isSupabaseConfigured) return;
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
   };
 
-  const verifyEmailCode = async (email, token) => {
+  const verifyEmailCode = async (email, token, type = 'signup') => {
     if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
-    
-    // For signup verification, type must be strictly 'signup'.
-    // Trying other types first might invalidate the token or trigger rate limits.
-    const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'signup' });
-    
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    const cleanToken = String(token || "").replace(/\D/g, "").slice(0, 6);
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: cleanEmail,
+      token: cleanToken,
+      type,
+    });
+
     if (error) throw error;
+    return data;
+  };
+
+  /**
+   * Sends a 6-digit login OTP to an already-registered account (confirmed or unconfirmed).
+   * Using shouldCreateUser: false ensures Supabase returns an error instead of silently
+   * succeeding when no account exists for that email.
+   */
+  const sendLoginCode = async (email) => {
+    if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    if (!cleanEmail) throw new Error("Please enter your email address first.");
+
+    const { data, error } = await supabase.auth.signInWithOtp({
+      email: cleanEmail,
+      options: { shouldCreateUser: false },
+    });
+
+    if (error) {
+      const code = String(error.code || "").toLowerCase();
+      const msg = String(error.message || "").toLowerCase();
+      if (
+        code === "otp_disabled" ||
+        msg.includes("signups not allowed") ||
+        msg.includes("user not found")
+      ) {
+        throw new Error("No account found with this email. Please create an account first.");
+      }
+      if (code === "over_email_send_rate_limit" || msg.includes("rate limit")) {
+        throw new Error("Too many requests. Please wait a minute before requesting a new code.");
+      }
+      throw error;
+    }
     return data;
   };
 
   const resendVerification = async (email) => {
     if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
-    const { data, error } = await supabase.auth.resend({ type: 'signup', email });
-    if (error) throw error;
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    if (!cleanEmail) throw new Error("Please enter your email address first.");
+
+    const { data, error } = await supabase.auth.resend({
+      type: 'signup',
+      email: cleanEmail,
+    });
+
+    if (error) {
+      const code = String(error.code || "").toLowerCase();
+      const msg = String(error.message || "").toLowerCase();
+      if (code === "over_email_send_rate_limit" || msg.includes("rate limit")) {
+        throw new Error("Too many requests. Please wait a minute before requesting a new code.");
+      }
+      throw error;
+    }
     return data;
   };
 
@@ -397,6 +463,7 @@ export const AuthProvider = ({ children }) => {
     signInWithGoogle,
     signOut,
     verifyEmailCode,
+    sendLoginCode,
     resendVerification,
     updateProfile,
     uploadAvatar,

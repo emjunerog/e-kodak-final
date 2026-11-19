@@ -122,17 +122,19 @@ export default function PublicPassPage() {
   };
 
   const STAGES = [
-    { key: 'PENDING', label: 'Received' },
-    { key: 'CONFIRMED', label: 'Confirmed' },
-    { key: 'PHOTOGRAPHER_ASSIGNED', label: 'Assigned' },
-    { key: 'CAPTURE', label: 'Studio Shoot' },
-    { key: 'EDITING', label: 'Retouching' },
-    { key: 'PRINTING', label: 'Printing' },
-    { key: 'READY', label: 'Ready for Pickup' },
-    { key: 'COMPLETED', label: 'Completed' },
+    { key: 'PENDING', label: 'Booking Received', matches: ['PENDING', 'RESERVED'] },
+    { key: 'CONFIRMED', label: 'Approved & Reserved', matches: ['CONFIRMED'] },
+    { key: 'PHOTOGRAPHER_ASSIGNED', label: 'Photographer Assigned', matches: ['PHOTOGRAPHER_ASSIGNED'] },
+    { key: 'CAPTURE', label: 'Ongoing Pictorial', matches: ['CAPTURE', 'IN_PROGRESS'] },
+    { key: 'EDITING', label: 'Editing', matches: ['EDITING'] },
+    { key: 'RETOUCHING', label: 'Retouching', matches: ['RETOUCHING'] },
+    { key: 'FINALIZED', label: 'Booking Finalized', matches: ['FINALIZED', 'PRINTING'] },
+    { key: 'READY', label: 'Ready for Pickup', matches: ['READY', 'UNDER_DELIVERY'] },
+    { key: 'COMPLETED', label: 'Completed', matches: ['COMPLETED'] },
   ];
 
-  const currentStageIndex = STAGES.findIndex((s) => s.key === booking?.status);
+  const rawStatusKey = String(booking?.status || 'PENDING').toUpperCase();
+  const currentStageIndex = STAGES.findIndex((s) => s.matches.includes(rawStatusKey));
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col justify-between selection:bg-gold selection:text-primary">

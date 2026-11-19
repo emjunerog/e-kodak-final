@@ -14,11 +14,6 @@ import {
   Layers,
   Table as TableIcon,
   MoreVertical,
-  CreditCard,
-  History,
-  Copy,
-  Check,
-  Eye,
   RefreshCw,
   GraduationCap,
   Video,
@@ -33,22 +28,36 @@ import {
   ChevronsRight,
   Megaphone,
   MapPin,
-  Activity,
-  FolderPlus,
+  Camera,
+  CreditCard,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import BookingLifecycleBadge from '../../components/admin/BookingLifecycleBadge';
+import AssignPhotographerModal from '../../components/admin/AssignPhotographerModal';
 import BookingQuickInspector from '../../components/admin/BookingQuickInspector';
 import CustomDropdown from '../../components/ui/CustomDropdown';
 import StudioRevenueTrendChart from '../../components/admin/dashboard/StudioRevenueTrendChart';
 import StudioPackageShareChart from '../../components/admin/dashboard/StudioPackageShareChart';
 import { supabase } from '../../lib/supabase';
 import StudioOperationsHub from '../../components/admin/dashboard/StudioOperationsHub';
+import StudioBookingBreakdownHub from '../../components/admin/dashboard/StudioBookingBreakdownHub';
 import { getDashboardStats, getRecentBookings, getPendingBookings } from '../../services/adminService';
-import { updateBookingStatus, confirmAndScheduleBooking } from '../../services/bookingAdminService';
-import { getEffectivePaymentStatus } from '../../lib/bookingUtils';
+import {
+  updateBookingStatus,
+  confirmAndScheduleBooking,
+  getPhotographersWithWorkloadAndAvailability,
+  assignPhotographerToBooking,
+} from '../../services/bookingAdminService';
+import {
+  getEffectivePaymentStatus,
+  getNextBookingAction,
+  getPhotographerDisplayName,
+  hasAssignedPhotographer,
+  isPaymentVerifiedByAdmin,
+} from '../../lib/bookingUtils';
+import { localDateKey } from '../../components/admin/dashboard/chartUtils';
 
 // ── Date formatting helper ─────────────────────────────────────────────────────
 function formatDate(dateStr) {
@@ -58,6 +67,57 @@ function formatDate(dateStr) {
     day: 'numeric',
     year: 'numeric',
   });
+}
+
+const STUDIO_TIME_SLOT_LABELS = {
+  '08:00': '8:00 AM – 9:00 AM',
+  '09:00': '9:00 AM – 10:00 AM',
+  '10:00': '10:00 AM – 11:00 AM',
+  '11:00': '11:00 AM – 12:00 PM',
+  '13:00': '1:00 PM – 2:00 PM',
+  '14:00': '2:00 PM – 3:00 PM',
+  '15:00': '3:00 PM – 4:00 PM',
+  '16:00': '4:00 PM – 5:00 PM',
+};
+
+function formatBookingTime(booking) {
+  const noteTime =
+    booking?.notes?.match?.(/•\s*(?:Preferred\s*Time|Time\s*Slot|Session\s*Time|Schedule\s*Time):\s*([^\n\r]+)/i)?.[1]?.trim() ||
+    '';
+  const raw =
+    booking?.preferred_time ||
+    booking?.student_details?.preferred_time ||
+    booking?.participant_details?.preferred_time ||
+    noteTime;
+  if (!raw) return '';
+
+  const trimmed = String(raw).trim();
+  const isFullDayOrder =
+    /full[-\s]*day|school batch/i.test(trimmed) ||
+    /•\s*(?:Booking\s*Mode|Academic\s*Mode):\s*School\s*Section/i.test(booking?.notes || '');
+
+  if (/full[-\s]*day|school batch/i.test(trimmed)) {
+    const timeMatch = trimmed.match(/(\d{1,2}:\d{2}\s*(?:AM|PM)\s*[–-]\s*\d{1,2}:\d{2}\s*(?:AM|PM))/i);
+    return timeMatch ? timeMatch[1] : '8:00 AM – 5:00 PM';
+  }
+  if (/am|pm/i.test(trimmed)) return trimmed;
+
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return trimmed;
+
+  const rawHours = parseInt(match[1], 10);
+  const minutes = match[2];
+  const slotKey = `${String(rawHours).padStart(2, '0')}:${minutes}`;
+  if (isFullDayOrder && slotKey === '08:00') {
+    return '8:00 AM – 5:00 PM';
+  }
+  if (STUDIO_TIME_SLOT_LABELS[slotKey]) {
+    return STUDIO_TIME_SLOT_LABELS[slotKey];
+  }
+
+  const ampm = rawHours >= 12 ? 'PM' : 'AM';
+  const h12 = rawHours % 12 || 12;
+  return `${h12}:${minutes} ${ampm}`;
 }
 
 // ── Empty state ───────────────────────────────────────────────────────────────
@@ -71,118 +131,88 @@ function EmptyState({ icon: Icon = BookOpen, message }) {
 }
 
 // ── Row Action Dropdown ────────────────────────────────────────────────────────
-function RowActionDropdown({ booking, onInspect, onFastConfirm }) {
+function RowActionDropdown({ booking, onStageAction, isBusy = false }) {
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
   const ref = useRef(null);
+  const nextAction = getNextBookingAction(booking);
 
   useEffect(() => {
+    if (!open) return;
     function handleClickOutside(e) {
       if (ref.current && !ref.current.contains(e.target)) {
         setOpen(false);
       }
     }
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') {
+        setOpen(false);
+      }
+    }
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
 
-  const handleCopy = (e) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(booking.booking_number);
-    setCopied(true);
-    setTimeout(() => {
-      setCopied(false);
-      setOpen(false);
-    }, 1200);
-  };
+  if (!nextAction) {
+    return (
+      <button
+        type="button"
+        disabled
+        aria-label={`No stage actions available for booking #${booking.booking_number}`}
+        title="No stage action available for this status"
+        className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-300 cursor-not-allowed"
+      >
+        <MoreVertical size={15} aria-hidden="true" />
+      </button>
+    );
+  }
+
+  const ActionIcon =
+    nextAction.type === 'APPROVE_AND_RESERVE' || nextAction.type === 'CONFIRM_PAYMENT'
+      ? CheckCircle2
+      : nextAction.type === 'ASSIGN_PHOTOGRAPHER'
+        ? Camera
+        : ArrowRight;
 
   return (
     <div className="relative inline-block text-left" ref={ref}>
       <button
         type="button"
+        disabled={isBusy}
         onClick={(e) => {
           e.stopPropagation();
-          setOpen(!open);
+          setOpen((prev) => !prev);
         }}
-        className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-primary hover:bg-neutral-100 transition-colors"
-        title="Direct booking tools"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Order progress action for booking #${booking.booking_number}`}
+        className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-500 hover:text-primary hover:bg-neutral-100 transition-colors cursor-pointer disabled:opacity-50"
+        title={nextAction.label}
       >
-        <MoreVertical size={15} />
+        {isBusy ? <Loader2 size={15} className="animate-spin text-amber-700" aria-hidden="true" /> : <MoreVertical size={15} aria-hidden="true" />}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-1 w-52 bg-white rounded-2xl shadow-xl border border-neutral-200/80 py-1.5 z-40 animate-in fade-in zoom-in-95 duration-100 font-body">
+        <div
+          role="menu"
+          className="absolute right-0 mt-1 w-52 bg-white rounded-2xl shadow-xl border border-neutral-200/80 py-1.5 z-40 animate-in fade-in zoom-in-95 duration-100 font-body"
+        >
           <button
             type="button"
+            role="menuitem"
+            disabled={isBusy}
             onClick={(e) => {
               e.stopPropagation();
-              onInspect?.(booking);
               setOpen(false);
+              onStageAction?.(booking, nextAction);
             }}
-            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-neutral-700 hover:bg-neutral-50 hover:text-primary font-medium text-left"
+            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-neutral-800 hover:bg-amber-50/70 hover:text-amber-950 font-semibold text-left cursor-pointer disabled:opacity-50"
           >
-            <Eye size={13} className="text-gold" />
-            <span>Quick Inspect & Edit</span>
-          </button>
-
-          {booking.status === 'PENDING' && onFastConfirm && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onFastConfirm(booking);
-                setOpen(false);
-              }}
-              className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-blue-700 hover:bg-blue-50 font-semibold text-left"
-            >
-              <CheckCircle2 size={13} className="text-blue-600" />
-              <span>Confirm & Schedule Session</span>
-            </button>
-          )}
-
-          <Link
-            to={`/admin/activity-logs?search=${encodeURIComponent(booking.booking_number || '')}`}
-            className="flex items-center gap-2.5 px-3.5 py-2 text-xs text-neutral-700 hover:bg-neutral-50 hover:text-primary font-medium"
-            onClick={() => setOpen(false)}
-          >
-            <History size={13} className="text-gold" />
-            <span>View Activity Logs</span>
-          </Link>
-
-          <Link
-            to={`/admin/payments`}
-            className="flex items-center gap-2.5 px-3.5 py-2 text-xs text-neutral-700 hover:bg-neutral-50 hover:text-primary font-medium"
-            onClick={() => setOpen(false)}
-          >
-            <CreditCard size={13} className="text-emerald-500" />
-            <span>Record Payment</span>
-          </Link>
-
-          <Link
-            to={`/admin/photos?bookingId=${booking.id}`}
-            className="flex items-center gap-2.5 px-3.5 py-2 text-xs text-amber-900 hover:bg-amber-50 font-semibold"
-            onClick={() => setOpen(false)}
-          >
-            <FolderPlus size={13} className="text-amber-600" />
-            <span>Upload Soft Copies / Drive Link</span>
-          </Link>
-
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-neutral-700 hover:bg-neutral-50 hover:text-primary font-medium border-t border-neutral-100 mt-1 text-left"
-          >
-            {copied ? (
-              <>
-                <Check size={13} className="text-emerald-500" />
-                <span className="text-emerald-600 font-semibold">Copied Ref!</span>
-              </>
-            ) : (
-              <>
-                <Copy size={13} className="text-neutral-400" />
-                <span>Copy Ref #{booking.booking_number}</span>
-              </>
-            )}
+            <ActionIcon size={13} className="text-amber-700 shrink-0" aria-hidden="true" />
+            <span>{nextAction.label}</span>
           </button>
         </div>
       )}
@@ -207,7 +237,6 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
-  const [dateFilter, setDateFilter] = useState('ALL');
   const [viewMode, setViewMode] = useState('table');
   const [activePreset, setActivePreset] = useState('ALL');
 
@@ -217,6 +246,7 @@ export default function AdminDashboard() {
 
   // Direct Management State
   const [inspectingBooking, setInspectingBooking] = useState(null);
+  const [openPaymentOnInspect, setOpenPaymentOnInspect] = useState(false);
   const [selectedBookingIds, setSelectedBookingIds] = useState(new Set());
   const [toastMessage, setToastMessage] = useState(null);
 
@@ -226,7 +256,14 @@ export default function AdminDashboard() {
   const [scheduleTime, setScheduleTime] = useState('09:00:00');
   const [scheduleLocation, setScheduleLocation] = useState('E-Kodak Studio, 311 Rizal Street, City of Naga, Cebu');
   const [scheduleRemarks, setScheduleRemarks] = useState('');
+  const [schedulePhotographerId, setSchedulePhotographerId] = useState('');
+  const [schedulePhotographers, setSchedulePhotographers] = useState([]);
+  const [loadingSchedulePhotographers, setLoadingSchedulePhotographers] = useState(false);
   const [isSubmittingSchedule, setIsSubmittingSchedule] = useState(false);
+
+  // Photographer Assignment Modal & Row Stage Progression
+  const [assigningBooking, setAssigningBooking] = useState(null);
+  const [advancingBookingId, setAdvancingBookingId] = useState(null);
 
   const statsRef = useRef(stats);
   statsRef.current = stats;
@@ -262,19 +299,52 @@ export default function AdminDashboard() {
       setError(`Database notice: ${errDetail || 'Live metrics require active database credentials.'}`);
     }
 
+    const freshRecent = recentRes.data ? (recentRes.data || []).filter(b => !b.is_deleted) : recentRef.current;
     if (statsRes.data) setStats(statsRes.data);
-    if (recentRes.data) setRecent((recentRes.data || []).filter(b => !b.is_deleted));
+    if (recentRes.data) setRecent(freshRecent);
     if (pendingRes.data) setPending((pendingRes.data || []).filter(b => !b.is_deleted));
     if (servicesRes?.data) setServicesList(servicesRes.data);
     if (logsRes?.data) setActivityLogs(logsRes.data);
     setLoadingStats(false);
     setLoadingTables(false);
     setIsRefreshing(false);
+    return freshRecent;
   };
 
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (!schedulingBooking) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && !isSubmittingSchedule) {
+        setSchedulingBooking(null);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [schedulingBooking, isSubmittingSchedule]);
+
+  // Fetch available photographers for Confirm & Schedule modal
+  useEffect(() => {
+    if (!schedulingBooking) {
+      setSchedulePhotographers([]);
+      return;
+    }
+    let active = true;
+    setLoadingSchedulePhotographers(true);
+    getPhotographersWithWorkloadAndAvailability(scheduleDate || schedulingBooking.event_date, scheduleTime)
+      .then(({ data }) => {
+        if (active) setSchedulePhotographers(Array.isArray(data) ? data : []);
+      })
+      .finally(() => {
+        if (active) setLoadingSchedulePhotographers(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [schedulingBooking?.id, scheduleDate, scheduleTime]);
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -288,6 +358,7 @@ export default function AdminDashboard() {
     setScheduleTime(booking.preferred_time || '09:00:00');
     setScheduleLocation(booking.location || 'E-Kodak Studio, 311 Rizal Street, City of Naga, Cebu');
     setScheduleRemarks('');
+    setSchedulePhotographerId(booking.photographer_id || booking.photographer?.id || '');
   };
 
   // Fast confirm action (triggers modal so admin adds schedule & location)
@@ -297,6 +368,69 @@ export default function AdminDashboard() {
       : recent.find((item) => item.id === bookingOrId);
     if (b) {
       handleOpenConfirmScheduleModal(b);
+    }
+  };
+
+  // Single stage-corresponding action triggered from the 3-dot Quick Action menu
+  const handleRowStageAction = async (booking, nextAction) => {
+    if (!booking || !nextAction) return;
+    const paymentConfirmed = isPaymentVerifiedByAdmin(booking);
+
+    if (nextAction.type === 'CONFIRM_PAYMENT') {
+      setOpenPaymentOnInspect(true);
+      setInspectingBooking(booking);
+      return;
+    }
+
+    if (nextAction.type === 'APPROVE_AND_RESERVE') {
+      if (!paymentConfirmed) {
+        showToast(`Confirm downpayment for #${booking.booking_number} first.`);
+        setOpenPaymentOnInspect(true);
+        setInspectingBooking(booking);
+        return;
+      }
+      handleFastConfirm(booking);
+      return;
+    }
+    if (nextAction.type === 'ASSIGN_PHOTOGRAPHER') {
+      if (!paymentConfirmed) {
+        showToast(`Confirm payment for #${booking.booking_number} first before assigning a photographer.`);
+        setOpenPaymentOnInspect(true);
+        setInspectingBooking(booking);
+        return;
+      }
+      setAssigningBooking(booking);
+      return;
+    }
+    if (nextAction.type === 'ADVANCE_STAGE' && nextAction.nextStatus) {
+      if (!paymentConfirmed) {
+        showToast(`Confirm payment for #${booking.booking_number} first before proceeding.`);
+        setOpenPaymentOnInspect(true);
+        setInspectingBooking(booking);
+        return;
+      }
+      if (!hasAssignedPhotographer(booking)) {
+        showToast(`Assign a photographer first before moving #${booking.booking_number} to ${nextAction.nextLabel}.`);
+        setAssigningBooking(booking);
+        return;
+      }
+      setAdvancingBookingId(booking.id);
+      try {
+        const { error: statusErr } = await updateBookingStatus(
+          booking.id,
+          nextAction.nextStatus,
+          `Updated to ${nextAction.nextLabel} from All Bookings`,
+          profile?.id || null
+        );
+        if (statusErr) throw statusErr;
+        showToast(`✓ Booking #${booking.booking_number} moved to ${nextAction.nextLabel}.`);
+        await load(true);
+      } catch (err) {
+        console.error('Stage advance failed:', err);
+        showToast('Error updating booking: ' + (err?.message || 'Database error'));
+      } finally {
+        setAdvancingBookingId(null);
+      }
     }
   };
 
@@ -322,7 +456,27 @@ export default function AdminDashboard() {
 
       if (!res.success) throw res.error || new Error('Failed to confirm and schedule booking');
 
-      showToast(`✓ Booking #${schedulingBooking.booking_number} approved & scheduled! Downpayment notice sent to customer.`);
+      if (schedulePhotographerId) {
+        const chosen = schedulePhotographers.find((p) => p.id === schedulePhotographerId);
+        const chosenName = chosen
+          ? `${chosen.first_name || ''} ${chosen.last_name || ''}`.trim() || chosen.email
+          : 'Studio Photographer';
+        const { error: assignErr } = await assignPhotographerToBooking({
+          bookingId: schedulingBooking.id,
+          photographerId: schedulePhotographerId,
+          photographerName: chosenName,
+          changedById: profile?.id || null,
+          remarks: scheduleRemarks,
+          customerId: schedulingBooking.customer?.id || schedulingBooking.customer_id || null,
+          bookingNumber: schedulingBooking.booking_number,
+          eventDate: scheduleDate,
+        });
+        if (assignErr) throw assignErr;
+        showToast(`✓ Booking #${schedulingBooking.booking_number} approved & assigned to ${chosenName}!`);
+      } else {
+        showToast(`✓ Booking #${schedulingBooking.booking_number} approved & reserved! Assign a photographer before pictorial.`);
+      }
+
       setSchedulingBooking(null);
       await load(true);
     } catch (err) {
@@ -336,15 +490,18 @@ export default function AdminDashboard() {
   // Status updated from inspector drawer
   const handleInspectorStatusUpdated = async (bookingId, newStatus) => {
     showToast(`Status updated to ${newStatus}`);
-    await load();
-    const updatedItem = recent.find((b) => b.id === bookingId);
+    const freshRecent = await load(true);
+    const updatedItem = freshRecent.find((b) => b.id === bookingId);
     if (updatedItem) {
-      setInspectingBooking({ ...updatedItem, status: newStatus });
+      setInspectingBooking(updatedItem);
+    } else {
+      setInspectingBooking((prev) => (prev && prev.id === bookingId ? { ...prev, status: newStatus } : prev));
     }
   };
 
   // Filtered recent bookings based on search, dropdowns, and presets
   const filteredBookings = useMemo(() => {
+    const todayIso = localDateKey();
     return recent.filter((b) => {
       // Search filter
       const q = searchQuery.toLowerCase().trim();
@@ -356,7 +513,7 @@ export default function AdminDashboard() {
       // Status & Clearance filter (or smart preset)
       const effectiveFilter = statusFilter !== 'ALL' ? statusFilter : activePreset;
       const effPayStatus = getEffectivePaymentStatus(b);
-      const todayIso = new Date().toISOString().slice(0, 10);
+      const statusUpper = String(b.status || '').toUpperCase();
       let matchesStatus = true;
       if (effectiveFilter === 'PAID' || effectiveFilter === 'CLEARED') {
         matchesStatus = effPayStatus === 'PAID';
@@ -365,31 +522,43 @@ export default function AdminDashboard() {
       } else if (effectiveFilter === 'UNPAID') {
         matchesStatus = effPayStatus === 'UNPAID';
       } else if (effectiveFilter === 'BALANCE_DUE') {
-        matchesStatus = ['DOWNPAYMENT', 'UNPAID'].includes(effPayStatus) && !['CANCELLED', 'REJECTED'].includes(b.status?.toUpperCase());
+        matchesStatus = !['PAID', 'REFUNDED'].includes(effPayStatus) && !['CANCELLED', 'REJECTED'].includes(statusUpper);
+      } else if (effectiveFilter === 'ASSIGNED_PHOTOGRAPHER') {
+        matchesStatus = !['CANCELLED', 'REJECTED'].includes(statusUpper) && hasAssignedPhotographer(b);
       } else if (effectiveFilter === 'UNASSIGNED_PHOTOGRAPHER') {
-        matchesStatus = b.status?.toUpperCase() === 'CONFIRMED' && !b.photographer?.id && !b.photographer_id;
+        matchesStatus = !['CANCELLED', 'REJECTED'].includes(statusUpper) && !hasAssignedPhotographer(b);
+      } else if (effectiveFilter === 'SOFT_COPIES_SENT') {
+        matchesStatus = !['CANCELLED', 'REJECTED'].includes(statusUpper) && Array.isArray(b.photo_outputs) && b.photo_outputs.length > 0;
       } else if (effectiveFilter === 'AWAITING_SOFT_COPIES') {
-        matchesStatus = ['CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING'].includes(b.status?.toUpperCase()) && (!b.photo_outputs || b.photo_outputs.length === 0);
+        matchesStatus = ['CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING'].includes(statusUpper) && (!b.photo_outputs || b.photo_outputs.length === 0);
       } else if (effectiveFilter === 'TODAY_SHOOTS') {
-        matchesStatus = Boolean(b.event_date && String(b.event_date).slice(0, 10) === todayIso);
+        matchesStatus = Boolean(b.event_date && localDateKey(b.event_date) === todayIso) && !['CANCELLED', 'REJECTED'].includes(statusUpper);
       } else if (effectiveFilter === 'PENDING') {
-        matchesStatus = ['PENDING', 'RESERVED'].includes(b.status?.toUpperCase());
+        matchesStatus = ['PENDING', 'RESERVED'].includes(statusUpper);
+      } else if (effectiveFilter === 'PAYMENT_UNCONFIRMED') {
+        matchesStatus = ['PENDING', 'RESERVED', 'CONFIRMED', 'PHOTOGRAPHER_ASSIGNED'].includes(statusUpper) && !isPaymentVerifiedByAdmin(b);
+      } else if (effectiveFilter === 'STAGE_CONFIRMED') {
+        matchesStatus = ['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED'].includes(statusUpper);
       } else if (effectiveFilter === 'CONFIRMED') {
-        matchesStatus = ['CONFIRMED', 'PHOTOGRAPHER_ASSIGNED'].includes(b.status?.toUpperCase());
+        matchesStatus = statusUpper === 'CONFIRMED';
+      } else if (effectiveFilter === 'PHOTOGRAPHER_PENDING') {
+        matchesStatus = statusUpper === 'PHOTOGRAPHER_ASSIGNED' && !hasAssignedPhotographer(b);
+      } else if (effectiveFilter === 'PHOTOGRAPHER_ASSIGNED') {
+        matchesStatus = statusUpper === 'PHOTOGRAPHER_ASSIGNED' && hasAssignedPhotographer(b);
       } else if (effectiveFilter === 'CAPTURE' || effectiveFilter === 'PRODUCTION') {
-        matchesStatus = ['CAPTURE', 'IN_PROGRESS'].includes(b.status?.toUpperCase());
+        matchesStatus = ['CAPTURE', 'IN_PROGRESS'].includes(statusUpper);
       } else if (effectiveFilter === 'EDITING') {
-        matchesStatus = b.status?.toUpperCase() === 'EDITING';
+        matchesStatus = statusUpper === 'EDITING';
       } else if (effectiveFilter === 'RETOUCHING') {
-        matchesStatus = b.status?.toUpperCase() === 'RETOUCHING';
+        matchesStatus = statusUpper === 'RETOUCHING';
       } else if (effectiveFilter === 'FINALIZED') {
-        matchesStatus = ['FINALIZED', 'PRINTING'].includes(b.status?.toUpperCase());
+        matchesStatus = ['FINALIZED', 'PRINTING'].includes(statusUpper);
       } else if (effectiveFilter === 'READY') {
-        matchesStatus = ['READY', 'UNDER_DELIVERY'].includes(b.status?.toUpperCase());
+        matchesStatus = ['READY', 'UNDER_DELIVERY'].includes(statusUpper);
       } else if (effectiveFilter === 'COMPLETED') {
-        matchesStatus = b.status?.toUpperCase() === 'COMPLETED';
+        matchesStatus = statusUpper === 'COMPLETED';
       } else if (effectiveFilter !== 'ALL') {
-        matchesStatus = b.status?.toUpperCase() === effectiveFilter;
+        matchesStatus = statusUpper === effectiveFilter;
       }
 
       // Category filter (College, Senior High)
@@ -406,62 +575,37 @@ export default function AdminDashboard() {
         }
       }
 
-      // Date filter
-      let matchesDate = true;
-      if (dateFilter !== 'ALL' && b.event_date) {
-        const eventDate = new Date(b.event_date);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        if (dateFilter === 'TODAY') {
-          const checkDate = new Date(eventDate);
-          checkDate.setHours(0, 0, 0, 0);
-          matchesDate = checkDate.getTime() === today.getTime();
-        } else if (dateFilter === 'NEXT_7') {
-          const next7 = new Date(today);
-          next7.setDate(next7.getDate() + 7);
-          matchesDate = eventDate >= today && eventDate <= next7;
-        } else if (dateFilter === 'THIS_MONTH') {
-          matchesDate = eventDate.getMonth() === today.getMonth() && eventDate.getFullYear() === today.getFullYear();
-        }
-      }
-
-      return matchesSearch && matchesStatus && matchesCategory && matchesDate;
+      return matchesSearch && matchesStatus && matchesCategory;
     });
-  }, [recent, searchQuery, statusFilter, categoryFilter, dateFilter, activePreset]);
+  }, [recent, searchQuery, statusFilter, categoryFilter, activePreset]);
 
-  // Live Operational Triage Counts & Proactive Action Center Data
-  const { triageItems, actionCenterBuckets } = useMemo(() => {
-    const todayIso = new Date().toISOString().slice(0, 10);
-    const pendingList = recent.filter((b) => ['PENDING', 'RESERVED'].includes(b.status?.toUpperCase()));
-    const unassignedList = recent.filter((b) => b.status?.toUpperCase() === 'CONFIRMED' && !b.photographer?.id && !b.photographer_id);
-    const awaitingOutputsList = recent.filter(
-      (b) => ['CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING'].includes(b.status?.toUpperCase()) && (!b.photo_outputs || b.photo_outputs.length === 0)
+  // Live Proactive KPI Queue Counts
+  const actionCenterBuckets = useMemo(() => {
+    const todayIso = localDateKey();
+    const activeNonCancelled = (b) => !['CANCELLED', 'REJECTED'].includes(String(b.status || '').toUpperCase());
+
+    const pendingList = recent.filter((b) => ['PENDING', 'RESERVED'].includes(String(b.status || '').toUpperCase()));
+    const assignedPhotographerList = recent.filter((b) => activeNonCancelled(b) && hasAssignedPhotographer(b));
+    const unassignedList = recent.filter((b) => activeNonCancelled(b) && !hasAssignedPhotographer(b));
+    const softCopiesSentList = recent.filter(
+      (b) => activeNonCancelled(b) && Array.isArray(b.photo_outputs) && b.photo_outputs.length > 0
     );
-    const todayShootsList = recent.filter((b) => b.event_date && String(b.event_date).slice(0, 10) === todayIso);
+    const todayShootsList = recent.filter(
+      (b) => activeNonCancelled(b) && b.event_date && localDateKey(b.event_date) === todayIso
+    );
     const balanceDueList = recent.filter(
-      (b) => ['DOWNPAYMENT', 'UNPAID'].includes(getEffectivePaymentStatus(b)) && !['CANCELLED', 'REJECTED'].includes(b.status?.toUpperCase())
+      (b) => activeNonCancelled(b) && !['PAID', 'REFUNDED'].includes(getEffectivePaymentStatus(b))
     );
-    const readyList = recent.filter((b) => ['READY', 'UNDER_DELIVERY'].includes(b.status?.toUpperCase()));
+    const readyList = recent.filter((b) => ['READY', 'UNDER_DELIVERY'].includes(String(b.status || '').toUpperCase()));
 
     return {
-      triageItems: [
-        { key: 'ALL', label: 'All Orders', count: recent.length },
-        { key: 'PENDING', label: 'Needs Approval', count: pendingList.length, highlight: pendingList.length > 0 },
-        { key: 'UNASSIGNED_PHOTOGRAPHER', label: 'Assign Photographer', count: unassignedList.length, highlight: unassignedList.length > 0 },
-        { key: 'AWAITING_SOFT_COPIES', label: 'Awaiting Soft Copies', count: awaitingOutputsList.length, highlight: awaitingOutputsList.length > 0 },
-        { key: 'TODAY_SHOOTS', label: "Today's Shoots", count: todayShootsList.length, highlight: todayShootsList.length > 0 },
-        { key: 'BALANCE_DUE', label: 'Balance Due', count: balanceDueList.length },
-        { key: 'READY', label: 'Ready for Pickup', count: readyList.length, highlight: readyList.length > 0 },
-      ],
-      actionCenterBuckets: {
-        pendingList,
-        unassignedList,
-        awaitingOutputsList,
-        todayShootsList,
-        balanceDueList,
-        readyList,
-      },
+      pendingList,
+      assignedPhotographerList,
+      unassignedList,
+      softCopiesSentList,
+      todayShootsList,
+      balanceDueList,
+      readyList,
     };
   }, [recent]);
 
@@ -481,7 +625,7 @@ export default function AdminDashboard() {
   // Reset to first page when search or filter options change
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, statusFilter, categoryFilter, dateFilter, activePreset, pageSize]);
+  }, [searchQuery, statusFilter, categoryFilter, activePreset, pageSize]);
 
   // Export to CSV function
   const handleExportCSV = (recordsToExport = filteredBookings) => {
@@ -558,28 +702,26 @@ export default function AdminDashboard() {
     { value: 'senior-high', label: 'Senior High School (SHS)', icon: Building2 },
   ];
 
-  // Simple status filter options
-  const statusOptions = [
-    { value: 'ALL', label: 'All Statuses', dotColor: 'bg-neutral-400', badge: stats?.total },
-    { value: 'PENDING', label: 'Booking Received', dotColor: 'bg-gold', badge: stats?.pending },
-    { value: 'CONFIRMED', label: 'Approved & Scheduled', dotColor: 'bg-primary', badge: stats?.confirmed },
-    { value: 'CAPTURE', label: 'Ongoing Photoshoot', dotColor: 'bg-gold', badge: stats?.capture },
-    { value: 'EDITING', label: 'Editing', dotColor: 'bg-primary', badge: stats?.editing },
-    { value: 'RETOUCHING', label: 'Retouching', dotColor: 'bg-gold', badge: stats?.retouching },
-    { value: 'FINALIZED', label: 'Printing', dotColor: 'bg-primary', badge: (stats?.finalized || 0) + (stats?.printing || 0) },
-    { value: 'READY', label: 'Ready for Pickup', dotColor: 'bg-gold', badge: stats?.ready },
-    { value: 'COMPLETED', label: 'Completed', dotColor: 'bg-neutral-400', badge: stats?.completed },
-    { value: 'PAID', label: 'Fully Paid', dotColor: 'bg-emerald-500', badge: stats?.cleared },
-    { value: 'BALANCE_DUE', label: 'With Balance Due', dotColor: 'bg-amber-500', badge: stats?.unpaid_partial },
-  ];
+  // Status filter options matching Order Progress steps
+  const statusOptions = useMemo(() => {
+    const countOf = (pred) => recent.filter(pred).length;
+    const upper = (b) => String(b.status || '').toUpperCase();
 
-  // Date Filter Options
-  const dateOptions = [
-    { value: 'ALL', label: 'Calendar' },
-    { value: 'TODAY', label: "Today's Schedule Only" },
-    { value: 'NEXT_7', label: 'Next 7 Days' },
-    { value: 'THIS_MONTH', label: 'This Month' },
-  ];
+    return [
+      { value: 'ALL', label: 'All Statuses', dotColor: 'bg-neutral-400', badge: recent.length },
+      { value: 'PENDING', label: 'Booking Received', dotColor: 'bg-gold', badge: countOf((b) => ['PENDING', 'RESERVED'].includes(upper(b))) },
+      { value: 'PAYMENT_UNCONFIRMED', label: 'Confirm Payment', dotColor: 'bg-amber-500', badge: countOf((b) => ['PENDING', 'RESERVED', 'CONFIRMED', 'PHOTOGRAPHER_ASSIGNED'].includes(upper(b)) && !isPaymentVerifiedByAdmin(b)) },
+      { value: 'CONFIRMED', label: 'Approved & Reserved', dotColor: 'bg-primary', badge: countOf((b) => upper(b) === 'CONFIRMED') },
+      { value: 'PHOTOGRAPHER_PENDING', label: 'Photographer Pending', dotColor: 'bg-amber-500', badge: countOf((b) => upper(b) === 'PHOTOGRAPHER_ASSIGNED' && !hasAssignedPhotographer(b)) },
+      { value: 'PHOTOGRAPHER_ASSIGNED', label: 'Photographer Assigned', dotColor: 'bg-primary', badge: countOf((b) => upper(b) === 'PHOTOGRAPHER_ASSIGNED' && hasAssignedPhotographer(b)) },
+      { value: 'CAPTURE', label: 'Ongoing Pictorial', dotColor: 'bg-gold', badge: countOf((b) => ['CAPTURE', 'IN_PROGRESS'].includes(upper(b))) },
+      { value: 'EDITING', label: 'Editing', dotColor: 'bg-primary', badge: countOf((b) => upper(b) === 'EDITING') },
+      { value: 'RETOUCHING', label: 'Retouching', dotColor: 'bg-gold', badge: countOf((b) => upper(b) === 'RETOUCHING') },
+      { value: 'FINALIZED', label: 'Booking Finalized', dotColor: 'bg-primary', badge: countOf((b) => ['FINALIZED', 'PRINTING'].includes(upper(b))) },
+      { value: 'READY', label: 'Ready for Pickup', dotColor: 'bg-gold', badge: countOf((b) => ['READY', 'UNDER_DELIVERY'].includes(upper(b))) },
+      { value: 'COMPLETED', label: 'Completed', dotColor: 'bg-neutral-400', badge: countOf((b) => upper(b) === 'COMPLETED') },
+    ];
+  }, [recent]);
 
   // Rows Per Page Options
   const pageSizeOptions = [
@@ -648,162 +790,56 @@ export default function AdminDashboard() {
           }}
         />
 
-        {/* ── Needs Your Attention Today ──────── */}
-        {!loadingTables && recent.length > 0 && (
-          <div className="rounded-3xl border border-[#c9a96e]/35 bg-[#faf8f5] p-4 sm:p-5 shadow-2xs ring-1 ring-[#c9a96e]/15">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3.5 border-b border-[#ece6da]">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-900 text-[#c9a96e] shadow-2xs">
-                  <Activity size={15} />
-                </span>
-                <div>
-                  <h3 className="font-heading text-sm sm:text-base font-bold text-neutral-900 leading-tight">
-                    Needs Your Attention Today
-                  </h3>
-                  <p className="text-[11.5px] text-neutral-500">
-                    Click any booking below to assign a photographer, add a Google Drive link, or record a payment
-                  </p>
-                </div>
-              </div>
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-800 bg-amber-100/70 px-2.5 py-1 rounded-full border border-amber-300/50 self-start sm:self-auto">
-                {actionCenterBuckets.todayShootsList.length} Today
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 pt-3.5">
-              {[
-                {
-                  key: 'UNASSIGNED_PHOTOGRAPHER',
-                  title: 'No Photographer Yet',
-                  subtitle: 'Approved bookings needing a photographer',
-                  items: actionCenterBuckets.unassignedList,
-                  cta: 'Assign',
-                },
-                {
-                  key: 'AWAITING_SOFT_COPIES',
-                  title: 'Waiting for Soft Copies',
-                  subtitle: 'No Google Drive link added yet',
-                  items: actionCenterBuckets.awaitingOutputsList,
-                  cta: 'Add Link',
-                },
-                {
-                  key: 'BALANCE_DUE',
-                  title: 'Unpaid Balance',
-                  subtitle: 'Bookings with remaining balance',
-                  items: actionCenterBuckets.balanceDueList,
-                  cta: 'Pay Balance',
-                },
-                {
-                  key: 'TODAY_SHOOTS',
-                  title: "Today's Schedule",
-                  subtitle: 'Photoshoots booked for today',
-                  items: actionCenterBuckets.todayShootsList,
-                  cta: 'View',
-                },
-              ].map((bucket) => {
-                const topItem = bucket.items[0] || null;
-                return (
-                  <div
-                    key={bucket.key}
-                    className="rounded-2xl bg-white border border-[#ece6da] p-3.5 flex flex-col justify-between gap-2.5 shadow-2xs hover:border-[#c9a96e]/60 transition-all"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-xs font-bold text-neutral-900">{bucket.title}</p>
-                        <p className="text-[11px] text-neutral-400 mt-0.5">{bucket.subtitle}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setStatusFilter('ALL');
-                          setActivePreset((prev) => (prev === bucket.key ? 'ALL' : bucket.key));
-                        }}
-                        className={`px-2 py-0.5 rounded-full text-xs font-bold tabular-nums cursor-pointer ${
-                          bucket.items.length > 0
-                            ? 'bg-amber-100 text-amber-900 border border-amber-300/60'
-                            : 'bg-neutral-100 text-neutral-400'
-                        }`}
-                        title="Filter queue by this bucket"
-                      >
-                        {bucket.items.length}
-                      </button>
-                    </div>
-
-                    {topItem ? (
-                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-neutral-100">
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold text-neutral-800 truncate">
-                            {topItem.customer?.first_name} {topItem.customer?.last_name}
-                          </p>
-                          <p className="text-[11px] font-mono text-amber-800 truncate">
-                            #{topItem.booking_number}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setInspectingBooking(topItem)}
-                          className="h-7 px-2.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-[#c9a96e] text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
-                        >
-                          <span>{bucket.cta}</span>
-                          <ArrowRight size={11} />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="pt-2 border-t border-neutral-100 flex items-center gap-1.5 text-[11px] text-emerald-700 font-medium">
-                        <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
-                        <span>All clear</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* ── Master Studio Intelligence Hub (Unified One Big Box Section) ── */}
-        <div className="relative rounded-3xl border border-[#c9a96e]/35 bg-white shadow-xs overflow-hidden font-body ring-1 ring-[#c9a96e]/15">
-          {/* Studio Signature Gold Top Accent Line */}
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-amber-600 via-[#c9a96e] to-amber-600" />
-
-
-          {/* Main Box Interior: Two Main Engines with Clean Subtle Divider */}
-          <div className="grid grid-cols-1 xl:grid-cols-12 divide-y xl:divide-y-0 xl:divide-x divide-neutral-200/80 items-stretch bg-white">
-            {/* Left: Revenue & Booking Trajectory */}
-            <div className="xl:col-span-6 p-4 sm:p-5 xl:p-6 flex flex-col justify-between bg-white">
-              <StudioRevenueTrendChart bookings={recent} loading={loadingTables} isEmbedded />
-            </div>
-
-            {/* Right: Service Demand */}
-            <div className="xl:col-span-6 p-4 sm:p-5 xl:p-6 flex flex-col justify-between bg-white">
-
-              <StudioPackageShareChart
-                bookings={recent}
-                services={servicesList}
-                loading={loadingTables}
-                activeServiceFilter={searchQuery}
-                onSelectService={(serviceName) => {
-                  setSearchQuery((prev) => (prev === serviceName ? '' : serviceName));
-                  setPage(1);
-                }}
-                isEmbedded
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ── Studio Operations Hub: Weekly Intake, Workflow Line Chart & Collections (Single Card) ── */}
-        <StudioOperationsHub
-          bookings={recent}
-          onSelectStatus={(key) => {
-            setActivePreset('ALL');
-            setStatusFilter((prev) => (prev === key ? 'ALL' : key));
-            setPage(1);
-          }}
+        {/* ── Secondary KPI Status Cards (Photographers, Soft Copies, Balance Due, Today's Shoots) ── */}
+        <CategorizedMetricStrip
+          loading={loadingTables}
+          activeFilter={activePreset}
+          cards={[
+            {
+              key: 'ASSIGNED_PHOTOGRAPHER',
+              label: 'Photographers',
+              value: actionCenterBuckets.assignedPhotographerList.length,
+              onClick: () => {
+                setStatusFilter('ALL');
+                setActivePreset((prev) => (prev === 'ASSIGNED_PHOTOGRAPHER' ? 'ALL' : 'ASSIGNED_PHOTOGRAPHER'));
+                setPage(1);
+              },
+            },
+            {
+              key: 'SOFT_COPIES_SENT',
+              label: 'Soft Copies',
+              value: actionCenterBuckets.softCopiesSentList.length,
+              onClick: () => {
+                setStatusFilter('ALL');
+                setActivePreset((prev) => (prev === 'SOFT_COPIES_SENT' ? 'ALL' : 'SOFT_COPIES_SENT'));
+                setPage(1);
+              },
+            },
+            {
+              key: 'BALANCE_DUE',
+              label: 'Balance Due',
+              value: actionCenterBuckets.balanceDueList.length,
+              onClick: () => {
+                setStatusFilter('ALL');
+                setActivePreset((prev) => (prev === 'BALANCE_DUE' ? 'ALL' : 'BALANCE_DUE'));
+                setPage(1);
+              },
+            },
+            {
+              key: 'TODAY_SHOOTS',
+              label: "Today's Shoots",
+              value: actionCenterBuckets.todayShootsList.length,
+              onClick: () => {
+                setStatusFilter('ALL');
+                setActivePreset((prev) => (prev === 'TODAY_SHOOTS' ? 'ALL' : 'TODAY_SHOOTS'));
+                setPage(1);
+              },
+            },
+          ]}
         />
 
 
-        {/* ── Master Operational Bookings & Production Queue (ALL Records with Pagination) ── */}
+        {/* ── Master Operational Bookings & Production Queue (Prioritized Above Charts) ── */}
         <div className="relative rounded-3xl border border-[#c9a96e]/35 bg-white shadow-xs overflow-hidden font-body ring-1 ring-[#c9a96e]/15">
           <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-amber-600 via-[#c9a96e] to-amber-600" />
 
@@ -827,11 +863,10 @@ export default function AdminDashboard() {
                   <button
                     type="button"
                     onClick={() => setViewMode('table')}
-                    className={`h-7 px-2.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center cursor-pointer ${
-                      viewMode === 'table'
+                    className={`h-7 px-2.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center cursor-pointer ${viewMode === 'table'
                         ? 'bg-white text-neutral-900 shadow-xs border border-neutral-200/60 font-semibold'
                         : 'text-neutral-500 hover:text-neutral-900'
-                    }`}
+                      }`}
                     title="Table View"
                   >
                     <TableIcon size={14} />
@@ -839,11 +874,10 @@ export default function AdminDashboard() {
                   <button
                     type="button"
                     onClick={() => setViewMode('cards')}
-                    className={`h-7 px-2.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center cursor-pointer ${
-                      viewMode === 'cards'
+                    className={`h-7 px-2.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center cursor-pointer ${viewMode === 'cards'
                         ? 'bg-white text-neutral-900 shadow-xs border border-neutral-200/60 font-semibold'
                         : 'text-neutral-500 hover:text-neutral-900'
-                    }`}
+                      }`}
                     title="Grid Cards View"
                   >
                     <LayoutGrid size={14} />
@@ -876,49 +910,11 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* 1-Click Operational Triage Strip */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-none">
-              {triageItems.map((item) => {
-                const isSelected = (statusFilter === 'ALL' && activePreset === item.key) || (statusFilter === item.key && activePreset === 'ALL');
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => {
-                      setStatusFilter('ALL');
-                      setActivePreset((prev) => (prev === item.key && item.key !== 'ALL' ? 'ALL' : item.key));
-                      setPage(1);
-                    }}
-                    className={`h-8 px-3 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all cursor-pointer border ${
-                      isSelected
-                        ? 'bg-neutral-900 text-white border-neutral-900 shadow-xs'
-                        : item.highlight
-                        ? 'bg-[#faf7f2] text-amber-950 border-[#c9a96e]/50 hover:border-[#c9a96e]'
-                        : 'bg-neutral-50 text-neutral-600 border-neutral-200/80 hover:bg-neutral-100 hover:text-neutral-900'
-                    }`}
-                  >
-                    <span>{item.label}</span>
-                    <span
-                      className={`px-1.5 py-0.5 rounded-md text-[10.5px] font-bold tabular-nums leading-none ${
-                        isSelected
-                          ? 'bg-[#c9a96e] text-neutral-950'
-                          : item.highlight
-                          ? 'bg-[#c9a96e]/25 text-amber-900'
-                          : 'bg-neutral-200/70 text-neutral-600'
-                      }`}
-                    >
-                      {item.count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            {/* Filter Controls Row: Prioritized Search Bar + Compact Filters */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 pt-1">
 
-            {/* Filter Controls Row (Balanced 4-Column Grid) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5 items-center pt-1">
-
-              {/* Search Bar */}
-              <div className="relative">
+              {/* Prioritized Search Bar */}
+              <div className="relative flex-1 min-w-0">
                 <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
                 <input
                   type="text"
@@ -939,20 +935,19 @@ export default function AdminDashboard() {
                 )}
               </div>
 
-              {/* Category Dropdown */}
-              <div>
+              {/* Compact Filter Dropdowns */}
+              <div className="flex items-center gap-2 shrink-0">
                 <CustomDropdown
                   value={categoryFilter}
                   onChange={setCategoryFilter}
                   options={categoryOptions}
                   placeholder="Categories"
-                  className="w-full"
-                  popoverWidth="w-full min-w-[220px]"
+                  size="sm"
+                  className="w-36 sm:w-40"
+                  popoverWidth="w-56"
+                  align="right"
                 />
-              </div>
 
-              {/* Status Custom Dropdown */}
-              <div>
                 <CustomDropdown
                   value={statusFilter}
                   onChange={(val) => {
@@ -961,28 +956,55 @@ export default function AdminDashboard() {
                   }}
                   options={statusOptions}
                   placeholder="Status"
-                  className="w-full"
-                  popoverWidth="w-full min-w-[240px]"
-                />
-              </div>
-
-              {/* Date Horizon Custom Dropdown */}
-              <div>
-                <CustomDropdown
-                  value={dateFilter}
-                  onChange={setDateFilter}
-                  options={dateOptions}
-                  placeholder="Calendar"
-                  className="w-full"
-                  popoverWidth="w-full min-w-[200px]"
+                  size="sm"
+                  className="w-40 sm:w-44"
+                  popoverWidth="w-60"
+                  align="right"
                 />
               </div>
 
             </div>
+
+            {/* Active Filter Summary & 1-Click Reset */}
+            {(searchQuery.trim() || statusFilter !== 'ALL' || activePreset !== 'ALL' || categoryFilter !== 'ALL') && (
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
+                <div className="flex flex-wrap items-center gap-1.5 text-neutral-600">
+                  <span className="font-semibold text-neutral-700">
+                    Showing {filteredBookings.length} of {recent.length} bookings
+                  </span>
+                  {searchQuery.trim() && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200/80 text-amber-900 font-medium">
+                      Filter: &ldquo;{searchQuery.trim()}&rdquo;
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        aria-label="Clear search filter"
+                        className="hover:text-amber-700 cursor-pointer"
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setStatusFilter('ALL');
+                    setActivePreset('ALL');
+                    setCategoryFilter('ALL');
+                    setPage(1);
+                  }}
+                  className="text-xs font-semibold text-amber-800 hover:text-amber-950 underline underline-offset-2 cursor-pointer"
+                >
+                  Reset all filters
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Queue View: Table vs Cards */}
-          <div className="overflow-x-auto min-h-[380px]">
+          <div className="overflow-x-auto">
             {loadingTables ? (
               <div className="p-6 space-y-3">
                 {[...Array(6)].map((_, i) => (
@@ -1005,11 +1027,11 @@ export default function AdminDashboard() {
                       />
                     </th>
                     <th className="px-4 py-3.5 whitespace-nowrap">Ref #</th>
-                    <th className="px-4 py-3.5 min-w-[220px]">Client & Package</th>
-                    <th className="px-4 py-3.5 w-48 hidden md:table-cell">Schedule</th>
-                    <th className="px-4 py-3.5 min-w-[170px]">Order Progress</th>
-                    <th className="px-4 py-3.5 w-40 whitespace-nowrap">Payment Status</th>
-                    <th className="px-4 py-3.5 w-28 text-right">Quick Action</th>
+                    <th className="px-4 py-3.5 min-w-[170px] w-56">Client</th>
+                    <th className="px-4 py-3.5 w-48 hidden sm:table-cell whitespace-nowrap">Time Schedule</th>
+                    <th className="px-4 py-3.5 w-44 hidden md:table-cell whitespace-nowrap">Schedule</th>
+                    <th className="px-4 py-3.5 min-w-[190px]">Order Progress</th>
+                    <th className="px-4 py-3.5 w-24 text-right">Quick Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100/90">
@@ -1020,11 +1042,10 @@ export default function AdminDashboard() {
                         key={booking.id}
                         onClick={() => setInspectingBooking(booking)}
                         title="Click row to inspect booking details"
-                        className={`transition-colors duration-150 group cursor-pointer ${
-                          isChecked
+                        className={`transition-colors duration-150 group cursor-pointer ${isChecked
                             ? 'bg-amber-50/60 border-l-2 border-l-amber-500'
                             : 'hover:bg-[#faf7f2]/80'
-                        }`}
+                          }`}
                       >
                         {/* Selection Checkbox */}
                         <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
@@ -1046,7 +1067,7 @@ export default function AdminDashboard() {
                           </span>
                         </td>
 
-                        {/* Customer & Service */}
+                        {/* Customer */}
                         <td className="px-4 py-3.5">
                           <div className="space-y-0.5">
                             <p
@@ -1055,31 +1076,47 @@ export default function AdminDashboard() {
                             >
                               {booking.customer?.first_name} {booking.customer?.last_name}
                             </p>
-                            <p
-                              className="text-xs text-neutral-500 truncate max-w-[240px] flex items-center gap-1.5"
-                              title={`Package: ${booking.service?.name || 'Studio Session'} · Total: ₱${Number(booking.total_amount || 0).toLocaleString()}`}
-                            >
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#c9a96e]/70 shrink-0" />
-                              <span>{booking.service?.name || 'Studio Session'}</span>
-                              {Number(booking.total_amount) > 0 && (
-                                <span className="text-neutral-400 font-mono text-[11px]">· ₱{Number(booking.total_amount).toLocaleString()}</span>
-                              )}
-                            </p>
+                            {Number(booking.total_amount) > 0 && (
+                              <p className="text-[11px] text-neutral-400 font-mono">
+                                ₱{Number(booking.total_amount).toLocaleString()}
+                              </p>
+                            )}
                           </div>
                         </td>
 
+                        {/* Time Schedule */}
+                        <td className="px-4 py-3.5 hidden sm:table-cell whitespace-nowrap text-xs font-medium text-neutral-700">
+                          {(() => {
+                            const timeLabel = formatBookingTime(booking);
+                            return timeLabel ? (
+                              <div
+                                className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-800"
+                                title={`Selected booking time schedule: ${timeLabel}`}
+                              >
+                                <Clock size={13} className="text-amber-700 shrink-0" />
+                                <span>{timeLabel}</span>
+                              </div>
+                            ) : (
+                              <div
+                                className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-400"
+                                title="No booking time slot selected"
+                              >
+                                <Clock size={13} className="text-neutral-400 shrink-0" />
+                                <span>Not set</span>
+                              </div>
+                            );
+                          })()}
+                        </td>
+
                         {/* Schedule */}
-                        <td className="px-4 py-3.5 hidden md:table-cell text-xs font-medium text-neutral-700">
+                        <td className="px-4 py-3.5 hidden md:table-cell whitespace-nowrap text-xs font-medium text-neutral-700">
                           {booking.event_date ? (
                             <div
                               className="flex items-center gap-1.5 text-xs font-medium text-neutral-800"
-                              title={`Session Date: ${new Date(booking.event_date).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}${booking.preferred_time ? ` at ${String(booking.preferred_time).slice(0, 5)}` : ''}`}
+                              title={`Session Date: ${new Date(booking.event_date).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}${formatBookingTime(booking) ? ` · ${formatBookingTime(booking)}` : ''}`}
                             >
                               <CalendarDays size={13} className="text-amber-700 shrink-0" />
                               <span>{formatDate(booking.event_date)}</span>
-                              {booking.preferred_time && (
-                                <span className="text-[11px] text-neutral-400 font-mono">· {String(booking.preferred_time).slice(0, 5)}</span>
-                              )}
                             </div>
                           ) : (
                             <div
@@ -1097,46 +1134,32 @@ export default function AdminDashboard() {
                           className="px-4 py-3.5"
                           title={`Lifecycle stage: ${booking.status || 'PENDING'}`}
                         >
-                          <BookingLifecycleBadge
-                            status={booking.status}
-                            showStatus={true}
-                            showClearance={false}
-                            variant="text"
-                          />
-                        </td>
-
-                        {/* Payment Status */}
-                        <td
-                          className="px-4 py-3.5 whitespace-nowrap"
-                          title={`Payment clearance: ${booking.payment_status || 'UNPAID'} (Total: ₱${Number(booking.total_amount || 0).toLocaleString()})`}
-                        >
-                          <BookingLifecycleBadge
-                            booking={booking}
-                            paymentStatus={booking.payment_status}
-                            showStatus={false}
-                            showClearance={true}
-                            variant="text"
-                          />
+                          <div className="flex flex-col items-start">
+                            <BookingLifecycleBadge
+                              booking={booking}
+                              status={booking.status}
+                              showStatus={true}
+                              showClearance={false}
+                              variant="text"
+                            />
+                            {String(booking.status || '').toUpperCase() === 'PHOTOGRAPHER_ASSIGNED' && hasAssignedPhotographer(booking) && (
+                              <span className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium text-neutral-600">
+                                <Camera size={11} className="text-amber-700 shrink-0" aria-hidden="true" />
+                                <span className="truncate max-w-[175px]">
+                                  {getPhotographerDisplayName(booking) || 'Assigned'}
+                                </span>
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         {/* Direct Actions Cell */}
                         <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-1">
-                            {/* Inspect button */}
-                            <button
-                              type="button"
-                              onClick={() => setInspectingBooking(booking)}
-                              className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-amber-900 hover:bg-amber-500/10 border border-transparent hover:border-amber-300/40 transition-all cursor-pointer"
-                              title="Inspect Details"
-                            >
-                              <Eye size={15} />
-                            </button>
-
-                            {/* 3-Dot Action Menu */}
+                          <div className="flex items-center justify-end">
                             <RowActionDropdown
                               booking={booking}
-                              onInspect={(b) => setInspectingBooking(b)}
-                              onFastConfirm={handleFastConfirm}
+                              onStageAction={handleRowStageAction}
+                              isBusy={advancingBookingId === booking.id}
                             />
                           </div>
                         </td>
@@ -1155,11 +1178,10 @@ export default function AdminDashboard() {
                       key={booking.id}
                       whileHover={{ y: -2 }}
                       onClick={() => setInspectingBooking(booking)}
-                      className={`rounded-2xl p-4 border transition-all space-y-3 cursor-pointer ${
-                        isChecked
+                      className={`rounded-2xl p-4 border transition-all space-y-3 cursor-pointer ${isChecked
                           ? 'border-amber-500 bg-amber-50/30 shadow-xs'
                           : 'border-neutral-200/80 bg-white hover:border-[#c9a96e]/60 hover:shadow-sm'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5">
@@ -1185,23 +1207,21 @@ export default function AdminDashboard() {
                         <div onClick={(e) => e.stopPropagation()}>
                           <RowActionDropdown
                             booking={booking}
-                            onInspect={(b) => setInspectingBooking(b)}
-                            onFastConfirm={handleFastConfirm}
+                            onStageAction={handleRowStageAction}
+                            isBusy={advancingBookingId === booking.id}
                           />
                         </div>
                       </div>
 
                       <div className="text-xs text-neutral-500 space-y-1.5">
-                        <p
-                          className="truncate font-medium text-neutral-700 flex items-center gap-1.5"
-                          title={`Service Package: ${booking.service?.name || 'Photography Session'} · Total: ₱${Number(booking.total_amount || 0).toLocaleString()}`}
-                        >
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#c9a96e]/70 shrink-0" />
-                          <span>{booking.service?.name || 'Photography Session'}</span>
-                        </p>
+                        {Number(booking.total_amount) > 0 && (
+                          <p className="text-[11px] text-neutral-400 font-mono">
+                            ₱{Number(booking.total_amount).toLocaleString()}
+                          </p>
+                        )}
                         <div
-                          className="flex items-center gap-1.5"
-                          title={booking.event_date ? `Reserved session date: ${new Date(booking.event_date).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}` : 'No date scheduled yet'}
+                          className="flex flex-wrap items-center gap-x-2.5 gap-y-1"
+                          title={booking.event_date ? `Reserved session date: ${new Date(booking.event_date).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}${formatBookingTime(booking) ? ` · ${formatBookingTime(booking)}` : ''}` : 'No date scheduled yet'}
                         >
                           {booking.event_date ? (
                             <span className="flex items-center gap-1.5 text-xs font-medium text-neutral-800">
@@ -1214,18 +1234,35 @@ export default function AdminDashboard() {
                               <span>Unscheduled</span>
                             </span>
                           )}
+                          {(() => {
+                            const timeLabel = formatBookingTime(booking);
+                            return timeLabel ? (
+                              <span className="flex items-center gap-1 text-[11px] font-medium text-neutral-600">
+                                <Clock size={11} className="text-amber-700 shrink-0" />
+                                <span>{timeLabel}</span>
+                              </span>
+                            ) : null;
+                          })()}
                         </div>
                       </div>
 
-                      <div className="pt-2.5 border-t border-neutral-100 flex items-center justify-between">
-                        <div title={`Status: ${booking.status || 'PENDING'} · Clearance: ${booking.payment_status || 'UNPAID'}`}>
+                      <div className="pt-2.5 border-t border-neutral-100 flex items-center justify-between gap-2">
+                        <div className="flex flex-col items-start min-w-0">
                           <BookingLifecycleBadge
                             booking={booking}
                             status={booking.status}
-                            paymentStatus={booking.payment_status}
-                            layout="inline"
+                            showStatus={true}
+                            showClearance={false}
                             variant="text"
                           />
+                          {String(booking.status || '').toUpperCase() === 'PHOTOGRAPHER_ASSIGNED' && hasAssignedPhotographer(booking) && (
+                            <span className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium text-neutral-600">
+                              <Camera size={11} className="text-amber-700 shrink-0" aria-hidden="true" />
+                              <span className="truncate max-w-[165px]">
+                                {getPhotographerDisplayName(booking) || 'Assigned'}
+                              </span>
+                            </span>
+                          )}
                         </div>
                         <button
                           type="button"
@@ -1233,7 +1270,7 @@ export default function AdminDashboard() {
                             e.stopPropagation();
                             setInspectingBooking(booking);
                           }}
-                          className="text-xs text-amber-700 hover:text-amber-900 font-semibold flex items-center gap-1 transition-colors cursor-pointer group"
+                          className="text-xs text-amber-700 hover:text-amber-900 font-semibold flex items-center gap-1 transition-colors cursor-pointer group shrink-0"
                           title={`Quick inspect & manage booking #${booking.booking_number}`}
                         >
                           <span>Manage</span>
@@ -1331,6 +1368,58 @@ export default function AdminDashboard() {
 
         </div>
 
+        {/* ── Visual Divider Heading: Separates Bookings Table from Analytics Graphs ── */}
+        <div className="pt-4 pb-1 flex items-center gap-4">
+          <h2 className="text-2xl sm:text-3xl lg:text-[32px] font-display font-bold tracking-tight text-neutral-900 shrink-0">
+            Studio Analytics &amp; Graphs
+          </h2>
+          <div className="h-px flex-1 bg-gradient-to-r from-[#c9a96e]/55 via-neutral-200 to-transparent" />
+        </div>
+
+        {/* ── Master Studio Intelligence Hub (Revenue & Booking Trajectory + Service Demand) ── */}
+        <div className="relative rounded-3xl border border-[#c9a96e]/35 bg-white shadow-xs overflow-hidden font-body ring-1 ring-[#c9a96e]/15">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-amber-600 via-[#c9a96e] to-amber-600" />
+          <div className="grid grid-cols-1 xl:grid-cols-12 divide-y xl:divide-y-0 xl:divide-x divide-neutral-200/80 items-stretch bg-white">
+            {/* Left: Revenue & Booking Trajectory */}
+            <div className="xl:col-span-6 min-w-0 p-4 sm:p-5 xl:p-6 flex flex-col justify-between bg-white">
+              <StudioRevenueTrendChart bookings={recent} loading={loadingTables} isEmbedded />
+            </div>
+
+            {/* Right: Service Demand */}
+            <div className="xl:col-span-6 min-w-0 p-4 sm:p-5 xl:p-6 flex flex-col justify-between bg-white">
+              <StudioPackageShareChart
+                bookings={recent}
+                services={servicesList}
+                loading={loadingTables}
+                activeServiceFilter={searchQuery}
+                onSelectService={(serviceName) => {
+                  setSearchQuery((prev) => (prev === serviceName ? '' : serviceName));
+                  setPage(1);
+                }}
+                isEmbedded
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ── Studio Operations Hub: Weekly Intake, Workflow Line Chart & Collections (Single Card) ── */}
+        <StudioOperationsHub
+          bookings={recent}
+          onSelectStatus={(key) => {
+            if (key === 'CONFIRMED') {
+              setStatusFilter('ALL');
+              setActivePreset((prev) => (prev === 'STAGE_CONFIRMED' ? 'ALL' : 'STAGE_CONFIRMED'));
+            } else {
+              setActivePreset('ALL');
+              setStatusFilter((prev) => (prev === key ? 'ALL' : key));
+            }
+            setPage(1);
+          }}
+        />
+
+        {/* ── Studio Breakdown Hub: Package Sets (SHS A-D / College A-B), Order Types & Schools ── */}
+        <StudioBookingBreakdownHub bookings={recent} />
+
       </div>
 
       {/* ── 4. Floating Multi-Select Direct Management Toolbar ─────────────── */}
@@ -1388,20 +1477,30 @@ export default function AdminDashboard() {
       <BookingQuickInspector
         booking={inspectingBooking}
         isOpen={!!inspectingBooking}
-        onClose={() => setInspectingBooking(null)}
+        initialOpenPayment={openPaymentOnInspect}
+        onClose={() => {
+          setInspectingBooking(null);
+          setOpenPaymentOnInspect(false);
+        }}
         onStatusUpdated={handleInspectorStatusUpdated}
       />
 
       {/* ── 6. Confirm & Schedule Pictorial Session Modal ───────────────────── */}
       <AnimatePresence>
         {schedulingBooking && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 overscroll-contain"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm and schedule pictorial session"
+          >
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => !isSubmittingSchedule && setSchedulingBooking(null)}
               className="absolute inset-0 bg-neutral-950/70 backdrop-blur-sm"
+              aria-hidden="true"
             />
 
             <motion.div
@@ -1409,7 +1508,7 @@ export default function AdminDashboard() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-neutral-200/80 overflow-hidden z-10 font-body"
+              className="relative w-full max-w-lg max-h-[90dvh] bg-white rounded-3xl shadow-2xl border border-neutral-200/80 overflow-y-auto z-10 font-body overscroll-contain"
             >
               {/* Modal Header */}
               <div className="bg-gradient-to-r from-neutral-900 via-neutral-950 to-neutral-900 text-white p-6 relative">
@@ -1503,6 +1602,41 @@ export default function AdminDashboard() {
                     />
                   </div>
 
+                  {/* Assign Photographer (Optional during Approval; Required before Pictorial) */}
+                  <div>
+                    <label
+                      htmlFor="schedule-photographer-select"
+                      className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1.5 flex items-center justify-between gap-2"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles size={13} className="text-gold" />
+                        <span>Assign Photographer (Required before Pictorial)</span>
+                      </span>
+                      {loadingSchedulePhotographers && (
+                        <Loader2 size={12} className="animate-spin text-gold" aria-hidden="true" />
+                      )}
+                    </label>
+                    <select
+                      id="schedule-photographer-select"
+                      value={schedulePhotographerId}
+                      onChange={(e) => setSchedulePhotographerId(e.target.value)}
+                      className="w-full h-11 px-3.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-semibold focus:bg-white focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all cursor-pointer"
+                    >
+                      <option value="">Assign later (Approve &amp; Reserve first)</option>
+                      {schedulePhotographers.map((ph) => {
+                        const phName = `${ph.first_name || ''} ${ph.last_name || ''}`.trim() || ph.email;
+                        const statusNote = ph.is_available && !ph.hasConflict
+                          ? `Available · ${ph.activeWorkloadCount || 0} shoots`
+                          : ph.conflictReason || ph.availability_status || 'Check schedule';
+                        return (
+                          <option key={ph.id} value={ph.id}>
+                            {phName} ({statusNote})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
                   {/* Remarks / Shoot Instructions */}
                   <div>
                     <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
@@ -1552,6 +1686,19 @@ export default function AdminDashboard() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* ── 7. Assign Photographer Modal (Required before Pictorial) ───────── */}
+      <AssignPhotographerModal
+        booking={assigningBooking}
+        changedById={profile?.id}
+        isOpen={!!assigningBooking}
+        onClose={() => setAssigningBooking(null)}
+        onAssigned={async (b, chosenName) => {
+          showToast(`✓ ${chosenName} assigned to #${b.booking_number}.`);
+          await load(true);
+        }}
+        onError={(msg) => showToast(msg)}
+      />
 
     </div>
   );

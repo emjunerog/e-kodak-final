@@ -39,16 +39,16 @@ export default function PremiumIcon({
 
   const tileBg =
     tone === 'soft'
-      ? colors.gold.bg
+      ? (isDark ? 'rgba(217, 180, 108, 0.16)' : '#F8EFE0')
       : tone === 'dark'
         ? (isDark ? '#1D1A20' : '#2A2520')
         : isDark
           ? 'rgba(255, 255, 255, 0.06)'
-          : 'rgba(255, 255, 255, 0.92)';
+          : '#FFFFFF';
 
   const tileBorder =
     tone === 'soft'
-      ? colors.gold.borderLight
+      ? (isDark ? 'rgba(217, 180, 108, 0.30)' : 'rgba(176, 125, 30, 0.22)')
       : isDark
         ? 'rgba(255, 255, 255, 0.10)'
         : 'rgba(30, 20, 5, 0.08)';
@@ -59,8 +59,11 @@ export default function PremiumIcon({
       ? (isDark ? '#17130C' : '#FFFFFF')
       : tone === 'dark'
         ? colors.gold.light
-        : colors.gold.light);
+        : isDark
+          ? colors.gold.light
+          : colors.gold.DEFAULT);
 
+  const hasShadow = isGradient || tone === 'dark' || glow;
   const glowColor = tone === 'ember' ? '#F28C3A' : tone === 'mint' ? '#3DDC97' : '#D9B46C';
 
   const content = (
@@ -72,9 +75,9 @@ export default function PremiumIcon({
           height: box,
           borderRadius: radius,
           shadowColor: glow ? glowColor : '#000000',
-          shadowOpacity: glow ? (isDark ? 0.45 : 0.3) : (isDark ? 0.25 : 0.08),
-          shadowRadius: glow ? 14 : 8,
-          elevation: glow ? 6 : 2,
+          shadowOpacity: hasShadow ? (glow ? (isDark ? 0.45 : 0.3) : (isDark ? 0.25 : 0.08)) : 0,
+          shadowRadius: hasShadow ? (glow ? 14 : 8) : 0,
+          elevation: hasShadow ? (glow ? 6 : 2) : 0,
         },
         style,
       ]}
@@ -129,8 +132,8 @@ export default function PremiumIcon({
       accessibilityLabel={accessibilityLabel}
       onPress={() => {
         try {
-          Haptics.selectionAsync();
-        } catch {}
+          Haptics.selectionAsync().catch(() => { });
+        } catch { }
         onPress();
       }}
     >

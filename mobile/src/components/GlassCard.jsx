@@ -39,13 +39,13 @@ export default function GlassCard({
       ? isDark
         ? 'rgba(24, 26, 36, 0.62)'
         : isSage
-          ? 'rgba(248, 250, 245, 0.72)'
-          : 'rgba(255, 252, 248, 0.72)'
+          ? 'rgba(253, 254, 251, 0.96)'
+          : 'rgba(255, 255, 255, 0.96)'
       : isDark
         ? 'rgba(24, 27, 38, 0.76)'
         : isSage
-          ? 'rgba(248, 250, 245, 0.78)'
-          : 'rgba(252, 250, 247, 0.78)';
+          ? 'rgba(253, 254, 251, 0.96)'
+          : 'rgba(255, 255, 255, 0.96)';
 
   return (
     <View

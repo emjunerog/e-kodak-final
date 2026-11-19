@@ -30,14 +30,17 @@
   --color-text-muted: #6b6358;
 
   /* Fonts */
-  --font-heading: "Playfair Display", Georgia, serif;
-  --font-body: "Inter", system-ui, sans-serif;
+  --font-heading: "Google Sans", system-ui, sans-serif;
+  --font-body: "Google Sans", system-ui, sans-serif;
 
-  /* Bootstrap Brand Variable Overrides — enforce studio dark charcoal instead of Bootstrap blue */
+  /* Bootstrap Brand Variable Overrides — enforce studio dark charcoal & Google Sans */
   --bs-primary: #1a1a1a;
   --bs-primary-rgb: 26, 26, 26;
   --bs-link-color: #1a1a1a;
   --bs-link-hover-color: #c9a96e;
+  --bs-font-sans-serif: "Google Sans", system-ui, sans-serif;
+  --bs-font-monospace: "Google Sans", system-ui, sans-serif;
+  --bs-body-font-family: "Google Sans", system-ui, sans-serif;
 
   /* Transitions */
   --transition-base: 200ms ease;
@@ -47,6 +50,18 @@
      "Viewing" bar (ResizeObserver); these are safe first-paint fallbacks. */
   --nav-h: 100px;
   --viewing-h: 68px;
+}
+
+/* Enforce Google Sans over unlayered Bootstrap body and heading typography */
+html,
+body,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-body);
 }
 
 /* ── Services page — one scroll, one package ────────────────────────────────
@@ -128,7 +143,7 @@ a.text-primary {
     line-height: 1.25rem !important;
   }
 
-  /* Heading elements use the editorial serif font */
+  /* Heading elements use Google Sans */
   h1,
   h2,
   h3,

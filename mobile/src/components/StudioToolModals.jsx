@@ -25,11 +25,13 @@ import GlassCard from './GlassCard';
 import GoldButton from './GoldButton';
 import StudioShapeLoader from './StudioShapeLoader';
 import { fetchStudioServices, fetchStudioSettings } from '../services/storageService';
+import { useResponsiveLayout } from '../utils/responsive';
 import { Typography, Spacing, Radius, Shadow } from '../theme';
 
 const { height } = Dimensions.get('window');
 
 function BottomSheetModal({ visible, onClose, styles, bottomInset, children }) {
+  const { modalFrameStyle, sheetMaxHeight } = useResponsiveLayout();
   const [isMounted, setIsMounted] = useState(visible);
   const [fadeAnim] = useState(() => new Animated.Value(0));
   const [slideAnim] = useState(() => new Animated.Value(Math.min(height * 0.55, 420)));
@@ -106,7 +108,9 @@ function BottomSheetModal({ visible, onClose, styles, bottomInset, children }) {
         <Animated.View
           style={[
             styles.modalCard,
+            modalFrameStyle,
             {
+              maxHeight: sheetMaxHeight,
               paddingBottom: Math.max(bottomInset, 16) + 8,
               transform: [{ translateY: slideAnim }],
             },
@@ -154,7 +158,7 @@ export function RatesModal({ visible, onClose, initialCategory = 'all' }) {
   }, [visible, initialCategory]);
 
   const toggleSetExpanded = (setId) => {
-    try { Haptics.selectionAsync(); } catch { }
+    try { Haptics.selectionAsync().catch(() => {}); } catch { }
     setExpandedSets((prev) => ({ ...prev, [setId]: !prev[setId] }));
   };
 
@@ -193,7 +197,7 @@ export function RatesModal({ visible, onClose, initialCategory = 'all' }) {
       <View style={styles.filterWrap}>
         <TouchableOpacity
           onPress={() => {
-            try { Haptics.selectionAsync(); } catch { }
+            try { Haptics.selectionAsync().catch(() => {}); } catch { }
             setFilterOpen((prev) => !prev);
           }}
           activeOpacity={0.85}
@@ -221,7 +225,7 @@ export function RatesModal({ visible, onClose, initialCategory = 'all' }) {
                 <TouchableOpacity
                   key={cat.id}
                   onPress={() => {
-                    try { Haptics.selectionAsync(); } catch { }
+                    try { Haptics.selectionAsync().catch(() => {}); } catch { }
                     setActiveCategory(cat.id);
                     setFilterOpen(false);
                   }}

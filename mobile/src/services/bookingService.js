@@ -145,13 +145,34 @@ const BOOKING_SELECT = `
   deleted_at,
   deletion_reason,
   created_at,
+  updated_at,
   confirmed_at,
   down_payment_confirmed,
+  payment_confirmed_at,
+  booking_for,
+  participant_name,
+  participant_phone,
+  participant_email,
+  participant_relationship,
+  participant_details,
+  student_details,
+  school,
+  school_address,
+  track,
+  batch,
+  section,
+  student_id,
+  yearbook_motto,
   service:services (
     id, name, category, base_price, tiers, inclusions
   ),
   customer:profiles!bookings_customer_id_fkey (
     id, first_name, last_name, email, phone, address, avatar_url, studio_specs
+  ),
+  photographer:photographer_profiles!bookings_photographer_id_fkey (
+    id,
+    specialization,
+    profile:profiles(first_name, last_name, avatar_url)
   ),
   booking_deliveries (
     id, delivery_type, status, tracking_number, carrier, dispatch_address,
@@ -282,8 +303,22 @@ function normalizeBooking(raw) {
     loc.includes('331 rizal') ||
     loc.includes('311 rizal');
 
-  // Parse structured notes
+  // Parse structured notes and overlay top-level DB academic/participant columns
   const parsedNotes = parseBookingNotes(raw.notes);
+  const dbStudent = (raw.student_details && typeof raw.student_details === 'object') ? raw.student_details : {};
+  const dbParticipant = (raw.participant_details && typeof raw.participant_details === 'object') ? raw.participant_details : {};
+
+  if (raw.school || dbStudent.school) parsedNotes['School'] = raw.school || dbStudent.school;
+  if (raw.school_address || dbStudent.school_address) parsedNotes['Campus / Address'] = raw.school_address || dbStudent.school_address;
+  if (raw.track || dbStudent.course || dbStudent.track) parsedNotes['Degree / Program'] = raw.track || dbStudent.course || dbStudent.track;
+  if (raw.section || dbStudent.section) parsedNotes['Section'] = raw.section || dbStudent.section;
+  if (raw.batch || dbStudent.batch) parsedNotes['Batch'] = raw.batch || dbStudent.batch;
+  if (raw.student_id || dbStudent.student_id) parsedNotes['Student ID'] = raw.student_id || dbStudent.student_id;
+  if (raw.yearbook_motto || dbStudent.yearbook_motto) parsedNotes['Yearbook Motto'] = raw.yearbook_motto || dbStudent.yearbook_motto;
+  if (raw.participant_name || dbParticipant.full_name) parsedNotes['Participant Name'] = raw.participant_name || dbParticipant.full_name;
+  if (raw.participant_phone || dbParticipant.phone) parsedNotes['Participant Phone'] = raw.participant_phone || dbParticipant.phone;
+  if (raw.participant_email || dbParticipant.email) parsedNotes['Participant Email'] = raw.participant_email || dbParticipant.email;
+
   const deliveryDetails = resolveDeliveryInfo(raw);
 
   // Match selected tier from services.tiers
@@ -590,7 +625,59 @@ export function subscribeToBookingUpdates(bookingId, onUpdate) {
     });
   } catch (cleanErr) {}
 
-  // Generate a distinct channel topic to ensure no collisions with already-subscribed channels
+  let isActive = true;
+  let lastSnapshotKey = '';
+
+  const buildSnapshotKey = (b) => {
+    if (!b) return '';
+    return [
+      b.status || '',
+      b.payment_status || '',
+      b.down_payment_confirmed ? '1' : '0',
+      b.payment_confirmed_at || '',
+      b.photographer_id || '',
+      b.event_date || '',
+      b.preferred_time || '',
+      b.updated_at || '',
+      b.school || '',
+      b.track || '',
+      b.section || '',
+      b.student_id || '',
+    ].join('|');
+  };
+
+  const syncFullBooking = async (fallbackRaw = null) => {
+    if (!isActive) return;
+    try {
+      const { data: fullBooking } = await fetchBookingByToken(bookingId);
+      if (!isActive) return;
+      if (fullBooking) {
+        const nextKey = buildSnapshotKey(fullBooking);
+        if (nextKey && nextKey !== lastSnapshotKey) {
+          const hadPrevious = Boolean(lastSnapshotKey);
+          lastSnapshotKey = nextKey;
+          if (hadPrevious || fallbackRaw) {
+            onUpdate(fullBooking);
+          }
+        }
+        return;
+      }
+    } catch {}
+    if (fallbackRaw && isActive) {
+      onUpdate(normalizeBooking(fallbackRaw));
+    }
+  };
+
+  // Seed initial snapshot key
+  fetchBookingByToken(bookingId)
+    .then(({ data }) => {
+      if (data && isActive && !lastSnapshotKey) {
+        lastSnapshotKey = buildSnapshotKey(data);
+      }
+    })
+    .catch(() => {});
+
+  // 1. Supabase Realtime subscription (when RLS allows direct row events)
   const uniqueTopic = `booking-sub-${bookingId}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   let channel = null;
 
@@ -601,16 +688,24 @@ export function subscribeToBookingUpdates(bookingId, onUpdate) {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'bookings', filter: `id=eq.${bookingId}` },
         (payload) => {
-          if (payload.new) onUpdate(normalizeBooking(payload.new));
+          if (payload.new && isActive) {
+            syncFullBooking(payload.new);
+          }
         }
       )
       .subscribe();
   } catch (err) {
     console.warn('Realtime subscription initialization skipped:', err?.message);
-    return () => {};
   }
 
+  // 2. Live RPC status sync poll (ensures anonymous QR-pass mobile users bypass RLS and receive admin status moves within seconds)
+  const pollInterval = setInterval(() => {
+    syncFullBooking(null);
+  }, 4000);
+
   return () => {
+    isActive = false;
+    clearInterval(pollInterval);
     if (channel) {
       try {
         supabase.removeChannel(channel);

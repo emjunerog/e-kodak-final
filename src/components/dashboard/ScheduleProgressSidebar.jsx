@@ -13,6 +13,7 @@ import {
   Camera,
   Aperture,
   Package,
+  UserCheck,
   Info
 } from 'lucide-react';
 import { getProgressSteps } from '../../lib/bookingUtils';
@@ -23,7 +24,7 @@ export default function ScheduleProgressSidebar({ isOpen, onClose, bookings = []
 
   const stageInfo = useMemo(() => {
     if (!latestBooking) return { percentage: 0, stageText: 'No active session' };
-    const steps = getProgressSteps(latestBooking.status);
+    const steps = getProgressSteps(latestBooking);
     const totalSteps = steps.length;
     const completedSteps = steps.filter(s => s.done || s.completed).length;
     const currentStep = steps.find(s => s.active || s.current) || steps[Math.max(0, completedSteps - 1)];
@@ -38,7 +39,7 @@ export default function ScheduleProgressSidebar({ isOpen, onClose, bookings = []
 
     return {
       percentage,
-      stageText: `Stage ${Math.max(1, completedSteps)}/${totalSteps} · ${currentStep?.label || 'In Progress'}`
+      stageText: `Stage ${Math.min(totalSteps, completedSteps + 1)}/${totalSteps} · ${currentStep?.label || 'In Progress'}`
     };
   }, [latestBooking]);
 
@@ -161,8 +162,8 @@ export default function ScheduleProgressSidebar({ isOpen, onClose, bookings = []
                 <div className="flex items-center justify-between relative px-1">
                   <div className="absolute left-6 right-6 top-1/2 -translate-y-1/2 h-[2px] bg-neutral-100 dark:bg-neutral-800 z-0 rounded-full" />
 
-                  {getProgressSteps(latestBooking.status).map((step, idx) => {
-                    const icons = [FileText, CheckCircle, Camera, Aperture, Package];
+                  {getProgressSteps(latestBooking).map((step, idx) => {
+                    const icons = [FileText, CheckCircle, UserCheck, Camera, Aperture, Sparkles, Layers, Package];
                     const Icon = icons[idx] || Info;
                     const isActive = step.active || step.current;
                     const isDone = step.done || step.completed;

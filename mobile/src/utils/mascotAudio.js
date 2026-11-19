@@ -43,11 +43,11 @@ export async function playMascotSound(type = 'pop') {
   if (settings?.haptics !== false) {
     try {
       if (type === 'alert') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
       } else if (type === 'success') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       } else {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
       }
     } catch {
       // Safe fallback if device does not support haptics

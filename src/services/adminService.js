@@ -154,6 +154,9 @@ export async function getRecentBookings(limit = 50) {
       .select(`
         id,
         booking_number,
+        booking_token,
+        customer_id,
+        service_id,
         status,
         payment_status,
         tier_name,
@@ -165,9 +168,26 @@ export async function getRecentBookings(limit = 50) {
         down_payment_amount,
         remaining_balance,
         down_payment_confirmed,
+        payment_confirmed_at,
+        confirmed_at,
         photographer_id,
+        booking_for,
+        participant_name,
+        participant_phone,
+        participant_email,
+        participant_relationship,
+        participant_details,
+        student_details,
+        school,
+        school_address,
+        track,
+        batch,
+        section,
+        student_id,
+        yearbook_motto,
         is_deleted,
         created_at,
+        updated_at,
         service:services(id, name, base_price, category, tiers, inclusions),
         customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, email, phone, address, studio_specs),
         photographer:photographer_profiles!bookings_photographer_id_fkey(
@@ -184,13 +204,12 @@ export async function getRecentBookings(limit = 50) {
     if (error) throw error;
     const filtered = (data || []).filter(b => !b.is_deleted).map(b => {
       const effPayStatus = getEffectivePaymentStatus(b);
-      // Auto-heal DB record if downpayment was detected (e.g., down_payment_amount > 0) but payment_status was UNPAID
+      // Sync payment_status only; do not auto-confirm downpayment before explicit admin approval.
       if (b.payment_status === 'UNPAID' && effPayStatus === 'DOWNPAYMENT') {
         supabase
           .from('bookings')
           .update({
             payment_status: 'PARTIAL',
-            down_payment_confirmed: true,
             updated_at: new Date().toISOString()
           })
           .eq('id', b.id)
@@ -227,16 +246,38 @@ export async function getPendingBookings(limit = 5) {
       .select(`
         id,
         booking_number,
+        customer_id,
+        service_id,
+        tier_name,
         status,
         payment_status,
         event_date,
+        preferred_time,
+        location,
+        notes,
         is_deleted,
         total_amount,
         down_payment_amount,
         remaining_balance,
         down_payment_confirmed,
-        service:services(name),
-        customer:profiles!bookings_customer_id_fkey(first_name, last_name)
+        payment_confirmed_at,
+        booking_for,
+        participant_name,
+        participant_phone,
+        participant_email,
+        participant_relationship,
+        participant_details,
+        student_details,
+        school,
+        school_address,
+        track,
+        batch,
+        section,
+        student_id,
+        yearbook_motto,
+        created_at,
+        service:services(id, name, base_price, category, tiers, inclusions),
+        customer:profiles!bookings_customer_id_fkey(id, first_name, last_name, email, phone, address, studio_specs)
       `)
       .eq('status', 'PENDING')
       .or('is_deleted.is.null,is_deleted.eq.false')

@@ -26,7 +26,7 @@ export default function StudioPhotoReel({ galleryItems = [], onPhotoLike }) {
   const handleLike = useCallback(async (photo) => {
     if (!photo?.id) return;
     try {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     } catch {}
 
     const alreadyLiked = Boolean(likedIds[photo.id]);
@@ -40,7 +40,7 @@ export default function StudioPhotoReel({ galleryItems = [], onPhotoLike }) {
 
   const openLightbox = useCallback((photo) => {
     try {
-      Haptics.selectionAsync();
+      Haptics.selectionAsync().catch(() => {});
     } catch {}
     setShowBefore(false);
     setSelectedPhoto(photo);

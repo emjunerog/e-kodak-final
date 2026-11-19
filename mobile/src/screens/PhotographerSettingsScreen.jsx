@@ -43,9 +43,11 @@ import GlassBackground from '../components/GlassBackground';
 import GlassHeader from '../components/GlassHeader';
 import GlassCard from '../components/GlassCard';
 import CardDecorElements from '../components/CardDecorElements';
+import FontAdjusterCard from '../components/FontAdjusterCard';
 import DeliveryGoogleMap from '../components/DeliveryGoogleMap';
 import { useTheme } from '../context/ThemeContext';
 import { useDialog } from '../context/DialogContext';
+import { useResponsiveLayout } from '../utils/responsive';
 import {
   getAppSettings,
   saveAppSettings,
@@ -112,9 +114,10 @@ export default function PhotographerSettingsScreen({ navigation }) {
   } = useTheme();
   const { showAlert, showProcess, waitProcessDuration } = useDialog();
   const insets = useSafeAreaInsets();
+  const layout = useResponsiveLayout();
   const styles = useMemo(
-    () => getStyles(colors, isDark, isSage, highContrast),
-    [colors, isDark, isSage, highContrast],
+    () => getStyles(colors, isDark, isSage, highContrast, layout),
+    [colors, isDark, isSage, highContrast, layout],
   );
 
   const [photographerId, setPhotographerId] = useState(null);
@@ -534,6 +537,12 @@ export default function PhotographerSettingsScreen({ navigation }) {
           </View>
         </GlassCard>
 
+        {/* TEXT SIZE */}
+        <Text style={styles.sectionLabel}>TEXT SIZE</Text>
+        <View style={{ marginBottom: layout.pad(14, 0.5) }}>
+          <FontAdjusterCard hapticsEnabled={hapticsEnabled} />
+        </View>
+
         {/* SHIFT & PREFERENCES */}
         <Text style={styles.sectionLabel}>SHIFT & PREFERENCES</Text>
         <GlassCard style={styles.listCard}>
@@ -810,7 +819,7 @@ const stylesStatic = StyleSheet.create({
   },
 });
 
-const getStyles = (colors, isDark, isSage, highContrast) =>
+const getStyles = (colors, isDark, isSage, highContrast, layout) =>
   StyleSheet.create({
     root: {
       flex: 1,
@@ -838,21 +847,22 @@ const getStyles = (colors, isDark, isSage, highContrast) =>
             : 'rgba(15, 23, 42, 0.06)',
     },
     scrollContent: {
-      paddingHorizontal: 18,
-      paddingTop: 14,
+      paddingHorizontal: layout.gutter,
+      paddingTop: layout.pad(14, 0.45),
     },
     sectionLabel: {
       fontFamily: Typography.fontBodySemi,
-      fontSize: 11,
+      fontSize: layout.fs(11, 0.75),
+      lineHeight: layout.fs(15, 0.75),
       letterSpacing: 1.1,
       color: highContrast ? colors.text.secondary : colors.text.muted,
-      marginBottom: 8,
-      marginTop: 6,
+      marginBottom: layout.pad(8, 0.45),
+      marginTop: layout.pad(6, 0.45),
       marginLeft: 2,
     },
     sectionCard: {
-      padding: 14,
-      marginBottom: 14,
+      padding: layout.pad(14, 0.5),
+      marginBottom: layout.pad(14, 0.5),
       overflow: 'hidden',
     },
     themeGrid: {
@@ -905,15 +915,15 @@ const getStyles = (colors, isDark, isSage, highContrast) =>
       fontSize: 11,
     },
     listCard: {
-      paddingHorizontal: 16,
-      paddingVertical: 6,
-      marginBottom: 14,
+      paddingHorizontal: layout.pad(16, 0.5),
+      paddingVertical: layout.pad(6, 0.6),
+      marginBottom: layout.pad(14, 0.5),
     },
     studioBayCard: {
-      paddingHorizontal: 16,
-      paddingTop: 14,
-      paddingBottom: 6,
-      marginBottom: 14,
+      paddingHorizontal: layout.pad(16, 0.5),
+      paddingTop: layout.pad(14, 0.55),
+      paddingBottom: layout.pad(6, 0.5),
+      marginBottom: layout.pad(14, 0.5),
     },
     mapActionsRow: {
       flexDirection: 'row',
@@ -951,7 +961,7 @@ const getStyles = (colors, isDark, isSage, highContrast) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingVertical: 12,
+      paddingVertical: layout.pad(12, 0.7),
       gap: 12,
     },
     rowLeft: {
@@ -972,14 +982,16 @@ const getStyles = (colors, isDark, isSage, highContrast) =>
     },
     rowTitle: {
       fontFamily: Typography.fontBodySemi,
-      fontSize: 14.5,
+      fontSize: layout.fs(14.5, 0.9),
+      lineHeight: layout.fs(19, 0.9),
       color: colors.text.primary,
     },
     rowSub: {
       fontFamily: Typography.fontBody,
-      fontSize: 12,
+      fontSize: layout.fs(12, 0.9),
+      lineHeight: layout.fs(16.5, 0.9),
       color: highContrast ? colors.text.secondary : colors.text.muted,
-      marginTop: 1,
+      marginTop: layout.pad(2, 0.5),
     },
     rowDivider: {
       height: highContrast ? 1.5 : 1,
@@ -989,24 +1001,26 @@ const getStyles = (colors, isDark, isSage, highContrast) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 11,
-      paddingVertical: 12,
+      paddingVertical: layout.pad(12, 0.7),
     },
     infoCaption: {
       fontFamily: Typography.fontBodySemi,
-      fontSize: 11,
+      fontSize: layout.fs(11, 0.85),
+      lineHeight: layout.fs(15, 0.85),
       color: highContrast ? colors.text.secondary : colors.text.muted,
     },
     infoValue: {
       fontFamily: Typography.fontBodyMedium,
-      fontSize: 13.5,
+      fontSize: layout.fs(13.5, 0.9),
+      lineHeight: layout.fs(18.5, 0.9),
       color: colors.text.primary,
-      marginTop: 1,
+      marginTop: layout.pad(2, 0.5),
     },
     actionRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 11,
-      paddingVertical: 12,
+      paddingVertical: layout.pad(12, 0.7),
     },
     versionFoot: {
       fontFamily: Typography.fontBodyMedium,

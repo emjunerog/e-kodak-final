@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { getEffectivePaymentStatus } from '../../../lib/bookingUtils';
-import { peso, compactPeso } from './chartUtils';
+import { peso } from './chartUtils';
 
 // Curated luxury studio palette for the 4 official packages (Rank 1: Signature Kodak Gold)
 const SERVICE_COLORS = [
@@ -139,10 +139,13 @@ function PackageKpiCard({
         />
       </div>
 
-      {/* 2. THE HEADER - Clean, no "top" word */}
-      <div className="flex items-center min-w-0 flex-1">
+      {/* 2. THE HEADER + COUNT / SHARE */}
+      <div className="flex flex-col min-w-0 flex-1">
         <span className="text-xs sm:text-sm font-bold text-neutral-900 truncate group-hover/pkg:text-amber-800 transition-colors">
           {item.name.replace(' and Sets', '')}
+        </span>
+        <span className="text-[11px] font-medium text-neutral-500 tabular-nums mt-0.5">
+          {item.count} {item.count === 1 ? 'order' : 'orders'} · {Math.round(item.exactPct)}%
         </span>
       </div>
     </button>
@@ -301,7 +304,16 @@ export default function StudioPackageShareChart({
         <div className="pt-3 flex-1 flex flex-col justify-between">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6 flex-1">
             {/* ── LEFT SIDE: Main Circle (Master Donut Chart) - Enlarged ── */}
-            <div className="relative flex-1 flex items-center justify-center min-w-[220px] py-1">
+            <div className="relative flex-1 min-w-0 flex items-center justify-center py-1">
+              {packageData.totalBookings === 0 ? (
+                <div className="w-[220px] h-[220px] sm:w-[245px] sm:h-[245px] rounded-full border-2 border-dashed border-neutral-200 bg-neutral-50/70 flex flex-col items-center justify-center text-center px-6">
+                  <PieChartIcon size={24} className="text-neutral-300 mb-2" aria-hidden="true" />
+                  <p className="text-xs font-bold text-neutral-600">No paid orders yet</p>
+                  <p className="text-[11px] text-neutral-400 mt-1">
+                    Demand share appears once downpayments or payments are cleared.
+                  </p>
+                </div>
+              ) : (
               <div className="relative w-[230px] h-[230px] sm:w-[255px] sm:h-[255px] flex items-center justify-center">
                 {/* Concentric ambient background dashed ring */}
                 <div className="pointer-events-none absolute h-[216px] w-[216px] sm:h-[240px] sm:w-[240px] rounded-full border border-dashed border-amber-300/40" />
@@ -344,17 +356,21 @@ export default function StudioPackageShareChart({
                   </PieChart>
                 </ResponsiveContainer>
 
-                {/* Centered Donut Readout: Valuation only */}
+                {/* Centered Donut Readout: Collected Valuation */}
                 <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center text-center">
                   <span className="font-heading text-2xl sm:text-3xl font-extrabold text-amber-700 tabular-nums tracking-tight">
                     {peso(packageData.totalRevenue)}
                   </span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 mt-0.5">
+                    Collected
+                  </span>
                 </div>
               </div>
+              )}
             </div>
 
-            {/* ── RIGHT SIDE: All Four Shorter Cards (header + circle only) ── */}
-            <div className="w-full sm:w-[280px] md:w-[310px] shrink-0 flex flex-col justify-between gap-2.5">
+            {/* ── RIGHT SIDE: Package Breakdown Cards ── */}
+            <div className="w-full sm:w-[270px] md:w-[300px] min-w-0 shrink-0 flex flex-col justify-between gap-2.5">
               {packageData.allFourCards.map((item) => (
                 <PackageKpiCard
                   key={item.id}
@@ -371,7 +387,7 @@ export default function StudioPackageShareChart({
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-xl border border-neutral-200/70 bg-neutral-50/70 p-2.5">
                 <div className="flex items-center justify-between text-neutral-500 text-[10px] font-semibold">
-                  <span>Avg / Order</span>
+                  <span>Avg Collected / Order</span>
                   <Receipt size={12} className="text-neutral-400" />
                 </div>
                 <p className="mt-1 font-mono font-bold text-neutral-800 text-xs sm:text-sm">
@@ -381,7 +397,7 @@ export default function StudioPackageShareChart({
 
               <div className="rounded-xl border border-neutral-200/70 bg-neutral-50/70 p-2.5">
                 <div className="flex items-center justify-between text-neutral-500 text-[10px] font-semibold">
-                  <span>Total Value</span>
+                  <span>Total Collected</span>
                   <TrendingUp size={12} className="text-amber-600" />
                 </div>
                 <p className="mt-1 font-mono font-bold text-amber-700 text-xs sm:text-sm">

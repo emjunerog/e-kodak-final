@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   RefreshControl,
   StatusBar,
-  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
@@ -23,14 +22,12 @@ import {
   ClipboardCheck,
   MapPin,
   ChevronRight,
-  X,
 } from 'lucide-react-native';
 
-import GlassCard from '../components/GlassCard';
 import GlassBackground from '../components/GlassBackground';
-import GoldButton from '../components/GoldButton';
-import PremiumIcon from '../components/PremiumIcon';
+import GuideChooserModal from '../components/GuideChooserModal';
 import ScanInstructionsModal from '../components/ScanInstructionsModal';
+import NotificationsModal from '../components/NotificationsModal';
 import StudioMascotKit from '../components/StudioMascotKit';
 import CardDecorElements from '../components/CardDecorElements';
 import StudioShapeLoader from '../components/StudioShapeLoader';
@@ -39,8 +36,18 @@ import {
   getSavedBookings,
   fetchStudioServices,
 } from '../services/storageService';
+import { subscribeToBookingUpdates } from '../services/bookingService';
+import {
+  fetchCustomerNotificationsFeed,
+  markNotificationRead,
+  markAllNotificationsRead,
+  clearNotificationsList,
+  announceNewNotificationsWithSound,
+  playNotificationBellCue,
+} from '../services/notificationService';
 import { useTheme } from '../context/ThemeContext';
-import { useRegisterTourTarget } from '../context/TourContext';
+import { useRegisterTourTarget, useTour } from '../context/TourContext';
+import { useResponsiveLayout } from '../utils/responsive';
 import { Typography } from '../theme';
 
 const E_KODAK_LOGO = require('../../assets/ekodak-logo.png');
@@ -48,7 +55,12 @@ const E_KODAK_LOGO = require('../../assets/ekodak-logo.png');
 export default function HomeScreen({ navigation }) {
   const { isDark, isSage, colors, gradients } = useTheme();
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => getStyles(colors, isDark, isSage), [colors, isDark, isSage]);
+  const layout = useResponsiveLayout();
+  const tour = useTour();
+  const styles = useMemo(
+    () => getStyles(colors, isDark, isSage, layout),
+    [colors, isDark, isSage, layout]
+  );
   const guideBtnRef = useRegisterTourTarget('customer_btn_guide');
   const alertsBtnRef = useRegisterTourTarget('customer_btn_notifications');
   const heroCtaRef = useRegisterTourTarget('customer_btn_hero_cta');
@@ -59,12 +71,29 @@ export default function HomeScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [ratesCategory, setRatesCategory] = useState('all');
 
-  // Modals state
+  // Modals & Notifications state
+  const [showGuideChooser, setShowGuideChooser] = useState(false);
   const [showScanGuide, setShowScanGuide] = useState(false);
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [notifUnreadCount, setNotifUnreadCount] = useState(0);
   const [showRates, setShowRates] = useState(false);
   const [showPrep, setShowPrep] = useState(false);
   const [showStudio, setShowStudio] = useState(false);
+
+  const loadNotifications = useCallback(async ({ syncLive = true, soundIfNew = true } = {}) => {
+    try {
+      const feed = await fetchCustomerNotificationsFeed({ syncLive });
+      setNotifications(feed.items);
+      setNotifUnreadCount(feed.unreadCount);
+      if (Array.isArray(feed.bookings)) {
+        setSavedBookings(feed.bookings);
+      }
+      if (soundIfNew) {
+        await announceNewNotificationsWithSound(feed.items);
+      }
+    } catch { }
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -74,10 +103,11 @@ export default function HomeScreen({ navigation }) {
       ]);
       setSavedBookings(bookings);
       setStudioServices(services);
+      await loadNotifications({ syncLive: true, soundIfNew: true });
     } finally {
       setInitialLoading(false);
     }
-  }, []);
+  }, [loadNotifications]);
 
   useFocusEffect(
     useCallback(() => {
@@ -85,10 +115,19 @@ export default function HomeScreen({ navigation }) {
     }, [loadData])
   );
 
+  const primaryBookingId = savedBookings[0]?.bookingId;
+  useEffect(() => {
+    if (!primaryBookingId) return undefined;
+    const unsubscribe = subscribeToBookingUpdates(primaryBookingId, () => {
+      loadNotifications({ syncLive: true, soundIfNew: true });
+    });
+    return unsubscribe;
+  }, [primaryBookingId, loadNotifications]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
     } catch { }
     await loadData();
     setRefreshing(false);
@@ -96,9 +135,57 @@ export default function HomeScreen({ navigation }) {
 
   const recentBooking = savedBookings[0];
 
+  const handleOpenNotifications = useCallback(() => {
+    playNotificationBellCue(notifUnreadCount > 0).catch(() => { });
+    setShowNotificationsModal(true);
+    loadNotifications({ syncLive: true, soundIfNew: true });
+  }, [notifUnreadCount, loadNotifications]);
+
+  const handleMarkNotificationRead = useCallback(async (item) => {
+    if (!item || item.isRead) return;
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
+    );
+    setNotifUnreadCount((c) => Math.max(0, c - 1));
+    await markNotificationRead(item.id);
+  }, []);
+
+  const handlePressNotification = useCallback(
+    async (item) => {
+      if (!item) return;
+      await handleMarkNotificationRead(item);
+      if (item.bookingToken) {
+        setShowNotificationsModal(false);
+        navigation.navigate('BookingTracker', {
+          token: item.bookingToken,
+          booking: {
+            booking_number: item.bookingNumber,
+            status: item.status,
+          },
+        });
+      }
+    },
+    [navigation, handleMarkNotificationRead]
+  );
+
+  const handleMarkAllNotifsRead = useCallback(async () => {
+    Haptics.selectionAsync().catch(() => { });
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    setNotifUnreadCount(0);
+    await markAllNotificationsRead(notifications);
+  }, [notifications]);
+
+  const handleClearAllNotifs = useCallback(async () => {
+    Haptics.selectionAsync().catch(() => { });
+    const snapshot = notifications;
+    setNotifications([]);
+    setNotifUnreadCount(0);
+    await clearNotificationsList(snapshot);
+  }, [notifications]);
+
   const openRatesForCategory = useCallback((category = 'all') => {
     try {
-      Haptics.selectionAsync();
+      Haptics.selectionAsync().catch(() => { });
     } catch { }
     setRatesCategory(category);
     setShowRates(true);
@@ -115,13 +202,15 @@ export default function HomeScreen({ navigation }) {
 
   const openBookingTracker = useCallback(() => {
     try {
-      Haptics.selectionAsync();
+      Haptics.selectionAsync().catch(() => { });
     } catch { }
     if (recentBooking) {
       navigation.navigate('BookingTracker', {
         token: recentBooking.token || recentBooking.bookingNumber,
         booking: {
           booking_number: recentBooking.bookingNumber,
+          serviceName: recentBooking.serviceName,
+          tier_name: recentBooking.tierName,
           status: recentBooking.status,
         },
       });
@@ -138,15 +227,21 @@ export default function HomeScreen({ navigation }) {
   }, [savedBookings.length]);
 
   const goldPillColors = gradients.goldPill || gradients.gold;
+  const recentPassColors = useMemo(() => {
+    if (isSage) return ['#21281F', '#151B14'];
+    if (isDark) return ['#241F17', '#131722'];
+    return ['#231D16', '#14110E'];
+  }, [isDark, isSage]);
+  const recentAccentColor = isSage ? '#B8CFA4' : '#E6C275';
   const cardGradientColors =
     gradients.glassCard ||
     gradients.card ||
-    (isDark ? ['rgba(36, 32, 42, 0.78)', 'rgba(21, 27, 36, 0.86)'] : ['rgba(255, 253, 250, 0.84)', 'rgba(237, 243, 250, 0.78)']);
+    (isDark ? ['rgba(36, 32, 42, 0.78)', 'rgba(21, 27, 36, 0.86)'] : ['rgba(255, 255, 255, 0.97)', 'rgba(246, 248, 252, 0.95)']);
   const headerGradientColors =
     gradients.header ||
     (isDark
       ? ['#242029', '#151B24']
-      : ['rgba(255, 253, 250, 0.94)', 'rgba(241, 246, 252, 0.90)']);
+      : ['rgba(255, 255, 255, 0.98)', 'rgba(248, 250, 253, 0.96)']);
   const accentIconColor = isSage ? colors.gold.DEFAULT : '#B88622';
   const onPrimaryColor = isSage ? '#FFFFFF' : '#181410';
 
@@ -158,22 +253,13 @@ export default function HomeScreen({ navigation }) {
       />
       <GlassBackground />
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[
-          styles.scrollContent,
+      {/* Top Floating Glass-Pill Header (Fixed above scroll) */}
+      <View
+        style={[
+          styles.fixedHeaderWrap,
           { paddingTop: Math.max(insets.top, 16) + 8 },
         ]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.gold.DEFAULT}
-          />
-        }
       >
-        {/* Top Floating Glass-Pill Header */}
         <View style={styles.headerPillShadow}>
           <View style={styles.headerPillFrame}>
             <LinearGradient
@@ -212,9 +298,12 @@ export default function HomeScreen({ navigation }) {
                   ref={guideBtnRef}
                   collapsable={false}
                   activeOpacity={0.8}
-                  onPress={() => setShowScanGuide(true)}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => { });
+                    setShowGuideChooser(true);
+                  }}
                   style={styles.headerIconBtn}
-                  accessibilityLabel="Scan guide"
+                  accessibilityLabel="Studio guides"
                 >
                   <HelpCircle
                     size={19}
@@ -227,21 +316,39 @@ export default function HomeScreen({ navigation }) {
                   ref={alertsBtnRef}
                   collapsable={false}
                   activeOpacity={0.8}
-                  onPress={() => setShowNotificationsModal(true)}
+                  onPress={handleOpenNotifications}
                   style={styles.headerIconBtn}
-                  accessibilityLabel="Studio notifications"
+                  accessibilityLabel={
+                    notifUnreadCount > 0
+                      ? `Studio notifications (${notifUnreadCount} unread)`
+                      : 'Studio notifications'
+                  }
                 >
                   <Bell
                     size={19}
                     color={isDark ? colors.text.primary : '#241D14'}
                     strokeWidth={1.85}
                   />
-                  <View style={styles.notifBadgeDot} />
+                  {notifUnreadCount > 0 && <View style={styles.notifBadgeDot} />}
                 </TouchableOpacity>
               </View>
             </View>
           </View>
         </View>
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.gold.DEFAULT}
+          />
+        }
+      >
 
         {/* Pure-shapes load / reload indicator (zero text) */}
         {(initialLoading || refreshing) && (
@@ -252,15 +359,15 @@ export default function HomeScreen({ navigation }) {
 
         {/* Hero Mascot Card */}
         <View style={styles.heroCardOuter}>
-            <LinearGradient
-              colors={cardGradientColors}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.heroCardGradient}
-            >
-              <View pointerEvents="none" style={styles.heroOrbsClip}>
-                <CardDecorElements variant="hero" isDark={isDark} />
-              </View>
+          <LinearGradient
+            colors={cardGradientColors}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.heroCardGradient}
+          >
+            <View pointerEvents="none" style={styles.heroOrbsClip}>
+              <CardDecorElements variant="hero" isDark={isDark} />
+            </View>
 
             <View style={styles.heroLeft}>
               <Text style={styles.heroHeading}>
@@ -291,7 +398,7 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.mascotBox}>
               <StudioMascotKit
                 pose={mobileMascotPose}
-                size={80}
+                size={layout.isCompact ? 68 : 80}
                 interactive={true}
                 showBadge={false}
               />
@@ -419,13 +526,16 @@ export default function HomeScreen({ navigation }) {
 
                   <Text
                     style={styles.toolMiniTitle}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
+                    numberOfLines={layout.isLargeFont ? 2 : 1}
+                    adjustsFontSizeToFit={!layout.isLargeFont}
                     minimumFontScale={0.85}
                   >
                     {tool.title}
                   </Text>
-                  <Text style={styles.toolMiniSub} numberOfLines={1}>
+                  <Text
+                    style={styles.toolMiniSub}
+                    numberOfLines={layout.isLargeFont ? 2 : 1}
+                  >
                     {tool.sub}
                   </Text>
                 </LinearGradient>
@@ -439,34 +549,71 @@ export default function HomeScreen({ navigation }) {
 
         {recentBooking ? (
           <TouchableOpacity
-            activeOpacity={0.88}
+            activeOpacity={0.9}
             onPress={openBookingTracker}
-            style={styles.recentCard}
+            style={styles.recentPassCard}
           >
             <LinearGradient
-              colors={cardGradientColors}
+              colors={recentPassColors}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={styles.recentCardGradient}
+              style={styles.recentPassGradient}
             >
-              <CardDecorElements variant="recent" isDark={isDark} />
-              <View style={styles.recentTopRow}>
-                <View style={styles.recentIconBox}>
-                  <CalendarCheck size={18} color={accentIconColor} strokeWidth={1.9} />
+              {/* Soft warm ambient sheen */}
+              <LinearGradient
+                colors={
+                  isSage
+                    ? ['rgba(184, 207, 164, 0.16)', 'rgba(184, 207, 164, 0.0)']
+                    : ['rgba(230, 194, 117, 0.18)', 'rgba(230, 194, 117, 0.0)']
+                }
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0.9, y: 0.9 }}
+                style={styles.recentPassGlow}
+                pointerEvents="none"
+              />
+
+              {/* Left vertical studio accent spine */}
+              <LinearGradient
+                colors={goldPillColors}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={styles.recentAccentSpine}
+              />
+
+              <View style={styles.recentPassBody}>
+                <View style={styles.recentTopRow}>
+                  <LinearGradient
+                    colors={goldPillColors}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.recentCrestBadge}
+                  >
+                    <CalendarCheck
+                      size={19}
+                      color={onPrimaryColor}
+                      strokeWidth={2}
+                    />
+                  </LinearGradient>
+
+                  <View style={styles.recentTopLeft}>
+                    <Text numberOfLines={1} style={styles.recentPassTitle}>
+                      {recentBooking.serviceName || 'Studio Package'}
+                    </Text>
+                    <Text numberOfLines={1} style={styles.recentPassMeta}>
+                      {[recentBooking.clientName, recentBooking.tierName]
+                        .filter(Boolean)
+                        .join(' · ') || 'Studio Guest'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.recentChevronCircle}>
+                    <ChevronRight
+                      size={17}
+                      color={recentAccentColor}
+                      strokeWidth={2.2}
+                    />
+                  </View>
                 </View>
-                <View style={styles.recentTopLeft}>
-                  <Text numberOfLines={1} style={styles.recentOrderTitle}>
-                    {recentBooking.serviceName || 'Studio Package'}
-                  </Text>
-                  <Text numberOfLines={1} style={styles.recentOrderMeta}>
-                    {recentBooking.clientName || 'Studio Guest'}
-                  </Text>
-                </View>
-                <ChevronRight
-                  size={19}
-                  color={isDark ? colors.text.muted : '#4B4338'}
-                  strokeWidth={1.9}
-                />
               </View>
             </LinearGradient>
           </TouchableOpacity>
@@ -542,19 +689,29 @@ export default function HomeScreen({ navigation }) {
                       end={{ x: 1, y: 1 }}
                       style={styles.packageCardGradient}
                     >
-                      <Image
-                        source={{ uri: svc.cover_image }}
-                        style={styles.packageImage}
-                        resizeMode="cover"
-                      />
+                      <View style={styles.packageImageWrap}>
+                        <Image
+                          source={{ uri: svc.cover_image }}
+                          style={styles.packageImage}
+                          resizeMode="cover"
+                        />
+                        <View style={styles.packageImageHairline} />
+                      </View>
                       <View style={styles.packageBody}>
                         <CardDecorElements variant="package" isDark={isDark} />
                         <Text numberOfLines={2} style={styles.packageTitle}>
                           {svc.name}
                         </Text>
-                        <Text numberOfLines={1} style={styles.packageMeta}>
-                          {priceSummary}
-                        </Text>
+                        <View style={styles.packageFooterRow}>
+                          <Text numberOfLines={1} style={styles.packageMeta}>
+                            {priceSummary}
+                          </Text>
+                          <ChevronRight
+                            size={14}
+                            color={isDark ? colors.gold.light : isSage ? colors.gold.DEFAULT : '#8A6314'}
+                            strokeWidth={2}
+                          />
+                        </View>
                       </View>
                     </LinearGradient>
                   </TouchableOpacity>
@@ -567,92 +724,42 @@ export default function HomeScreen({ navigation }) {
         <View style={{ height: 132 }} />
       </ScrollView>
 
+      {/* Studio Guides Chooser Modal */}
+      <GuideChooserModal
+        visible={showGuideChooser}
+        onClose={() => setShowGuideChooser(false)}
+        onSelectTour={() => {
+          setShowGuideChooser(false);
+          setTimeout(() => {
+            tour?.startTour?.('customer');
+          }, 200);
+        }}
+        onSelectTrackGuide={() => {
+          setShowGuideChooser(false);
+          setTimeout(() => {
+            setShowScanGuide(true);
+          }, 120);
+        }}
+      />
+
       {/* Scan Instructions Modal */}
       <ScanInstructionsModal
         visible={showScanGuide}
         onClose={() => setShowScanGuide(false)}
+        onOpenScanner={() => navigation.navigate('Scanner')}
       />
 
       {/* Studio Notifications & Activity Modal */}
-      <Modal
+      <NotificationsModal
         visible={showNotificationsModal}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={() => setShowNotificationsModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity
-            style={StyleSheet.absoluteFill}
-            activeOpacity={1}
-            onPress={() => setShowNotificationsModal(false)}
-          />
-          <View style={styles.notifCardWrapper}>
-            <GlassCard opaque blurred={false} glow highlight style={styles.notifCard}>
-              <View style={styles.notifHeader}>
-                <View style={styles.notifTitleRow}>
-                  <PremiumIcon icon={Bell} size={18} box={40} tone="soft" glow />
-                  <View>
-                    <Text style={[styles.notifTitle, { color: colors.text.primary }]}>
-                      Studio Alerts
-                    </Text>
-                    <Text style={[styles.notifSub, { color: colors.text.muted }]}>
-                      Real-time atelier updates
-                    </Text>
-                  </View>
-                </View>
-
-                <TouchableOpacity
-                  onPress={() => setShowNotificationsModal(false)}
-                  style={styles.notifCloseBtn}
-                >
-                  <X size={18} color={colors.text.muted} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.notifList}>
-                <View style={[styles.notifItem, { borderBottomColor: colors.gold.border }]}>
-                  <View style={[styles.notifDot, { backgroundColor: colors.status.ready }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.notifItemTitle, { color: colors.text.primary }]}>
-                      Live Shoot Milestones Active
-                    </Text>
-                    <Text style={[styles.notifItemDesc, { color: colors.text.secondary }]}>
-                      Scan your booking pass to receive live updates for capture, editing, and pickup.
-                    </Text>
-                    <Text style={[styles.notifItemTime, { color: colors.gold.light }]}>
-                      Studio Live Feed · Connected
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.notifItem}>
-                  <View style={[styles.notifDot, { backgroundColor: colors.gold.DEFAULT }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.notifItemTitle, { color: colors.text.primary }]}>
-                      Studio Packages Ready
-                    </Text>
-                    <Text style={[styles.notifItemDesc, { color: colors.text.secondary }]}>
-                      View live package sets and crystal wood inclusions on your dashboard.
-                    </Text>
-                    <Text style={[styles.notifItemTime, { color: colors.gold.light }]}>
-                      Studio Rates · Connected
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              <GoldButton
-                onPress={() => setShowNotificationsModal(false)}
-                variant="outline"
-                style={{ width: '100%', marginTop: 8 }}
-              >
-                Close Alerts
-              </GoldButton>
-            </GlassCard>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setShowNotificationsModal(false)}
+        items={notifications}
+        unreadCount={notifUnreadCount}
+        onMarkItemRead={handleMarkNotificationRead}
+        onPressItem={handlePressNotification}
+        onMarkAllRead={handleMarkAllNotifsRead}
+        onClearAll={handleClearAllNotifs}
+      />
 
       {/* Studio Tool Modals */}
       <RatesModal
@@ -666,7 +773,7 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-const getStyles = (colors, isDark, isSage) =>
+const getStyles = (colors, isDark, isSage, layout) =>
   StyleSheet.create({
     container: {
       flex: 1,
@@ -676,12 +783,17 @@ const getStyles = (colors, isDark, isSage) =>
       zIndex: 1,
     },
     scrollContent: {
-      paddingHorizontal: 18,
+      paddingHorizontal: layout.gutter,
+      paddingTop: 6,
     },
 
     // Header
+    fixedHeaderWrap: {
+      paddingHorizontal: layout.gutter,
+      paddingBottom: 10,
+      zIndex: 10,
+    },
     headerPillShadow: {
-      marginBottom: 16,
       borderRadius: 28,
       backgroundColor: 'transparent',
       shadowColor: isDark ? '#000000' : '#4E4332',
@@ -693,7 +805,8 @@ const getStyles = (colors, isDark, isSage) =>
     headerPillFrame: {
       borderRadius: 28,
       borderWidth: 1,
-      borderColor: isDark ? 'rgba(180, 198, 224, 0.20)' : 'rgba(255, 255, 255, 0.88)',
+      borderColor: isDark ? 'rgba(180, 198, 224, 0.20)' : 'rgba(255, 255, 255, 0.95)',
+      backgroundColor: isDark ? '#181E29' : isSage ? '#FCFDFB' : '#FFFFFF',
       paddingHorizontal: 16,
       paddingVertical: 12,
       overflow: 'hidden',
@@ -785,6 +898,8 @@ const getStyles = (colors, isDark, isSage) =>
         : isSage
           ? '#D7DDD1'
           : '#DCDDE6',
+      backgroundColor: isDark ? '#181E29' : isSage ? '#FCFDFB' : '#FFFFFF',
+      overflow: 'hidden',
       shadowColor: '#5B6472',
       shadowOffset: { width: 0, height: 6 },
       shadowOpacity: isDark ? 0 : 0.09,
@@ -796,8 +911,8 @@ const getStyles = (colors, isDark, isSage) =>
       alignItems: 'center',
       justifyContent: 'space-between',
       borderRadius: 21,
-      padding: 18,
-      gap: 12,
+      padding: layout.isCompact ? 14 : 18,
+      gap: layout.cardGap,
       position: 'relative',
     },
     heroOrbsClip: {
@@ -810,42 +925,43 @@ const getStyles = (colors, isDark, isSage) =>
     },
     heroHeading: {
       fontFamily: Typography.fontHeading,
-      fontSize: 23,
-      lineHeight: 28,
+      fontSize: layout.fs(23, 0.8),
+      lineHeight: layout.fs(28, 0.85),
       color: isDark ? colors.text.primary : '#181410',
     },
     heroBody: {
       fontFamily: Typography.fontBodyMedium,
-      fontSize: 12.5,
-      lineHeight: 18,
+      fontSize: layout.fs(12.5, 0.95),
+      lineHeight: layout.fs(18, 0.95),
       color: isDark ? colors.text.secondary : '#5C5346',
-      marginTop: 8,
+      marginTop: layout.pad(8, 0.5),
     },
     heroCtaWrap: {
-      marginTop: 14,
+      marginTop: layout.pad(14, 0.55),
       alignSelf: 'flex-start',
       borderRadius: 999,
       overflow: 'hidden',
     },
     heroCtaGradient: {
-      paddingVertical: 10,
-      paddingHorizontal: 18,
+      paddingVertical: layout.pad(10, 0.45),
+      paddingHorizontal: layout.pad(18, 0.4),
       borderRadius: 999,
       alignItems: 'center',
       justifyContent: 'center',
     },
     heroCtaText: {
       fontFamily: Typography.fontBodyBold,
-      fontSize: 13,
+      fontSize: layout.fs(13, 0.9),
+      lineHeight: layout.fs(17, 0.9),
       color: isSage ? '#FFFFFF' : '#181410',
     },
     mascotBox: {
-      width: 108,
-      height: 116,
+      width: layout.isCompact ? 92 : 108,
+      height: layout.isCompact ? 100 : 116,
       borderRadius: 16,
-      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255, 255, 255, 0.72)',
+      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255, 255, 255, 0.92)',
       borderWidth: 1,
-      borderColor: isDark ? 'rgba(180, 198, 224, 0.16)' : 'rgba(214, 219, 230, 0.80)',
+      borderColor: isDark ? 'rgba(180, 198, 224, 0.16)' : 'rgba(214, 219, 230, 0.85)',
       alignItems: 'center',
       justifyContent: 'center',
       zIndex: 10,
@@ -854,18 +970,18 @@ const getStyles = (colors, isDark, isSage) =>
     // Section Header
     sectionLabel: {
       fontFamily: Typography.fontHeading,
-      fontSize: 21,
-      lineHeight: 26,
+      fontSize: layout.fs(21, 0.75),
+      lineHeight: layout.fs(26, 0.8),
       letterSpacing: -0.25,
       color: isDark ? colors.text.primary : '#181410',
-      marginTop: 22,
-      marginBottom: 12,
+      marginTop: layout.pad(22, 0.5),
+      marginBottom: layout.pad(12, 0.5),
     },
 
     // Quick Actions 2-column
     quickActionsGrid: {
       flexDirection: 'row',
-      gap: 12,
+      gap: layout.cardGap,
     },
     quickActionCard: {
       flex: 1,
@@ -876,6 +992,7 @@ const getStyles = (colors, isDark, isSage) =>
         : isSage
           ? '#D7DDD1'
           : '#DCDDE6',
+      backgroundColor: isDark ? '#181E29' : isSage ? '#FCFDFB' : '#FFFFFF',
       overflow: 'hidden',
       shadowColor: '#5B6472',
       shadowOffset: { width: 0, height: 4 },
@@ -885,7 +1002,7 @@ const getStyles = (colors, isDark, isSage) =>
     },
     quickActionGradient: {
       flex: 1,
-      padding: 16,
+      padding: layout.cardPad,
       borderRadius: 19,
       position: 'relative',
     },
@@ -906,28 +1023,28 @@ const getStyles = (colors, isDark, isSage) =>
     },
     quickActionTitle: {
       fontFamily: Typography.fontBodyBold,
-      fontSize: 16.5,
-      lineHeight: 21,
+      fontSize: layout.fs(16.5, 0.9),
+      lineHeight: layout.fs(21, 0.9),
       color: isDark ? colors.text.primary : '#181410',
-      marginTop: 14,
+      marginTop: layout.pad(14, 0.55),
     },
     quickActionSub: {
       fontFamily: Typography.fontBodyMedium,
-      fontSize: 12,
-      lineHeight: 17,
+      fontSize: layout.fs(12, 0.95),
+      lineHeight: layout.fs(17, 0.95),
       color: isDark ? colors.text.secondary : '#5C5346',
-      marginTop: 4,
+      marginTop: layout.pad(4, 0.5),
     },
 
     // Studio Tool Cards Grid
     toolsCardsGrid: {
       flexDirection: 'row',
-      gap: 10,
-      marginTop: 12,
+      gap: layout.isCompact ? 8 : 10,
+      marginTop: layout.cardGap,
     },
     toolMiniCard: {
       flex: 1,
-      minHeight: 128,
+      minHeight: layout.pad(layout.isCompact ? 118 : 128, 0.65),
       borderRadius: 20,
       borderWidth: 1,
       borderColor: isDark
@@ -935,6 +1052,7 @@ const getStyles = (colors, isDark, isSage) =>
         : isSage
           ? '#D7DDD1'
           : '#DCDDE6',
+      backgroundColor: isDark ? '#181E29' : isSage ? '#FCFDFB' : '#FFFFFF',
       overflow: 'hidden',
       shadowColor: '#5B6472',
       shadowOffset: { width: 0, height: 4 },
@@ -944,8 +1062,8 @@ const getStyles = (colors, isDark, isSage) =>
     },
     toolMiniGradient: {
       flex: 1,
-      paddingHorizontal: 10,
-      paddingVertical: 16,
+      paddingHorizontal: layout.pad(10, 0.35),
+      paddingVertical: layout.pad(16, 0.7),
       borderRadius: 19,
       alignItems: 'center',
       justifyContent: 'center',
@@ -970,30 +1088,101 @@ const getStyles = (colors, isDark, isSage) =>
       width: 40,
       height: 40,
       borderRadius: 12,
-      backgroundColor: isDark ? 'rgba(180, 198, 224, 0.14)' : 'rgba(255, 255, 255, 0.85)',
+      backgroundColor: isDark ? 'rgba(180, 198, 224, 0.14)' : 'rgba(255, 255, 255, 0.96)',
       borderWidth: 1,
-      borderColor: isDark ? 'rgba(180, 198, 224, 0.24)' : 'rgba(198, 206, 222, 0.70)',
+      borderColor: isDark ? 'rgba(180, 198, 224, 0.24)' : 'rgba(198, 206, 222, 0.75)',
       alignItems: 'center',
       justifyContent: 'center',
     },
     toolMiniTitle: {
       fontFamily: Typography.fontBodyBold,
-      fontSize: 14,
-      lineHeight: 18,
+      fontSize: layout.fs(14, 0.85),
+      lineHeight: layout.fs(18, 0.85),
       color: isDark ? colors.text.primary : '#181410',
       textAlign: 'center',
-      marginTop: 12,
+      marginTop: layout.pad(12, 0.5),
     },
     toolMiniSub: {
       fontFamily: Typography.fontBodyMedium,
-      fontSize: 11,
-      lineHeight: 15,
+      fontSize: layout.fs(11, 0.85),
+      lineHeight: layout.fs(15, 0.85),
       color: isDark ? colors.text.secondary : '#5C5346',
       textAlign: 'center',
-      marginTop: 3,
+      marginTop: layout.pad(3, 0.5),
     },
 
-    // Recent Tracker Summary
+    // Recent Order Highlight Pass
+    recentPassCard: {
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: isSage
+        ? 'rgba(162, 188, 142, 0.45)'
+        : 'rgba(229, 189, 103, 0.46)',
+      backgroundColor: isSage ? '#191F17' : '#161310',
+      overflow: 'hidden',
+      shadowColor: isDark ? '#000000' : '#2C2214',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: isDark ? 0.34 : 0.18,
+      shadowRadius: 16,
+      elevation: 5,
+    },
+    recentPassGradient: {
+      borderRadius: 19,
+      position: 'relative',
+      flexDirection: 'row',
+      overflow: 'hidden',
+    },
+    recentPassGlow: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 76,
+    },
+    recentAccentSpine: {
+      width: 4,
+    },
+    recentPassBody: {
+      flex: 1,
+      paddingHorizontal: layout.pad(15, 0.45),
+      paddingVertical: layout.pad(16, 0.7),
+    },
+    recentCrestBadge: {
+      width: 42,
+      height: 42,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    recentPassTitle: {
+      fontFamily: Typography.fontBodyBold,
+      fontSize: layout.fs(16.5, 0.9),
+      lineHeight: layout.fs(21, 0.9),
+      color: '#FFFDF8',
+    },
+    recentPassMeta: {
+      fontFamily: Typography.fontBodyMedium,
+      fontSize: layout.fs(12.5, 0.95),
+      lineHeight: layout.fs(17, 0.95),
+      color: '#C9BFA9',
+      marginTop: layout.pad(2, 0.5),
+    },
+    recentChevronCircle: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      backgroundColor: isSage
+        ? 'rgba(184, 207, 164, 0.14)'
+        : 'rgba(230, 194, 117, 0.14)',
+      borderWidth: 1,
+      borderColor: isSage
+        ? 'rgba(184, 207, 164, 0.34)'
+        : 'rgba(230, 194, 117, 0.34)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
+    // Empty Recent Card
     recentCard: {
       borderRadius: 20,
       borderWidth: 1,
@@ -1002,6 +1191,7 @@ const getStyles = (colors, isDark, isSage) =>
         : isSage
           ? '#D7DDD1'
           : '#DCDDE6',
+      backgroundColor: isDark ? '#181E29' : isSage ? '#FAFBF8' : '#FFFFFF',
       overflow: 'hidden',
       shadowColor: '#5B6472',
       shadowOffset: { width: 0, height: 4 },
@@ -1050,15 +1240,21 @@ const getStyles = (colors, isDark, isSage) =>
       marginTop: 2,
     },
     packagesScroll: {
-      gap: 12,
+      gap: layout.cardGap,
       paddingRight: 8,
       paddingBottom: 6,
+      alignItems: 'stretch',
     },
     packageCard: {
-      width: 220,
+      width: layout.packageCardWidth,
       borderRadius: 18,
       borderWidth: 1,
-      borderColor: isDark ? 'rgba(180, 198, 224, 0.20)' : '#DCDDE6',
+      borderColor: isDark
+        ? 'rgba(180, 198, 224, 0.20)'
+        : isSage
+          ? '#D7DDD1'
+          : '#DCDDE6',
+      backgroundColor: isDark ? '#181E29' : isSage ? '#FAFBF8' : '#FFFFFF',
       overflow: 'hidden',
       shadowColor: '#5B6472',
       shadowOffset: { width: 0, height: 4 },
@@ -1067,109 +1263,55 @@ const getStyles = (colors, isDark, isSage) =>
       elevation: isDark ? 0 : 2,
     },
     packageCardGradient: {
+      flex: 1,
       borderRadius: 17,
       overflow: 'hidden',
     },
+    packageImageWrap: {
+      width: '100%',
+      height: layout.isCompact ? 100 : 114,
+      backgroundColor: isDark ? '#1F2634' : '#E5EAF2',
+      position: 'relative',
+    },
     packageImage: {
       width: '100%',
-      height: 112,
-      backgroundColor: '#E5EAF2',
+      height: '100%',
+    },
+    packageImageHairline: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(24, 20, 16, 0.08)',
     },
     packageBody: {
-      paddingHorizontal: 14,
-      paddingTop: 11,
-      paddingBottom: 13,
+      flex: 1,
+      justifyContent: 'space-between',
+      paddingHorizontal: layout.pad(14, 0.45),
+      paddingTop: layout.pad(12, 0.6),
+      paddingBottom: layout.pad(14, 0.65),
       position: 'relative',
       overflow: 'hidden',
     },
     packageTitle: {
       fontFamily: Typography.fontBodyBold,
-      fontSize: 16,
-      lineHeight: 21,
+      fontSize: layout.fs(15.5, 0.9),
+      lineHeight: layout.fs(20.5, 0.9),
       color: isDark ? colors.text.primary : '#181410',
     },
-    packageMeta: {
-      fontFamily: Typography.fontBodySemi,
-      fontSize: 12.5,
-      color: isDark ? colors.gold.light : '#8A6314',
-      marginTop: 6,
-    },
-
-    // Notifications Modal
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(10, 8, 6, 0.72)',
-      justifyContent: 'center',
-      padding: 20,
-    },
-    notifCardWrapper: {
-      width: '100%',
-      maxWidth: 420,
-      alignSelf: 'center',
-    },
-    notifCard: {
-      padding: 20,
-      borderRadius: 24,
-    },
-    notifHeader: {
+    packageFooterRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      marginBottom: 16,
+      gap: 6,
+      marginTop: layout.pad(8, 0.55),
     },
-    notifTitleRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-    },
-    notifTitle: {
-      fontFamily: Typography.fontBodyBold,
-      fontSize: 17,
-    },
-    notifSub: {
-      fontFamily: Typography.fontBody,
-      fontSize: 12,
-      marginTop: 2,
-    },
-    notifCloseBtn: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      backgroundColor: colors.surface?.chip || 'rgba(127, 127, 140, 0.14)',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    notifList: {
-      gap: 12,
-      marginBottom: 8,
-    },
-    notifItem: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: 10,
-      paddingBottom: 12,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: 'rgba(180, 140, 50, 0.2)',
-    },
-    notifDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      marginTop: 5,
-    },
-    notifItemTitle: {
-      fontFamily: Typography.fontBodyBold,
-      fontSize: 13.5,
-    },
-    notifItemDesc: {
-      fontFamily: Typography.fontBody,
-      fontSize: 12.5,
-      lineHeight: 18,
-      marginTop: 3,
-    },
-    notifItemTime: {
-      fontFamily: Typography.fontBodyMedium,
-      fontSize: 11,
-      marginTop: 4,
+    packageMeta: {
+      flex: 1,
+      fontFamily: Typography.fontBodySemi,
+      fontSize: layout.fs(12.5, 0.9),
+      lineHeight: layout.fs(17, 0.9),
+      color: isDark ? colors.gold.light : isSage ? colors.gold.DEFAULT : '#8A6314',
     },
   });

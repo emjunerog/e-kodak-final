@@ -34,8 +34,10 @@ import {
 import GlassBackground from '../components/GlassBackground';
 import GlassHeader from '../components/GlassHeader';
 import CardDecorElements from '../components/CardDecorElements';
+import FontAdjusterCard from '../components/FontAdjusterCard';
 import { useTheme } from '../context/ThemeContext';
 import { useDialog } from '../context/DialogContext';
+import { useResponsiveLayout } from '../utils/responsive';
 import {
   getAppSettings,
   saveAppSettings,
@@ -80,7 +82,8 @@ export default function SettingsScreen({ navigation }) {
   const { isDark, isSage, themeMode, setThemeMode, highContrast: themeHighContrast, setHighContrast: setThemeHighContrast, colors, gradients } = useTheme();
   const { showAlert, showProcess, waitProcessDuration } = useDialog();
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => getStyles(colors, isDark), [colors, isDark]);
+  const layout = useResponsiveLayout();
+  const styles = useMemo(() => getStyles(colors, isDark, layout), [colors, isDark, layout]);
 
   const [notifications, setNotifications] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -587,6 +590,16 @@ export default function SettingsScreen({ navigation }) {
           ))}
         </View>
 
+        {/* ── Text Size Adjuster ── */}
+        <Text style={[styles.sectionLabel, styles.sectionLabelSpaced, { color: sectionLabelColor }]}>
+          TEXT SIZE
+        </Text>
+        <FontAdjusterCard
+          hapticsEnabled={hapticsEnabled}
+          cardBorder={cardBorder}
+          cardGradientColors={cardGradientColors}
+        />
+
         {/* ── 2. Studio Credentials Group (Location, Hotline & Hours) ── */}
         <Text style={[styles.sectionLabel, styles.sectionLabelSpaced, { color: sectionLabelColor }]}>
           STUDIO CREDENTIALS
@@ -955,7 +968,7 @@ const stylesStatic = StyleSheet.create({
   },
 });
 
-const getStyles = (colors, isDark) =>
+const getStyles = (colors, isDark, layout) =>
   StyleSheet.create({
     screen: { flex: 1 },
     scroll: { flex: 1, zIndex: 1 },
@@ -973,20 +986,20 @@ const getStyles = (colors, isDark) =>
       justifyContent: 'center',
     },
     content: {
-      paddingHorizontal: 16,
+      paddingHorizontal: layout.gutter,
       paddingTop: 6,
-      gap: 12,
+      gap: layout.pad(12, 0.5),
     },
     sectionLabel: {
       fontFamily: Typography.fontBodyBold,
-      fontSize: 11.5,
-      lineHeight: 15,
+      fontSize: layout.fs(11.5, 0.75),
+      lineHeight: layout.fs(15, 0.75),
       letterSpacing: 1.15,
       paddingHorizontal: 4,
       marginBottom: -4,
     },
     sectionLabelSpaced: {
-      marginTop: 6,
+      marginTop: layout.pad(6, 0.5),
     },
 
     // Theme Preview Cards Row
@@ -1063,13 +1076,15 @@ const getStyles = (colors, isDark) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: 20,
-      paddingVertical: 14,
+      paddingHorizontal: layout.pad(18, 0.45),
+      paddingVertical: layout.pad(14, 0.7),
+      gap: 12,
     },
     togglePillTitle: {
+      flex: 1,
       fontFamily: Typography.fontHeading,
-      fontSize: 15,
-      lineHeight: 20,
+      fontSize: layout.fs(15, 0.9),
+      lineHeight: layout.fs(20, 0.9),
       letterSpacing: -0.15,
     },
 
@@ -1077,9 +1092,9 @@ const getStyles = (colors, isDark) =>
     actionPillGradient: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: 16,
-      paddingVertical: 14,
-      gap: 13,
+      paddingHorizontal: layout.pad(16, 0.45),
+      paddingVertical: layout.pad(14, 0.7),
+      gap: layout.pad(13, 0.4),
     },
     portalIconBox: {
       width: 42,
@@ -1102,35 +1117,35 @@ const getStyles = (colors, isDark) =>
     },
     actionCardTitle: {
       fontFamily: Typography.fontHeading,
-      fontSize: 15,
-      lineHeight: 20,
+      fontSize: layout.fs(15, 0.9),
+      lineHeight: layout.fs(20, 0.9),
       letterSpacing: -0.15,
     },
     clearCardTitle: {
       fontFamily: Typography.fontHeading,
-      fontSize: 15,
-      lineHeight: 20,
+      fontSize: layout.fs(15, 0.9),
+      lineHeight: layout.fs(20, 0.9),
       letterSpacing: -0.15,
       color: '#EF4444',
     },
     actionCardSub: {
       fontFamily: Typography.fontBody,
-      fontSize: 12,
-      lineHeight: 16,
-      marginTop: 2,
+      fontSize: layout.fs(12, 0.9),
+      lineHeight: layout.fs(16, 0.9),
+      marginTop: layout.pad(2, 0.6),
     },
 
     // Studio Details Card
     studioInfoGradient: {
-      paddingHorizontal: 16,
-      paddingVertical: 6,
+      paddingHorizontal: layout.pad(16, 0.45),
+      paddingVertical: layout.pad(6, 0.5),
       position: 'relative',
     },
     studioInfoRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
-      paddingVertical: 12,
+      gap: layout.pad(12, 0.4),
+      paddingVertical: layout.pad(12, 0.7),
     },
     studioRowIconBox: {
       width: 34,
@@ -1145,14 +1160,14 @@ const getStyles = (colors, isDark) =>
     },
     studioInfoLabel: {
       fontFamily: Typography.fontBody,
-      fontSize: 11.5,
-      lineHeight: 15,
+      fontSize: layout.fs(11.5, 0.85),
+      lineHeight: layout.fs(15, 0.85),
     },
     studioInfoVal: {
       fontFamily: Typography.fontBodyBold,
-      fontSize: 13.5,
-      lineHeight: 19,
-      marginTop: 2,
+      fontSize: layout.fs(13.5, 0.9),
+      lineHeight: layout.fs(19, 0.9),
+      marginTop: layout.pad(2, 0.5),
     },
     infoDivider: {
       height: StyleSheet.hairlineWidth,

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Defs, Mask, Rect } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { ChevronRight, Check, X } from 'lucide-react-native';
 
@@ -14,14 +15,16 @@ import { useTour } from '../context/TourContext';
 import { useTheme } from '../context/ThemeContext';
 import { Typography } from '../theme';
 
-const SPOTLIGHT_PAD = 6;
+const SPOTLIGHT_PAD = 3;
 
 export default function TourSpotlightOverlay() {
   const tour = useTour();
   const { isDark, colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { width: screenW, height: screenH } = useWindowDimensions();
+  const { width: winW, height: winH } = useWindowDimensions();
 
+  const overlayRef = useRef(null);
+  const [overlaySize, setOverlaySize] = useState({ width: winW, height: winH });
   const [rect, setRect] = useState(null);
 
   const activeTourRole = tour?.activeTourRole || null;
@@ -30,6 +33,30 @@ export default function TourSpotlightOverlay() {
   const steps = tour?.steps || [];
   const getTargetRef = tour?.getTargetRef;
 
+  const updateRectIfChanged = useCallback((next) => {
+    if (
+      !next ||
+      !Number.isFinite(next.x) ||
+      !Number.isFinite(next.y) ||
+      next.width <= 0 ||
+      next.height <= 0
+    ) {
+      return;
+    }
+    setRect((prev) => {
+      if (
+        prev &&
+        Math.abs(prev.x - next.x) < 1 &&
+        Math.abs(prev.y - next.y) < 1 &&
+        Math.abs(prev.width - next.width) < 1 &&
+        Math.abs(prev.height - next.height) < 1
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
+
   const measureCurrent = useCallback(() => {
     if (!activeTourRole || !currentStep || !getTargetRef) {
       setRect(null);
@@ -37,54 +64,109 @@ export default function TourSpotlightOverlay() {
     }
 
     const ref = getTargetRef(currentStep.id);
-    if (!ref?.current || typeof ref.current.measureInWindow !== 'function') {
+    const targetNode = ref?.current;
+    const overlayNode = overlayRef.current;
+    if (!targetNode) {
       setRect(null);
       return;
     }
 
-    ref.current.measureInWindow((x, y, width, height) => {
-      if (
-        typeof x === 'number' &&
-        typeof y === 'number' &&
-        width > 0 &&
-        height > 0
-      ) {
-        setRect({ x, y, width, height });
+    // Prefer measureLayout relative to our own overlay container so status bar /
+    // translucent edge-to-edge / safe-area window offsets cancel out 100%.
+    if (overlayNode && typeof targetNode.measureLayout === 'function') {
+      targetNode.measureLayout(
+        overlayNode,
+        (x, y, width, height) => {
+          if (width > 0 && height > 0) {
+            updateRectIfChanged({ x, y, width, height });
+          }
+        },
+        () => {
+          // Fallback: subtract overlay window origin from target window origin
+          if (
+            typeof overlayNode.measureInWindow === 'function' &&
+            typeof targetNode.measureInWindow === 'function'
+          ) {
+            overlayNode.measureInWindow((ox, oy) => {
+              targetNode.measureInWindow((tx, ty, width, height) => {
+                if (width > 0 && height > 0) {
+                  updateRectIfChanged({
+                    x: tx - (ox || 0),
+                    y: ty - (oy || 0),
+                    width,
+                    height,
+                  });
+                }
+              });
+            });
+          }
+        }
+      );
+      return;
+    }
+
+    if (typeof targetNode.measureInWindow === 'function') {
+      if (overlayNode && typeof overlayNode.measureInWindow === 'function') {
+        overlayNode.measureInWindow((ox, oy) => {
+          targetNode.measureInWindow((tx, ty, width, height) => {
+            if (width > 0 && height > 0) {
+              updateRectIfChanged({
+                x: tx - (ox || 0),
+                y: ty - (oy || 0),
+                width,
+                height,
+              });
+            }
+          });
+        });
+      } else {
+        targetNode.measureInWindow((x, y, width, height) => {
+          if (width > 0 && height > 0) {
+            updateRectIfChanged({ x, y, width, height });
+          }
+        });
       }
-    });
-  }, [activeTourRole, currentStep, getTargetRef]);
+    }
+  }, [activeTourRole, currentStep, getTargetRef, updateRectIfChanged]);
 
   useEffect(() => {
     if (!activeTourRole || !currentStep) {
-      setRect(null);
       return undefined;
     }
 
-    setRect(null);
+    const raf = requestAnimationFrame(measureCurrent);
     const t1 = setTimeout(measureCurrent, 60);
     const t2 = setTimeout(measureCurrent, 220);
-    const t3 = setTimeout(measureCurrent, 480);
+    const t3 = setTimeout(measureCurrent, 520);
+    const interval = setInterval(measureCurrent, 400);
+
     return () => {
+      cancelAnimationFrame(raf);
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
+      clearInterval(interval);
     };
-  }, [activeTourRole, currentStep, stepIndex, screenW, screenH, measureCurrent]);
+  }, [activeTourRole, currentStep, stepIndex, overlaySize.width, overlaySize.height, measureCurrent]);
 
   if (!activeTourRole || !currentStep) {
     return null;
   }
 
+  const screenW = overlaySize.width || winW;
+  const screenH = overlaySize.height || winH;
   const isLastStep = stepIndex >= steps.length - 1;
 
   const cutout = rect
-    ? {
-        left: Math.max(4, rect.x - SPOTLIGHT_PAD),
-        top: Math.max(4, rect.y - SPOTLIGHT_PAD),
-        width: Math.min(screenW - 8, rect.width + SPOTLIGHT_PAD * 2),
-        height: Math.min(screenH - 8, rect.height + SPOTLIGHT_PAD * 2),
-        radius: currentStep.borderRadius ?? 18,
-      }
+    ? (() => {
+        const left = Math.max(2, Math.round(rect.x - SPOTLIGHT_PAD));
+        const top = Math.max(2, Math.round(rect.y - SPOTLIGHT_PAD));
+        const width = Math.min(screenW - 4, Math.round(rect.width + SPOTLIGHT_PAD * 2));
+        const height = Math.min(screenH - 4, Math.round(rect.height + SPOTLIGHT_PAD * 2));
+        const rawRadius = currentStep.borderRadius ?? 16;
+        const radius = Math.min(rawRadius, Math.floor(Math.min(width, height) / 2));
+        return { left, top, width, height, radius };
+      })()
     : null;
 
   const scrimColor = isDark ? 'rgba(6, 8, 14, 0.80)' : 'rgba(14, 15, 22, 0.74)';
@@ -102,100 +184,85 @@ export default function TourSpotlightOverlay() {
       : undefined;
 
   const handleNext = () => {
-    try { Haptics.selectionAsync(); } catch {}
+    try { Haptics.selectionAsync().catch(() => {}); } catch {}
     tour.nextStep();
   };
 
   const handlePrev = () => {
-    try { Haptics.selectionAsync(); } catch {}
+    try { Haptics.selectionAsync().catch(() => {}); } catch {}
     tour.prevStep();
   };
 
   const handleSkip = () => {
-    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); } catch {}
     tour.finishTour();
   };
 
   return (
-    <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none" collapsable={false}>
-      {/* Scrim Framing Strict Button Cutout */}
-      {cutout ? (
-        <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
-          {/* Top Scrim */}
-          <View
-            pointerEvents="auto"
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: cutout.top,
-              backgroundColor: scrimColor,
-            }}
-          />
-          {/* Bottom Scrim */}
-          <View
-            pointerEvents="auto"
-            style={{
-              position: 'absolute',
-              top: cutout.top + cutout.height,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: scrimColor,
-            }}
-          />
-          {/* Left Scrim */}
-          <View
-            pointerEvents="auto"
-            style={{
-              position: 'absolute',
-              top: cutout.top,
-              left: 0,
-              width: cutout.left,
-              height: cutout.height,
-              backgroundColor: scrimColor,
-            }}
-          />
-          {/* Right Scrim */}
-          <View
-            pointerEvents="auto"
-            style={{
-              position: 'absolute',
-              top: cutout.top,
-              left: cutout.left + cutout.width,
-              right: 0,
-              height: cutout.height,
-              backgroundColor: scrimColor,
-            }}
-          />
+    <View
+      ref={overlayRef}
+      style={StyleSheet.absoluteFill}
+      pointerEvents="box-none"
+      collapsable={false}
+      onLayout={(e) => {
+        const { width, height } = e.nativeEvent.layout;
+        if (width > 0 && height > 0) {
+          setOverlaySize((prev) =>
+            Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1
+              ? prev
+              : { width, height }
+          );
+        }
+      }}
+    >
+      {/* Touch-blocking transparent layer so taps outside tooltip stay guarded */}
+      <View pointerEvents="auto" style={StyleSheet.absoluteFill} />
 
-          {/* Glowing Gold Highlight Ring Strictly Around Target Button */}
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              top: cutout.top - 2,
-              left: cutout.left - 2,
-              width: cutout.width + 4,
-              height: cutout.height + 4,
-              borderRadius: cutout.radius,
-              borderWidth: 2.5,
-              borderColor: '#E5BD67',
-              shadowColor: '#E5BD67',
-              shadowOffset: { width: 0, height: 0 },
-              shadowOpacity: 0.75,
-              shadowRadius: 12,
-              elevation: 8,
-            }}
-          />
-        </View>
-      ) : (
-        <View
-          pointerEvents="auto"
-          style={[StyleSheet.absoluteFillObject, { backgroundColor: scrimColor }]}
+      {/* Pixel-exact SVG rounded-rect / circular cutout scrim + crisp gold border */}
+      <Svg
+        width={screenW}
+        height={screenH}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      >
+        <Defs>
+          <Mask id="tourSpotlightMask">
+            <Rect x={0} y={0} width={screenW} height={screenH} fill="#FFFFFF" />
+            {cutout && (
+              <Rect
+                x={cutout.left}
+                y={cutout.top}
+                width={cutout.width}
+                height={cutout.height}
+                rx={cutout.radius}
+                ry={cutout.radius}
+                fill="#000000"
+              />
+            )}
+          </Mask>
+        </Defs>
+        <Rect
+          x={0}
+          y={0}
+          width={screenW}
+          height={screenH}
+          fill={scrimColor}
+          mask="url(#tourSpotlightMask)"
         />
-      )}
+        {cutout && (
+          <Rect
+            x={cutout.left}
+            y={cutout.top}
+            width={cutout.width}
+            height={cutout.height}
+            rx={cutout.radius}
+            ry={cutout.radius}
+            fill="none"
+            stroke="#E5BD67"
+            strokeWidth={2.5}
+          />
+        )}
+      </Svg>
 
       {/* Feature Explanation Card */}
       <View

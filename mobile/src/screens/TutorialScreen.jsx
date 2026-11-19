@@ -42,6 +42,7 @@ import {
   Check,
   PackageCheck,
   Flashlight,
+  Sun,
   Camera as CameraIcon,
   CheckCircle2,
   AlertCircle,
@@ -56,6 +57,11 @@ import {
 import GlassBackground from '../components/GlassBackground';
 import GoldButton from '../components/GoldButton';
 import CardDecorElements from '../components/CardDecorElements';
+import IntroVideoOverlay from '../components/IntroVideoOverlay';
+import {
+  CameraBrightnessOverlay,
+  CameraBrightnessControl,
+} from '../components/CameraBrightnessTool';
 import {
   setUserRole,
   saveBookingToken,
@@ -274,6 +280,7 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
 
   const clampedInitial = Math.max(0, Math.min(GATE_SLIDES.length - 1, initialSlide ? 1 : 0));
 
+  const [introDone, setIntroDone] = useState(false);
   const [phase, setPhase] = useState('gate'); // 'gate' | 'role_splash'
   const [detectedRole, setDetectedRole] = useState(null); // 'customer' | 'photographer' | null
   const [authPayload, setAuthPayload] = useState({});
@@ -286,13 +293,15 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
         : CUSTOMER_SPLASH_SLIDES
       : GATE_SLIDES;
 
-  const isScannerSlide = phase === 'gate' && currentIndex === GATE_SLIDES.length - 1;
+  const isScannerSlide = introDone && phase === 'gate' && currentIndex === GATE_SLIDES.length - 1;
 
   const [hookPermission, requestHookPermission, getHookPermission] = useCameraPermissions();
   const [osPermission, setOsPermission] = useState(null);
   const permission = hookPermission || osPermission;
 
   const [torch, setTorch] = useState(false);
+  const [camBrightness, setCamBrightness] = useState(0);
+  const [showBrightnessBar, setShowBrightnessBar] = useState(false);
   const [scanState, setScanState] = useState('SCANNING'); // 'SCANNING' | 'VERIFYING' | 'SUCCESS' | 'ERROR'
   const [scanMessage, setScanMessage] = useState('');
   const [cameraKey, setCameraKey] = useState(1);
@@ -314,6 +323,27 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
   const [scanLineAnim] = useState(() => new Animated.Value(0));
   const [laserOpacityAnim] = useState(() => new Animated.Value(0));
   const [cornerPulseAnim] = useState(() => new Animated.Value(1));
+  const [contentRevealAnim] = useState(() => new Animated.Value(0));
+
+  const runContentReveal = useCallback(
+    (duration = 560) => {
+      contentRevealAnim.stopAnimation();
+      contentRevealAnim.setValue(0);
+      Animated.timing(contentRevealAnim, {
+        toValue: 1,
+        duration,
+        easing: Easing.bezier(0.22, 1, 0.36, 1),
+        useNativeDriver: true,
+      }).start();
+    },
+    [contentRevealAnim]
+  );
+
+  useEffect(() => {
+    if (introDone) {
+      runContentReveal(620);
+    }
+  }, [introDone, runContentReveal]);
 
   useEffect(() => {
     if (clampedInitial === 0 && phase === 'gate' && slideWidth > 0) {
@@ -492,10 +522,11 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
     setAuthPayload(payload);
     setPhase('role_splash');
     setCurrentIndex(0);
+    runContentReveal(480);
     setTimeout(() => {
       scrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
     }, 20);
-  }, []);
+  }, [runContentReveal]);
 
   const handleBarcodeScanned = useCallback(
     async (scanResult) => {
@@ -503,13 +534,13 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
       scanLockRef.current = true;
       if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
 
-      try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch { }
+      try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {}); } catch { }
       setScanState('VERIFYING');
       setScanMessage('Identifying role from QR code...');
 
       const parsed = parseQRPayload(scanResult?.data);
       if (!parsed.valid || !parsed.token) {
-        try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); } catch { }
+        try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}); } catch { }
         setScanState('ERROR');
         setScanMessage(parsed.error || 'Unrecognized QR code.');
         scheduleScannerUnlock(1900);
@@ -520,7 +551,7 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
       if (parsed.kind === 'photographer' || (parsed.kind === 'unknown' && UUID_REGEX.test(parsed.token))) {
         const phAuth = await loginPhotographerWithQRToken(parsed.token);
         if (phAuth.authorized && phAuth.profile) {
-          try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch { }
+          try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {}); } catch { }
           setScanState('SUCCESS');
           setScanMessage(
             `Photographer verified · Welcome ${phAuth.profile.first_name || phAuth.profile.full_name || ''}`
@@ -531,7 +562,7 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
           return;
         }
         if (parsed.kind === 'photographer') {
-          try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); } catch { }
+          try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}); } catch { }
           setScanState('ERROR');
           setScanMessage(phAuth.reason || 'Photographer QR pass is inactive or invalid.');
           scheduleScannerUnlock(2300);
@@ -549,7 +580,7 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
           saveCustomerProfileFromBooking(booking),
           setUserRole('customer'),
         ]).catch(() => { });
-        try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch { }
+        try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {}); } catch { }
         setScanState('SUCCESS');
         setScanMessage(`Customer pass #${booking.booking_number || ''} verified!`);
         setTimeout(() => {
@@ -558,7 +589,7 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
         return;
       }
 
-      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); } catch { }
+      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}); } catch { }
       setScanState('ERROR');
       setScanMessage('QR pass not found in studio records.');
       scheduleScannerUnlock(2100);
@@ -568,11 +599,18 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
 
   const goToSlide = (index) => {
     const target = Math.max(0, Math.min(activeSlides.length - 1, index));
-    try { Haptics.selectionAsync(); } catch { }
-    if (phase === 'gate' && target === 0) {
-      setTorch(false);
-      setCameraReady(false);
-      setCameraError(null);
+    try { Haptics.selectionAsync().catch(() => {}); } catch { }
+    if (phase === 'gate') {
+      if (target === 0) {
+        setTorch(false);
+        setCamBrightness(0);
+        setShowBrightnessBar(false);
+        setCameraReady(false);
+        setCameraError(null);
+      }
+      if (target !== currentIndex) {
+        runContentReveal(440);
+      }
     }
     scrollRef.current?.scrollTo({ x: target * slideWidth, y: 0, animated: true });
     setCurrentIndex(target);
@@ -582,13 +620,13 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
     const offsetX = event.nativeEvent.contentOffset.x;
     const index = Math.max(0, Math.min(activeSlides.length - 1, Math.round(offsetX / slideWidth)));
     if (index !== currentIndex) {
-      try { Haptics.selectionAsync(); } catch { }
+      try { Haptics.selectionAsync().catch(() => {}); } catch { }
       setCurrentIndex(index);
     }
   };
 
   const handleCompleteRoleSplash = async () => {
-    try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch { }
+    try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {}); } catch { }
     const role = detectedRole === 'photographer' ? 'photographer' : 'customer';
     await setUserRole(role).catch(() => { });
     await AsyncStorage.setItem('ekodak:tutorial_done', '1').catch(() => { });
@@ -663,6 +701,7 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
                     facing="back"
                     autofocus="on"
                     flash="off"
+                    exposure={camBrightness}
                     enableTorch={torch}
                     barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                     onBarcodeScanned={scanState === 'SCANNING' ? handleBarcodeScanned : undefined}
@@ -675,6 +714,12 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
                     }}
                   />
                 )}
+
+                <CameraBrightnessOverlay
+                  brightness={camBrightness}
+                  width={camWidth}
+                  height={stageH}
+                />
 
                 {CAM_CORNER_MASKS.map(({ key, pos, d }) => (
                   <View key={key} pointerEvents="none" style={[styles.camCornerMask, pos]}>
@@ -770,14 +815,43 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
                       </Animated.View>
                     )}
 
-                    <TouchableOpacity
-                      onPress={() => setTorch((t) => !t)}
-                      style={styles.torchBtn}
-                      activeOpacity={0.8}
-                      accessibilityLabel="Toggle flashlight"
-                    >
-                      <Flashlight size={16} color={torch ? '#F3D27A' : '#FFFFFF'} />
-                    </TouchableOpacity>
+                    <View style={styles.cameraTopTools}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          try { Haptics.selectionAsync().catch(() => {}); } catch { }
+                          setShowBrightnessBar((v) => !v);
+                        }}
+                        style={[
+                          styles.toolCircleBtn,
+                          (showBrightnessBar || camBrightness !== 0) && styles.toolCircleBtnActive,
+                        ]}
+                        activeOpacity={0.8}
+                        accessibilityLabel="Adjust camera brightness"
+                      >
+                        <Sun
+                          size={16}
+                          color={showBrightnessBar || camBrightness !== 0 ? '#F3D27A' : '#FFFFFF'}
+                        />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => setTorch((t) => !t)}
+                        style={[
+                          styles.toolCircleBtn,
+                          torch && styles.toolCircleBtnActive,
+                        ]}
+                        activeOpacity={0.8}
+                        accessibilityLabel="Toggle flashlight"
+                      >
+                        <Flashlight size={16} color={torch ? '#F3D27A' : '#FFFFFF'} />
+                      </TouchableOpacity>
+                    </View>
+
+                    <CameraBrightnessControl
+                      brightness={camBrightness}
+                      onChange={setCamBrightness}
+                      visible={showBrightnessBar}
+                    />
                   </>
                 ) : (
                   <View style={styles.cameraStatusOverlay} pointerEvents="box-none">
@@ -880,6 +954,23 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
     </View>
   );
 
+  if (!introDone) {
+    return (
+      <View style={[styles.container, { backgroundColor: '#EEF1F6' }]} collapsable={false}>
+        <IntroVideoOverlay onComplete={() => setIntroDone(true)} />
+      </View>
+    );
+  }
+
+  const contentTranslateY = contentRevealAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [16, 0],
+  });
+  const contentScale = contentRevealAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.985, 1],
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bg.base }]} collapsable={false}>
       <StatusBar
@@ -887,7 +978,17 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
         backgroundColor={colors.bg.base}
       />
       <GlassBackground>
-        <View style={[styles.foreground, { paddingTop: Math.max(insets.top, 12) }]} collapsable={false}>
+        <Animated.View
+          style={[
+            styles.foreground,
+            {
+              paddingTop: Math.max(insets.top, 12),
+              opacity: contentRevealAnim,
+              transform: [{ translateY: contentTranslateY }, { scale: contentScale }],
+            },
+          ]}
+          collapsable={false}
+        >
           {isScannerSlide ? (
             <View style={[styles.slide, { flex: 1, width: '100%' }]}>
               <View style={styles.slideContent}>
@@ -991,7 +1092,7 @@ export default function TutorialScreen({ onComplete, initialSlide = 0 }) {
               </TouchableOpacity>
             )}
           </View>
-        </View>
+        </Animated.View>
       </GlassBackground>
     </View>
   );
@@ -1274,7 +1375,8 @@ const getStyles = (colors, isDark) =>
       position: 'absolute',
       width: CAM_CORNER_RADIUS,
       height: CAM_CORNER_RADIUS,
-      zIndex: 4,
+      zIndex: 5,
+      elevation: 5,
     },
     reticleBox: {
       position: 'absolute',
@@ -1282,7 +1384,7 @@ const getStyles = (colors, isDark) =>
       elevation: 7,
     },
     reticleGuideBorder: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       borderRadius: 16,
       borderWidth: 1,
       borderColor: 'rgba(255, 255, 255, 0.22)',
@@ -1329,16 +1431,23 @@ const getStyles = (colors, isDark) =>
       justifyContent: 'center',
     },
     scanBeamGlow: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
     },
     scanLaserLine: {
       height: 2,
       borderRadius: 2,
     },
-    torchBtn: {
+    cameraTopTools: {
       position: 'absolute',
       top: 12,
       right: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      zIndex: 9,
+      elevation: 9,
+    },
+    toolCircleBtn: {
       width: 36,
       height: 36,
       borderRadius: 18,
@@ -1347,11 +1456,13 @@ const getStyles = (colors, isDark) =>
       borderColor: 'rgba(255,255,255,0.22)',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 9,
-      elevation: 9,
+    },
+    toolCircleBtnActive: {
+      borderColor: '#F3D27A',
+      backgroundColor: 'rgba(243, 210, 122, 0.22)',
     },
     cameraStatusOverlay: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       alignItems: 'center',
       justifyContent: 'center',
       zIndex: 10,
@@ -1374,7 +1485,7 @@ const getStyles = (colors, isDark) =>
       textAlign: 'center',
     },
     permissionFallback: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       backgroundColor: '#12151E',
       borderRadius: 18,
       paddingHorizontal: 22,

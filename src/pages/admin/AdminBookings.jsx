@@ -33,6 +33,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import JSZip from 'jszip';
 import {
   Search, RefreshCw, ChevronLeft, ChevronRight,
   CalendarDays, AlertCircle, X, Trash2, CheckCircle,
@@ -40,9 +41,10 @@ import {
   CheckCircle2, Clock, CreditCard, Layers, Sparkles, Package,
   DollarSign, MapPin, User, FileText, ChevronDown, Check,
   Download, ArrowUpDown, Lock, Phone, UserPlus, Copy, RotateCcw,
-  Archive, ShieldAlert, ArrowRightLeft, ExternalLink, Building2,
+  ShieldAlert, ArrowRightLeft, ExternalLink, Building2,
   FileImage, Maximize2, Megaphone, Bell, AlertTriangle,
-  QrCode, Table, Filter, Users, UserCheck, Printer, ShieldCheck, History
+  QrCode, Table, Filter, Users, UserCheck, Printer, ShieldCheck, History,
+  ArrowRight, Loader2
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -50,24 +52,44 @@ import StaffQRScannerModal from '../../components/admin/StaffQRScannerModal';
 import AnimatedCounter from '../../components/ui/AnimatedCounter';
 import {
   getAdminBookings,
-  softDeleteBooking,
   restoreBooking,
   deleteBookingPermanently,
   emptyTrash,
   adminCreateBooking,
   adminUpdateBooking,
+  updateBookingStatus,
   ALL_BOOKING_STATUSES,
   ALL_PAYMENT_STATUSES,
   getPhotographersWithWorkloadAndAvailability,
   batchScheduleSchoolPictorial,
   rescheduleStudentBooking,
 } from '../../services/bookingAdminService';
+import { toDatabaseTime } from '../../services/bookingService';
+import {
+  getNextBookingAction,
+  getPhotographerDisplayName,
+  getStatusLabel,
+  hasAssignedPhotographer,
+  isPaymentVerifiedByAdmin,
+} from '../../lib/bookingUtils';
 import BookingLifecycleBadge from '../../components/admin/BookingLifecycleBadge';
+import AssignPhotographerModal from '../../components/admin/AssignPhotographerModal';
 import BookingQuickInspector from '../../components/admin/BookingQuickInspector';
 import CustomDropdown from '../../components/ui/CustomDropdown';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import AdminLiveBookingCalendar from '../../components/admin/AdminLiveBookingCalendar';
+import {
+  STUDIO_HOURLY_SLOTS,
+  getBookingTimeWindow,
+  formatTime24To12,
+  fetchDateBookingRecords,
+  findTimeWindowOverlap,
+  checkBookingTimeConflict,
+  subscribeToAvailabilityUpdates,
+  parseTimeToMinutes,
+  minutesToHHMM,
+} from '../../services/liveAvailabilityService';
 
 function fmtDate(dateStr) {
   if (!dateStr) return '—';
@@ -87,6 +109,13 @@ function formatTime(timeStr) {
   const ampm = hours >= 12 ? 'PM' : 'AM';
   hours = hours % 12 || 12;
   return `${hours}:${minutes} ${ampm}`;
+}
+
+function formatServicePackageLabel(service) {
+  const text = `${service?.name || ''} ${service?.category || ''}`.toLowerCase();
+  if (text.includes('senior') || text.includes('shs')) return 'Senior High Package';
+  if (text.includes('college')) return 'College Package';
+  return service?.name || 'Studio Photography';
 }
 
 function getBookingSchool(b) {
@@ -140,7 +169,7 @@ function parseStructuredNotes(rawNotes = '') {
   // Extract fields with flexible regexes
   const school = rawNotes.match(/•\s*(?:School|Institution):\s*(.*)/i)?.[1]?.trim() || '';
   const campus = rawNotes.match(/•\s*Campus(?:\s*\/\s*Address)?:\s*(.*)/i)?.[1]?.trim() || '';
-  const degree = rawNotes.match(/•\s*(?:Degree|Program|Strand|Course)(?:\s*\/.*?)?:\s*(.*)/i)?.[1]?.trim() || '';
+  const degree = rawNotes.match(/•\s*(?:Track|Degree|Program|Strand|Course)(?:\s*\/.*?)?:\s*(.*)/i)?.[1]?.trim() || '';
   const section = rawNotes.match(/•\s*Section(?:\s*\/\s*Batch)?:\s*(.*)/i)?.[1]?.trim() || '';
   const studentId = rawNotes.match(/•\s*Student ID:\s*(.*)/i)?.[1]?.trim() || '';
   const togaSize = rawNotes.match(/•\s*Toga(?:\s*Size)?:\s*(.*)/i)?.[1]?.trim() || '';
@@ -155,8 +184,8 @@ function parseStructuredNotes(rawNotes = '') {
     const line = lines[i];
     const trimmed = line.trim();
 
-    // Check if entering known academic or metadata block
-    if (/^\[(?:STUDENT & YEARBOOK DETAILS|SELECTED ADD-ONS|SYSTEM METADATA)\]/i.test(trimmed)) {
+    // Check if entering known academic, beneficiary, payment, or metadata block
+    if (/^\[(?:STUDENT & YEARBOOK DETAILS|SELECTED ADD-ONS|SYSTEM METADATA|BOOKING BENEFICIARY & PARTICIPANT|50% RESERVATION DOWNPAYMENT|FULL RESERVATION PAYMENT|PAYMENT(?: & RECEIPT| RECEIPT| DETAILS)?)\]$/i.test(trimmed)) {
       inSystemBlock = true;
       continue;
     }
@@ -179,7 +208,7 @@ function parseStructuredNotes(rawNotes = '') {
     }
 
     // Exclude any remaining academic bullet points
-    if (/^•\s*(?:Type|School|Campus|Degree|Program|Strand|Course|Section|Student ID|Toga|Height):/i.test(trimmed)) {
+    if (/^•\s*(?:Type|School|Campus|Degree|Program|Strand|Track|Course|Section|Batch|Student ID|Yearbook Motto|Toga|Height|Booking For|Booking Mode|Participant|Relationship|Account Owner|Registered Under|Middle Name|Class Adviser|Adviser|Gateway|Amount Paid|Reference No|Payment Date|Remaining Balance):/i.test(trimmed)) {
       continue;
     }
 
@@ -202,8 +231,33 @@ function parseStructuredNotes(rawNotes = '') {
   };
 }
 
-function buildStructuredNotes({ school, campus, degree, section, studentId, togaSize, height, remarks }) {
-  const parts = [];
+function buildStructuredNotes({ rawNotes = '', school, campus, degree, section, studentId, togaSize, height, remarks }) {
+  const preservedBlocks = [];
+  let preservedStudentBullets = [];
+
+  if (rawNotes && typeof rawNotes === 'string') {
+    const sections = rawNotes.split(/\n{2,}(?=\[)/);
+    for (const sectionText of sections) {
+      const trimmedSection = sectionText.trim();
+      if (!trimmedSection) continue;
+      if (/^\[STUDENT & YEARBOOK DETAILS\]/i.test(trimmedSection)) {
+        preservedStudentBullets = trimmedSection
+          .split('\n')
+          .slice(1)
+          .filter((line) => {
+            const t = line.trim();
+            if (!t) return false;
+            return !/^•\s*(?:School|Campus(?:\s*\/\s*Address)?|Degree(?:\s*\/\s*Strand)?|Track(?:\s*\/\s*Strand)?(?:\s*\/\s*Program)?|Section(?:\s*\/\s*Batch)?|Student ID|Toga(?:\s*Size)?|Height):/i.test(t);
+          });
+      } else if (/^\[(?:SPECIAL INSTRUCTIONS|CLIENT REMARKS|NOTES|INSTRUCTIONS)\]/i.test(trimmedSection)) {
+        // Replaced cleanly by cleanRemarks below
+      } else if (/^\[/.test(trimmedSection)) {
+        preservedBlocks.push(trimmedSection);
+      }
+    }
+  }
+
+  const parts = [...preservedBlocks];
 
   const cleanSchool = (school || '').trim();
   const cleanCampus = (campus || '').trim();
@@ -214,14 +268,22 @@ function buildStructuredNotes({ school, campus, degree, section, studentId, toga
   const cleanHeight = (height || '').trim();
   const cleanRemarks = (remarks || '').trim();
 
-  const hasAcademic = cleanSchool || cleanCampus || cleanDegree || cleanSection || cleanStudentId || cleanToga || cleanHeight;
+  const hasAcademic =
+    cleanSchool ||
+    cleanCampus ||
+    cleanDegree ||
+    cleanSection ||
+    cleanStudentId ||
+    cleanToga ||
+    cleanHeight ||
+    preservedStudentBullets.length > 0;
 
   if (hasAcademic) {
-    const studentLines = ['[STUDENT & YEARBOOK DETAILS]'];
+    const studentLines = ['[STUDENT & YEARBOOK DETAILS]', ...preservedStudentBullets];
     if (cleanSchool) studentLines.push(`• School: ${cleanSchool}`);
     if (cleanCampus) studentLines.push(`• Campus / Address: ${cleanCampus}`);
-    if (cleanDegree) studentLines.push(`• Degree / Strand: ${cleanDegree}`);
-    if (cleanSection) studentLines.push(`• Section / Batch: ${cleanSection}`);
+    if (cleanDegree) studentLines.push(`• Track / Strand / Program: ${cleanDegree}`);
+    if (cleanSection) studentLines.push(`• Section: ${cleanSection}`);
     if (cleanStudentId) studentLines.push(`• Student ID: ${cleanStudentId}`);
     if (cleanToga) studentLines.push(`• Toga Size: ${cleanToga}`);
     if (cleanHeight) studentLines.push(`• Height: ${cleanHeight}`);
@@ -234,6 +296,10 @@ function buildStructuredNotes({ school, campus, degree, section, studentId, toga
 
   return parts.join('\n\n');
 }
+
+const FORM_SECTION_TITLE = 'text-[11px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5';
+const FORM_LABEL = 'block text-[11px] font-semibold text-neutral-700 mb-1';
+const FORM_INPUT = 'w-full h-9 px-3 bg-white rounded-xl border border-neutral-300/80 text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all';
 
 const PAGE_SIZE = 15;
 
@@ -291,6 +357,7 @@ export default function AdminBookings({ initialSection }) {
     if (initialTab === 'UNPAID') return 'UNPAID';
     return '';
   });
+  const [clientTypeFilter, setClientTypeFilter] = useState('');
   const [sortBy, setSortBy] = useState('created_at');
   const [sortAsc, setSortAsc] = useState(false);
   const [activeNavTab, setActiveNavTab] = useState(initialTab);
@@ -307,9 +374,12 @@ export default function AdminBookings({ initialSection }) {
     unpaid: 0,
     deleted: 0,
   });
+  const [activeTrackerRows, setActiveTrackerRows] = useState([]);
 
   // Modals & Inspection Drawers
   const [inspectingBooking, setInspectingBooking] = useState(null);
+  const [openPaymentOnInspect, setOpenPaymentOnInspect] = useState(false);
+  const [advancingBookingId, setAdvancingBookingId] = useState(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingBooking, setEditingBooking] = useState(null);
   const [editBookingPhotographers, setEditBookingPhotographers] = useState([]);
@@ -324,6 +394,7 @@ export default function AdminBookings({ initialSection }) {
   const [actionNotice, setActionNotice] = useState(null);
   const [copiedRef, setCopiedRef] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
+  const [assigningPhotographerBooking, setAssigningPhotographerBooking] = useState(null);
 
   // Create Mode: 'existing' or 'walkin'
   const [customerMode, setCustomerMode] = useState('existing');
@@ -353,6 +424,8 @@ export default function AdminBookings({ initialSection }) {
     height: '',
     notes: '',
   });
+  const [createDateRecords, setCreateDateRecords] = useState([]);
+  const [editDateRecords, setEditDateRecords] = useState([]);
 
   const debounceRef = useRef(null);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -361,6 +434,23 @@ export default function AdminBookings({ initialSection }) {
     setActionNotice({ type, text });
     setTimeout(() => setActionNotice(null), 3500);
   };
+
+  useEffect(() => {
+    const handleModalEscape = (e) => {
+      if (e.key !== 'Escape') return;
+      if (bookingToPermanentlyPurge && !isDeleting) {
+        setBookingToPermanentlyPurge(null);
+      } else if (bookingToDelete && !isDeleting) {
+        setBookingToDelete(null);
+      } else if (editingBooking && !isSaving) {
+        setEditingBooking(null);
+      } else if (isCreateModalOpen && !isSaving) {
+        setIsCreateModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleModalEscape);
+    return () => window.removeEventListener('keydown', handleModalEscape);
+  }, [bookingToPermanentlyPurge, bookingToDelete, editingBooking, isCreateModalOpen, isDeleting, isSaving]);
 
   // ── Photographer Availability State ─────────────────────────────────────────
   const [isPhotographerAvailabilityOpen, setIsPhotographerAvailabilityOpen] = useState(false);
@@ -796,6 +886,73 @@ export default function AdminBookings({ initialSection }) {
     }
   }, [editingBooking?.id, editingBooking?.event_date, editingBooking?.preferred_time]);
 
+  // Live slot conflict tracking for Create Booking & Edit Booking modals
+  useEffect(() => {
+    const cleanDate = isCreateModalOpen && newBooking.event_date ? String(newBooking.event_date).split('T')[0] : '';
+    if (!cleanDate) {
+      setCreateDateRecords([]);
+      return;
+    }
+    let cancelled = false;
+    const loadCreateRecords = () => {
+      fetchDateBookingRecords(cleanDate).then((rows) => {
+        if (!cancelled) setCreateDateRecords(rows);
+      });
+    };
+    loadCreateRecords();
+    const unsub = subscribeToAvailabilityUpdates(loadCreateRecords);
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [isCreateModalOpen, newBooking.event_date]);
+
+  useEffect(() => {
+    const cleanDate = editingBooking?.event_date ? String(editingBooking.event_date).split('T')[0] : '';
+    if (!cleanDate) {
+      setEditDateRecords([]);
+      return;
+    }
+    let cancelled = false;
+    const loadEditRecords = () => {
+      fetchDateBookingRecords(cleanDate).then((rows) => {
+        if (!cancelled) setEditDateRecords(rows);
+      });
+    };
+    loadEditRecords();
+    const unsub = subscribeToAvailabilityUpdates(loadEditRecords);
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [editingBooking?.id, editingBooking?.event_date]);
+
+  const createTimeConflict = useMemo(() => {
+    if (!isCreateModalOpen || !newBooking.event_date) {
+      return { hasConflict: false, conflictType: null, reason: null };
+    }
+    return findTimeWindowOverlap({
+      dateStr: String(newBooking.event_date).split('T')[0],
+      startTime: newBooking.preferred_time,
+      durationMinutes: 60,
+      bookingsOrWindows: createDateRecords,
+    });
+  }, [isCreateModalOpen, newBooking.event_date, newBooking.preferred_time, createDateRecords]);
+
+  const editTimeConflict = useMemo(() => {
+    if (!editingBooking || !editingBooking.event_date) {
+      return { hasConflict: false, conflictType: null, reason: null };
+    }
+    const existingWin = getBookingTimeWindow(editingBooking);
+    return findTimeWindowOverlap({
+      dateStr: String(editingBooking.event_date).split('T')[0],
+      startTime: editingBooking.preferred_time,
+      durationMinutes: existingWin.durationMinutes || 60,
+      excludeBookingId: editingBooking.id,
+      bookingsOrWindows: editDateRecords,
+    });
+  }, [editingBooking, editDateRecords]);
+
   const handleBatchScheduleSubmit = async (e) => {
     e.preventDefault();
     const targetSchool = selectedBatchSchool || (schoolBatchesList.find(b => b.key === selectedBatchKey)?.school);
@@ -871,15 +1028,20 @@ export default function AdminBookings({ initialSection }) {
   // ── Fetch Global Counts for Sub-Navigation Tabs ────────────────────────────
   const fetchCounts = useCallback(async () => {
     try {
-      const [allRes, pendingRes, confirmedRes, inBayRes, readyRes, completedRes, unpaidRes, deletedRes] = await Promise.all([
+      const [allRes, pendingRes, confirmedRes, inBayRes, readyRes, completedRes, unpaidRes, deletedRes, trackerRes] = await Promise.all([
         supabase.from('bookings').select('id', { count: 'exact', head: true }).or('is_deleted.is.null,is_deleted.eq.false'),
-        supabase.from('bookings').select('id', { count: 'exact', head: true }).or('is_deleted.is.null,is_deleted.eq.false').eq('status', 'PENDING'),
+        supabase.from('bookings').select('id', { count: 'exact', head: true }).or('is_deleted.is.null,is_deleted.eq.false').in('status', ['PENDING', 'RESERVED']),
         supabase.from('bookings').select('id', { count: 'exact', head: true }).or('is_deleted.is.null,is_deleted.eq.false').eq('status', 'CONFIRMED'),
-        supabase.from('bookings').select('id', { count: 'exact', head: true }).or('is_deleted.is.null,is_deleted.eq.false').in('status', ['PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'EDITING', 'PRINTING']),
-        supabase.from('bookings').select('id', { count: 'exact', head: true }).or('is_deleted.is.null,is_deleted.eq.false').eq('status', 'READY'),
+        supabase.from('bookings').select('id', { count: 'exact', head: true }).or('is_deleted.is.null,is_deleted.eq.false').in('status', ['PHOTOGRAPHER_ASSIGNED', 'CAPTURE', 'IN_PROGRESS', 'EDITING', 'RETOUCHING', 'FINALIZED', 'PRINTING']),
+        supabase.from('bookings').select('id', { count: 'exact', head: true }).or('is_deleted.is.null,is_deleted.eq.false').in('status', ['READY', 'UNDER_DELIVERY']),
         supabase.from('bookings').select('id', { count: 'exact', head: true }).or('is_deleted.is.null,is_deleted.eq.false').eq('status', 'COMPLETED'),
         supabase.from('bookings').select('id', { count: 'exact', head: true }).or('is_deleted.is.null,is_deleted.eq.false').in('payment_status', ['UNPAID', 'PARTIAL']),
         supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('is_deleted', true),
+        supabase
+          .from('bookings')
+          .select('id, status, payment_status, down_payment_confirmed, photographer_id')
+          .or('is_deleted.is.null,is_deleted.eq.false')
+          .not('status', 'in', '(COMPLETED,CANCELLED,REJECTED)'),
       ]);
 
       setCounts({
@@ -892,10 +1054,105 @@ export default function AdminBookings({ initialSection }) {
         unpaid: unpaidRes.count || 0,
         deleted: deletedRes.count || 0,
       });
+      setActiveTrackerRows(Array.isArray(trackerRes.data) ? trackerRes.data : []);
     } catch (err) {
       console.warn('Count fetch warning:', err);
     }
   }, []);
+
+  const trackerAttentionSummary = useMemo(() => {
+    let paymentUnconfirmed = 0;
+    let photographerUnscheduled = 0;
+    let pictorialPending = 0;
+    let photosUnedited = 0;
+    let awaitingPickup = 0;
+
+    for (const row of activeTrackerRows) {
+      const st = String(row.status || '').toUpperCase();
+      if (['PENDING', 'RESERVED'].includes(st) || !isPaymentVerifiedByAdmin(row)) {
+        paymentUnconfirmed += 1;
+      } else if (st === 'CONFIRMED' || (st === 'PHOTOGRAPHER_ASSIGNED' && !hasAssignedPhotographer(row))) {
+        photographerUnscheduled += 1;
+      } else if ((st === 'PHOTOGRAPHER_ASSIGNED' && hasAssignedPhotographer(row)) || ['CAPTURE', 'IN_PROGRESS'].includes(st)) {
+        pictorialPending += 1;
+      } else if (['EDITING', 'RETOUCHING'].includes(st)) {
+        photosUnedited += 1;
+      } else if (['FINALIZED', 'PRINTING', 'READY', 'UNDER_DELIVERY'].includes(st)) {
+        awaitingPickup += 1;
+      }
+    }
+
+    const items = [];
+    const clauses = [];
+
+    if (paymentUnconfirmed > 0) {
+      clauses.push(`${paymentUnconfirmed} ${paymentUnconfirmed === 1 ? 'payment is' : 'payments are'} awaiting confirmation`);
+      items.push({
+        key: 'payment',
+        count: paymentUnconfirmed,
+        label: `${paymentUnconfirmed} Payment Unconfirmed`,
+        dotColor: 'bg-amber-500',
+        statusTarget: 'PENDING',
+        tabTarget: 'PENDING',
+      });
+    }
+    if (photographerUnscheduled > 0) {
+      clauses.push(`${photographerUnscheduled} ${photographerUnscheduled === 1 ? 'booking needs' : 'bookings need'} a photographer assigned`);
+      items.push({
+        key: 'photographer',
+        count: photographerUnscheduled,
+        label: `${photographerUnscheduled} Needs Photographer`,
+        dotColor: 'bg-indigo-500',
+        statusTarget: 'CONFIRMED',
+        tabTarget: 'CONFIRMED',
+      });
+    }
+    if (pictorialPending > 0) {
+      clauses.push(`${pictorialPending} ${pictorialPending === 1 ? 'booking is' : 'bookings are'} ready for or in pictorial`);
+      items.push({
+        key: 'pictorial',
+        count: pictorialPending,
+        label: `${pictorialPending} Pictorial Stage`,
+        dotColor: 'bg-purple-500',
+        statusTarget: 'PHOTOGRAPHER_ASSIGNED',
+        tabTarget: 'ALL',
+      });
+    }
+    if (photosUnedited > 0) {
+      clauses.push(`${photosUnedited} ${photosUnedited === 1 ? 'booking has' : 'bookings have'} photos awaiting editing`);
+      items.push({
+        key: 'editing',
+        count: photosUnedited,
+        label: `${photosUnedited} Photos Unedited`,
+        dotColor: 'bg-cyan-600',
+        statusTarget: 'EDITING',
+        tabTarget: 'ALL',
+      });
+    }
+    if (awaitingPickup > 0) {
+      clauses.push(`${awaitingPickup} ${awaitingPickup === 1 ? 'booking is' : 'bookings are'} ready for pickup`);
+      items.push({
+        key: 'ready',
+        count: awaitingPickup,
+        label: `${awaitingPickup} Ready / Release`,
+        dotColor: 'bg-emerald-600',
+        statusTarget: 'READY',
+        tabTarget: 'READY',
+      });
+    }
+
+    const total = activeTrackerRows.length;
+    let summaryText = '';
+    if (clauses.length === 1) {
+      summaryText = `${clauses[0]}.`;
+    } else if (clauses.length === 2) {
+      summaryText = `${clauses[0]} and ${clauses[1]}.`;
+    } else if (clauses.length > 2) {
+      summaryText = `${clauses.slice(0, -1).join(', ')}, and ${clauses[clauses.length - 1]}.`;
+    }
+
+    return { total, items, summaryText };
+  }, [activeTrackerRows]);
 
   useEffect(() => {
     fetchCounts();
@@ -994,61 +1251,146 @@ export default function AdminBookings({ initialSection }) {
 
   // Sync active tab whenever location, initialSection, or search query params change
   const prevTabRef = useRef(initialTab);
+  const prevSearchParamRef = useRef(initialSearchParam);
   useEffect(() => {
     const targetTab = resolveTabFromLocation();
     if (targetTab !== prevTabRef.current) {
       prevTabRef.current = targetTab;
       handleNavTabClick(targetTab);
     }
+    const nextSearch = searchParams.get('search') || '';
+    if (nextSearch !== prevSearchParamRef.current) {
+      prevSearchParamRef.current = nextSearch;
+      setLiveSearch(nextSearch);
+      setSearch(nextSearch);
+      setPage(1);
+    }
   }, [location.pathname, initialSection, searchParams, resolveTabFromLocation, handleNavTabClick]);
 
-  // ── Export CSV Handler ────────────────────────────────────────────────────
-  const handleExportCSV = () => {
-    if (bookings.length === 0) return;
+  // ── Export Excel (.xlsx) Handler ──────────────────────────────────────────
+  const handleExportExcel = async () => {
+    if (displayedBookings.length === 0) return;
+
+    const escapeXml = (str) =>
+      String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+
+    const colName = (idx) => {
+      let name = '';
+      let n = idx + 1;
+      while (n > 0) {
+        const rem = (n - 1) % 26;
+        name = String.fromCharCode(65 + rem) + name;
+        n = Math.floor((n - 1) / 26);
+      }
+      return name;
+    };
+
     const headers = [
       'Booking Number',
-      'Account Owner First Name',
-      'Account Owner Last Name',
+      'Client First Name',
+      'Client Last Name',
       'Phone',
       'Booking For',
       'Participant Name',
-      'Participant Relationship',
-      'Service',
-      'Tier',
+      'Package',
       'Event Date',
-      'Preferred Time',
-      'Lifecycle Status',
+      'Time Schedule',
+      'Status',
       'Payment Status',
       'Total Amount (PHP)',
-      'Remaining Balance (PHP)'
+      'Remaining Balance (PHP)',
     ];
 
-    const rows = bookings.map(b => [
+    const rows = displayedBookings.map(b => [
       b.booking_number || '',
       b.customer?.first_name || '',
       b.customer?.last_name || '',
       b.customer?.phone || '',
       b.participant_details?.booking_for === 'someone_else' ? 'Someone else' : 'Myself',
       b.participant_details?.full_name || '',
-      b.participant_details?.relationship || '',
-      b.service?.name || '',
-      b.tier_name || '',
-      b.event_date || '',
-      b.preferred_time || '',
+      formatServicePackageLabel(b.service),
+      b.event_date ? fmtDate(b.event_date) : 'Schedule TBA',
+      b.preferred_time ? formatTime(b.preferred_time) : '',
       b.status || '',
       b.payment_status || '',
-      b.total_amount || 0,
-      b.remaining_balance || 0,
+      Number(b.total_amount || 0),
+      Number(b.remaining_balance || 0),
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.map(val => `"${val}"`).join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const allRows = [headers, ...rows];
+    const sheetRowsXml = allRows
+      .map((row, rIdx) => {
+        const cells = row
+          .map((val, cIdx) => {
+            const ref = `${colName(cIdx)}${rIdx + 1}`;
+            if (typeof val === 'number' && Number.isFinite(val)) {
+              return `<c r="${ref}"><v>${val}</v></c>`;
+            }
+            return `<c r="${ref}" t="inlineStr"><is><t>${escapeXml(val)}</t></is></c>`;
+          })
+          .join('');
+        return `<row r="${rIdx + 1}">${cells}</row>`;
+      })
+      .join('');
+
+    const zip = new JSZip();
+    zip.file(
+      '[Content_Types].xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/>' +
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+        '</Types>'
+    );
+    zip.folder('_rels').file(
+      '.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+        '</Relationships>'
+    );
+    const xl = zip.folder('xl');
+    xl.file(
+      'workbook.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        '<sheets><sheet name="Bookings" sheetId="1" r:id="rId1"/></sheets>' +
+        '</workbook>'
+    );
+    xl.folder('_rels').file(
+      'workbook.xml.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+        '</Relationships>'
+    );
+    xl.folder('worksheets').file(
+      'sheet1.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        `<sheetData>${sheetRowsXml}</sheetData>` +
+        '</worksheet>'
+    );
+
+    const blob = await zip.generateAsync({
+      type: 'blob',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `ekodak_bookings_export_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.href = url;
+    link.download = `ekodak_bookings_export_${new Date().toISOString().slice(0, 10)}.xlsx`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // ── Copy Booking Ref Helper ───────────────────────────────────────────────
@@ -1114,6 +1456,19 @@ export default function AdminBookings({ initialSection }) {
 
     setIsSaving(true);
 
+    if (newBooking.preferred_time) {
+      const conflict = await checkBookingTimeConflict({
+        dateStr: String(newBooking.event_date).split('T')[0],
+        startTime: newBooking.preferred_time,
+        durationMinutes: 60,
+      });
+      if (conflict.hasConflict) {
+        setIsSaving(false);
+        showToast(conflict.reason, 'error');
+        return;
+      }
+    }
+
     // Format consolidated notes with student details
     let studentBlock = '';
     if (newBooking.school || newBooking.course || newBooking.student_id || newBooking.toga_size) {
@@ -1126,6 +1481,7 @@ export default function AdminBookings({ initialSection }) {
 
     const { data, error: createErr } = await adminCreateBooking({
       ...newBooking,
+      preferred_time: newBooking.preferred_time ? toDatabaseTime(newBooking.preferred_time) : null,
       customer_id: targetCustomerId,
       notes: consolidatedNotes,
     });
@@ -1183,20 +1539,23 @@ export default function AdminBookings({ initialSection }) {
       }
     }
 
+    const cleanVal = (v) => (v && v !== 'N/A' && v !== 'null' ? String(v).trim() : '');
+
     setEditingBooking({
       ...b,
       _originalStatus: b.status,
+      _rawNotes: b.notes || '',
       // Customer profile fields
       customer_id: b.customer_id || b.customer?.id,
       first_name: b.customer?.first_name || '',
       last_name: b.customer?.last_name || '',
       phone: b.customer?.phone || '',
-      // Customer academic & fitting specs
-      school: parsed.school || '',
-      campus: parsed.campus || '',
-      degree: parsed.degree || '',
-      section: parsed.section || '',
-      student_id: parsed.studentId || '',
+      // Customer academic & fitting specs (prefer structured DB columns, fallback to student_details/notes)
+      school: cleanVal(b.school) || cleanVal(b.student_details?.school) || parsed.school || '',
+      campus: cleanVal(b.school_address) || cleanVal(b.student_details?.school_address) || parsed.campus || '',
+      degree: cleanVal(b.track) || cleanVal(b.student_details?.course) || parsed.degree || '',
+      section: cleanVal(b.section) || cleanVal(b.student_details?.section) || parsed.section || '',
+      student_id: cleanVal(b.student_id) || cleanVal(b.student_details?.student_id) || parsed.studentId || '',
       toga_size: parsed.togaSize || b.toga_size || b.customer?.studio_specs?.toga_size || '',
       height: parsed.height || (b.customer?.studio_specs?.height_cm ? `${b.customer.studio_specs.height_cm} cm` : ''),
       client_remarks: parsed.remarks || '',
@@ -1206,7 +1565,7 @@ export default function AdminBookings({ initialSection }) {
       service_id: b.service_id || b.service?.id || '',
       tier_name: b.tier_name || 'Set A',
       event_date: b.event_date ? b.event_date.split('T')[0] : '',
-      preferred_time: b.preferred_time || '',
+      preferred_time: b.preferred_time ? String(b.preferred_time).slice(0, 5) : '',
       location: b.location || '',
       // Payment details
       total_amount: totalAmt,
@@ -1223,10 +1582,25 @@ export default function AdminBookings({ initialSection }) {
 
     setIsSaving(true);
 
+    if (editingBooking.event_date && editingBooking.preferred_time) {
+      const existingWin = getBookingTimeWindow(editingBooking);
+      const conflict = await checkBookingTimeConflict({
+        dateStr: editingBooking.event_date.split('T')[0],
+        startTime: editingBooking.preferred_time,
+        durationMinutes: existingWin.durationMinutes || 60,
+        excludeBookingId: editingBooking.id,
+      });
+      if (conflict.hasConflict) {
+        setIsSaving(false);
+        showToast(conflict.reason, 'error');
+        return;
+      }
+    }
+
     // 1. Update customer profile details if modified
     if (editingBooking.customer_id) {
       try {
-        await supabase
+        const { error: profErr } = await supabase
           .from('profiles')
           .update({
             first_name: editingBooking.first_name?.trim() || '',
@@ -1234,13 +1608,17 @@ export default function AdminBookings({ initialSection }) {
             phone: editingBooking.phone?.trim() || null,
           })
           .eq('id', editingBooking.customer_id);
+        if (profErr) {
+          console.warn('Customer profile update warning:', profErr);
+        }
       } catch (profErr) {
         console.warn('Customer profile update error:', profErr);
       }
     }
 
-    // 2. Rebuild minimal structured notes
+    // 2. Rebuild structured notes while preserving beneficiary, payment audit & add-ons blocks
     const consolidatedNotes = buildStructuredNotes({
+      rawNotes: editingBooking._rawNotes || editingBooking.notes || '',
       school: editingBooking.school,
       campus: editingBooking.campus,
       degree: editingBooking.degree,
@@ -1251,71 +1629,82 @@ export default function AdminBookings({ initialSection }) {
       remarks: editingBooking.client_remarks,
     });
 
-    const totalAmt = Math.max(0, Number(editingBooking.total_amount || 0));
-    const downAmt = Math.max(0, Number(editingBooking.down_payment_amount || 0));
-    const remainingBal = Math.max(0, totalAmt - downAmt);
+    const existingStudentDetails =
+      editingBooking.student_details && typeof editingBooking.student_details === 'object'
+        ? { ...editingBooking.student_details }
+        : null;
+
+    let syncedScheduleAdj = existingStudentDetails?.schedule_adjustment || null;
+    if (syncedScheduleAdj && editingBooking.preferred_time) {
+      const newStartMins = parseTimeToMinutes(editingBooking.preferred_time);
+      const dur = Number(syncedScheduleAdj.duration_minutes) > 0 ? Number(syncedScheduleAdj.duration_minutes) : 60;
+      if (newStartMins != null) {
+        syncedScheduleAdj = {
+          ...syncedScheduleAdj,
+          start_time: minutesToHHMM(newStartMins),
+          end_time: minutesToHHMM(Math.min(23 * 60 + 59, newStartMins + dur)),
+          updated_at: new Date().toISOString(),
+        };
+      }
+    }
+
+    const updatedStudentDetails = existingStudentDetails
+      ? {
+          ...existingStudentDetails,
+          school: editingBooking.school?.trim() || null,
+          school_address: editingBooking.campus?.trim() || null,
+          course: editingBooking.degree?.trim() || null,
+          section: editingBooking.section?.trim() || null,
+          student_id: editingBooking.student_id?.trim() || null,
+          ...(syncedScheduleAdj ? { schedule_adjustment: syncedScheduleAdj } : {}),
+        }
+      : undefined;
 
     const updates = {
-      status: editingBooking.status,
-      payment_status: editingBooking.payment_status,
-      service_id: editingBooking.service_id || null,
-      tier_name: editingBooking.tier_name || null,
       photographer_id: editingBooking.photographer_id || null,
       event_date: editingBooking.event_date ? editingBooking.event_date.split('T')[0] : null,
-      preferred_time: editingBooking.preferred_time || null,
-      location: editingBooking.location || '',
-      notes: consolidatedNotes,
+      preferred_time: editingBooking.preferred_time ? toDatabaseTime(editingBooking.preferred_time) : null,
+      school: editingBooking.school?.trim() || null,
+      school_address: editingBooking.campus?.trim() || null,
+      track: editingBooking.degree?.trim() || null,
+      section: editingBooking.section?.trim() || null,
+      student_id: editingBooking.student_id?.trim() || null,
+      ...(updatedStudentDetails ? { student_details: updatedStudentDetails } : {}),
+      notes: consolidatedNotes || null,
       reference_images: editingBooking.reference_images || [],
-      total_amount: totalAmt,
-      down_payment_amount: downAmt,
-      remaining_balance: remainingBal,
+      updated_at: new Date().toISOString(),
     };
 
     const { error: updateErr } = await adminUpdateBooking(editingBooking.id, updates);
 
-    // 3. Record status history if stage changed
-    if (!updateErr && editingBooking.status !== editingBooking._originalStatus) {
-      try {
-        await supabase.from('booking_status_history').insert([{
-          booking_id: editingBooking.id,
-          status: editingBooking.status,
-          remarks: `Order stage updated to ${editingBooking.status}`,
-          changed_by: profile?.id || null,
-        }]);
-      } catch (histErr) {
-        console.warn('Could not record status history:', histErr);
-      }
-    }
-
     setIsSaving(false);
-
     if (updateErr) {
-      showToast(updateErr.message || 'Failed to update order', 'error');
+      showToast(updateErr.message || 'Failed to update booking details', 'error');
     } else {
-      showToast(`Order #${editingBooking.booking_number} updated.`);
+      showToast(`Details for order #${editingBooking.booking_number} updated.`);
       setEditingBooking(null);
       fetchBookings();
       fetchCounts();
     }
   };
 
-  // ── SOFT DELETE CRUD (Move to Trash) ──────────────────────────────────────
-  const handleConfirmSoftDelete = async () => {
+  // ── PERMANENT DELETE CRUD (Direct Database Removal) ───────────────────────
+  const handleConfirmDeleteBooking = async () => {
     if (!bookingToDelete) return;
     setIsDeleting(true);
 
-    const { success, error: delErr } = await softDeleteBooking({
+    const { success, error: delErr } = await deleteBookingPermanently({
       bookingId: bookingToDelete.id,
       deletedById: profile?.id,
       deletedByName: adminStaffName,
-      reason: deleteReason || 'Moved to Trash by Admin',
+      reason: deleteReason.trim() || 'Permanently deleted by Admin',
     });
 
     setIsDeleting(false);
     if (!success) {
-      showToast('Failed to archive booking: ' + (delErr?.message || 'Database error'), 'error');
+      showToast('Failed to permanently delete booking: ' + (delErr?.message || 'Database error'), 'error');
     } else {
-      showToast(`Booking #${bookingToDelete.booking_number || ''} moved to Deleted tab.`);
+      showToast(`Booking #${bookingToDelete.booking_number || ''} permanently deleted.`);
       setBookingToDelete(null);
       setDeleteReason('');
       fetchBookings();
@@ -1388,71 +1777,132 @@ export default function AdminBookings({ initialSection }) {
     }
   };
 
+  // ── Status-Driven Row Action Handler (Reads Current Order Status & Confirms/Moves) ──
+  const handleRowStageAction = async (booking, nextAction) => {
+    if (!booking || !nextAction) return;
+    const paymentConfirmed = isPaymentVerifiedByAdmin(booking);
+
+    if (nextAction.type === 'CONFIRM_PAYMENT') {
+      setOpenPaymentOnInspect(true);
+      setInspectingBooking(booking);
+      return;
+    }
+
+    if (nextAction.type === 'APPROVE_AND_RESERVE') {
+      if (!paymentConfirmed) {
+        showToast(`Confirm downpayment for #${booking.booking_number} first.`, 'error');
+        setOpenPaymentOnInspect(true);
+        setInspectingBooking(booking);
+        return;
+      }
+      if (!booking.event_date) {
+        handleOpenEditModal(booking);
+        return;
+      }
+      setAdvancingBookingId(booking.id);
+      try {
+        const { error: statusErr } = await updateBookingStatus(
+          booking.id,
+          'CONFIRMED',
+          'Booking approved and reserved by admin',
+          profile?.id || null
+        );
+        if (statusErr) throw statusErr;
+        showToast(`Booking #${booking.booking_number} approved & reserved.`);
+        fetchBookings();
+        fetchCounts();
+      } catch (err) {
+        showToast(err?.message || 'Failed to approve booking.', 'error');
+      } finally {
+        setAdvancingBookingId(null);
+      }
+      return;
+    }
+
+    if (nextAction.type === 'ASSIGN_PHOTOGRAPHER') {
+      if (!paymentConfirmed) {
+        showToast(`Confirm payment for #${booking.booking_number} first before assigning a photographer.`, 'error');
+        setOpenPaymentOnInspect(true);
+        setInspectingBooking(booking);
+        return;
+      }
+      setAssigningPhotographerBooking(booking);
+      return;
+    }
+
+    if (nextAction.type === 'ADVANCE_STAGE' && nextAction.nextStatus) {
+      if (!paymentConfirmed) {
+        showToast(`Confirm payment for #${booking.booking_number} first before proceeding.`, 'error');
+        setOpenPaymentOnInspect(true);
+        setInspectingBooking(booking);
+        return;
+      }
+      if (!hasAssignedPhotographer(booking)) {
+        showToast(`Assign a photographer first before moving #${booking.booking_number} to ${nextAction.nextLabel}.`, 'error');
+        setAssigningPhotographerBooking(booking);
+        return;
+      }
+      setAdvancingBookingId(booking.id);
+      try {
+        const { error: statusErr } = await updateBookingStatus(
+          booking.id,
+          nextAction.nextStatus,
+          `Updated to ${nextAction.nextLabel} from Bookings Management`,
+          profile?.id || null
+        );
+        if (statusErr) throw statusErr;
+        showToast(`Booking #${booking.booking_number} moved to ${nextAction.nextLabel}.`);
+        fetchBookings();
+        fetchCounts();
+      } catch (err) {
+        showToast(err?.message || 'Failed to move booking status.', 'error');
+      } finally {
+        setAdvancingBookingId(null);
+      }
+    }
+  };
+
   // Dropdown options
   const statusDropdownOptions = [
     { value: '', label: 'All Statuses', dotColor: 'bg-neutral-400' },
-    { value: 'PENDING', label: 'Pending Review', dotColor: 'bg-amber-500' },
-    { value: 'CONFIRMED', label: 'Confirmed Sessions', dotColor: 'bg-neutral-900' },
+    { value: 'PENDING', label: 'Booking Received', dotColor: 'bg-amber-500' },
+    { value: 'CONFIRMED', label: 'Approved & Reserved', dotColor: 'bg-neutral-900' },
     { value: 'PHOTOGRAPHER_ASSIGNED', label: 'Photographer Assigned', dotColor: 'bg-neutral-600' },
-    { value: 'CAPTURE', label: 'In Studio Bay', dotColor: 'bg-gold' },
-    { value: 'EDITING', label: 'In Post-Processing', dotColor: 'bg-neutral-600' },
+    { value: 'CAPTURE', label: 'Ongoing Pictorial', dotColor: 'bg-gold' },
+    { value: 'EDITING', label: 'Editing', dotColor: 'bg-neutral-900' },
+    { value: 'RETOUCHING', label: 'Retouching', dotColor: 'bg-gold' },
+    { value: 'FINALIZED', label: 'Booking Finalized', dotColor: 'bg-neutral-900' },
     { value: 'READY', label: 'Ready for Pickup', dotColor: 'bg-gold' },
-    { value: 'COMPLETED', label: 'Completed Orders', dotColor: 'bg-neutral-900' },
+    { value: 'UNDER_DELIVERY', label: 'Under Delivery', dotColor: 'bg-neutral-900' },
+    { value: 'COMPLETED', label: 'Completed', dotColor: 'bg-neutral-500' },
     { value: 'REJECTED', label: 'Rejected', dotColor: 'bg-neutral-400' },
     { value: 'CANCELLED', label: 'Cancelled', dotColor: 'bg-neutral-300' },
   ];
 
-  const sortDropdownOptions = [
-    { value: 'created_at', label: 'Newest First' },
-    { value: 'student_name_asc', label: 'Student (A–Z)' },
-    { value: 'student_name_desc', label: 'Student (Z–A)' },
-    { value: 'event_date', label: 'Event Date' },
-    { value: 'booking_number', label: 'Booking Number' },
-    { value: 'total_amount', label: 'Total Amount' },
+  const clientTypeDropdownOptions = [
+    { value: '', label: 'All Client Types', dotColor: 'bg-neutral-400' },
+    { value: 'DIRECT_STUDENT', label: 'Direct Student', dotColor: 'bg-gold' },
+    { value: 'SOMEONE_ELSE', label: 'For Someone Else', dotColor: 'bg-amber-500' },
+    { value: 'SCHOOL_PARTNER', label: 'School Batch / Partner', dotColor: 'bg-indigo-500' },
   ];
-
-  // Sequential Pipeline Stages for Edit Order Progress
-  const ORDER_STAGES = [
-    { key: 'PENDING', label: 'Pending' },
-    { key: 'CONFIRMED', label: 'Confirmed' },
-    { key: 'PHOTOGRAPHER_ASSIGNED', label: 'Assigned' },
-    { key: 'CAPTURE', label: 'Shoot' },
-    { key: 'EDITING', label: 'Editing' },
-    { key: 'READY', label: 'Ready' },
-    { key: 'COMPLETED', label: 'Done' },
-  ];
-
-  const PAYMENT_STAGES = [
-    { key: 'UNPAID', label: 'Unpaid' },
-    { key: 'PARTIAL', label: 'Partial' },
-    { key: 'PAID', label: 'Paid' },
-    { key: 'REFUNDED', label: 'Refunded' },
-  ];
-
-  // Options for Edit Booking Modal
-  const editStatusOptions = [
-    { value: 'PENDING', label: 'Pending Review', dotColor: 'bg-amber-500' },
-    { value: 'CONFIRMED', label: 'Confirmed Schedule', dotColor: 'bg-blue-600' },
-    { value: 'PHOTOGRAPHER_ASSIGNED', label: 'Photographer Assigned', dotColor: 'bg-indigo-600' },
-    { value: 'CAPTURE', label: 'In Studio (Capture)', dotColor: 'bg-purple-600' },
-    { value: 'EDITING', label: 'Post-Processing (Editing)', dotColor: 'bg-cyan-600' },
-    { value: 'READY', label: 'Ready for Pickup / Release', dotColor: 'bg-emerald-600' },
-    { value: 'COMPLETED', label: 'Completed Order', dotColor: 'bg-neutral-800' },
-    { value: 'CANCELLED', label: 'Cancelled', dotColor: 'bg-neutral-400' },
-    { value: 'REJECTED', label: 'Rejected', dotColor: 'bg-rose-500' },
-  ];
-
-  const editPaymentOptions = [
-    { value: 'UNPAID', label: 'Unpaid (No Settlement)', dotColor: 'bg-amber-500' },
-    { value: 'PARTIAL', label: 'Partial Deposit (Balance Remaining)', dotColor: 'bg-gold' },
-    { value: 'PAID', label: 'Paid in Full (Cleared)', dotColor: 'bg-emerald-600' },
-    { value: 'REFUNDED', label: 'Refunded', dotColor: 'bg-neutral-400' },
-  ];
-
 
   // Apply in-memory filtering and multi-attribute sorting for campus batch orders
   const displayedBookings = useMemo(() => {
     let result = [...bookings];
+
+    if (clientTypeFilter) {
+      result = result.filter(b => {
+        const isSomeoneElse = b.participant_details?.booking_for === 'someone_else' || b.booking_for === 'someone_else';
+        const isSchoolPartner =
+          b.student_details?.booking_mode === 'SCHOOL_PARTNER' ||
+          b.booking_for === 'school_section' ||
+          (b.notes && /SCHOOL_PARTNER/i.test(b.notes));
+        if (clientTypeFilter === 'SOMEONE_ELSE') return isSomeoneElse;
+        if (clientTypeFilter === 'SCHOOL_PARTNER') return isSchoolPartner;
+        if (clientTypeFilter === 'DIRECT_STUDENT') return !isSomeoneElse && !isSchoolPartner;
+        return true;
+      });
+    }
 
     if (schoolFilter) {
       result = result.filter(b => getBookingSchool(b).toLowerCase().includes(schoolFilter.toLowerCase()));
@@ -1485,7 +1935,7 @@ export default function AdminBookings({ initialSection }) {
     }
 
     return result;
-  }, [bookings, schoolFilter, sectionFilter, sortBy]);
+  }, [bookings, clientTypeFilter, schoolFilter, sectionFilter, sortBy]);
 
   // Group all bookings into school places with sections (Batching categorization)
   const allSchoolPlacesList = useMemo(() => {
@@ -1683,18 +2133,17 @@ export default function AdminBookings({ initialSection }) {
     }, 400);
   };
   const editPhotographerOptions = useMemo(() => {
-    const base = [{ value: '', label: 'Unassigned (Assign Later)', dotColor: 'bg-neutral-300' }];
+    const base = [{ value: '', label: 'Unassigned', dotColor: 'bg-neutral-300' }];
     if (editBookingPhotographers.length > 0) {
       return [
         ...base,
         ...editBookingPhotographers.map(p => {
           const name = `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Photographer';
           const isAvail = !p.hasConflict && p.is_available;
-          const statusText = isAvail ? 'Available (On Duty)' : (p.conflictReason ? `Off Duty (${p.conflictReason})` : 'Off Duty');
           return {
             value: p.id,
-            label: `${name} — ${statusText}`,
-            dotColor: isAvail ? 'bg-emerald-500' : 'bg-neutral-400',
+            label: name,
+            dotColor: isAvail ? 'bg-emerald-500' : 'bg-rose-500',
           };
         }),
       ];
@@ -1705,24 +2154,14 @@ export default function AdminBookings({ initialSection }) {
         .filter(p => (!p.profile?.role || p.profile.role.toLowerCase() === 'photographer') && p.profile?.role?.toLowerCase() !== 'admin')
         .map(p => {
           const name = `${p.profile?.first_name || ''} ${p.profile?.last_name || ''}`.trim() || 'Photographer';
-          const spec = p.specialization ? ` (${p.specialization})` : '';
           return {
             value: p.id,
-            label: `${name}${spec}`,
-            dotColor: 'bg-indigo-500',
+            label: name,
+            dotColor: 'bg-neutral-400',
           };
         }),
     ];
   }, [editBookingPhotographers, availablePhotographers]);
-
-  const editServiceOptions = [
-    { value: '', label: 'Select photography service package...', dotColor: 'bg-neutral-300' },
-    ...availableServices.map(s => ({
-      value: s.id,
-      label: `${s.name} (₱${Number(s.base_price || 0).toLocaleString()})`,
-      dotColor: 'bg-gold',
-    })),
-  ];
 
   const TOGA_SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', 'Custom'];
 
@@ -1757,13 +2196,13 @@ export default function AdminBookings({ initialSection }) {
           onClick: () => setIsCreateModalOpen(true),
         }}
         secondaryAction={{
-          label: 'Export CSV',
+          label: 'Export Excel',
           icon: Download,
-          onClick: handleExportCSV,
+          onClick: handleExportExcel,
         }}
         onRefresh={() => { fetchBookings(); fetchCounts(); }}
         isRefreshing={loading}
-        onExport={handleExportCSV}
+        onExport={handleExportExcel}
       />
 
       {/* ── Page Content Container (Full Width Edge-to-Edge) ── */}
@@ -1837,48 +2276,62 @@ export default function AdminBookings({ initialSection }) {
         ]}
       />
 
-      {/* ── 2.5. School Pictorial Batch Scheduling Alert (Table View Only) ── */}
-      {pendingSchoolCount > 0 && !isDeletedTab && activeNavTab !== 'COMPLETED' && viewMode === 'table' && (
-        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-[#FAF7F2] to-amber-500/5 border border-amber-300/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in shadow-2xs">
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-900 flex items-center justify-center shrink-0 border border-amber-400/40">
-              <GraduationCap size={20} />
+      {/* ── 2.5. Smart Status-Tracker Admin Attention Notice (Table View Only) ── */}
+      {trackerAttentionSummary.total > 0 && !isDeletedTab && activeNavTab !== 'COMPLETED' && viewMode === 'table' && (
+        <div className="p-4 sm:px-5 sm:py-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-[#FAF7F2] to-amber-500/5 border border-amber-300/70 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3.5 animate-fade-in shadow-2xs">
+          <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-900 flex items-center justify-center shrink-0 border border-amber-400/30">
+              <AlertCircle size={19} />
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="text-sm font-heading font-bold text-neutral-900 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-                  <span>{pendingSchoolCount} Student{pendingSchoolCount > 1 ? 's' : ''} Awaiting School Pictorial Schedule</span>
-                </h4>
-                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
-                  {schoolBatchesList.length} School Batch{schoolBatchesList.length > 1 ? 'es' : ''}
-                </span>
-              </div>
-              <p className="text-xs text-neutral-600 font-body mt-0.5">
-                Students registered under school partner agreements need the confirmed photoshoot date, venue, and photographer assignment.
+            <div className="min-w-0">
+              <h4 className="text-sm font-heading font-bold text-neutral-900">
+                {trackerAttentionSummary.total} {trackerAttentionSummary.total === 1 ? 'Booking Needs Action!' : 'Bookings Need Actions!'}
+              </h4>
+              <p className="text-xs text-neutral-600 font-body mt-0.5 leading-relaxed">
+                {trackerAttentionSummary.summaryText}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2.5 shrink-0 w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={() => {
-                setIsSchoolSchedulerOpen(true);
-                fetchSchoolBatches();
-              }}
-              className="btn-gold text-xs py-2 px-3.5 flex items-center gap-1.5 shadow-sm justify-center flex-1 sm:flex-none cursor-pointer"
-            >
-              <Megaphone size={14} /> Schedule & Broadcast
-            </button>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0 w-full lg:w-auto">
+            {trackerAttentionSummary.items.map(item => {
+              const isSelected = statusFilter === item.statusTarget;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => {
+                    if (isSelected) {
+                      setActiveNavTab('ALL');
+                      setStatus('');
+                    } else {
+                      setActiveNavTab(item.tabTarget);
+                      setStatus(item.statusTarget);
+                    }
+                    setPayment('');
+                    setPage(1);
+                  }}
+                  title={isSelected ? 'Click to clear filter' : `Filter orders: ${item.label}`}
+                  className={`h-8 px-2.5 rounded-xl border text-[11px] font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-neutral-900 text-gold border-neutral-900 shadow-2xs'
+                      : 'bg-white text-neutral-700 border-neutral-200 hover:border-amber-300 hover:bg-amber-50/70'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${item.dotColor} shrink-0`} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
             <button
               type="button"
               onClick={() => {
                 setIsPhotographerAvailabilityOpen(true);
                 handleLoadPhotographerAvailability(availDate, availTime);
               }}
-              className="btn-outline text-xs py-2 px-3 flex items-center gap-1.5 bg-white shadow-xs justify-center flex-1 sm:flex-none cursor-pointer"
+              className="btn-outline h-8 text-xs px-3 inline-flex items-center gap-1.5 bg-white shadow-2xs cursor-pointer"
             >
-              <Camera size={14} className="text-gold" /> Check Photographers
+              <Camera size={13} className="text-gold" /> Check Photographers
             </button>
           </div>
         </div>
@@ -1998,23 +2451,23 @@ export default function AdminBookings({ initialSection }) {
             </div>
           </div>
 
-          {/* Streamlined Controls: Sort, Status, and View Mode */}
+          {/* Streamlined Controls: Filters, View Mode, Export, New Booking */}
           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
-            
-            {/* Sort & Grouping Dropdown */}
-            <div className="w-36 sm:w-44">
+
+            {/* Client Type Dropdown */}
+            <div className="w-40 sm:w-44">
               <CustomDropdown
-                value={sortBy}
-                onChange={val => setSortBy(val)}
-                options={sortDropdownOptions}
-                placeholder="Sort"
+                value={clientTypeFilter}
+                onChange={val => setClientTypeFilter(val)}
+                options={clientTypeDropdownOptions}
+                placeholder="All Client Types"
                 className="w-full"
                 popoverWidth="w-52"
               />
             </div>
 
             {/* Status Dropdown */}
-            <div className="w-36 sm:w-44">
+            <div className="w-40 sm:w-44">
               <CustomDropdown
                 value={statusFilter}
                 onChange={val => { setStatus(val); setPage(1); }}
@@ -2025,79 +2478,47 @@ export default function AdminBookings({ initialSection }) {
               />
             </div>
 
-            {/* View Mode: Complete Tables | Live Calendar | School Batches */}
+            {/* View Mode Icons: Complete Tables | Live Calendar */}
             <div className="flex items-center bg-neutral-100 p-1 rounded-xl border border-neutral-200/80 shrink-0">
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`p-2 rounded-lg transition-all cursor-pointer inline-flex items-center justify-center ${
                   viewMode === 'table'
                     ? 'bg-white text-neutral-900 shadow-2xs'
                     : 'text-neutral-500 hover:text-neutral-800'
                 }`}
-                title="Complete Tables (Master View)"
+                title="Complete Tables"
+                aria-label="Complete Tables"
               >
-                <Table size={13} className={viewMode === 'table' ? 'text-gold' : ''} />
-                <span>Complete Tables</span>
+                <Table size={15} className={viewMode === 'table' ? 'text-gold' : ''} />
               </button>
 
               <button
                 type="button"
                 onClick={() => setViewMode('calendar')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`p-2 rounded-lg transition-all cursor-pointer inline-flex items-center justify-center ${
                   viewMode === 'calendar'
                     ? 'bg-white text-neutral-900 shadow-2xs'
                     : 'text-neutral-500 hover:text-neutral-800'
                 }`}
-                title="Live Booking Calendar"
+                title="Live Calendar"
+                aria-label="Live Calendar"
               >
-                <CalendarDays size={13} className={viewMode === 'calendar' ? 'text-gold' : ''} />
-                <span>Live Calendar</span>
+                <CalendarDays size={15} className={viewMode === 'calendar' ? 'text-gold' : ''} />
               </button>
-
-              <div className="relative group">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('batch')}
-                  className={`relative p-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center ${
-                    viewMode === 'batch'
-                      ? 'bg-white text-neutral-900 shadow-2xs'
-                      : 'text-neutral-500 hover:text-neutral-800'
-                  }`}
-                  title={pendingSchoolCount > 0 ? `${pendingSchoolCount} Pending Schedule` : 'School Batches'}
-                  aria-label="School Batches"
-                >
-                  <GraduationCap size={15} className={viewMode === 'batch' ? 'text-gold' : ''} />
-                  {pendingSchoolCount > 0 && (
-                    <span className="absolute -top-1 -right-1 flex h-2 w-2 pointer-events-none">
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500 border border-white"></span>
-                    </span>
-                  )}
-                </button>
-                {/* Notification Tooltip on Hover */}
-                <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-neutral-900 text-white text-xs font-bold shadow-lg whitespace-nowrap z-30">
-                  {pendingSchoolCount > 0 ? (
-                    <>
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                      <span>{pendingSchoolCount} Pending Schedule</span>
-                    </>
-                  ) : (
-                    <span>School Batches</span>
-                  )}
-                </div>
-              </div>
             </div>
 
             {/* Clear Filters (if active) */}
-            {(statusFilter || paymentFilter || search || sortBy !== 'created_at') && (
+            {(statusFilter || paymentFilter || clientTypeFilter || search) && (
               <button
                 type="button"
                 onClick={() => {
                   setStatus('');
                   setPayment('');
+                  setClientTypeFilter('');
                   setSearch('');
                   setLiveSearch('');
-                  setSortBy('created_at');
                 }}
                 className="p-2 rounded-xl text-neutral-400 hover:text-rose-600 hover:bg-rose-50 border border-neutral-200 transition-colors cursor-pointer shrink-0"
                 title="Reset all filters"
@@ -2119,16 +2540,16 @@ export default function AdminBookings({ initialSection }) {
               </button>
             )}
 
-            {/* Export CSV */}
+            {/* Export Excel */}
             {!isDeletedTab && (
               <button
                 type="button"
-                onClick={handleExportCSV}
+                onClick={handleExportExcel}
                 className="h-9 px-3 rounded-xl border border-neutral-200/90 hover:bg-neutral-100 text-neutral-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
-                title="Export Bookings to CSV"
+                title="Export Bookings to Excel"
               >
                 <Download size={13} className="text-neutral-500" />
-                <span className="hidden sm:inline">Export CSV</span>
+                <span className="hidden sm:inline">Export Excel</span>
               </button>
             )}
 
@@ -2156,14 +2577,14 @@ export default function AdminBookings({ initialSection }) {
           onInspectBooking={setInspectingBooking}
           onEditBooking={handleOpenEditModal}
           onCreateBooking={({ date, time }) => {
-            setFormData(prev => ({
+            setNewBooking(prev => ({
               ...prev,
               event_date: date,
               preferred_time: time
             }));
             setIsCreateModalOpen(true);
           }}
-          onRefresh={loadBookings}
+          onRefresh={() => { fetchBookings(); fetchCounts(); }}
         />
       ) : viewMode === 'batch' && !isDeletedTab ? (
         <div className="space-y-4 sm:space-y-5">
@@ -2462,7 +2883,6 @@ export default function AdminBookings({ initialSection }) {
                                     <th className="px-4 py-2.5">Service Package</th>
                                     <th className="px-4 py-2.5">Pictorial Schedule</th>
                                     <th className="px-4 py-2.5">Shoot Location</th>
-                                    <th className="px-4 py-2.5">Lead Photographer</th>
                                     <th className="px-4 py-2.5">Status</th>
                                     <th className="px-4 py-2.5 text-right">Actions</th>
                                   </tr>
@@ -2506,13 +2926,9 @@ export default function AdminBookings({ initialSection }) {
                                               <span className="font-bold text-neutral-900 text-xs">
                                                 {getBookingStudentName(b)}
                                               </span>
-                                              {b.participant_details?.booking_for === 'someone_else' ? (
+                                              {b.participant_details?.booking_for === 'someone_else' && (
                                                 <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200">
                                                   For: {b.participant_details.full_name}{b.participant_details.relationship ? ` (${b.participant_details.relationship})` : ''}
-                                                </span>
-                                              ) : (
-                                                <span className="text-[11px] font-medium text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded-full border border-neutral-200">
-                                                  Direct Student
                                                 </span>
                                               )}
                                               {sizeBadge && (
@@ -2581,34 +2997,63 @@ export default function AdminBookings({ initialSection }) {
                                           )}
                                         </td>
 
-                                        {/* Lead Photographer */}
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                          {b.photographer ? (
-                                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-800">
-                                              <Camera size={12} className="text-gold shrink-0" />
-                                              <span>
-                                                {`${b.photographer.first_name || b.photographer.profile?.first_name || ''} ${b.photographer.last_name || b.photographer.profile?.last_name || ''}`.trim() || 'Assigned Lead'}
-                                              </span>
-                                            </span>
-                                          ) : (
-                                            <span className="text-[11px] text-neutral-400 italic">
-                                              Unassigned
-                                            </span>
-                                          )}
-                                        </td>
-
                                         {/* Status Column */}
                                         <td className="px-4 py-3 whitespace-nowrap">
-                                          <BookingLifecycleBadge
-                                            status={(!b.event_date && (b.student_details?.school || (b.notes || '').includes('School Pictorial') || (b.notes || '').includes('SCHOOL_PARTNER'))) ? 'PENDING' : b.status}
-                                            showStatus={true}
-                                            showPayment={false}
-                                          />
+                                          <div className="flex flex-col items-start gap-1">
+                                            <BookingLifecycleBadge
+                                              booking={b}
+                                              status={b.status}
+                                              showStatus={true}
+                                              showPayment={false}
+                                              variant="text"
+                                            />
+                                            {hasAssignedPhotographer(b) && (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setAssigningPhotographerBooking(b);
+                                                }}
+                                                title="Click to reassign lead photographer"
+                                                className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-600 hover:text-amber-800 transition-colors cursor-pointer"
+                                              >
+                                                <Camera size={12} className="text-gold shrink-0" />
+                                                <span>{getPhotographerDisplayName(b) || 'Assigned Lead'}</span>
+                                              </button>
+                                            )}
+                                          </div>
                                         </td>
 
                                         {/* Actions */}
                                         <td className="px-4 py-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                                           <div className="flex items-center justify-end gap-1.5">
+                                            {(() => {
+                                              const nextAction = getNextBookingAction(b);
+                                              const isAdvancing = advancingBookingId === b.id;
+                                              if (!nextAction) return null;
+                                              const ActionIcon =
+                                                nextAction.type === 'CONFIRM_PAYMENT' || nextAction.type === 'APPROVE_AND_RESERVE'
+                                                  ? CheckCircle2
+                                                  : nextAction.type === 'ASSIGN_PHOTOGRAPHER'
+                                                    ? Camera
+                                                    : ArrowRight;
+                                              return (
+                                                <button
+                                                  type="button"
+                                                  disabled={isAdvancing}
+                                                  onClick={() => handleRowStageAction(b, nextAction)}
+                                                  title={nextAction.label}
+                                                  className="h-8 px-2 rounded-lg text-neutral-900 hover:text-amber-800 hover:bg-amber-50/80 text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                                                >
+                                                  {isAdvancing ? (
+                                                    <Loader2 size={14} className="animate-spin shrink-0 text-gold-dark" />
+                                                  ) : (
+                                                    <ActionIcon size={14} className="shrink-0 text-gold-dark" />
+                                                  )}
+                                                  <span>{isAdvancing ? 'Updating...' : nextAction.label}</span>
+                                                </button>
+                                              );
+                                            })()}
                                             <button
                                               type="button"
                                               onClick={() => setInspectingBooking(b)}
@@ -2622,8 +3067,21 @@ export default function AdminBookings({ initialSection }) {
                                               onClick={() => handleOpenEditModal(b)}
                                               className="p-1.5 rounded-lg text-neutral-400 hover:text-gold hover:bg-gold/10 transition-colors cursor-pointer"
                                               title="Edit booking"
+                                              aria-label={`Edit booking #${b.booking_number}`}
                                             >
                                               <Edit3 size={13} />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setBookingToDelete(b);
+                                                setDeleteReason('');
+                                              }}
+                                              className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                              title="Delete booking"
+                                              aria-label={`Delete booking #${b.booking_number}`}
+                                            >
+                                              <Trash2 size={13} />
                                             </button>
                                           </div>
                                         </td>
@@ -2649,13 +3107,13 @@ export default function AdminBookings({ initialSection }) {
           <table className="min-w-full text-sm font-body">
             <thead>
               <tr className="bg-neutral-50/80 border-b border-neutral-200 text-xs font-bold uppercase tracking-wider text-neutral-600 text-left">
-                <th className="px-5 sm:px-6 py-3.5 sm:py-4">
+                <th className="px-4 py-3.5 whitespace-nowrap">
                   <div className="flex items-center gap-1.5 cursor-pointer select-none" onClick={() => setSortAsc(!sortAsc)}>
                     <span>Booking #</span>
                     <ArrowUpDown size={12} className="text-neutral-400" />
                   </div>
                 </th>
-                <th className="px-5 sm:px-6 py-3.5 sm:py-4">
+                <th className="px-4 py-3.5 whitespace-nowrap">
                   <div 
                     className="flex items-center gap-1.5 cursor-pointer select-none hover:text-gold transition-colors"
                     onClick={() => {
@@ -2667,15 +3125,15 @@ export default function AdminBookings({ initialSection }) {
                     <ArrowUpDown size={12} className={sortBy.startsWith('student_name') ? "text-gold" : "text-neutral-400"} />
                   </div>
                 </th>
-                <th className="px-5 sm:px-6 py-3.5 sm:py-4 hidden md:table-cell">Service</th>
-                <th className="px-5 sm:px-6 py-3.5 sm:py-4 hidden lg:table-cell">
+                <th className="px-4 py-3.5 hidden md:table-cell whitespace-nowrap">Service</th>
+                <th className="px-4 py-3.5 hidden lg:table-cell whitespace-nowrap">
                   <div className="flex items-center gap-1.5 cursor-pointer select-none" onClick={() => { setSortBy('event_date'); setSortAsc(!sortAsc); }}>
                     <span>Event Date</span>
                     <ArrowUpDown size={12} className="text-neutral-400" />
                   </div>
                 </th>
-                <th className="px-5 sm:px-6 py-3.5 sm:py-4">Status</th>
-                <th className="px-5 sm:px-6 py-3.5 sm:py-4 hidden xl:table-cell">Lead Photographer</th>
+                <th className="px-4 py-3.5 whitespace-nowrap">Status</th>
+                <th className="px-4 py-3.5 whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
@@ -2717,66 +3175,56 @@ export default function AdminBookings({ initialSection }) {
                       title="Click to view details"
                       className={`transition-colors ${isDeletedTab ? 'bg-neutral-50/40 hover:bg-neutral-100/50' : 'hover:bg-gold/8'} cursor-pointer group`}
                     >
-                      {/* Booking # & ID */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setInspectingBooking(b);
-                              }}
-                              className="font-mono text-xs sm:text-sm font-bold text-gold hover:text-primary hover:underline transition-colors text-left cursor-pointer"
-                              title="Inspect booking details"
-                            >
-                              {b.booking_number}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleCopyRef(b.booking_number, e);
-                              }}
-                              className="text-neutral-300 hover:text-gold transition-colors p-0.5 cursor-pointer"
-                              title="Copy booking number"
-                            >
-                              {copiedRef === b.booking_number ? (
-                                <Check size={12} className="text-gold" />
-                              ) : (
-                                <Copy size={12} />
-                              )}
-                            </button>
-                          </div>
-                          <p className="font-mono text-xs text-neutral-400">
-                            ID: {b.id.slice(0, 8)}...
-                          </p>
+                      {/* Booking # */}
+                      <td className="px-4 py-3.5 whitespace-nowrap text-xs sm:text-sm text-neutral-900 font-normal">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setInspectingBooking(b);
+                            }}
+                            className="font-mono text-xs sm:text-sm font-normal text-neutral-900 hover:underline transition-colors text-left cursor-pointer"
+                            title="Inspect booking details"
+                          >
+                            {b.booking_number}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopyRef(b.booking_number, e);
+                            }}
+                            className="text-neutral-500 hover:text-neutral-900 transition-colors p-0.5 cursor-pointer"
+                            title="Copy booking number"
+                          >
+                            {copiedRef === b.booking_number ? (
+                              <Check size={12} className="text-neutral-900" />
+                            ) : (
+                              <Copy size={12} />
+                            )}
+                          </button>
                         </div>
                       </td>
 
-                      {/* Customer / Participant with Size & Details */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5">
+                      {/* Customer / Participant */}
+                      <td className="px-4 py-3.5 text-xs sm:text-sm text-neutral-900 font-normal">
                         <div className="space-y-0.5">
                           {b.participant_details?.booking_for === 'someone_else' ? (
                             <>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setInspectingBooking(b);
-                                  }}
-                                  className="font-bold text-neutral-900 text-sm sm:text-base hover:text-gold transition-colors text-left cursor-pointer"
-                                  title="Inspect participant details"
-                                >
-                                  {b.participant_details.full_name}
-                                </button>
-                                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200">
-                                  For: {b.participant_details.full_name}{b.participant_details.relationship ? ` (${b.participant_details.relationship})` : ''}
-                                </span>
-                              </div>
-                              <p className="text-xs text-neutral-500 truncate max-w-[220px]">
-                                Account Owner: <span className="font-semibold text-neutral-700">{cust ? `${cust.first_name} ${cust.last_name}` : '—'}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setInspectingBooking(b);
+                                }}
+                                className="font-normal text-neutral-900 text-xs sm:text-sm hover:underline transition-colors text-left cursor-pointer"
+                                title="Inspect participant details"
+                              >
+                                {b.participant_details.full_name}
+                              </button>
+                              <p className="text-xs sm:text-sm font-normal text-neutral-900 truncate max-w-[220px]">
+                                Account Owner: {cust ? `${cust.first_name} ${cust.last_name}` : '—'}
                               </p>
                             </>
                           ) : (
@@ -2787,98 +3235,170 @@ export default function AdminBookings({ initialSection }) {
                                   e.stopPropagation();
                                   setInspectingBooking(b);
                                 }}
-                                className="font-semibold text-neutral-900 text-sm sm:text-base hover:text-gold transition-colors text-left cursor-pointer"
+                                className="font-normal text-neutral-900 text-xs sm:text-sm hover:underline transition-colors text-left cursor-pointer"
                                 title="Inspect customer details"
                               >
                                 {cust ? `${cust.first_name} ${cust.last_name}` : '—'}
                               </button>
-                              <span className="text-xs font-medium text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-full border border-neutral-200/80">
-                                Direct Student
-                              </span>
                               {sizeBadge && (
-                                <span className="text-xs font-mono font-medium px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 border border-neutral-200">
-                                  {sizeBadge}
+                                <span className="text-xs sm:text-sm font-normal text-neutral-900">
+                                  ({sizeBadge})
                                 </span>
                               )}
                             </div>
                           )}
 
                           {b.student_details?.student_name && (!b.participant_details?.full_name || b.student_details.student_name.toLowerCase() !== b.participant_details.full_name.toLowerCase()) && (
-                            <p className="text-xs text-neutral-600 flex items-center gap-1 truncate max-w-[200px]">
-                              <span className="text-xs text-neutral-400 font-medium uppercase">Student:</span>
-                              <span className="font-semibold text-primary truncate">{b.student_details.student_name}</span>
-                            </p>
-                          )}
-                          {(b.student_details?.school || cust?.studio_specs?.university || cust?.studio_specs?.degree) && (
-                            <p className="text-xs text-neutral-500 flex items-center gap-1 truncate max-w-[200px]">
-                              <GraduationCap size={12} className="text-gold-dark shrink-0" />
-                              <span className="truncate">{b.student_details?.school || cust?.studio_specs?.university || cust?.studio_specs?.degree}</span>
+                            <p className="text-xs sm:text-sm font-normal text-neutral-900 truncate max-w-[200px]">
+                              Student: {b.student_details.student_name}
                             </p>
                           )}
                         </div>
                       </td>
 
-                      {/* Service & Tier */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 hidden md:table-cell">
-                        <div className="space-y-0.5">
-                          <p className="font-medium text-neutral-800 text-xs sm:text-sm truncate max-w-[220px]">
-                            {b.service?.name || 'Studio Photography'}
-                          </p>
-                          {b.tier_name && (
-                            <span className="text-xs font-bold uppercase text-gold-dark bg-gold/10 px-2 py-0.5 rounded border border-gold/20 inline-block">
-                              {b.tier_name}
-                            </span>
-                          )}
-                        </div>
+                      {/* Service */}
+                      <td className="px-4 py-3.5 hidden md:table-cell text-xs sm:text-sm font-normal text-neutral-900">
+                        <p className="font-normal text-neutral-900 text-xs sm:text-sm truncate max-w-[200px]">
+                          {formatServicePackageLabel(b.service)}
+                        </p>
                       </td>
 
                       {/* Event Date */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 hidden lg:table-cell text-xs sm:text-sm text-neutral-600">
+                      <td className="px-4 py-3.5 hidden lg:table-cell whitespace-nowrap text-xs sm:text-sm font-normal text-neutral-900">
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5">
-                            <CalendarDays size={13} className="text-gold-dark flex-shrink-0" />
-                            {b.event_date ? (
-                              <span>{fmtDate(b.event_date)}</span>
-                            ) : (
-                              <span
-                                title="Schedule TBA"
-                                className="text-[11px] font-semibold text-amber-900 bg-amber-50/80 px-2 py-0.5 rounded-md border border-amber-200/80 inline-flex items-center gap-1.5"
-                              >
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-                                <span>Schedule TBA</span>
-                              </span>
-                            )}
+                            <CalendarDays size={13} className="text-neutral-700 flex-shrink-0" />
+                            <span>{b.event_date ? fmtDate(b.event_date) : 'Schedule TBA'}</span>
                           </div>
-                          {b.preferred_time && (
-                            <p className="text-xs text-neutral-400 pl-4">
-                              {formatTime(b.preferred_time)}
-                            </p>
-                          )}
+                          {(b.preferred_time || b.student_details?.schedule_adjustment) && (() => {
+                            const timeWin = getBookingTimeWindow(b);
+                            return (
+                              <p className="text-xs sm:text-sm font-normal text-neutral-900 pl-5">
+                                {timeWin.isAdjusted && timeWin.startTime && timeWin.endTime
+                                  ? `${formatTime24To12(timeWin.startTime)} – ${formatTime24To12(timeWin.endTime)}`
+                                  : formatTime(b.preferred_time)}
+                              </p>
+                            );
+                          })()}
                         </div>
                       </td>
 
                       {/* Status Column */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5">
-                        <BookingLifecycleBadge
-                          status={(!b.event_date && (b.student_details?.school || (b.notes || '').includes('School Pictorial') || (b.notes || '').includes('SCHOOL_PARTNER'))) ? 'PENDING' : b.status}
-                          showStatus={true}
-                          showPayment={false}
-                        />
+                      <td className="px-4 py-3.5 whitespace-nowrap text-xs sm:text-sm font-normal text-neutral-900">
+                        <div className="flex flex-col items-start gap-1">
+                          <BookingLifecycleBadge
+                            booking={b}
+                            status={b.status}
+                            showStatus={true}
+                            showPayment={false}
+                            variant="text"
+                          />
+                          {hasAssignedPhotographer(b) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAssigningPhotographerBooking(b);
+                              }}
+                              title="Click to reassign lead photographer"
+                              className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-normal text-neutral-900 hover:underline transition-colors cursor-pointer"
+                            >
+                              <Camera size={13} className="text-neutral-700 shrink-0" aria-hidden="true" />
+                              <span className="truncate max-w-[165px]">
+                                {getPhotographerDisplayName(b) || 'Assigned Lead'}
+                              </span>
+                            </button>
+                          )}
+                        </div>
                       </td>
 
-                      {/* Lead Photographer Column */}
-                      <td className="px-5 sm:px-6 py-4 sm:py-4.5 hidden xl:table-cell whitespace-nowrap">
-                        {b.photographer ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-800">
-                            <Camera size={13} className="text-gold shrink-0" />
-                            <span>
-                              {`${b.photographer.first_name || b.photographer.profile?.first_name || ''} ${b.photographer.last_name || b.photographer.profile?.last_name || ''}`.trim() || 'Assigned Lead'}
-                            </span>
-                          </span>
+                      {/* Actions Column (Only Bold Text Column) */}
+                      <td
+                        className="px-4 py-3.5 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {isDeletedTab ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleRestoreBooking(b)}
+                              title="Restore booking to active queue"
+                              className="h-8 px-2.5 rounded-lg text-neutral-900 hover:bg-neutral-100 text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <RotateCcw size={13} className="text-neutral-900 shrink-0" aria-hidden="true" />
+                              <span>Restore</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setBookingToPermanentlyPurge(b)}
+                              title="Permanently delete booking"
+                              className="h-8 px-2.5 rounded-lg text-neutral-900 hover:bg-neutral-100 text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <Trash2 size={13} className="text-neutral-900 shrink-0" aria-hidden="true" />
+                              <span>Purge</span>
+                            </button>
+                          </div>
                         ) : (
-                          <span className="text-xs text-neutral-400 italic">
-                            Unassigned
-                          </span>
+                          <div className="flex items-center gap-1">
+                            {(() => {
+                              const nextAction = getNextBookingAction(b);
+                              const isAdvancing = advancingBookingId === b.id;
+
+                              if (!nextAction) {
+                                return (
+                                  <span className="h-9 px-1.5 text-neutral-900 text-xs sm:text-sm font-bold inline-flex items-center gap-1.5">
+                                    <CheckCircle2 size={14} className="text-neutral-900 shrink-0" aria-hidden="true" />
+                                    <span>{String(b.status || '').toUpperCase() === 'COMPLETED' ? 'Order Completed' : 'Closed'}</span>
+                                  </span>
+                                );
+                              }
+
+                              const ActionIcon =
+                                nextAction.type === 'CONFIRM_PAYMENT' || nextAction.type === 'APPROVE_AND_RESERVE'
+                                  ? CheckCircle2
+                                  : nextAction.type === 'ASSIGN_PHOTOGRAPHER'
+                                    ? Camera
+                                    : ArrowRight;
+
+                              return (
+                                <button
+                                  type="button"
+                                  disabled={isAdvancing}
+                                  onClick={() => handleRowStageAction(b, nextAction)}
+                                  title={`${nextAction.label} for booking #${b.booking_number}`}
+                                  className="h-9 px-2.5 rounded-lg text-neutral-900 hover:bg-neutral-100 text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                                >
+                                  {isAdvancing ? (
+                                    <Loader2 size={14} className="animate-spin shrink-0 text-neutral-900" aria-hidden="true" />
+                                  ) : (
+                                    <ActionIcon size={14} className="shrink-0 text-neutral-900" aria-hidden="true" />
+                                  )}
+                                  <span>{isAdvancing ? 'Updating...' : nextAction.label}</span>
+                                </button>
+                              );
+                            })()}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditModal(b)}
+                              title={`Edit booking #${b.booking_number}`}
+                              aria-label={`Edit booking #${b.booking_number}`}
+                              className="h-9 w-9 rounded-lg text-neutral-700 hover:text-neutral-900 hover:bg-neutral-100 inline-flex items-center justify-center transition-colors cursor-pointer"
+                            >
+                              <Edit3 size={15} aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBookingToDelete(b);
+                                setDeleteReason('');
+                              }}
+                              title={`Delete booking #${b.booking_number}`}
+                              aria-label={`Delete booking #${b.booking_number}`}
+                              className="h-9 w-9 rounded-lg text-neutral-700 hover:text-neutral-900 hover:bg-neutral-100 inline-flex items-center justify-center transition-colors cursor-pointer"
+                            >
+                              <Trash2 size={15} aria-hidden="true" />
+                            </button>
+                          </div>
                         )}
                       </td>
 
@@ -2891,16 +3411,9 @@ export default function AdminBookings({ initialSection }) {
           </table>
         </div>
 
-        {/* Live DB Sync & Pagination Footer */}
-        <div className="px-5 sm:px-6 py-3.5 sm:py-4 border-t border-neutral-200 flex items-center justify-between text-xs sm:text-sm text-neutral-500 font-body flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-gold inline-block animate-pulse" />
-            <span>
-              Showing {bookings.length} of {total} {isDeletedTab ? 'deleted' : 'active'} records from live database
-            </span>
-          </div>
-
-          {totalPages > 1 && (
+        {/* Pagination Footer */}
+        {totalPages > 1 && (
+          <div className="px-5 sm:px-6 py-3.5 sm:py-4 border-t border-neutral-200 flex items-center justify-end text-xs sm:text-sm text-neutral-500 font-body">
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
@@ -2920,339 +3433,378 @@ export default function AdminBookings({ initialSection }) {
                 <ChevronRight size={14} />
               </button>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
       )}
 
       {/* ── 6. Create Booking Modal (INSERT CRUD) ──────────────────────── */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 bg-neutral-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-neutral-200 overflow-hidden">
-            {/* Modal Header */}
-            <div className="px-6 py-4 bg-gradient-to-r from-neutral-950 via-[#141414] to-primary text-white flex items-center justify-between">
+        <div
+          className="fixed inset-0 z-50 bg-neutral-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fade-in"
+          onClick={() => !isSaving && setIsCreateModalOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-booking-modal-title"
+            onClick={e => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-neutral-200 overflow-hidden"
+          >
+            {/* Header */}
+            <div className="px-5 sm:px-6 py-4 bg-gradient-to-r from-neutral-950 via-[#141414] to-primary text-white flex items-center justify-between border-b border-white/10 shrink-0">
               <div>
-                <span className="text-xs uppercase font-bold text-gold bg-gold/15 px-2.5 py-0.5 rounded-full border border-gold/30">
-                  Database Insertion
-                </span>
-                <h3 className="font-heading text-lg font-bold text-white mt-1">Create New Booking</h3>
+                <h3 id="create-booking-modal-title" className="font-heading text-base sm:text-lg font-bold text-white tracking-wide">
+                  Create New Booking
+                </h3>
+                <p className="text-[11px] text-neutral-300 mt-0.5">
+                  Register a walk-in or existing client booking
+                </p>
               </div>
               <button
                 type="button"
+                disabled={isSaving}
                 onClick={() => setIsCreateModalOpen(false)}
-                className="p-1.5 rounded-xl text-neutral-400 hover:text-white hover:bg-white/10 cursor-pointer"
+                aria-label="Close modal"
+                className="p-1.5 rounded-xl text-neutral-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-40"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs font-body scrollbar-thin">
-              
-              {/* Customer Mode Selection */}
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-600 mb-1.5">
-                  Client Registry Mode *
-                </label>
-                <div className="grid grid-cols-2 gap-2 mb-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setCustomerMode('existing')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      customerMode === 'existing'
-                        ? 'bg-neutral-900 text-white border-neutral-900 shadow-xs'
-                        : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100'
-                    }`}
-                  >
-                    <User size={13} />
-                    <span>Existing Profile</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCustomerMode('walkin')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      customerMode === 'walkin'
-                        ? 'bg-neutral-900 text-white border-neutral-900 shadow-xs'
-                        : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100'
-                    }`}
-                  >
-                    <UserPlus size={13} />
-                    <span>New / Walk-in Client</span>
-                  </button>
+            <form onSubmit={handleCreateSubmit} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 text-xs font-body scrollbar-thin">
+              {/* Section 1: Client Registry */}
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className={FORM_SECTION_TITLE}>
+                    <User size={13} className="text-gold-dark" aria-hidden="true" />
+                    Client Information
+                  </span>
+                  <div className="inline-grid grid-cols-2 p-1 rounded-xl bg-neutral-100 border border-neutral-200/70 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setCustomerMode('existing')}
+                      className={`h-7 px-3 rounded-lg text-[11px] font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        customerMode === 'existing'
+                          ? 'bg-neutral-900 text-gold shadow-2xs'
+                          : 'text-neutral-600 hover:text-neutral-900'
+                      }`}
+                    >
+                      <User size={12} aria-hidden="true" />
+                      <span>Existing Client</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCustomerMode('walkin')}
+                      className={`h-7 px-3 rounded-lg text-[11px] font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        customerMode === 'walkin'
+                          ? 'bg-neutral-900 text-gold shadow-2xs'
+                          : 'text-neutral-600 hover:text-neutral-900'
+                      }`}
+                    >
+                      <UserPlus size={12} aria-hidden="true" />
+                      <span>Walk-in Client</span>
+                    </button>
+                  </div>
                 </div>
 
                 {customerMode === 'existing' ? (
-                  <select
-                    value={newBooking.customer_id}
-                    onChange={e => setNewBooking({ ...newBooking, customer_id: e.target.value })}
-                    required={customerMode === 'existing'}
-                    className="w-full px-3 py-2 bg-neutral-50 rounded-xl border border-neutral-300 focus:border-gold outline-none text-xs"
-                  >
-                    <option value="">Select a registered customer...</option>
-                    {availableCustomers.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.first_name} {c.last_name} ({c.phone || 'No phone'})
-                      </option>
-                    ))}
-                  </select>
+                  <div>
+                    <label htmlFor="create-existing-customer" className={FORM_LABEL}>
+                      Select Client <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      id="create-existing-customer"
+                      value={newBooking.customer_id}
+                      onChange={e => setNewBooking({ ...newBooking, customer_id: e.target.value })}
+                      required={customerMode === 'existing'}
+                      className={FORM_INPUT}
+                    >
+                      <option value="">Select a registered customer...</option>
+                      {availableCustomers.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.first_name} {c.last_name} ({c.phone || 'No phone'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 ) : (
-                  <div className="grid grid-cols-3 gap-2 p-3 bg-neutral-50 rounded-2xl border border-neutral-200">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-xs text-neutral-500 font-semibold mb-1">First Name *</label>
+                      <label htmlFor="create-walkin-first" className={FORM_LABEL}>
+                        First Name <span className="text-rose-500">*</span>
+                      </label>
                       <input
+                        id="create-walkin-first"
                         type="text"
                         placeholder="e.g. Maria"
                         value={walkinClient.first_name}
                         onChange={e => setWalkinClient({ ...walkinClient, first_name: e.target.value })}
                         required={customerMode === 'walkin'}
-                        className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 text-xs outline-none focus:border-gold"
+                        className={FORM_INPUT}
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-neutral-500 font-semibold mb-1">Last Name *</label>
+                      <label htmlFor="create-walkin-last" className={FORM_LABEL}>
+                        Last Name <span className="text-rose-500">*</span>
+                      </label>
                       <input
+                        id="create-walkin-last"
                         type="text"
                         placeholder="e.g. Santos"
                         value={walkinClient.last_name}
                         onChange={e => setWalkinClient({ ...walkinClient, last_name: e.target.value })}
                         required={customerMode === 'walkin'}
-                        className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 text-xs outline-none focus:border-gold"
+                        className={FORM_INPUT}
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-neutral-500 font-semibold mb-1">Phone Number</label>
+                      <label htmlFor="create-walkin-phone" className={FORM_LABEL}>
+                        Phone Number
+                      </label>
                       <input
+                        id="create-walkin-phone"
                         type="text"
                         placeholder="0917..."
                         value={walkinClient.phone}
                         onChange={e => setWalkinClient({ ...walkinClient, phone: e.target.value })}
-                        className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 text-xs outline-none focus:border-gold"
+                        className={`${FORM_INPUT} font-mono`}
                       />
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Service & Tier Selection */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-600 mb-1">
-                    Photography Service *
-                  </label>
-                  <select
-                    value={newBooking.service_id}
-                    onChange={e => {
-                      const svc = availableServices.find(s => s.id === e.target.value);
-                      setNewBooking({
-                        ...newBooking,
-                        service_id: e.target.value,
-                        total_amount: svc?.base_price || 0,
-                      });
-                    }}
-                    required
-                    className="w-full px-3 py-2 bg-neutral-50 rounded-xl border border-neutral-300 focus:border-gold outline-none text-xs"
-                  >
-                    <option value="">Select package...</option>
-                    {availableServices.map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} (₱{Number(s.base_price || 0).toLocaleString()})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {/* Section 2: Package, Schedule & Location */}
+              <div className="space-y-3 pt-4 border-t border-neutral-100">
+                <span className={FORM_SECTION_TITLE}>
+                  <CalendarDays size={13} className="text-gold-dark" aria-hidden="true" />
+                  Package, Schedule &amp; Payment
+                </span>
 
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-600 mb-1">
-                    Package Tier
-                  </label>
-                  <input
-                    type="text"
-                    value={newBooking.tier_name}
-                    onChange={e => setNewBooking({ ...newBooking, tier_name: e.target.value })}
-                    placeholder="e.g. Set A / Deluxe"
-                    className="w-full px-3 py-2 bg-neutral-50 rounded-xl border border-neutral-300 focus:border-gold outline-none text-xs"
-                  />
-                </div>
-              </div>
-
-              {/* Schedule Date & Time */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-600 mb-1">
-                    Event Date *
-                  </label>
-                  <input
-                    type="date"
-                    value={newBooking.event_date}
-                    onChange={e => setNewBooking({ ...newBooking, event_date: e.target.value })}
-                    required
-                    className="w-full px-3 py-2 bg-neutral-50 rounded-xl border border-neutral-300 focus:border-gold outline-none text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-600 mb-1">
-                    Preferred Time Slot
-                  </label>
-                  <input
-                    type="time"
-                    value={newBooking.preferred_time}
-                    onChange={e => setNewBooking({ ...newBooking, preferred_time: e.target.value })}
-                    className="w-full px-3 py-2 bg-neutral-50 rounded-xl border border-neutral-300 focus:border-gold outline-none text-xs"
-                  />
-                </div>
-              </div>
-
-              {/* Location */}
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-600 mb-1">
-                  Studio Location
-                </label>
-                <input
-                  type="text"
-                  value={newBooking.location}
-                  onChange={e => setNewBooking({ ...newBooking, location: e.target.value })}
-                  placeholder="Studio branch or location address"
-                  className="w-full px-3 py-2 bg-neutral-50 rounded-xl border border-neutral-300 focus:border-gold outline-none text-xs"
-                />
-              </div>
-
-              {/* Financials & Clearance */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-600 mb-1">
-                    Total Amount (₱)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={newBooking.total_amount}
-                    onChange={e => setNewBooking({ ...newBooking, total_amount: e.target.value })}
-                    className="w-full px-3 py-2 bg-neutral-50 rounded-xl border border-neutral-300 focus:border-gold outline-none text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-600 mb-1">
-                    Initial Payment Clearance
-                  </label>
-                  <select
-                    value={newBooking.payment_status}
-                    onChange={e => setNewBooking({ ...newBooking, payment_status: e.target.value })}
-                    className="w-full px-3 py-2 bg-neutral-50 rounded-xl border border-neutral-300 focus:border-gold outline-none text-xs"
-                  >
-                    <option value="UNPAID">Unpaid</option>
-                    <option value="PARTIAL">Partial Balance</option>
-                    <option value="PAID">Paid / Cleared</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Student & Yearbook Details */}
-              <div className="space-y-2.5 pt-2 border-t border-neutral-100">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
-                  <GraduationCap size={13} className="text-gold-dark" />
-                  Student & Yearbook Details
-                </label>
-
-                <div className="p-3 bg-neutral-50/70 rounded-xl border border-neutral-200/80 space-y-2.5">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <div>
-                      <span className="block text-xs text-neutral-500 font-semibold mb-1">School / University</span>
-                      <input
-                        type="text"
-                        placeholder="e.g. University of San Carlos"
-                        value={newBooking.school}
-                        onChange={e => setNewBooking({ ...newBooking, school: e.target.value })}
-                        className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 focus:border-gold outline-none text-xs"
-                      />
-                    </div>
-                    <div>
-                      <span className="block text-xs text-neutral-500 font-semibold mb-1">Degree / Strand</span>
-                      <input
-                        type="text"
-                        placeholder="e.g. BS Computer Science"
-                        value={newBooking.course}
-                        onChange={e => setNewBooking({ ...newBooking, course: e.target.value })}
-                        className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 focus:border-gold outline-none text-xs"
-                      />
-                    </div>
-                    <div>
-                      <span className="block text-xs text-neutral-500 font-semibold mb-1">Student ID</span>
-                      <input
-                        type="text"
-                        placeholder="e.g. 21-0492-381"
-                        value={newBooking.student_id}
-                        onChange={e => setNewBooking({ ...newBooking, student_id: e.target.value })}
-                        className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 focus:border-gold outline-none text-xs font-mono"
-                      />
-                    </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="create-service" className={FORM_LABEL}>
+                      Photography Service <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      id="create-service"
+                      value={newBooking.service_id}
+                      onChange={e => {
+                        const svc = availableServices.find(s => s.id === e.target.value);
+                        setNewBooking({
+                          ...newBooking,
+                          service_id: e.target.value,
+                          total_amount: svc?.base_price || 0,
+                        });
+                      }}
+                      required
+                      className={FORM_INPUT}
+                    >
+                      <option value="">Select package...</option>
+                      {availableServices.map(s => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} (₱{Number(s.base_price || 0).toLocaleString()})
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <div>
-                      <span className="block text-xs text-neutral-500 font-semibold mb-1">Campus / Section</span>
-                      <input
-                        type="text"
-                        placeholder="e.g. Main Campus / 4-A"
-                        value={newBooking.section}
-                        onChange={e => setNewBooking({ ...newBooking, section: e.target.value })}
-                        className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 focus:border-gold outline-none text-xs"
-                      />
+                  <div>
+                    <label htmlFor="create-tier" className={FORM_LABEL}>
+                      Package Tier
+                    </label>
+                    <input
+                      id="create-tier"
+                      type="text"
+                      value={newBooking.tier_name}
+                      onChange={e => setNewBooking({ ...newBooking, tier_name: e.target.value })}
+                      placeholder="e.g. Set A / Deluxe"
+                      className={FORM_INPUT}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="create-event-date" className={FORM_LABEL}>
+                      Event Date <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      id="create-event-date"
+                      type="date"
+                      value={newBooking.event_date}
+                      onChange={e => setNewBooking({ ...newBooking, event_date: e.target.value })}
+                      required
+                      className={FORM_INPUT}
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="create-preferred-time" className={FORM_LABEL}>
+                      Time Schedule
+                    </label>
+                    <input
+                      id="create-preferred-time"
+                      type="time"
+                      list="studio-booking-time-presets"
+                      value={newBooking.preferred_time ? String(newBooking.preferred_time).slice(0, 5) : ''}
+                      onChange={e => setNewBooking({ ...newBooking, preferred_time: e.target.value })}
+                      className={`${FORM_INPUT} ${createTimeConflict.hasConflict ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-200' : ''}`}
+                    />
+                  </div>
+                </div>
+
+                {newBooking.event_date && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-neutral-500">
+                      <span className="font-semibold">Studio Bay Slots ({String(newBooking.event_date).split('T')[0]})</span>
+                      <span>Reserved slots cannot be booked</span>
                     </div>
-                    <div>
-                      <span className="block text-xs text-neutral-500 font-semibold mb-1">Toga Size</span>
-                      <input
-                        type="text"
-                        placeholder="e.g. S, M, L, XL"
-                        value={newBooking.toga_size}
-                        onChange={e => setNewBooking({ ...newBooking, toga_size: e.target.value })}
-                        className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 focus:border-gold outline-none text-xs"
-                      />
+                    <div className="flex flex-wrap gap-1.5">
+                      {STUDIO_HOURLY_SLOTS.map((slot) => {
+                        const slotOverlap = findTimeWindowOverlap({
+                          dateStr: String(newBooking.event_date).split('T')[0],
+                          startTime: slot.time,
+                          durationMinutes: 60,
+                          bookingsOrWindows: createDateRecords,
+                        });
+                        const isSelected = String(newBooking.preferred_time || '').slice(0, 5) === slot.time;
+                        return (
+                          <button
+                            key={slot.time}
+                            type="button"
+                            disabled={slotOverlap.hasConflict}
+                            onClick={() => setNewBooking({ ...newBooking, preferred_time: slot.time })}
+                            title={slotOverlap.hasConflict ? slotOverlap.reason : `Select ${slot.label}`}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition-all ${
+                              slotOverlap.hasConflict
+                                ? 'bg-neutral-100 text-neutral-400 border-neutral-200 line-through cursor-not-allowed opacity-70'
+                                : isSelected
+                                  ? 'bg-neutral-950 text-white border-neutral-950 cursor-pointer'
+                                  : 'bg-white text-neutral-800 border-neutral-200 hover:border-neutral-400 cursor-pointer'
+                            }`}
+                          >
+                            {slot.display}
+                          </button>
+                        );
+                      })}
                     </div>
-                    <div>
-                      <span className="block text-xs text-neutral-500 font-semibold mb-1">Height</span>
-                      <input
-                        type="text"
-                        placeholder="e.g. 5'7 or 170cm"
-                        value={newBooking.height}
-                        onChange={e => setNewBooking({ ...newBooking, height: e.target.value })}
-                        className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 focus:border-gold outline-none text-xs"
-                      />
-                    </div>
+                    {createTimeConflict.hasConflict && (
+                      <p className="text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 flex items-start gap-1.5">
+                        <AlertTriangle size={14} className="shrink-0 mt-0.5 text-rose-600" />
+                        <span>{createTimeConflict.reason}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="create-total-amount" className={FORM_LABEL}>
+                      Total Amount (₱)
+                    </label>
+                    <input
+                      id="create-total-amount"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={newBooking.total_amount}
+                      onChange={e => setNewBooking({ ...newBooking, total_amount: e.target.value })}
+                      className={`${FORM_INPUT} font-semibold`}
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="create-payment-status" className={FORM_LABEL}>
+                      Initial Payment Status
+                    </label>
+                    <select
+                      id="create-payment-status"
+                      value={newBooking.payment_status}
+                      onChange={e => setNewBooking({ ...newBooking, payment_status: e.target.value })}
+                      className={FORM_INPUT}
+                    >
+                      <option value="UNPAID">Unpaid</option>
+                      <option value="PARTIAL">Partial Deposit</option>
+                      <option value="PAID">Paid in Full</option>
+                    </select>
                   </div>
                 </div>
               </div>
 
-              {/* General Notes */}
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-600 mb-1">
-                  General Intake Notes
-                </label>
-                <textarea
-                  rows={2}
-                  value={newBooking.notes}
-                  onChange={e => setNewBooking({ ...newBooking, notes: e.target.value })}
-                  placeholder="Special instructions, studio requests, etc."
-                  className="w-full px-3 py-2 bg-neutral-50 rounded-xl border border-neutral-300 focus:border-gold outline-none text-xs"
-                />
+              {/* Section 3: Student & Yearbook Details (Optional) */}
+              <div className="space-y-3 pt-4 border-t border-neutral-100">
+                <span className={FORM_SECTION_TITLE}>
+                  <GraduationCap size={13} className="text-gold-dark" aria-hidden="true" />
+                  Student &amp; Yearbook Details
+                  <span className="font-normal normal-case tracking-normal text-neutral-400">(Optional)</span>
+                </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="create-school" className={FORM_LABEL}>School / University</label>
+                    <input
+                      id="create-school"
+                      type="text"
+                      placeholder="e.g. University of San Carlos"
+                      value={newBooking.school}
+                      onChange={e => setNewBooking({ ...newBooking, school: e.target.value })}
+                      className={FORM_INPUT}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="create-course" className={FORM_LABEL}>Degree / Strand</label>
+                    <input
+                      id="create-course"
+                      type="text"
+                      placeholder="e.g. BS Computer Science"
+                      value={newBooking.course}
+                      onChange={e => setNewBooking({ ...newBooking, course: e.target.value })}
+                      className={FORM_INPUT}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="create-student-id" className={FORM_LABEL}>Student ID</label>
+                    <input
+                      id="create-student-id"
+                      type="text"
+                      placeholder="e.g. 21-0492-381"
+                      value={newBooking.student_id}
+                      onChange={e => setNewBooking({ ...newBooking, student_id: e.target.value })}
+                      className={`${FORM_INPUT} font-mono`}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="create-section" className={FORM_LABEL}>Section / Batch</label>
+                    <input
+                      id="create-section"
+                      type="text"
+                      placeholder="e.g. 4-A / Batch 2026"
+                      value={newBooking.section}
+                      onChange={e => setNewBooking({ ...newBooking, section: e.target.value })}
+                      className={FORM_INPUT}
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-neutral-100">
+              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-neutral-100">
                 <button
                   type="button"
+                  disabled={isSaving}
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-neutral-200 text-neutral-600 hover:bg-neutral-50 cursor-pointer text-xs"
+                  className="h-9 px-4 rounded-xl border border-neutral-200 text-neutral-600 hover:bg-neutral-50 font-semibold cursor-pointer text-xs disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={isSaving}
-                  className="btn-primary py-2 px-5 text-xs font-semibold flex items-center gap-2 cursor-pointer"
+                  disabled={isSaving || createTimeConflict.hasConflict}
+                  className="btn-primary h-9 px-5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isSaving ? <RefreshCw size={14} className="animate-spin text-gold" /> : <Save size={14} />}
-                  <span>Save to Database</span>
+                  {isSaving ? <RefreshCw size={13} className="animate-spin text-gold" /> : <Save size={13} />}
+                  <span>Create Booking</span>
                 </button>
               </div>
             </form>
@@ -3260,26 +3812,41 @@ export default function AdminBookings({ initialSection }) {
         </div>
       )}
 
-      {/* ── 7. Order Progress, Customer & Payment Manager Modal ─── */}
+      {/* ── 7. Edit Booking Details Modal (Details Only) ────────────────────── */}
       {editingBooking && (() => {
         const totalAmt = Number(editingBooking.total_amount || 0);
-        const downAmt = Number(editingBooking.down_payment_amount || 0);
-        const calculatedBalance = Math.max(0, totalAmt - downAmt);
-        const currentStageIndex = ORDER_STAGES.findIndex(s => s.key === editingBooking.status);
+        const statusText =
+          String(editingBooking.status || '').toUpperCase() === 'PHOTOGRAPHER_ASSIGNED' &&
+          !hasAssignedPhotographer(editingBooking)
+            ? 'Photographer Pending'
+            : getStatusLabel(editingBooking.status);
 
         return (
-          <div className="fixed inset-0 z-50 bg-neutral-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fade-in">
-            <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-neutral-200 overflow-hidden">
-              
-              {/* Minimal Header */}
-              <div className="px-5 py-3.5 bg-gradient-to-r from-neutral-950 via-[#141414] to-primary text-white flex items-center justify-between border-b border-white/10 shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <span className="font-heading text-base font-bold text-white tracking-wide">
-                    Edit Order
-                  </span>
-                  <span className="text-xs text-gold font-mono font-medium">
-                    #{editingBooking.booking_number}
-                  </span>
+          <div
+            className="fixed inset-0 z-50 bg-neutral-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fade-in"
+            onClick={() => !isSaving && setEditingBooking(null)}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="edit-booking-modal-title"
+              onClick={e => e.stopPropagation()}
+              className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-neutral-200 overflow-hidden"
+            >
+              {/* Header */}
+              <div className="px-5 sm:px-6 py-4 bg-gradient-to-r from-neutral-950 via-[#141414] to-primary text-white flex items-center justify-between border-b border-white/10 shrink-0">
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <h3 id="edit-booking-modal-title" className="font-heading text-base sm:text-lg font-bold text-white tracking-wide">
+                      Edit Booking Details
+                    </h3>
+                    <span className="text-xs text-gold font-mono font-semibold">
+                      #{editingBooking.booking_number}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-300 mt-0.5">
+                    Update customer, academic, schedule, and assignment details
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-1.5">
@@ -3295,518 +3862,376 @@ export default function AdminBookings({ initialSection }) {
                   </Link>
                   <button
                     type="button"
+                    disabled={isSaving}
                     onClick={() => setEditingBooking(null)}
-                    className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                    aria-label="Close modal"
+                    className="p-1.5 rounded-xl text-neutral-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-40"
                   >
-                    <X size={17} />
+                    <X size={18} />
                   </button>
                 </div>
               </div>
 
               {/* Form Body */}
-              <form onSubmit={handleEditSubmit} className="flex-1 overflow-y-auto p-5 space-y-4 text-xs font-body scrollbar-thin">
-                
-                {/* 1. ORDER PROGRESS PIPELINE & STATUS DROPDOWN */}
-                <div className="space-y-2">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex-1">
-                      <CustomDropdown
-                        value={editingBooking.status}
-                        onChange={val => setEditingBooking({ ...editingBooking, status: val })}
-                        options={editStatusOptions}
-                        label="Order Stage"
-                        className="w-full"
-                        popoverWidth="w-64"
-                      />
-                    </div>
-                    <div className="flex items-center gap-1 sm:self-end pb-0.5">
-                      {['CANCELLED', 'REJECTED'].map(termStatus => (
-                        <button
-                          key={termStatus}
-                          type="button"
-                          onClick={() => setEditingBooking({ ...editingBooking, status: termStatus })}
-                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold border transition-all cursor-pointer ${
-                            editingBooking.status === termStatus
-                              ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
-                              : 'bg-neutral-50 text-neutral-500 border-neutral-200 hover:text-rose-600 hover:bg-rose-50'
-                          }`}
-                        >
-                          {termStatus === 'CANCELLED' ? 'Cancel' : 'Reject'}
-                        </button>
-                      ))}
-                    </div>
+              <form onSubmit={handleEditSubmit} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 text-xs font-body scrollbar-thin">
+                {/* Order Status & Total (Plain Text Only, No Pills or Highlights) */}
+                <div className="flex items-center justify-between gap-4 pb-1">
+                  <div>
+                    <span className="block text-xs font-medium text-neutral-500">Order Status</span>
+                    <span className="text-base sm:text-lg font-bold text-neutral-900 leading-tight">
+                      {statusText}
+                    </span>
                   </div>
-
-                  {/* Stage Stepper Buttons */}
-                  <div className="grid grid-cols-7 gap-1 p-1 bg-neutral-100 rounded-xl border border-neutral-200/80">
-                    {ORDER_STAGES.map((st, idx) => {
-                      const isActive = editingBooking.status === st.key;
-                      const isPast = currentStageIndex > -1 && idx < currentStageIndex;
-
-                      return (
-                        <button
-                          key={st.key}
-                          type="button"
-                          onClick={() => setEditingBooking({ ...editingBooking, status: st.key })}
-                          className={`py-1.5 px-1 rounded-lg text-center transition-all cursor-pointer flex flex-col items-center justify-center min-w-0 ${
-                            isActive
-                              ? 'bg-neutral-900 text-gold shadow-xs font-bold ring-1 ring-gold/40'
-                              : isPast
-                              ? 'bg-white text-neutral-800 hover:bg-neutral-50 font-medium'
-                              : 'text-neutral-400 hover:text-neutral-700 hover:bg-white/60 font-medium'
-                          }`}
-                        >
-                          <span className={`text-[11px] font-mono leading-none mb-0.5 ${isActive ? 'text-gold' : 'text-neutral-400'}`}>
-                            {idx + 1}
-                          </span>
-                          <span className="text-[11px] truncate w-full leading-tight">
-                            {st.label}
-                          </span>
-                        </button>
-                      );
-                    })}
+                  <div className="text-right">
+                    <span className="block text-xs font-medium text-neutral-500">Total</span>
+                    <span className="text-base sm:text-lg font-bold font-mono text-neutral-900 leading-tight">
+                      ₱{totalAmt.toLocaleString()}
+                    </span>
                   </div>
                 </div>
 
-                {/* 2. CUSTOMER CONTACT */}
-                <div className="space-y-2.5 pt-2 border-t border-neutral-100">
-                  <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                {/* Section 1: Customer Contact */}
+                <div className="space-y-3 pt-4 border-t border-neutral-100">
+                  <span className={FORM_SECTION_TITLE}>
+                    <User size={13} className="text-gold-dark" aria-hidden="true" />
                     Customer Contact
-                  </label>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  </span>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">First Name</span>
+                      <label htmlFor="edit-first-name" className={FORM_LABEL}>First Name</label>
                       <input
+                        id="edit-first-name"
                         type="text"
                         value={editingBooking.first_name || ''}
                         onChange={e => setEditingBooking({ ...editingBooking, first_name: e.target.value })}
-                        className="w-full px-2.5 py-1.5 bg-neutral-50 rounded-lg border border-neutral-300 focus:border-gold outline-none text-xs"
+                        className={FORM_INPUT}
                       />
                     </div>
                     <div>
-                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">Last Name</span>
+                      <label htmlFor="edit-last-name" className={FORM_LABEL}>Last Name</label>
                       <input
+                        id="edit-last-name"
                         type="text"
                         value={editingBooking.last_name || ''}
                         onChange={e => setEditingBooking({ ...editingBooking, last_name: e.target.value })}
-                        className="w-full px-2.5 py-1.5 bg-neutral-50 rounded-lg border border-neutral-300 focus:border-gold outline-none text-xs"
+                        className={FORM_INPUT}
                       />
                     </div>
                     <div>
-                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">Phone</span>
+                      <label htmlFor="edit-phone" className={FORM_LABEL}>Phone</label>
                       <input
+                        id="edit-phone"
                         type="text"
                         value={editingBooking.phone || ''}
                         onChange={e => setEditingBooking({ ...editingBooking, phone: e.target.value })}
                         placeholder="09..."
-                        className="w-full px-2.5 py-1.5 bg-neutral-50 rounded-lg border border-neutral-300 focus:border-gold outline-none text-xs font-mono"
+                        className={`${FORM_INPUT} font-mono`}
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* 3. STUDENT & YEARBOOK DETAILS */}
-                <div className="space-y-2.5 pt-2 border-t border-neutral-100">
-                  <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
-                    <GraduationCap size={13} className="text-gold-dark" />
-                    Student & Yearbook Details
-                  </label>
+                {/* Section 2: Student & Yearbook Details */}
+                <div className="space-y-3 pt-4 border-t border-neutral-100">
+                  <span className={FORM_SECTION_TITLE}>
+                    <GraduationCap size={13} className="text-gold-dark" aria-hidden="true" />
+                    Student &amp; Yearbook Details
+                  </span>
 
-                  <div className="p-3 bg-neutral-50/70 rounded-xl border border-neutral-200/80 space-y-2.5">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <div>
-                        <span className="block text-xs text-neutral-500 font-semibold mb-1">School / University</span>
-                        <input
-                          type="text"
-                          value={editingBooking.school || ''}
-                          onChange={e => setEditingBooking({ ...editingBooking, school: e.target.value })}
-                          placeholder="e.g. University of San Carlos"
-                          className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 focus:border-gold outline-none text-xs"
-                        />
-                      </div>
-                      <div>
-                        <span className="block text-xs text-neutral-500 font-semibold mb-1">Degree / Strand</span>
-                        <input
-                          type="text"
-                          value={editingBooking.degree || ''}
-                          onChange={e => setEditingBooking({ ...editingBooking, degree: e.target.value })}
-                          placeholder="e.g. BS Information Technology"
-                          className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 focus:border-gold outline-none text-xs"
-                        />
-                      </div>
-                      <div>
-                        <span className="block text-xs text-neutral-500 font-semibold mb-1">Student ID</span>
-                        <input
-                          type="text"
-                          value={editingBooking.student_id || ''}
-                          onChange={e => setEditingBooking({ ...editingBooking, student_id: e.target.value })}
-                          placeholder="e.g. 21-0492-381"
-                          className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 focus:border-gold outline-none text-xs font-mono"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <div>
-                        <span className="block text-xs text-neutral-500 font-semibold mb-1">Campus / Section</span>
-                        <input
-                          type="text"
-                          value={editingBooking.section || editingBooking.campus || ''}
-                          onChange={e => setEditingBooking({ ...editingBooking, section: e.target.value, campus: e.target.value })}
-                          placeholder="e.g. Main Campus / 4-A"
-                          className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 focus:border-gold outline-none text-xs"
-                        />
-                      </div>
-                      <div>
-                        <span className="block text-xs text-neutral-500 font-semibold mb-1">Toga Size</span>
-                        <input
-                          type="text"
-                          value={editingBooking.toga_size || ''}
-                          onChange={e => setEditingBooking({ ...editingBooking, toga_size: e.target.value })}
-                          placeholder="e.g. S, M, L, XL"
-                          className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 focus:border-gold outline-none text-xs"
-                        />
-                      </div>
-                      <div>
-                        <span className="block text-xs text-neutral-500 font-semibold mb-1">Height</span>
-                        <input
-                          type="text"
-                          value={editingBooking.height || ''}
-                          onChange={e => setEditingBooking({ ...editingBooking, height: e.target.value })}
-                          placeholder="e.g. 5'7 or 170cm"
-                          className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-neutral-200 focus:border-gold outline-none text-xs"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3. PAYMENT & CHARGES WITH CURRENT DROPDOWN UI */}
-                <div className="space-y-2.5 pt-2 border-t border-neutral-100">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-end">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                      <CustomDropdown
-                        value={editingBooking.payment_status}
-                        onChange={val => setEditingBooking({ ...editingBooking, payment_status: val })}
-                        options={editPaymentOptions}
-                        label="Payment State"
-                        className="w-full"
-                        popoverWidth="w-56"
-                      />
-                    </div>
-                    <div>
-                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">Total Amount (₱)</span>
+                      <label htmlFor="edit-school" className={FORM_LABEL}>School / University</label>
                       <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={editingBooking.total_amount ?? 0}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setEditingBooking({
-                            ...editingBooking,
-                            total_amount: val,
-                            remaining_balance: Math.max(0, Number(val || 0) - Number(editingBooking.down_payment_amount || 0)),
-                          });
-                        }}
-                        className="w-full px-2.5 py-2 bg-neutral-50 rounded-xl border border-neutral-300 focus:border-gold outline-none text-xs font-semibold"
+                        id="edit-school"
+                        type="text"
+                        value={editingBooking.school || ''}
+                        onChange={e => setEditingBooking({ ...editingBooking, school: e.target.value })}
+                        placeholder="e.g. University of San Carlos"
+                        className={FORM_INPUT}
                       />
                     </div>
                     <div>
-                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">Paid / Deposit (₱)</span>
-                      <div className="relative flex items-center">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={editingBooking.down_payment_amount ?? 0}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setEditingBooking({
-                              ...editingBooking,
-                              down_payment_amount: val,
-                              remaining_balance: Math.max(0, Number(editingBooking.total_amount || 0) - Number(val || 0)),
-                            });
-                          }}
-                          className="w-full px-2.5 py-2 bg-neutral-50 rounded-xl border border-neutral-300 focus:border-gold outline-none text-xs font-semibold"
-                        />
-                        <span className="absolute right-2.5 text-[11px] font-bold text-neutral-500 pointer-events-none">
-                          Bal: ₱{calculatedBalance.toLocaleString()}
-                        </span>
-                      </div>
+                      <label htmlFor="edit-degree" className={FORM_LABEL}>Degree / Strand</label>
+                      <input
+                        id="edit-degree"
+                        type="text"
+                        value={editingBooking.degree || ''}
+                        onChange={e => setEditingBooking({ ...editingBooking, degree: e.target.value })}
+                        placeholder="e.g. BS Information Technology"
+                        className={FORM_INPUT}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="edit-student-id" className={FORM_LABEL}>Student ID</label>
+                      <input
+                        id="edit-student-id"
+                        type="text"
+                        value={editingBooking.student_id || ''}
+                        onChange={e => setEditingBooking({ ...editingBooking, student_id: e.target.value })}
+                        placeholder="e.g. 21-0492-381"
+                        className={`${FORM_INPUT} font-mono`}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="edit-campus" className={FORM_LABEL}>Campus / Address</label>
+                      <input
+                        id="edit-campus"
+                        type="text"
+                        value={editingBooking.campus || ''}
+                        onChange={e => setEditingBooking({ ...editingBooking, campus: e.target.value })}
+                        placeholder="e.g. Main Campus"
+                        className={FORM_INPUT}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="edit-section" className={FORM_LABEL}>Section / Batch</label>
+                      <input
+                        id="edit-section"
+                        type="text"
+                        value={editingBooking.section || ''}
+                        onChange={e => setEditingBooking({ ...editingBooking, section: e.target.value })}
+                        placeholder="e.g. 4-A / Batch 2026"
+                        className={FORM_INPUT}
+                      />
                     </div>
                   </div>
                 </div>
 
-                {/* 4. SCHEDULE & ASSIGNMENT WITH CURRENT DROPDOWN UI */}
-                <div className="space-y-2.5 pt-2 border-t border-neutral-100">
-                  <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
-                    Schedule & Assignment
-                  </label>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <CustomDropdown
-                      value={editingBooking.service_id || ''}
-                      onChange={val => {
-                        const svc = availableServices.find(s => s.id === val);
-                        setEditingBooking({
-                          ...editingBooking,
-                          service_id: val,
-                          total_amount: svc?.base_price ?? editingBooking.total_amount,
-                        });
-                      }}
-                      options={editServiceOptions}
-                      label="Service Package"
-                      className="w-full"
-                      popoverWidth="w-72"
-                    />
+                {/* Section 3: Schedule & Assignment */}
+                <div className="space-y-3 pt-4 border-t border-neutral-100">
+                  <span className={FORM_SECTION_TITLE}>
+                    <CalendarDays size={13} className="text-gold-dark" aria-hidden="true" />
+                    Schedule &amp; Assignment
+                  </span>
 
-                    <div className="space-y-1.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                    <div className="sm:col-span-5 min-w-0">
+                      <label className={FORM_LABEL}>Assigned Lead Photographer</label>
                       <CustomDropdown
                         value={editingBooking.photographer_id || ''}
                         onChange={val => setEditingBooking({ ...editingBooking, photographer_id: val })}
                         options={editPhotographerOptions}
-                        label="Assigned Lead Photographer"
+                        size="form"
                         className="w-full"
-                        popoverWidth="w-80"
+                        popoverWidth="w-64"
                       />
-                      {editingBooking.event_date && (
-                        (() => {
-                          const assignedPh = editBookingPhotographers.find(p => p.id === editingBooking.photographer_id);
-                          if (!assignedPh) {
-                            return (
-                              <div className="text-[11px] text-neutral-400 italic flex items-center gap-1 mt-1">
-                                <Camera size={12} className="text-neutral-400" />
-                                <span>No lead assigned yet · Only verified photographer accounts eligible</span>
-                              </div>
-                            );
-                          }
-                          const isAvail = !assignedPh.hasConflict && assignedPh.is_available;
-                          return (
-                            <div className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-between border mt-1.5 ${
-                              isAvail ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'
-                            }`}>
-                              <span className="flex items-center gap-1.5 truncate">
-                                {isAvail ? <CheckCircle2 size={13} className="text-emerald-600 shrink-0" /> : <AlertTriangle size={13} className="text-amber-600 shrink-0" />}
-                                <span className="truncate">{isAvail ? `On Duty on ${fmtDate(editingBooking.event_date)}` : (assignedPh.conflictReason || 'Not scheduled on this date')}</span>
-                              </span>
-                              <span className="text-xs text-neutral-500 font-normal shrink-0 ml-1">Photographer Account</span>
-                            </div>
-                          );
-                        })()
-                      )}
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <div>
-                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">Date</span>
+                    <div className="sm:col-span-4 min-w-0">
+                      <label htmlFor="edit-event-date" className={FORM_LABEL}>Event Date</label>
                       <input
+                        id="edit-event-date"
                         type="date"
                         value={editingBooking.event_date ? editingBooking.event_date.split('T')[0] : ''}
                         onChange={e => setEditingBooking({ ...editingBooking, event_date: e.target.value })}
-                        className="w-full px-2.5 py-2 bg-neutral-50 rounded-xl border border-neutral-300 focus:border-gold outline-none text-xs"
+                        className={FORM_INPUT}
                       />
                     </div>
-                    <div>
-                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">Time</span>
+
+                    <div className="sm:col-span-3 min-w-0">
+                      <label htmlFor="edit-preferred-time" className={FORM_LABEL}>Time Schedule</label>
                       <input
+                        id="edit-preferred-time"
                         type="time"
-                        value={editingBooking.preferred_time || ''}
+                        list="studio-booking-time-presets"
+                        value={editingBooking.preferred_time ? String(editingBooking.preferred_time).slice(0, 5) : ''}
                         onChange={e => setEditingBooking({ ...editingBooking, preferred_time: e.target.value })}
-                        className="w-full px-2.5 py-2 bg-neutral-50 rounded-xl border border-neutral-300 focus:border-gold outline-none text-xs"
-                      />
-                    </div>
-                    <div>
-                      <span className="block text-xs text-neutral-400 font-semibold mb-0.5">Studio / Location</span>
-                      <input
-                        type="text"
-                        value={editingBooking.location || ''}
-                        onChange={e => setEditingBooking({ ...editingBooking, location: e.target.value })}
-                        placeholder="Studio branch or venue"
-                        className="w-full px-2.5 py-2 bg-neutral-50 rounded-xl border border-neutral-300 focus:border-gold outline-none text-xs"
+                        className={`${FORM_INPUT} ${editTimeConflict.hasConflict ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-200' : ''}`}
                       />
                     </div>
                   </div>
+
+                  {editingBooking.event_date && (
+                    <div className="space-y-1.5">
+                      <div className="flex flex-wrap gap-1.5">
+                        {STUDIO_HOURLY_SLOTS.map((slot) => {
+                          const existingWin = getBookingTimeWindow(editingBooking);
+                          const slotOverlap = findTimeWindowOverlap({
+                            dateStr: editingBooking.event_date.split('T')[0],
+                            startTime: slot.time,
+                            durationMinutes: existingWin.durationMinutes || 60,
+                            excludeBookingId: editingBooking.id,
+                            bookingsOrWindows: editDateRecords,
+                          });
+                          const isSelected = String(editingBooking.preferred_time || '').slice(0, 5) === slot.time;
+                          return (
+                            <button
+                              key={slot.time}
+                              type="button"
+                              disabled={slotOverlap.hasConflict}
+                              onClick={() => setEditingBooking({ ...editingBooking, preferred_time: slot.time })}
+                              title={slotOverlap.hasConflict ? slotOverlap.reason : `Select ${slot.label}`}
+                              className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition-all ${
+                                slotOverlap.hasConflict
+                                  ? 'bg-neutral-100 text-neutral-400 border-neutral-200 line-through cursor-not-allowed opacity-70'
+                                  : isSelected
+                                    ? 'bg-neutral-950 text-white border-neutral-950 cursor-pointer'
+                                    : 'bg-white text-neutral-800 border-neutral-200 hover:border-neutral-400 cursor-pointer'
+                              }`}
+                            >
+                              {slot.display}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {editTimeConflict.hasConflict && (
+                        <p className="text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 flex items-start gap-1.5">
+                          <AlertTriangle size={14} className="shrink-0 mt-0.5 text-rose-600" />
+                          <span>{editTimeConflict.reason}</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {/* 6. INTAKE NOTES & CLIENT REQUIREMENTS */}
-                <div className="pt-2 border-t border-neutral-100">
-                  <div className="bg-neutral-50/80 rounded-2xl border border-neutral-200/90 p-3.5 space-y-3 shadow-2xs">
+                {/* Client Reference Images (shown only when uploaded) */}
+                {editingBooking.reference_images?.length > 0 && (
+                  <div className="space-y-2 pt-4 border-t border-neutral-100">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-5 h-5 rounded-md bg-gold/15 text-gold-dark flex items-center justify-center">
-                          <FileText size={12} />
-                        </div>
-                        <span className="font-heading text-xs font-bold uppercase tracking-wider text-neutral-800">
-                          Intake Notes & Client Requests
-                        </span>
-                      </div>
-                      <span className="text-xs text-neutral-400 font-mono">
-                        Syncs to Order & Invoice
+                      <span className={FORM_SECTION_TITLE}>
+                        <FileImage size={13} className="text-gold-dark" aria-hidden="true" />
+                        Client Reference Images ({editingBooking.reference_images.length})
                       </span>
+                      <span className="text-[11px] text-neutral-500">Click to preview</span>
                     </div>
 
-                    {/* Client Uploaded Reference Images (Only displayed when photos exist) */}
-                    {editingBooking.reference_images?.length > 0 && (
-                      <div className="space-y-1.5 pb-2.5 border-b border-neutral-200/70">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
-                            <FileImage size={12} className="text-gold-dark" />
-                            Client Reference Pegs ({editingBooking.reference_images.length})
-                          </span>
-                          <span className="text-[11px] text-neutral-400">Click to enlarge</span>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2 p-2 bg-white rounded-xl border border-neutral-200/80">
-                          {editingBooking.reference_images.map((imgItem, idx) => {
-                            const imgUrl = getRefImageUrl(imgItem);
-                            return (
-                              <div
-                                key={idx}
-                                className="group relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-neutral-200 bg-neutral-100 shadow-2xs flex-shrink-0 cursor-pointer hover:border-gold transition-all"
-                                onClick={() => setPreviewImage(imgUrl)}
-                                title="Click to inspect full image"
-                              >
-                                <img
-                                  src={imgUrl}
-                                  alt={`Client peg ${idx + 1}`}
-                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                  onError={(e) => {
-                                    e.target.onerror = null;
-                                    e.target.src = 'https://placehold.co/150x150?text=No+Preview';
-                                  }}
-                                />
-                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1 text-white">
-                                  <Maximize2 size={14} />
-                                </div>
-                                <span className="absolute bottom-0.5 right-0.5 px-1 rounded bg-black/60 text-[10px] text-white font-mono">
-                                  #{idx + 1}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Textarea for Special Instructions / Notes */}
-                    <div className="space-y-1">
-                      <span className="block text-xs text-neutral-400 font-semibold">Special Instructions & Client Notes</span>
-                      <textarea
-                        rows={3}
-                        value={editingBooking.client_remarks || ''}
-                        onChange={e => setEditingBooking({ ...editingBooking, client_remarks: e.target.value })}
-                        placeholder="Enter special instructions, pose preferences, or retouching notes..."
-                        className="w-full px-3 py-2 bg-white rounded-xl border border-neutral-300 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none text-xs leading-relaxed resize-none shadow-2xs"
-                      />
+                    <div className="flex flex-wrap items-center gap-2">
+                      {editingBooking.reference_images.map((imgItem, idx) => {
+                        const imgUrl = getRefImageUrl(imgItem);
+                        return (
+                          <div
+                            key={idx}
+                            className="group relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-neutral-200 bg-neutral-100 shadow-2xs shrink-0 cursor-pointer hover:border-gold transition-all"
+                            onClick={() => setPreviewImage(imgUrl)}
+                            title="Click to inspect full image"
+                          >
+                            <img
+                              src={imgUrl}
+                              alt={`Client reference ${idx + 1}`}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.src = 'https://placehold.co/150x150?text=No+Preview';
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                              <Maximize2 size={14} />
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Action Buttons */}
-                <div className="pt-2 border-t border-neutral-100 flex items-center justify-end gap-2">
+                <div className="pt-4 border-t border-neutral-100 flex items-center justify-end gap-2.5">
                   <button
                     type="button"
+                    disabled={isSaving}
                     onClick={() => setEditingBooking(null)}
-                    className="px-4 py-2 rounded-xl border border-neutral-200 text-neutral-600 hover:bg-neutral-50 font-semibold cursor-pointer text-xs"
+                    className="h-9 px-4 rounded-xl border border-neutral-200 text-neutral-600 hover:bg-neutral-50 font-semibold cursor-pointer text-xs disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    disabled={isSaving}
-                    className="btn-primary py-2 px-5 text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    disabled={isSaving || editTimeConflict.hasConflict}
+                    className="btn-primary h-9 px-5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSaving ? <RefreshCw size={13} className="animate-spin text-gold" /> : <Save size={13} />}
                     <span>Save Changes</span>
                   </button>
                 </div>
-
               </form>
             </div>
           </div>
         );
       })()}
 
-      {/* ── 8. Soft Delete Modal (Move to Trash) ────────────────────────── */}
-      {bookingToDelete && (
-        <div 
-          className="fixed inset-0 z-50 bg-neutral-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in"
-          onClick={() => !isDeleting && setBookingToDelete(null)}
-        >
-          <div 
-            className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-neutral-200"
-            onClick={e => e.stopPropagation()}
+      {/* ── 8. Permanent Delete Modal ──────────────────────────────────── */}
+      {bookingToDelete && (() => {
+        const clientName =
+          `${bookingToDelete.customer?.first_name || ''} ${bookingToDelete.customer?.last_name || ''}`.trim() ||
+          bookingToDelete.participant_name ||
+          'this client';
+
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-neutral-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in"
+            onClick={() => !isDeleting && setBookingToDelete(null)}
           >
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gold/10 text-gold-dark flex items-center justify-center shrink-0 border border-gold/20">
-                <Archive size={20} />
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="delete-booking-modal-title"
+              className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-neutral-200"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
+                  <Trash2 size={18} />
+                </div>
+                <div>
+                  <h3 id="delete-booking-modal-title" className="font-heading text-lg font-bold text-primary">
+                    Delete Booking
+                  </h3>
+                  <p className="text-xs text-neutral-600 font-body mt-1">
+                    Are you sure you want to Delete <strong className="text-primary font-bold">&ldquo;{clientName}&rdquo;</strong> booking?
+                  </p>
+                </div>
               </div>
+
               <div>
-                <h3 className="font-heading text-lg font-bold text-primary">Move Booking to Trash</h3>
-                <p className="text-xs text-neutral-500 font-body mt-1">
-                  Booking <strong className="text-primary font-bold">#{bookingToDelete.booking_number}</strong> ({bookingToDelete.customer?.first_name || 'Client'}) will be cancelled and moved to the <strong className="text-rose-600 font-semibold">Trash Cycle</strong>.
-                </p>
+                <label htmlFor="delete-booking-reason" className={FORM_LABEL}>
+                  Reason for Deletion <span className="font-normal text-neutral-400">(Optional)</span>
+                </label>
+                <input
+                  id="delete-booking-reason"
+                  type="text"
+                  value={deleteReason}
+                  onChange={e => setDeleteReason(e.target.value)}
+                  placeholder="e.g. Client requested cancellation, duplicate order, schedule expired"
+                  className={FORM_INPUT}
+                />
               </div>
-            </div>
 
-            <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-xs text-neutral-700 space-y-1 font-body">
-              <p className="font-bold flex items-center gap-1.5 text-primary">
-                <Bell size={13} className="text-gold-dark" /> Customer Notification & Trash Cycle:
-              </p>
-              <ul className="list-disc list-inside text-[11px] text-neutral-600 space-y-0.5 ml-1">
-                <li>Booking will be cleared from active records and customer dashboard</li>
-                <li>Customer will receive an immediate notification that their order was removed</li>
-                <li>Order can be reviewed, restored, or permanently cleared out anytime from the Trash Cycle</li>
-              </ul>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-primary mb-1">
-                Reason for Removal / Cancellation (Optional)
-              </label>
-              <input
-                type="text"
-                value={deleteReason}
-                onChange={e => setDeleteReason(e.target.value)}
-                placeholder="e.g. Client requested cancellation, duplicate order, schedule expired"
-                className="w-full px-3.5 py-2 text-xs font-body border border-neutral-200 rounded-xl outline-none focus:border-gold"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-neutral-100">
-              <button
-                type="button"
-                disabled={isDeleting}
-                onClick={() => setBookingToDelete(null)}
-                className="px-4 py-2 text-xs font-semibold rounded-xl border border-neutral-200 text-neutral-600 hover:bg-neutral-50 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isDeleting}
-                onClick={handleConfirmSoftDelete}
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-neutral-900 hover:bg-neutral-800 text-gold border border-gold/40 flex items-center gap-1.5 shadow-sm cursor-pointer"
-              >
-                {isDeleting ? (
-                  <>
-                    <RefreshCw size={13} className="animate-spin text-gold" />
-                    Moving to Trash...
-                  </>
-                ) : (
-                  <>
-                    <Archive size={13} />
-                    Move to Trash
-                  </>
-                )}
-              </button>
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-neutral-100">
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setBookingToDelete(null)}
+                  className="h-9 px-4 text-xs font-semibold rounded-xl border border-neutral-200 text-neutral-600 hover:bg-neutral-50 cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={handleConfirmDeleteBooking}
+                  className="h-9 px-4 text-xs font-semibold rounded-xl bg-rose-600 hover:bg-rose-700 text-white inline-flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50 transition-colors"
+                >
+                  {isDeleting ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={13} />
+                      Permanent Delete
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── 9. Permanent Delete Confirmation Modal (Hard Wipe from Trash) ─ */}
       {bookingToPermanentlyPurge && (
@@ -4717,7 +5142,11 @@ export default function AdminBookings({ initialSection }) {
       <BookingQuickInspector
         booking={inspectingBooking}
         isOpen={!!inspectingBooking}
-        onClose={() => setInspectingBooking(null)}
+        initialOpenPayment={openPaymentOnInspect}
+        onClose={() => {
+          setInspectingBooking(null);
+          setOpenPaymentOnInspect(false);
+        }}
         onStatusUpdated={() => {
           fetchBookings();
           fetchCounts();
@@ -4735,6 +5164,31 @@ export default function AdminBookings({ initialSection }) {
         isOpen={isQrScannerOpen}
         onClose={() => setIsQrScannerOpen(false)}
       />
+
+      {/* ── 12. Direct Photographer Assignment Modal ─────────────────────── */}
+      <AssignPhotographerModal
+        booking={assigningPhotographerBooking}
+        changedById={profile?.id}
+        isOpen={!!assigningPhotographerBooking}
+        onClose={() => setAssigningPhotographerBooking(null)}
+        onAssigned={(b, chosenName) => {
+          showToast(`${chosenName} assigned to #${b.booking_number}.`);
+          fetchBookings();
+          fetchCounts();
+        }}
+        onError={(msg) => showToast(msg, 'error')}
+      />
+
+      <datalist id="studio-booking-time-presets">
+        <option value="08:00" label="8:00 AM – 9:00 AM" />
+        <option value="09:00" label="9:00 AM – 10:00 AM" />
+        <option value="10:00" label="10:00 AM – 11:00 AM" />
+        <option value="11:00" label="11:00 AM – 12:00 PM" />
+        <option value="13:00" label="1:00 PM – 2:00 PM" />
+        <option value="14:00" label="2:00 PM – 3:00 PM" />
+        <option value="15:00" label="3:00 PM – 4:00 PM" />
+        <option value="16:00" label="4:00 PM – 5:00 PM" />
+      </datalist>
 
       </div>
     </div>

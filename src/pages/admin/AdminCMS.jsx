@@ -11,6 +11,7 @@ import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import StudioDropdown from '../../components/ui/StudioDropdown';
 import ImageDirectUploader from '../../components/ui/ImageDirectUploader';
 import Modal from '../../components/ui/Modal';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import {
   getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement,
   getFaqs, createFaq, updateFaq, deleteFaq,
@@ -28,6 +29,7 @@ export default function AdminCMS() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionSuccessMsg, setActionSuccessMsg] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   // Data states directly from database
   const [announcements, setAnnouncements] = useState([]);
@@ -384,6 +386,7 @@ export default function AdminCMS() {
                 items={announcements}
                 onRefresh={loadData}
                 showToast={showToast}
+                onConfirm={setConfirmDialog}
               />
             )}
 
@@ -392,6 +395,7 @@ export default function AdminCMS() {
                 items={faqs}
                 onRefresh={loadData}
                 showToast={showToast}
+                onConfirm={setConfirmDialog}
               />
             )}
 
@@ -400,6 +404,7 @@ export default function AdminCMS() {
                 items={gallery}
                 onRefresh={loadData}
                 showToast={showToast}
+                onConfirm={setConfirmDialog}
               />
             )}
 
@@ -416,6 +421,7 @@ export default function AdminCMS() {
                 items={team}
                 onRefresh={loadData}
                 showToast={showToast}
+                onConfirm={setConfirmDialog}
               />
             )}
 
@@ -424,11 +430,13 @@ export default function AdminCMS() {
                 items={legalDocs}
                 onRefresh={loadData}
                 showToast={showToast}
+                onConfirm={setConfirmDialog}
               />
             )}
           </>
         )}
       </div>
+      <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
     </div>
   );
 }
@@ -436,7 +444,7 @@ export default function AdminCMS() {
 // ════════════════════════════════════════════════════════════════════════════════
 // 1. ANNOUNCEMENTS VIEW (Notices & Banners)
 // ════════════════════════════════════════════════════════════════════════════════
-function AnnouncementsView({ items, onRefresh, showToast }) {
+function AnnouncementsView({ items, onRefresh, showToast, onConfirm }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -514,12 +522,17 @@ function AnnouncementsView({ items, onRefresh, showToast }) {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (confirm('Are you sure you want to delete this announcement?')) {
-      await deleteAnnouncement(id);
-      showToast('Announcement deleted from database.');
-      onRefresh();
-    }
+  const handleDelete = (id) => {
+    onConfirm?.({
+      title: 'Delete Announcement?',
+      message: 'Are you sure you want to delete this announcement?',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        await deleteAnnouncement(id);
+        showToast('Announcement deleted from database.');
+        onRefresh();
+      },
+    });
   };
 
   // Dropdown filter options (only essential type filter)
@@ -816,7 +829,7 @@ function AnnouncementsView({ items, onRefresh, showToast }) {
 // ════════════════════════════════════════════════════════════════════════════════
 // 2. FAQS VIEW (Knowledge Base & Inquiries)
 // ════════════════════════════════════════════════════════════════════════════════
-function FaqsView({ items, onRefresh, showToast }) {
+function FaqsView({ items, onRefresh, showToast, onConfirm }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -891,12 +904,17 @@ function FaqsView({ items, onRefresh, showToast }) {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (confirm('Are you sure you want to delete this FAQ?')) {
-      await deleteFaq(id);
-      showToast('FAQ deleted from database.');
-      onRefresh();
-    }
+  const handleDelete = (id) => {
+    onConfirm?.({
+      title: 'Delete FAQ?',
+      message: 'Are you sure you want to delete this FAQ?',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        await deleteFaq(id);
+        showToast('FAQ deleted from database.');
+        onRefresh();
+      },
+    });
   };
 
   // Distinct categories for dropdown (only essential category dropdown)
@@ -1161,7 +1179,7 @@ function FaqsView({ items, onRefresh, showToast }) {
 // ════════════════════════════════════════════════════════════════════════════════
 // 3. GALLERY SHOWCASE VIEW (Portfolio Images)
 // ════════════════════════════════════════════════════════════════════════════════
-function GalleryView({ items, onRefresh, showToast }) {
+function GalleryView({ items, onRefresh, showToast, onConfirm }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1268,12 +1286,17 @@ function GalleryView({ items, onRefresh, showToast }) {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (confirm('Delete this photo from the public portfolio?')) {
-      await deleteGalleryItem(id);
-      showToast('Photo removed from gallery.');
-      onRefresh();
-    }
+  const handleDelete = (id) => {
+    onConfirm?.({
+      title: 'Delete Portfolio Photo?',
+      message: 'Delete this photo from the public portfolio?',
+      confirmLabel: 'Delete Photo',
+      onConfirm: async () => {
+        await deleteGalleryItem(id);
+        showToast('Photo removed from gallery.');
+        onRefresh();
+      },
+    });
   };
 
   // Distinct category options for StudioDropdown (only essential category dropdown)
@@ -1896,7 +1919,7 @@ function StudioSettingsView({ settings, onRefresh, showToast }) {
 // ════════════════════════════════════════════════════════════════════════════════
 // 5. TEAM MEMBERS VIEW
 // ════════════════════════════════════════════════════════════════════════════════
-function TeamView({ items, onRefresh, showToast }) {
+function TeamView({ items, onRefresh, showToast, onConfirm }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
 
@@ -1960,12 +1983,17 @@ function TeamView({ items, onRefresh, showToast }) {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (confirm('Delete this team member?')) {
-      await deleteTeamMember(id);
-      showToast('Team member removed.');
-      onRefresh();
-    }
+  const handleDelete = (id) => {
+    onConfirm?.({
+      title: 'Delete Team Member?',
+      message: 'Delete this team member from the studio showcase?',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        await deleteTeamMember(id);
+        showToast('Team member removed.');
+        onRefresh();
+      },
+    });
   };
 
   return (
@@ -2174,7 +2202,7 @@ function TeamView({ items, onRefresh, showToast }) {
 // ════════════════════════════════════════════════════════════════════════════════
 // 6. LEGAL POLICIES VIEW
 // ════════════════════════════════════════════════════════════════════════════════
-function LegalView({ items, onRefresh, showToast }) {
+function LegalView({ items, onRefresh, showToast, onConfirm }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
 
@@ -2232,12 +2260,17 @@ function LegalView({ items, onRefresh, showToast }) {
     }
   };
 
-  const handleDelete = async (slug) => {
-    if (confirm(`Delete legal policy "${slug}"?`)) {
-      await deleteLegalDoc(slug);
-      showToast('Document removed.');
-      onRefresh();
-    }
+  const handleDelete = (slug) => {
+    onConfirm?.({
+      title: 'Delete Legal Policy?',
+      message: `Delete legal policy "${slug}"?`,
+      confirmLabel: 'Delete Policy',
+      onConfirm: async () => {
+        await deleteLegalDoc(slug);
+        showToast('Document removed.');
+        onRefresh();
+      },
+    });
   };
 
   return (

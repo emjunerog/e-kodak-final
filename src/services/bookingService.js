@@ -1,4 +1,4 @@
-import { broadcastAvailabilityChange } from './liveAvailabilityService';
+import { broadcastAvailabilityChange, checkBookingTimeConflict } from './liveAvailabilityService';
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { generateAndStoreQRCode, rotateBookingToken } from './qrService';
 import { getCustomerAuditLogs, recordCustomerAction } from './customerAuditService';
@@ -215,6 +215,21 @@ export async function createBooking(bookingData, referenceFiles = []) {
       student_id: bookingData.student_details?.student_id || null,
       yearbook_motto: bookingData.student_details?.yearbook_motto || null,
     };
+
+    // 4.5. Prevent booking into any time slot/window affected by an existing or adjusted reservation
+    if (cleanInsertPayload.event_date && cleanInsertPayload.preferred_time) {
+      const conflict = await checkBookingTimeConflict({
+        dateStr: String(cleanInsertPayload.event_date).split('T')[0],
+        startTime: cleanInsertPayload.preferred_time,
+        durationMinutes: 60,
+      });
+      if (conflict.hasConflict) {
+        return {
+          data: null,
+          error: new Error(conflict.reason),
+        };
+      }
+    }
 
     // 5. Insert into existing bookings table with automatic retry on rare constraint race
     let insertResult = await supabase
@@ -1091,6 +1106,33 @@ export async function updateBookingAcademicDetails(bookingId, academicData = {},
     if (error) throw error;
 
     if (userId) {
+      try {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('studio_specs')
+          .eq('id', userId)
+          .single();
+        const nextSpecs = {
+          ...(prof?.studio_specs || {}),
+          ...(school ? { school, university: school } : {}),
+          ...(schoolAddress ? { campus: schoolAddress, school_address: schoolAddress } : {}),
+          ...(course ? { course, degree: course, strand: course } : {}),
+          ...(batch ? { gradYear: batch, batch } : {}),
+          ...(section ? { section } : {}),
+          ...(studentId ? { student_id: studentId } : {}),
+          ...(motto ? { yearbook_motto: motto } : {}),
+        };
+        await supabase
+          .from('profiles')
+          .update({
+            studio_specs: nextSpecs,
+            ...(motto ? { bio: motto } : {}),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', userId);
+      } catch (specErr) {
+        console.warn('Non-fatal profile studio_specs sync warning:', specErr);
+      }
       invalidateCustomerBookingsCache(userId);
     }
     return { data, updatedNotes, error: null };

@@ -1121,6 +1121,14 @@ export default function BookingPage() {
     const activeChannel = targetChannel || selectedPaymentGateway || "gcash";
     setPendingPaymentChannel(activeChannel);
 
+    // Clear any stale booking/receipt from an earlier completed session before starting a new checkout
+    setBookingResult(null);
+    setPaymentReceiptData(null);
+    try {
+      sessionStorage.removeItem('ekodak_active_confirmed_booking');
+      sessionStorage.removeItem('ekodak_active_receipt_data');
+    } catch {}
+
     const activeP = customerProfile || profile;
     const accountOwnerFullName = [activeP?.first_name || user?.user_metadata?.first_name || "", activeP?.last_name || user?.user_metadata?.last_name || ""].filter(Boolean).join(" ") || "Client";
     const participantFullName = [participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") || (bookingFor === "myself" ? accountOwnerFullName : "Participant");
@@ -1290,60 +1298,97 @@ export default function BookingPage() {
     setIsRedirectingToXendit(true);
     setXenditPermissionNotice(null);
 
+    // Ensure any previous session booking cache cannot block saving this new Xendit checkout
+    setBookingResult(null);
+    try {
+      sessionStorage.removeItem('ekodak_active_confirmed_booking');
+      sessionStorage.removeItem('ekodak_active_receipt_data');
+    } catch {}
+
     const activeP = customerProfile || profile;
     const accountOwnerFullName = [activeP?.first_name || user?.user_metadata?.first_name || "", activeP?.last_name || user?.user_metadata?.last_name || ""].filter(Boolean).join(" ") || "Client";
     const participantFullName = bookingFor === "school_section"
       ? (masterlistData?.adviserName || [participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") || accountOwnerFullName)
-      : ([participantFirstName, participantMiddleName, participantLastName].filter(Boolean).join(" ") || (bookingFor === "myself" ? accountOwnerFullName : "Participant"));
+      : ([participantFirstName || studentFirstName || editFirstName, participantMiddleName || studentMiddleName || editMiddleName, participantLastName || studentLastName || editLastName].filter(Boolean).join(" ") || (bookingFor === "myself" ? accountOwnerFullName : "Participant"));
 
     try {
+      let existingDraft = {};
+      try {
+        const rawExisting =
+          sessionStorage.getItem('ekodak_pending_xendit_booking') ||
+          localStorage.getItem('ekodak_pending_xendit_booking') ||
+          sessionStorage.getItem('ekodak_booking_form_draft') ||
+          localStorage.getItem('ekodak_booking_form_draft');
+        if (rawExisting) existingDraft = JSON.parse(rawExisting) || {};
+      } catch {}
+
+      const pick = (liveVal, draftVal) => {
+        if (liveVal !== undefined && liveVal !== null && String(liveVal).trim() !== "") return liveVal;
+        return draftVal !== undefined && draftVal !== null ? draftVal : "";
+      };
+
       const serializableMasterlist = masterlistData
         ? {
             ...masterlistData,
             pdfFile: undefined,
           }
-        : null;
+        : (existingDraft.masterlistData || null);
+      const checkoutCustomerId = user?.id || activeP?.id || existingDraft.customerId || null;
+      const resolvedPhone = pick(participantPhone || editPhone || activeP?.phone, existingDraft.participantPhone || existingDraft.editPhone);
+      const resolvedEmail = pick(participantEmail || activeP?.email || user?.email, existingDraft.participantEmail);
+      const resolvedService = selectedService || existingDraft.selectedService || null;
+      const resolvedTier = selectedTier || existingDraft.selectedTier || null;
+      const resolvedAddOns = (Array.isArray(selectedAddOns) && selectedAddOns.length > 0)
+        ? selectedAddOns
+        : (Array.isArray(existingDraft.selectedAddOns) ? existingDraft.selectedAddOns : []);
+
       const pendingBooking = {
-        selectedService,
-        selectedTier,
-        customerId: activeCustomerId,
-        serviceId: selectedService?.id,
-        serviceSlug: selectedService?.slug,
-        tierName: selectedTier?.name,
-        selectedAddOns,
-        bookingFor,
+        selectedService: resolvedService,
+        selectedTier: resolvedTier,
+        customerId: checkoutCustomerId,
+        serviceId: resolvedService?.id || existingDraft.serviceId,
+        serviceSlug: resolvedService?.slug || existingDraft.serviceSlug,
+        tierName: resolvedTier?.name || existingDraft.tierName,
+        selectedAddOns: resolvedAddOns,
+        bookingFor: pick(bookingFor, existingDraft.bookingFor) || "myself",
         masterlistData: serializableMasterlist,
-        participantFullName,
-        participantFirstName,
-        participantMiddleName,
-        participantLastName,
-        participantPhone,
-        participantEmail,
-        participantRelationship,
-        studentType,
-        studentSchool,
-        studentSchoolAddress,
-        studentCourse,
-        selectedShsStrand,
-        customShsStrand,
-        effectiveShsStrand,
-        studentBatch,
-        studentSection: normalizedStudentSection || studentSection,
-        studentIdNumber,
-        yearbookMotto,
-        schoolScheduleNote,
-        academicBookingMode,
-        totalAmount,
-        downPaymentAmount,
-        remainingBalance,
-        eventDate,
-        preferredTime,
-        location: resolvedLocation,
-        notes,
+        participantFullName: pick(participantFullName, existingDraft.participantFullName),
+        participantFirstName: pick(participantFirstName || studentFirstName || editFirstName, existingDraft.participantFirstName),
+        participantMiddleName: pick(participantMiddleName || studentMiddleName || editMiddleName, existingDraft.participantMiddleName),
+        participantLastName: pick(participantLastName || studentLastName || editLastName, existingDraft.participantLastName),
+        participantPhone: resolvedPhone,
+        editPhone: resolvedPhone,
+        participantEmail: resolvedEmail,
+        participantRelationship: pick(participantRelationship, existingDraft.participantRelationship),
+        studentType: pick(studentType, existingDraft.studentType),
+        studentSchool: pick(studentSchool, existingDraft.studentSchool),
+        studentSchoolAddress: pick(studentSchoolAddress, existingDraft.studentSchoolAddress),
+        studentCourse: pick(studentCourse, existingDraft.studentCourse),
+        selectedShsStrand: pick(selectedShsStrand, existingDraft.selectedShsStrand),
+        customShsStrand: pick(customShsStrand, existingDraft.customShsStrand),
+        effectiveShsStrand: pick(effectiveShsStrand, existingDraft.effectiveShsStrand),
+        studentBatch: pick(studentBatch, existingDraft.studentBatch),
+        studentSection: pick(normalizedStudentSection || studentSection, existingDraft.studentSection),
+        studentIdNumber: pick(studentIdNumber, existingDraft.studentIdNumber),
+        yearbookMotto: pick(yearbookMotto, existingDraft.yearbookMotto),
+        schoolScheduleNote: pick(schoolScheduleNote, existingDraft.schoolScheduleNote),
+        academicBookingMode: pick(academicBookingMode, existingDraft.academicBookingMode),
+        totalAmount: totalAmount > 0 ? totalAmount : (existingDraft.totalAmount || 0),
+        downPaymentAmount: downPaymentAmount > 0 ? downPaymentAmount : (existingDraft.downPaymentAmount || 0),
+        remainingBalance: remainingBalance > 0 ? remainingBalance : (existingDraft.remainingBalance || 0),
+        eventDate: pick(eventDate, existingDraft.eventDate),
+        preferredTime: pick(preferredTime, existingDraft.preferredTime),
+        location: pick(resolvedLocation, existingDraft.location),
+        notes: pick(notes, existingDraft.notes),
         selectedPaymentGateway: activeChannel
       };
-      sessionStorage.setItem('ekodak_pending_xendit_booking', JSON.stringify(pendingBooking));
-      try { localStorage.setItem('ekodak_pending_xendit_booking', JSON.stringify(pendingBooking)); } catch {}
+      const serialized = JSON.stringify(pendingBooking);
+      sessionStorage.setItem('ekodak_pending_xendit_booking', serialized);
+      sessionStorage.setItem('ekodak_booking_form_draft', serialized);
+      try {
+        localStorage.setItem('ekodak_pending_xendit_booking', serialized);
+        localStorage.setItem('ekodak_booking_form_draft', serialized);
+      } catch {}
     } catch (err) {
       console.warn("[SessionStorage pending error]", err);
     }
@@ -1744,6 +1789,155 @@ export default function BookingPage() {
   // Visual Reference Pegs & Files
   const [referenceFiles, setReferenceFiles] = useState([]);
   const [notes, setNotes] = useState("");
+
+  // Hydrate booking form state on mount from saved draft or pending Xendit booking
+  const hasHydratedDraftRef = useRef(false);
+  useEffect(() => {
+    if (hasHydratedDraftRef.current) return;
+    hasHydratedDraftRef.current = true;
+    try {
+      const rawPending =
+        sessionStorage.getItem("ekodak_pending_xendit_booking") ||
+        localStorage.getItem("ekodak_pending_xendit_booking") ||
+        sessionStorage.getItem("ekodak_booking_form_draft") ||
+        localStorage.getItem("ekodak_booking_form_draft");
+      if (!rawPending) return;
+      const draft = JSON.parse(rawPending);
+      if (!draft || typeof draft !== "object") return;
+
+      if (draft.selectedService && !selectedService) setSelectedService(draft.selectedService);
+      if (draft.selectedTier && !selectedTier) setSelectedTier(draft.selectedTier);
+      if (Array.isArray(draft.selectedAddOns) && draft.selectedAddOns.length > 0 && selectedAddOns.length === 0) {
+        setSelectedAddOns(draft.selectedAddOns);
+      }
+      if (draft.bookingFor) setBookingFor(draft.bookingFor);
+      if (draft.participantFirstName) {
+        setParticipantFirstName((prev) => prev || draft.participantFirstName);
+        setStudentFirstName((prev) => prev || draft.participantFirstName);
+      }
+      if (draft.participantMiddleName) {
+        setParticipantMiddleName((prev) => prev || draft.participantMiddleName);
+        setStudentMiddleName((prev) => prev || draft.participantMiddleName);
+      }
+      if (draft.participantLastName) {
+        setParticipantLastName((prev) => prev || draft.participantLastName);
+        setStudentLastName((prev) => prev || draft.participantLastName);
+      }
+      if (draft.participantPhone || draft.editPhone) {
+        const phoneVal = draft.participantPhone || draft.editPhone;
+        setParticipantPhone((prev) => prev || phoneVal);
+        setEditPhone((prev) => prev || phoneVal);
+      }
+      if (draft.participantEmail) setParticipantEmail((prev) => prev || draft.participantEmail);
+      if (draft.participantRelationship) setParticipantRelationship((prev) => prev || draft.participantRelationship);
+      if (draft.studentType) setStudentType(draft.studentType);
+      if (draft.academicBookingMode) setAcademicBookingMode(draft.academicBookingMode);
+      if (draft.studentSchool) setStudentSchool((prev) => prev || draft.studentSchool);
+      if (draft.studentSchoolAddress) setStudentSchoolAddress((prev) => prev || draft.studentSchoolAddress);
+      if (draft.studentCourse) setStudentCourse((prev) => prev || draft.studentCourse);
+      if (draft.selectedShsStrand) setSelectedShsStrand((prev) => prev || draft.selectedShsStrand);
+      if (draft.customShsStrand) setCustomShsStrand((prev) => prev || draft.customShsStrand);
+      if (draft.studentBatch) setStudentBatch((prev) => prev || draft.studentBatch);
+      if (draft.studentSection) setStudentSection((prev) => prev || draft.studentSection);
+      if (draft.studentIdNumber) setStudentIdNumber((prev) => prev || draft.studentIdNumber);
+      if (draft.yearbookMotto) setYearbookMotto((prev) => prev || draft.yearbookMotto);
+      if (draft.schoolScheduleNote) setSchoolScheduleNote((prev) => prev || draft.schoolScheduleNote);
+      if (draft.eventDate) setEventDate((prev) => prev || draft.eventDate);
+      if (draft.preferredTime) setPreferredTime((prev) => prev || draft.preferredTime);
+      if (draft.notes) setNotes((prev) => prev || draft.notes);
+    } catch (err) {
+      console.warn("[BookSessionPage] Failed to hydrate draft on mount:", err);
+    }
+  }, []);
+
+  // Continuously persist non-empty booking form progress so page reloads or gateway redirects never lose academic/participant data
+  useEffect(() => {
+    if (!hasHydratedDraftRef.current) return;
+    try {
+      const existingRaw =
+        sessionStorage.getItem("ekodak_booking_form_draft") ||
+        localStorage.getItem("ekodak_booking_form_draft");
+      const existing = existingRaw ? JSON.parse(existingRaw) : {};
+      const pick = (liveVal, savedVal) => {
+        if (typeof liveVal === "string") return liveVal.trim() ? liveVal.trim() : (savedVal || "");
+        return liveVal !== undefined && liveVal !== null && liveVal !== "" ? liveVal : savedVal;
+      };
+
+      const nextDraft = {
+        ...existing,
+        selectedService: selectedService || existing.selectedService || null,
+        selectedTier: selectedTier || existing.selectedTier || null,
+        selectedAddOns: Array.isArray(selectedAddOns) && selectedAddOns.length > 0 ? selectedAddOns : (existing.selectedAddOns || []),
+        bookingFor: pick(bookingFor, existing.bookingFor) || "myself",
+        participantFirstName: pick(participantFirstName || studentFirstName || editFirstName, existing.participantFirstName),
+        participantMiddleName: pick(participantMiddleName || studentMiddleName || editMiddleName, existing.participantMiddleName),
+        participantLastName: pick(participantLastName || studentLastName || editLastName, existing.participantLastName),
+        participantPhone: pick(participantPhone || editPhone, existing.participantPhone),
+        editPhone: pick(editPhone || participantPhone, existing.editPhone),
+        participantEmail: pick(participantEmail, existing.participantEmail),
+        participantRelationship: pick(participantRelationship, existing.participantRelationship),
+        studentType: pick(studentType, existing.studentType),
+        academicBookingMode: pick(academicBookingMode, existing.academicBookingMode),
+        studentSchool: pick(studentSchool, existing.studentSchool),
+        studentSchoolAddress: pick(studentSchoolAddress, existing.studentSchoolAddress),
+        studentCourse: pick(studentCourse, existing.studentCourse),
+        selectedShsStrand: pick(selectedShsStrand, existing.selectedShsStrand),
+        customShsStrand: pick(customShsStrand, existing.customShsStrand),
+        effectiveShsStrand: pick(effectiveShsStrand, existing.effectiveShsStrand),
+        studentBatch: pick(studentBatch, existing.studentBatch),
+        studentSection: pick(normalizedStudentSection || studentSection, existing.studentSection),
+        studentIdNumber: pick(studentIdNumber, existing.studentIdNumber),
+        yearbookMotto: pick(yearbookMotto, existing.yearbookMotto),
+        schoolScheduleNote: pick(schoolScheduleNote, existing.schoolScheduleNote),
+        eventDate: pick(eventDate, existing.eventDate),
+        preferredTime: pick(preferredTime, existing.preferredTime),
+        notes: pick(notes, existing.notes),
+      };
+
+      const serialized = JSON.stringify(nextDraft);
+      sessionStorage.setItem("ekodak_booking_form_draft", serialized);
+      try {
+        localStorage.setItem("ekodak_booking_form_draft", serialized);
+      } catch {}
+    } catch (err) {
+      console.warn("[BookSessionPage] Failed to save booking draft:", err);
+    }
+  }, [
+    selectedService,
+    selectedTier,
+    selectedAddOns,
+    bookingFor,
+    participantFirstName,
+    participantMiddleName,
+    participantLastName,
+    studentFirstName,
+    studentMiddleName,
+    studentLastName,
+    editFirstName,
+    editMiddleName,
+    editLastName,
+    participantPhone,
+    editPhone,
+    participantEmail,
+    participantRelationship,
+    studentType,
+    academicBookingMode,
+    studentSchool,
+    studentSchoolAddress,
+    studentCourse,
+    selectedShsStrand,
+    customShsStrand,
+    effectiveShsStrand,
+    studentBatch,
+    studentSection,
+    normalizedStudentSection,
+    studentIdNumber,
+    yearbookMotto,
+    schoolScheduleNote,
+    eventDate,
+    preferredTime,
+    notes,
+  ]);
 
   // Review Accordion Motion & Lock State (Auto-show & auto-hide on motion)
   const [motionEnabled, setMotionEnabled] = useState(true);
@@ -2259,11 +2453,11 @@ export default function BookingPage() {
       console.warn("[Booking] Duplicate handleCompleteBookingAndPayment call rejected (in-flight).");
       return;
     }
-    // If already completed in this session, don't re-create
-    if (bookingResult?.id) {
-      console.warn("[Booking] Session already has a confirmed booking (#" + (bookingResult.booking_number || bookingResult.id) + "). Skipping creation.");
+    // If already completed in this session AND not finishing a fresh checkout payload, don't duplicate
+    if (bookingResult?.id && !pendingOverride) {
+      console.warn("[Booking] Session already has a saved booking (#" + (bookingResult.booking_number || bookingResult.id) + "). Skipping duplicate creation.");
       setStep(7);
-      return;
+      return true;
     }
 
     isCompletingBookingRef.current = true;
@@ -2288,59 +2482,181 @@ export default function BookingPage() {
       setGatewayTxnRef(refNum);
       setGatewayOrNumber(orNum);
 
-      const effectiveService = pendingOverride?.selectedService || selectedService || services?.[0] || SERVICES[1];
-      const effectiveTier = pendingOverride?.selectedTier || selectedTier || effectiveService?.tiers?.[0];
+      // Merge pendingOverride with any saved form draft so fields are never lost across Xendit redirects or retries
+      let savedDraft = {};
+      try {
+        const rawDraft =
+          sessionStorage.getItem('ekodak_pending_xendit_booking') ||
+          localStorage.getItem('ekodak_pending_xendit_booking') ||
+          sessionStorage.getItem('ekodak_booking_form_draft') ||
+          localStorage.getItem('ekodak_booking_form_draft');
+        if (rawDraft) savedDraft = JSON.parse(rawDraft) || {};
+      } catch {}
+
+      const src = { ...savedDraft, ...(pendingOverride || {}) };
+      const pickStr = (...vals) => {
+        for (const v of vals) {
+          if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
+        }
+        return "";
+      };
+
+      // Hydrate React state upfront from saved checkout snapshot
+      if (src.selectedService && !selectedService) setSelectedService(src.selectedService);
+      if (src.selectedTier && !selectedTier) setSelectedTier(src.selectedTier);
+      if (Array.isArray(src.selectedAddOns) && src.selectedAddOns.length > 0 && selectedAddOns.length === 0) {
+        setSelectedAddOns(src.selectedAddOns);
+      }
+      if (src.bookingFor && !bookingFor) setBookingFor(src.bookingFor);
+      if (src.masterlistData && !masterlistData) setMasterlistData(src.masterlistData);
+      if (src.eventDate && !eventDate) setEventDate(src.eventDate);
+      if (src.preferredTime && !preferredTime) setPreferredTime(src.preferredTime);
+      if (src.selectedPaymentGateway) setSelectedPaymentGateway(src.selectedPaymentGateway);
+      if (src.participantFirstName && !participantFirstName) setParticipantFirstName(src.participantFirstName);
+      if (src.participantMiddleName && !participantMiddleName) setParticipantMiddleName(src.participantMiddleName);
+      if (src.participantLastName && !participantLastName) setParticipantLastName(src.participantLastName);
+      if (src.participantEmail && !participantEmail) setParticipantEmail(src.participantEmail);
+      if ((src.participantPhone || src.editPhone) && !participantPhone) {
+        setParticipantPhone(src.participantPhone || src.editPhone);
+      }
+      if (src.participantRelationship && !participantRelationship) setParticipantRelationship(src.participantRelationship);
+      if (src.studentSchool && !studentSchool) setStudentSchool(src.studentSchool);
+      if (src.studentSchoolAddress && !studentSchoolAddress) setStudentSchoolAddress(src.studentSchoolAddress);
+      if (src.studentCourse && !studentCourse) setStudentCourse(src.studentCourse);
+      if (src.selectedShsStrand && !selectedShsStrand) setSelectedShsStrand(src.selectedShsStrand);
+      if (src.customShsStrand && !customShsStrand) setCustomShsStrand(src.customShsStrand);
+      if (src.effectiveShsStrand && !selectedShsStrand) setSelectedShsStrand(src.effectiveShsStrand);
+      if (src.studentBatch && !studentBatch) setStudentBatch(src.studentBatch);
+      if (src.studentSection && !studentSection) setStudentSection(src.studentSection);
+      if (src.studentIdNumber && !studentIdNumber) setStudentIdNumber(src.studentIdNumber);
+      if (src.yearbookMotto && !yearbookMotto) setYearbookMotto(src.yearbookMotto);
+
+      const activeP = customerProfile || profile;
+      const specs = activeP?.studio_specs || {};
+
+      const effectiveService = src.selectedService || selectedService || services?.[0] || SERVICES[1];
+      const effectiveTier = src.selectedTier || selectedTier || effectiveService?.tiers?.[0];
       const resolvedTierPrice = parsePrice(effectiveTier?.price || 1750);
-      const effectiveTotal = (pendingOverride?.totalAmount && pendingOverride.totalAmount > 0)
-        ? pendingOverride.totalAmount
+      const effectiveTotal = (src.totalAmount && src.totalAmount > 0)
+        ? src.totalAmount
         : (totalAmount && totalAmount > 0)
         ? totalAmount
         : (resolvedTierPrice + (addOnsTotal || 0));
-      const effectiveDownPayment = (pendingOverride?.downPaymentAmount && pendingOverride.downPaymentAmount > 0)
-        ? pendingOverride.downPaymentAmount
+      const effectiveDownPayment = (src.downPaymentAmount && src.downPaymentAmount > 0)
+        ? src.downPaymentAmount
         : (downPaymentAmount && downPaymentAmount > 0)
         ? downPaymentAmount
         : Math.round(effectiveTotal * 0.5);
-      const effectiveRemaining = (pendingOverride?.remainingBalance && pendingOverride.remainingBalance > 0)
-        ? pendingOverride.remainingBalance
+      const effectiveRemaining = (src.remainingBalance && src.remainingBalance > 0)
+        ? src.remainingBalance
         : Math.max(0, effectiveTotal - effectiveDownPayment);
-      const effectiveDate = pendingOverride?.eventDate || eventDate;
-      const effectiveTime = pendingOverride?.preferredTime || preferredTime;
-      const effectiveLocation = pendingOverride?.location || resolvedLocation;
-      const effectiveBookingFor = pendingOverride?.bookingFor || bookingFor || "myself";
+      const effectiveDate = pickStr(pendingOverride?.eventDate, eventDate, savedDraft.eventDate);
+      const effectiveTime = pickStr(pendingOverride?.preferredTime, preferredTime, savedDraft.preferredTime);
+      const effectiveLocation = pickStr(pendingOverride?.location, resolvedLocation, savedDraft.location);
+      const effectiveAddOns = (Array.isArray(pendingOverride?.selectedAddOns) && pendingOverride.selectedAddOns.length > 0)
+        ? pendingOverride.selectedAddOns
+        : (Array.isArray(selectedAddOns) && selectedAddOns.length > 0)
+        ? selectedAddOns
+        : (Array.isArray(savedDraft.selectedAddOns) ? savedDraft.selectedAddOns : []);
+      const effectiveGateway = pickStr(pendingOverride?.selectedPaymentGateway, selectedPaymentGateway, savedDraft.selectedPaymentGateway) || "gcash";
+      const effectiveBookingFor = pickStr(pendingOverride?.bookingFor, bookingFor, savedDraft.bookingFor) || "myself";
+      const isSelfBooking = effectiveBookingFor === "myself";
       const isAcademic = effectiveService?.category === "ACADEMIC" ||
                          effectiveService?.slug === "college-packages" ||
                          effectiveService?.slug === "senior-high-packages" ||
                          isAcademicService;
 
-      const effectiveParticipantFirst = (pendingOverride?.participantFirstName !== undefined ? pendingOverride.participantFirstName : participantFirstName) || "";
-      const effectiveParticipantMiddle = (pendingOverride?.participantMiddleName !== undefined ? pendingOverride.participantMiddleName : participantMiddleName) || "";
-      const effectiveParticipantLast = (pendingOverride?.participantLastName !== undefined ? pendingOverride.participantLastName : participantLastName) || "";
-      const effectiveParticipantPhone = (pendingOverride?.participantPhone !== undefined ? pendingOverride.participantPhone : participantPhone) || "";
-      const effectiveParticipantEmail = (pendingOverride?.participantEmail !== undefined ? pendingOverride.participantEmail : participantEmail) || "";
+      const effectiveParticipantFirst = pickStr(
+        pendingOverride?.participantFirstName,
+        participantFirstName,
+        isSelfBooking ? (studentFirstName || editFirstName) : "",
+        savedDraft.participantFirstName,
+        isSelfBooking ? (activeP?.first_name || user?.user_metadata?.first_name) : ""
+      );
+      const effectiveParticipantMiddle = pickStr(
+        pendingOverride?.participantMiddleName,
+        participantMiddleName,
+        isSelfBooking ? (studentMiddleName || editMiddleName) : "",
+        savedDraft.participantMiddleName,
+        isSelfBooking ? (activeP?.middle_name || user?.user_metadata?.middle_name) : ""
+      );
+      const effectiveParticipantLast = pickStr(
+        pendingOverride?.participantLastName,
+        participantLastName,
+        isSelfBooking ? (studentLastName || editLastName) : "",
+        savedDraft.participantLastName,
+        isSelfBooking ? (activeP?.last_name || user?.user_metadata?.last_name) : ""
+      );
+      const effectiveParticipantPhone = pickStr(
+        pendingOverride?.participantPhone,
+        pendingOverride?.editPhone,
+        participantPhone,
+        isSelfBooking ? editPhone : "",
+        savedDraft.participantPhone,
+        savedDraft.editPhone,
+        isSelfBooking ? (activeP?.phone || user?.user_metadata?.phone) : ""
+      );
+      const effectiveParticipantEmail = pickStr(
+        pendingOverride?.participantEmail,
+        participantEmail,
+        savedDraft.participantEmail,
+        isSelfBooking ? (activeP?.email || user?.email) : ""
+      );
       const effectiveRelationship = effectiveBookingFor === "someone_else"
-        ? (pendingOverride?.participantRelationship || participantRelationship || "Beneficiary")
+        ? (pickStr(pendingOverride?.participantRelationship, participantRelationship, savedDraft.participantRelationship) || "Beneficiary")
         : "Self (Account Owner)";
 
-      const effectiveStudentType = pendingOverride?.studentType || studentType || (effectiveService?.slug === "college-packages" ? "COLLEGE" : "SENIOR_HIGH");
-      const isSchoolPartner = isAcademic && (pendingOverride?.academicBookingMode === "SCHOOL_PARTNER" || academicBookingMode === "SCHOOL_PARTNER");
-      const effectiveStudentSchool = pendingOverride?.studentSchool || studentSchool || "";
-      const effectiveStudentSchoolAddress = pendingOverride?.studentSchoolAddress || studentSchoolAddress || "";
+      const effectiveStudentType = pickStr(pendingOverride?.studentType, studentType, savedDraft.studentType) || (effectiveService?.slug === "college-packages" ? "COLLEGE" : "SENIOR_HIGH");
+      const isSchoolPartner = isAcademic && (src.academicBookingMode === "SCHOOL_PARTNER" || academicBookingMode === "SCHOOL_PARTNER");
+      const effectiveStudentSchool = pickStr(
+        pendingOverride?.studentSchool,
+        studentSchool,
+        savedDraft.studentSchool,
+        isSelfBooking ? (specs.school || specs.university) : ""
+      );
+      const effectiveStudentSchoolAddress = pickStr(
+        pendingOverride?.studentSchoolAddress,
+        studentSchoolAddress,
+        savedDraft.studentSchoolAddress,
+        isSelfBooking ? (specs.school_address || specs.campus) : ""
+      );
+      const resolvedShsStrandVal = selectedShsStrand === "OTHERS" ? customShsStrand : selectedShsStrand;
+      const draftShsStrandVal = src.selectedShsStrand === "OTHERS" ? src.customShsStrand : (src.effectiveShsStrand || src.selectedShsStrand);
       const effectiveStudentCourse = (effectiveStudentType === "COLLEGE"
-        ? (pendingOverride?.studentCourse || studentCourse || "")
-        : (pendingOverride?.effectiveShsStrand || pendingOverride?.selectedShsStrand || pendingOverride?.studentCourse || effectiveShsStrand || selectedShsStrand || studentCourse || "")
-      ) || pendingOverride?.effectiveShsStrand || pendingOverride?.selectedShsStrand || effectiveShsStrand || selectedShsStrand || "";
-      const effectiveStudentBatch = pendingOverride?.studentBatch || studentBatch || "";
-      const effectiveStudentSection = pendingOverride?.studentSection || normalizedStudentSection || studentSection || "";
-      const effectiveStudentId = pendingOverride?.studentIdNumber || studentIdNumber || "";
-      const effectiveYearbookMotto = pendingOverride?.yearbookMotto || yearbookMotto || "";
-      const effectiveScheduleNote = pendingOverride?.schoolScheduleNote || schoolScheduleNote || "";
+        ? pickStr(pendingOverride?.studentCourse, studentCourse, savedDraft.studentCourse, isSelfBooking ? (specs.course || specs.degree) : "")
+        : pickStr(pendingOverride?.effectiveShsStrand, draftShsStrandVal, pendingOverride?.studentCourse, effectiveShsStrand, resolvedShsStrandVal, studentCourse, savedDraft.studentCourse, isSelfBooking ? (specs.strand || specs.course || specs.degree) : "")
+      ) || pickStr(pendingOverride?.effectiveShsStrand, draftShsStrandVal, effectiveShsStrand, resolvedShsStrandVal, studentCourse, savedDraft.studentCourse);
+      const effectiveStudentBatch = pickStr(
+        pendingOverride?.studentBatch,
+        studentBatch,
+        savedDraft.studentBatch,
+        isSelfBooking ? (specs.batch || specs.gradYear) : ""
+      );
+      const effectiveStudentSection = pickStr(
+        pendingOverride?.studentSection,
+        normalizedStudentSection,
+        studentSection,
+        savedDraft.studentSection,
+        isSelfBooking ? specs.section : ""
+      );
+      const effectiveStudentId = pickStr(
+        pendingOverride?.studentIdNumber,
+        studentIdNumber,
+        savedDraft.studentIdNumber,
+        isSelfBooking ? specs.student_id : ""
+      );
+      const effectiveYearbookMotto = pickStr(
+        pendingOverride?.yearbookMotto,
+        yearbookMotto,
+        savedDraft.yearbookMotto,
+        isSelfBooking ? (specs.yearbook_motto || activeP?.bio) : ""
+      );
+      const effectiveScheduleNote = pickStr(pendingOverride?.schoolScheduleNote, schoolScheduleNote, savedDraft.schoolScheduleNote);
 
-      const activeP = customerProfile || profile;
       const accountOwnerFullName = [activeP?.first_name || user?.user_metadata?.first_name || "", activeP?.last_name || user?.user_metadata?.last_name || ""].filter(Boolean).join(" ") || "Client";
       const participantFullName = [effectiveParticipantFirst, effectiveParticipantMiddle, effectiveParticipantLast].filter(Boolean).join(" ") || (effectiveBookingFor === "myself" ? accountOwnerFullName : "Participant");
 
-      let activeCustomerId = user?.id || activeP?.id;
+      let activeCustomerId = user?.id || activeP?.id || src.customerId;
       if (!activeCustomerId && isSupabaseConfigured && supabase) {
         try {
           const { data: sessData } = await supabase.auth.getSession();
@@ -2367,7 +2683,7 @@ export default function BookingPage() {
 
       if (!activeCustomerId) {
         setValidationError("You must be logged in to reserve a photoshoot slot. Please sign in or refresh your session.");
-        return;
+        return false;
       }
 
       let resolvedServiceId = effectiveService?.id;
@@ -2376,7 +2692,7 @@ export default function BookingPage() {
       }
 
       // refNum resolved dynamically above
-      const paymentAuditNote = `[50% RESERVATION DOWNPAYMENT]\n• Gateway: ${selectedPaymentGateway.toUpperCase()}\n• Amount Paid: ₱${effectiveDownPayment.toLocaleString()}\n• Reference No: ${refNum}\n• Payment Date: ${new Date().toLocaleString()}\n• Remaining Balance: ₱${effectiveRemaining.toLocaleString()} (Due at studio/carrier)`;
+      const paymentAuditNote = `[50% RESERVATION DOWNPAYMENT]\n• Gateway: ${effectiveGateway.toUpperCase()}\n• Amount Paid: ₱${effectiveDownPayment.toLocaleString()}\n• Reference No: ${refNum}\n• Payment Date: ${new Date().toLocaleString()}\n• Remaining Balance: ₱${effectiveRemaining.toLocaleString()} (Due at studio/carrier)`;
 
       let fullNotes = notes || "";
       const isSchoolSectionBooking = effectiveBookingFor === "school_section";
@@ -2434,11 +2750,9 @@ export default function BookingPage() {
       if (pendingOverride) {
         if (pendingOverride.selectedService) setSelectedService(pendingOverride.selectedService);
         if (pendingOverride.selectedTier) setSelectedTier(pendingOverride.selectedTier);
+        if (Array.isArray(pendingOverride.selectedAddOns)) setSelectedAddOns(pendingOverride.selectedAddOns);
         if (pendingOverride.bookingFor) setBookingFor(pendingOverride.bookingFor);
         if (pendingOverride.masterlistData) setMasterlistData(pendingOverride.masterlistData);
-        if (pendingOverride.totalAmount != null) setTotalAmount(pendingOverride.totalAmount);
-        if (pendingOverride.downPaymentAmount != null) setDownPaymentAmount(pendingOverride.downPaymentAmount);
-        if (pendingOverride.remainingBalance != null) setRemainingBalance(pendingOverride.remainingBalance);
         if (pendingOverride.eventDate) setEventDate(pendingOverride.eventDate);
         if (pendingOverride.preferredTime) setPreferredTime(pendingOverride.preferredTime);
         if (pendingOverride.selectedPaymentGateway) setSelectedPaymentGateway(pendingOverride.selectedPaymentGateway);
@@ -2507,9 +2821,9 @@ export default function BookingPage() {
         } : null,
         total_amount: effectiveTotal,
         down_payment_amount: effectiveDownPayment,
-        down_payment_confirmed: true,
+        down_payment_confirmed: false,
         remaining_balance: effectiveRemaining,
-        status: 'CONFIRMED',
+        status: 'PENDING',
         payment_status: 'DOWNPAYMENT_PAID',
         event_date: effectiveDate || null,
         preferred_time: toDatabaseTime(
@@ -2529,26 +2843,62 @@ export default function BookingPage() {
       if (submitError) {
         console.error("Booking creation error:", submitError);
         setValidationError("Failed to reserve slot: " + submitError.message);
-        return;
+        return false;
+      }
+
+      // Clear draft storage only after booking row is safely created in Supabase
+      try {
+        sessionStorage.removeItem('ekodak_booking_form_draft');
+        localStorage.removeItem('ekodak_booking_form_draft');
+      } catch {}
+
+      // Persist academic & contact details to customer profile when booking for self
+      if (activeCustomerId && isSelfBooking && isSupabaseConfigured && supabase) {
+        try {
+          const nextSpecs = {
+            ...(activeP?.studio_specs || {}),
+            ...(effectiveStudentSchool ? { school: effectiveStudentSchool, university: effectiveStudentSchool } : {}),
+            ...(effectiveStudentSchoolAddress ? { campus: effectiveStudentSchoolAddress, school_address: effectiveStudentSchoolAddress } : {}),
+            ...(effectiveStudentCourse ? { course: effectiveStudentCourse, degree: effectiveStudentCourse, strand: effectiveStudentCourse } : {}),
+            ...(effectiveStudentBatch ? { gradYear: effectiveStudentBatch, batch: effectiveStudentBatch } : {}),
+            ...(effectiveStudentSection ? { section: effectiveStudentSection } : {}),
+            ...(effectiveStudentId ? { student_id: effectiveStudentId } : {}),
+            ...(effectiveYearbookMotto ? { yearbook_motto: effectiveYearbookMotto } : {}),
+          };
+          const profileUpdates = {
+            studio_specs: nextSpecs,
+            ...(effectiveParticipantPhone ? { phone: effectiveParticipantPhone } : {}),
+            ...(effectiveParticipantEmail ? { email: effectiveParticipantEmail } : {}),
+            ...(effectiveYearbookMotto ? { bio: effectiveYearbookMotto } : {}),
+            updated_at: new Date().toISOString(),
+          };
+          await supabase.from('profiles').update(profileUpdates).eq('id', activeCustomerId);
+          if (refreshProfile) refreshProfile();
+        } catch (profSyncErr) {
+          console.warn("[Profile Academic Sync Warning]", profSyncErr);
+        }
       }
 
       // Record payment directly to payments table and notify admin
       try {
-        await customerPaymentService.submitPayment({
+        const payRes = await customerPaymentService.submitPayment({
           bookingId: data.id,
           amount: effectiveDownPayment,
           paymentType: 'downpayment',
-          paymentMethod: selectedPaymentGateway,
+          paymentMethod: effectiveGateway,
           referenceNumber: refNum,
-          notes: `Initial 50% reservation deposit settled via ${selectedPaymentGateway.toUpperCase()} during checkout.`,
+          notes: `Initial 50% reservation deposit settled via ${effectiveGateway.toUpperCase()} during checkout.`,
           recordedBy: activeCustomerId
         });
+        if (!payRes?.success) {
+          throw new Error(payRes?.error || 'Payment submission failed');
+        }
       } catch (payErr) {
         console.warn("[Payment Service Submission Warning]", payErr);
         try {
           let dbMethod = 'E_WALLET';
-          if (selectedPaymentGateway === 'bank_transfer') dbMethod = 'BANK_TRANSFER';
-          else if (selectedPaymentGateway === 'maya') dbMethod = 'E_WALLET';
+          if (effectiveGateway === 'bank_transfer') dbMethod = 'BANK_TRANSFER';
+          else if (effectiveGateway === 'maya') dbMethod = 'E_WALLET';
           else dbMethod = 'E_WALLET';
 
           await supabase.from('payments').insert({
@@ -2559,12 +2909,17 @@ export default function BookingPage() {
             reference_number: refNum,
             payment_date: new Date().toISOString(),
             recorded_by: activeCustomerId,
-            notes: `50% downpayment via ${selectedPaymentGateway.toUpperCase()} (Ref: ${refNum})`
+            notes: `50% downpayment via ${effectiveGateway.toUpperCase()} (Ref: ${refNum})`
           });
         } catch (dbErr) {
           console.warn("[Direct Payment Insert Warning]", dbErr);
         }
       }
+
+      // Notify customer portal state immediately so pending approval status is reflected
+      try {
+        window.dispatchEvent(new Event('ekodak_bookings_updated'));
+      } catch {}
 
       // Construct high-fidelity official receipt data for instant viewing & printing
       const activeReceiptData = {
@@ -2585,7 +2940,7 @@ export default function BookingPage() {
         payments: [
           {
             id: 1,
-            payment_method: selectedPaymentGateway.toUpperCase(),
+            payment_method: effectiveGateway.toUpperCase(),
             reference_number: refNum,
             amount: effectiveDownPayment,
             created_at: new Date().toISOString()
@@ -2598,11 +2953,11 @@ export default function BookingPage() {
 
       setBookingResult({
         ...data,
-        down_payment_confirmed: true,
+        down_payment_confirmed: false,
         down_payment_amount: effectiveDownPayment,
         remaining_balance: effectiveRemaining,
         payment_status: 'DOWNPAYMENT_PAID',
-        status: 'CONFIRMED'
+        status: 'PENDING'
       });
       setStep(7);
       document.body.style.overflow = "";
@@ -2612,11 +2967,11 @@ export default function BookingPage() {
       try {
         sessionStorage.setItem('ekodak_active_confirmed_booking', JSON.stringify({
           ...data,
-          down_payment_confirmed: true,
+          down_payment_confirmed: false,
           down_payment_amount: effectiveDownPayment,
           remaining_balance: effectiveRemaining,
           payment_status: 'DOWNPAYMENT_PAID',
-          status: 'CONFIRMED'
+          status: 'PENDING'
         }));
         sessionStorage.setItem('ekodak_active_receipt_data', JSON.stringify(activeReceiptData));
         sessionStorage.setItem(`ekodak_fulfilled_ref_${refNum}`, 'true');
@@ -2649,7 +3004,7 @@ export default function BookingPage() {
           downpaymentAmount: effectiveDownPayment,
           remainingBalance: effectiveRemaining,
           totalAmount: (effectiveDownPayment || 0) + (effectiveRemaining || 0),
-          paymentMethod: selectedPaymentGateway.toUpperCase(),
+          paymentMethod: effectiveGateway.toUpperCase(),
           paymentReference: refNum,
           bookingUrl: typeof window !== "undefined" ? `${window.location.origin}/dashboard/bookings` : "https://e-kodak.ph/dashboard/bookings"
         }).then(res => {
@@ -2669,8 +3024,8 @@ export default function BookingPage() {
           recordCustomerAction({
             userId: activeCustomerId,
             category: 'BOOKING',
-            title: `Slot Reserved & 50% Deposit Paid (#${data.booking_number || 'New'})`,
-            description: `Customer settled 50% deposit (₱${effectiveDownPayment.toLocaleString()}) via ${selectedPaymentGateway.toUpperCase()} (Ref: ${refNum}). Dedicated bay locked.`,
+            title: `Booking Submitted & 50% Deposit Paid (#${data.booking_number || 'New'})`,
+            description: `Customer settled 50% deposit (₱${effectiveDownPayment.toLocaleString()}) via ${effectiveGateway.toUpperCase()} (Ref: ${refNum}). Pending studio admin approval.`,
             bookingId: data.id,
             bookingNumber: data.booking_number
           });
@@ -2678,9 +3033,11 @@ export default function BookingPage() {
           console.warn("[Audit warning]", auditErr);
         }
       }
+      return true;
     } catch (err) {
       console.error("[Booking Completion Error]", err);
       setValidationError("Failed to complete booking: " + (err.message || "An unexpected error occurred."));
+      return false;
     } finally {
       setIsSubmitting(false);
       isCompletingBookingRef.current = false;
@@ -2695,16 +3052,7 @@ export default function BookingPage() {
     const externalIdParam = searchParams.get("external_id");
 
     if (paymentStatusParam === "success") {
-      // 1. Immediately clean up URL search parameters to prevent duplicate triggers on F5 / reload
-      try {
-        const cleanUrl = window.location.pathname;
-        window.history.replaceState({}, document.title, cleanUrl);
-        setSearchParams({}, { replace: true });
-      } catch (e) {
-        console.warn("[URL Cleanup Warning]", e);
-      }
-
-      // 2. Persistent idempotency check using invoice / external ID
+      // 1. Persistent idempotency check using invoice / external ID
       const txKey = (invoiceIdParam && invoiceIdParam !== '{invoice_id}')
         ? invoiceIdParam
         : (externalIdParam || 'xendit_last_return');
@@ -2716,37 +3064,63 @@ export default function BookingPage() {
         return;
       }
       hasProcessedPaymentReturnRef.current = true;
-      try { sessionStorage.setItem(dedupeKey, 'true'); } catch {}
 
+      const channelParam = searchParams.get("channel") || null;
+
+      // Clean up URL search parameters so F5 won't re-trigger after processing starts
       try {
-        const rawPending = sessionStorage.getItem('ekodak_pending_xendit_booking') || localStorage.getItem('ekodak_pending_xendit_booking');
-        let parsedPending = null;
-        if (rawPending) {
-          try { parsedPending = JSON.parse(rawPending); } catch {}
-          sessionStorage.removeItem('ekodak_pending_xendit_booking');
-          try { localStorage.removeItem('ekodak_pending_xendit_booking'); } catch {}
-        }
-
-        // If no pending booking was found and we already have a confirmed booking, just jump to Step 7
-        if (!parsedPending && bookingResult?.id) {
-          setStep(7);
-          return;
-        }
-
-        const channelParam = searchParams.get("channel") || parsedPending?.selectedPaymentGateway || selectedPaymentGateway || "gcash";
-        setSelectedPaymentGateway(channelParam);
-
-        const ref = (invoiceIdParam && invoiceIdParam !== '{invoice_id}')
-          ? `XND-${invoiceIdParam.replace(/[^a-zA-Z0-9]/g, '').slice(-8).toUpperCase()}`
-          : (externalIdParam && externalIdParam.startsWith('EK-INV-'))
-          ? `XND-${externalIdParam.slice(-8).toUpperCase()}`
-          : `XND-${Date.now().toString().slice(-8).toUpperCase()}`;
-        const orNo = `OR-2026-${Math.floor(10000 + Math.random() * 90000)}`;
-
-        handleCompleteBookingAndPayment(ref, orNo, parsedPending);
-      } catch (err) {
-        console.warn("[Xendit Return Handling Warning]", err);
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+        setSearchParams({}, { replace: true });
+      } catch (e) {
+        console.warn("[URL Cleanup Warning]", e);
       }
+
+      (async () => {
+        try {
+          const rawPending = sessionStorage.getItem('ekodak_pending_xendit_booking') || localStorage.getItem('ekodak_pending_xendit_booking');
+          let parsedPending = null;
+          if (rawPending) {
+            try { parsedPending = JSON.parse(rawPending); } catch {}
+          }
+
+          // If no pending booking was found and we already have a confirmed booking, just jump to Step 7
+          if (!parsedPending && bookingResult?.id) {
+            try { sessionStorage.setItem(dedupeKey, 'true'); } catch {}
+            setStep(7);
+            return;
+          }
+
+          const resolvedChannel = channelParam || parsedPending?.selectedPaymentGateway || selectedPaymentGateway || "gcash";
+          setSelectedPaymentGateway(resolvedChannel);
+          if (parsedPending && !parsedPending.selectedPaymentGateway) {
+            parsedPending.selectedPaymentGateway = resolvedChannel;
+          }
+
+          const ref = (invoiceIdParam && invoiceIdParam !== '{invoice_id}')
+            ? `XND-${invoiceIdParam.replace(/[^a-zA-Z0-9]/g, '').slice(-8).toUpperCase()}`
+            : (externalIdParam && externalIdParam.startsWith('EK-INV-'))
+            ? `XND-${externalIdParam.slice(-8).toUpperCase()}`
+            : `XND-${Date.now().toString().slice(-8).toUpperCase()}`;
+          const orNo = `OR-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+
+          const completed = await handleCompleteBookingAndPayment(ref, orNo, parsedPending);
+          if (completed) {
+            try {
+              sessionStorage.setItem(dedupeKey, 'true');
+              sessionStorage.removeItem('ekodak_pending_xendit_booking');
+              localStorage.removeItem('ekodak_pending_xendit_booking');
+            } catch {}
+          } else {
+            hasProcessedPaymentReturnRef.current = false;
+            setStep(6);
+          }
+        } catch (err) {
+          console.warn("[Xendit Return Handling Warning]", err);
+          hasProcessedPaymentReturnRef.current = false;
+          setStep(6);
+        }
+      })();
     }
   }, [searchParams, setSearchParams]);
 
@@ -2987,19 +3361,63 @@ export default function BookingPage() {
     printWindow.document.close();
   };
 
+  // Clear cached bookingResult if it belongs to a different user or no longer exists in DB
+  useEffect(() => {
+    if (!bookingResult?.id) return;
+    if (user?.id && bookingResult.customer_id && bookingResult.customer_id !== user.id) {
+      setBookingResult(null);
+      setPaymentReceiptData(null);
+      try {
+        sessionStorage.removeItem('ekodak_active_confirmed_booking');
+        sessionStorage.removeItem('ekodak_active_receipt_data');
+      } catch {}
+    }
+  }, [user?.id, bookingResult?.id, bookingResult?.customer_id]);
+
   // ── STEP 7: RESERVATION SUCCESS & CAMERA-READY QR PASS ────────────────────
   if (step === 7) {
+    if (!bookingResult?.id) {
+      return (
+        <div className="animate-fade-in w-full max-w-2xl mx-auto px-4 py-12 font-heading">
+          <div className="rounded-3xl bg-white border border-neutral-200 p-8 text-center shadow-lg space-y-4">
+            {isSubmitting ? (
+              <>
+                <Loader2 size={34} className="animate-spin text-gold mx-auto" />
+                <h2 className="text-xl font-bold text-neutral-900">Recording your booking &amp; payment…</h2>
+                <p className="text-xs text-neutral-500">
+                  Please wait while we finalize your reservation for studio admin approval.
+                </p>
+              </>
+            ) : (
+              <>
+                <AlertCircle size={34} className="text-rose-500 mx-auto" />
+                <h2 className="text-xl font-bold text-neutral-900">Booking Not Saved Yet</h2>
+                <p className="text-xs text-neutral-600 leading-relaxed max-w-md mx-auto">
+                  {validationError || "We could not find a saved booking record for this checkout session. Please review Step 6 and complete payment again."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setValidationError("");
+                    setStep(6);
+                  }}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-neutral-900 text-[#e8cf9d] text-xs font-bold cursor-pointer hover:bg-neutral-800 transition-colors"
+                >
+                  <ArrowLeft size={14} /> Return to Payment Step
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     const isSchoolPartner = isAcademicService && academicBookingMode === "SCHOOL_PARTNER";
-    const activeBooking = bookingResult || {
-      id: "pending",
-      booking_number: "BK-2026-00004",
-      booking_token: "890f9569-1f2e-427e-a06b-e4f8cd9021a4",
-      total_amount: totalAmount > 0 ? totalAmount : (parsePrice(selectedTier?.price || selectedService?.tiers?.[0]?.price || 1750) + addOnsTotal),
-      down_payment_amount: downPaymentAmount > 0 ? downPaymentAmount : Math.round((totalAmount > 0 ? totalAmount : (parsePrice(selectedTier?.price || selectedService?.tiers?.[0]?.price || 1750) + addOnsTotal)) * 0.5),
-      remaining_balance: remainingBalance,
-      location: resolvedLocation,
-      status: "CONFIRMED"
-    };
+    const activeBooking = bookingResult;
+    const isAdminApproved = Boolean(
+      activeBooking.down_payment_confirmed ||
+      !['PENDING', 'RESERVED'].includes(String(activeBooking.status || '').toUpperCase())
+    );
 
     const effectiveToken = activeBooking?.booking_token || activeBooking?.id || "890f9569-1f2e-427e-a06b-e4f8cd9021a4";
     const shortToken = effectiveToken.length > 28 ? `${effectiveToken.slice(0, 24)}...` : effectiveToken;
@@ -3143,7 +3561,7 @@ export default function BookingPage() {
     const formattedActualRemaining = `₱${effectiveRemaining.toLocaleString()}`;
 
     const effectiveReceipt = {
-      receiptNumber: (typeof customOrNumber === "string" && customOrNumber.trim()) || gatewayOrNumber || `OR-2026-${(activeBooking.booking_number || '').replace(/\D/g, '').padStart(5, '0') || '92841'}`,
+      receiptNumber: paymentReceiptData?.receiptNumber || gatewayOrNumber || `OR-2026-${(activeBooking.booking_number || '').replace(/\D/g, '').padStart(5, '0') || '00001'}`,
       issuedAt: activeBooking?.created_at || new Date().toISOString(),
       bookingNumber: activeBooking.booking_number || 'BK-2026-00004',
       clientName: resolvedClientName || 'Client',
@@ -3183,10 +3601,10 @@ export default function BookingPage() {
               </div>
               <div className="flex flex-col">
                 <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-bold text-white tracking-tight leading-tight">
-                  Booking Received
+                  {isAdminApproved ? "Booking Approved" : "Booking Received"}
                 </h1>
-                <span className="font-heading text-xs sm:text-sm text-emerald-400 font-semibold tracking-widest uppercase mt-0.5">
-                  Confirmed
+                <span className={`font-heading text-xs sm:text-sm font-semibold tracking-widest uppercase mt-0.5 ${isAdminApproved ? "text-emerald-400" : "text-amber-300"}`}>
+                  {isAdminApproved ? "Confirmed" : "Pending Studio Admin Approval"}
                 </span>
               </div>
             </div>

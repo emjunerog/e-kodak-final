@@ -20,16 +20,16 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, {
-  Defs, LinearGradient as SvgLinearGradient, Stop,
+  Defs, LinearGradient as SvgLinearGradient, RadialGradient, Stop,
   Circle, Line, Rect, Path, G,
 } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import {
   ArrowLeft, Calendar, MapPin, Camera, Package,
   QrCode, RefreshCw, Bookmark, BookmarkCheck,
-  ChevronDown, ChevronUp, Sparkles, ListOrdered, Route,
-  Phone, CheckCircle2, User, School, GraduationCap,
-  Award, Tag, CreditCard, Compass, Info, X, FileText, Building2, Truck,
+  ChevronDown, ChevronUp, Sparkles, List, GitBranch,
+  Phone, Mail, CheckCircle2, User, School, GraduationCap,
+  Award, Tag, CreditCard, Compass, Info, X, Building2, Truck,
 } from 'lucide-react-native';
 
 import {
@@ -52,6 +52,42 @@ import { useTheme } from '../context/ThemeContext';
 import { Typography, Spacing, Radius, STATUS_META, MILESTONE_STEPS } from '../theme';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+function buildPineTreePath(cx, topY, baseY, halfW) {
+  const h = baseY - topY;
+  const y1 = topY + h * 0.34;
+  const y2 = topY + h * 0.66;
+  return [
+    `M ${cx} ${topY}`,
+    `L ${cx + halfW * 0.52} ${y1}`,
+    `L ${cx + halfW * 0.22} ${y1}`,
+    `L ${cx + halfW * 0.80} ${y2}`,
+    `L ${cx + halfW * 0.36} ${y2}`,
+    `L ${cx + halfW} ${baseY}`,
+    `L ${cx - halfW} ${baseY}`,
+    `L ${cx - halfW * 0.36} ${y2}`,
+    `L ${cx - halfW * 0.80} ${y2}`,
+    `L ${cx - halfW * 0.22} ${y1}`,
+    `L ${cx - halfW * 0.52} ${y1}`,
+    'Z',
+  ].join(' ');
+}
+
+const PROGRESS_FOREST_TREES = {
+  far: [
+    [24, 54, 108, 12], [68, 42, 108, 14], [116, 50, 108, 13],
+    [166, 38, 108, 15], [212, 46, 108, 13], [250, 34, 108, 15],
+    [288, 28, 108, 16], [322, 36, 108, 14], [350, 46, 108, 13],
+  ],
+  mid: [
+    [42, 48, 122, 16], [142, 46, 122, 15], [228, 36, 122, 17],
+    [270, 26, 122, 19], [310, 32, 122, 18], [344, 42, 122, 16],
+  ],
+  near: [
+    [16, 62, 134, 17], [196, 56, 134, 16], [252, 44, 134, 18],
+    [292, 34, 134, 21], [332, 42, 134, 19],
+  ],
+};
 
 function formatDate(dateStr) {
   if (!dateStr) return 'To be announced';
@@ -98,8 +134,22 @@ function formatPeso(n) {
 export const STEP_COLOR_HIERARCHY = {
   PENDING: {
     step: 1,
-    total: 7,
+    total: 8,
     code: 'PENDING',
+    label: 'Booking Received',
+    tone: 'amber',
+    dot: '#F59E0B',
+    accent: '#D97706',
+    text: '#F59E0B',
+    bg: 'rgba(245, 158, 11, 0.12)',
+    border: 'rgba(245, 158, 11, 0.35)',
+    glow: 'rgba(245, 158, 11, 0.25)',
+    description: 'Booking request received · Front desk notified for review',
+  },
+  RESERVED: {
+    step: 1,
+    total: 8,
+    code: 'RESERVED',
     label: 'Booking Received',
     tone: 'amber',
     dot: '#F59E0B',
@@ -112,7 +162,7 @@ export const STEP_COLOR_HIERARCHY = {
   },
   CONFIRMED: {
     step: 2,
-    total: 7,
+    total: 8,
     code: 'CONFIRMED',
     label: 'Approved & Reserved',
     tone: 'sky',
@@ -122,13 +172,13 @@ export const STEP_COLOR_HIERARCHY = {
     bg: 'rgba(56, 189, 248, 0.12)',
     border: 'rgba(56, 189, 248, 0.35)',
     glow: 'rgba(56, 189, 248, 0.25)',
-    description: 'Session slot secured and locked · Downpayment requested',
+    description: 'Session slot approved and reserved by studio admin',
   },
   PHOTOGRAPHER_ASSIGNED: {
-    step: 2,
-    total: 7,
+    step: 3,
+    total: 8,
     code: 'PHOTOGRAPHER_ASSIGNED',
-    label: 'Approved & Reserved',
+    label: 'Photographer Assigned',
     tone: 'sky',
     dot: '#38BDF8',
     accent: '#0284C7',
@@ -136,11 +186,11 @@ export const STEP_COLOR_HIERARCHY = {
     bg: 'rgba(56, 189, 248, 0.12)',
     border: 'rgba(56, 189, 248, 0.35)',
     glow: 'rgba(56, 189, 248, 0.25)',
-    description: 'Session slot confirmed and studio photographer assigned',
+    description: 'Dedicated lead photographer assigned to your session',
   },
   CAPTURE: {
-    step: 3,
-    total: 7,
+    step: 4,
+    total: 8,
     code: 'CAPTURE',
     label: 'Ongoing Pictorial',
     tone: 'purple',
@@ -153,8 +203,8 @@ export const STEP_COLOR_HIERARCHY = {
     description: 'Photoshoot actively in progress in the camera bay',
   },
   IN_PROGRESS: {
-    step: 3,
-    total: 7,
+    step: 4,
+    total: 8,
     code: 'IN_PROGRESS',
     label: 'Ongoing Pictorial',
     tone: 'purple',
@@ -167,8 +217,8 @@ export const STEP_COLOR_HIERARCHY = {
     description: 'Photoshoot actively in progress in the camera bay',
   },
   EDITING: {
-    step: 4,
-    total: 7,
+    step: 5,
+    total: 8,
     code: 'EDITING',
     label: 'Editing',
     tone: 'teal',
@@ -181,8 +231,8 @@ export const STEP_COLOR_HIERARCHY = {
     description: 'Studio processing in progress · Darkroom team takes meticulous time and care with portraits',
   },
   RETOUCHING: {
-    step: 5,
-    total: 7,
+    step: 6,
+    total: 8,
     code: 'RETOUCHING',
     label: 'Retouching',
     tone: 'gold',
@@ -195,8 +245,8 @@ export const STEP_COLOR_HIERARCHY = {
     description: 'Fine-art beauty proofing, blemish polish, and color grading',
   },
   FINALIZED: {
-    step: 6,
-    total: 7,
+    step: 7,
+    total: 8,
     code: 'FINALIZED',
     label: 'Booking Finalized',
     tone: 'gold',
@@ -209,8 +259,8 @@ export const STEP_COLOR_HIERARCHY = {
     description: 'Museum-grade photo printing & crystal frame mounting assembled',
   },
   PRINTING: {
-    step: 6,
-    total: 7,
+    step: 7,
+    total: 8,
     code: 'PRINTING',
     label: 'Booking Finalized',
     tone: 'gold',
@@ -223,8 +273,8 @@ export const STEP_COLOR_HIERARCHY = {
     description: 'Museum-grade photo printing & crystal frame mounting assembled',
   },
   READY: {
-    step: 7,
-    total: 7,
+    step: 8,
+    total: 8,
     code: 'READY',
     label: 'Booking ready to pick-up (studio)',
     tone: 'gold',
@@ -237,8 +287,8 @@ export const STEP_COLOR_HIERARCHY = {
     description: 'Packaged prints framed and ready for studio counter collection',
   },
   UNDER_DELIVERY: {
-    step: 7,
-    total: 7,
+    step: 8,
+    total: 8,
     code: 'UNDER_DELIVERY',
     label: 'Booking under delivery',
     tone: 'sky',
@@ -251,8 +301,8 @@ export const STEP_COLOR_HIERARCHY = {
     description: 'Direct courier delivery dispatch and tracking active',
   },
   COMPLETED: {
-    step: 7,
-    total: 7,
+    step: 8,
+    total: 8,
     code: 'COMPLETED',
     label: 'Completed',
     tone: 'emerald',
@@ -266,7 +316,7 @@ export const STEP_COLOR_HIERARCHY = {
   },
   CANCELLED: {
     step: 0,
-    total: 7,
+    total: 8,
     code: 'CANCELLED',
     label: 'Cancelled',
     tone: 'rose',
@@ -277,6 +327,20 @@ export const STEP_COLOR_HIERARCHY = {
     border: 'rgba(239, 68, 68, 0.35)',
     glow: 'rgba(239, 68, 68, 0.25)',
     description: 'Session cancelled',
+  },
+  REJECTED: {
+    step: 0,
+    total: 8,
+    code: 'REJECTED',
+    label: 'Rejected',
+    tone: 'rose',
+    dot: '#EF4444',
+    accent: '#DC2626',
+    text: '#F87171',
+    bg: 'rgba(239, 68, 68, 0.12)',
+    border: 'rgba(239, 68, 68, 0.35)',
+    glow: 'rgba(239, 68, 68, 0.25)',
+    description: 'Session declined by studio',
   },
 };
 
@@ -617,8 +681,8 @@ function DeliveryPanel({ booking, deliveries, colors, isDark, styles }) {
 // ── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function BookingTrackerScreen({ route, navigation }) {
-  const { isDark, colors, gradients } = useTheme();
-  const styles = getStyles(colors, isDark);
+  const { isDark, isSage, colors, gradients } = useTheme();
+  const styles = getStyles(colors, isDark, isSage);
   const { booking: initialBooking, token: rawToken, initialMode } = route.params || {};
   const effectiveToken = rawToken || initialBooking?.booking_token || initialBooking?.booking_number || initialBooking?.id || '';
 
@@ -629,10 +693,9 @@ export default function BookingTrackerScreen({ route, navigation }) {
   const [trackerMode, setTrackerMode] = useState(initialMode || 'interactive'); // 'simple' | 'interactive'
   const [mascotAlert, setMascotAlert] = useState(null);
   const [showQRModal, setShowQRModal] = useState(false);
+  const [timelineCardSize, setTimelineCardSize] = useState({ width: 0, height: 0 });
 
-  // Dedicated section visibility & scroll animations
-  const [dossierOpen, setDossierOpen] = useState(false);
-  const scrollY = useRef(new Animated.Value(0)).current;
+  // Scroll ref
   const scrollViewRef = useRef(null);
 
   // Studio flagship settings loaded directly from database
@@ -674,7 +737,7 @@ export default function BookingTrackerScreen({ route, navigation }) {
     saveCustomerProfileFromBooking(booking);
     const unsubscribe = subscribeToBookingUpdates(booking.id, (updated) => {
       try {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => { });
       } catch { }
       setBooking((prev) => ({ ...prev, ...updated }));
     });
@@ -701,7 +764,7 @@ export default function BookingTrackerScreen({ route, navigation }) {
 
   const toggleSave = async () => {
     try {
-      await Haptics.selectionAsync();
+      await Haptics.selectionAsync().catch(() => { });
     } catch { }
     const tokenToSave = effectiveToken || booking.booking_token || booking.booking_number || 'BK-2026-00001';
     if (isSaved) {
@@ -726,18 +789,20 @@ export default function BookingTrackerScreen({ route, navigation }) {
       if (navigation.canGoBack()) {
         navigation.goBack();
       } else {
-        navigation.navigate('Main');
+        navigation.navigate('Home');
       }
     } catch {
-      navigation.navigate('Main');
+      navigation.navigate('Home');
     }
   };
 
-  // ── Derived display values (Real concrete records, zero AI fluff) ──────────
+  // ── Derived display values (Real concrete records) ──────────
   const realBookingId = booking.booking_number || 'BK-2026-00001';
-  const rawPackageName = booking.services?.name || booking.service?.name || 'Portrait Packages and Sets';
-  const cleanPackageName = rawPackageName.replace(/Senior\s*High\s*/gi, '').trim() || 'Portrait Packages and Sets';
-  const packageName = cleanPackageName;
+  const selectedPackageName =
+    booking.services?.name ||
+    booking.service?.name ||
+    initialBooking?.serviceName ||
+    'Studio Package';
   const selectedSetName = booking.tier_name || booking.parsed_notes?.['Set'] || 'Set A';
   const tierDetails = booking.tier_details;
 
@@ -770,53 +835,206 @@ export default function BookingTrackerScreen({ route, navigation }) {
     ? (booking.parsed_notes?.['School'] ? `School preview: ${booking.parsed_notes['School']} (Shoot venue TBA)` : 'Reservation received · Official shoot venue will be announced upon admin broadcast')
     : 'Confirmed photoshoot venue';
 
-  // Real student & participant data from notes
-  const studentName = booking.parsed_notes?.['Student Name'] || booking.parsed_notes?.['Participant Name'] || booking.profile?.full_name || 'Mark June Alimento Repunte';
-  const schoolName = booking.parsed_notes?.['School'] || 'Alpaco Senior High School';
-  const strandName = booking.parsed_notes?.['Degree / Strand'] || 'TVL-ICT';
-  const batchName = booking.parsed_notes?.['Batch'] || 'Batch 2026';
-  const sectionName = booking.parsed_notes?.['Section'] || 'Magsaysay';
-  const studentIdNum = booking.parsed_notes?.['Student ID'] || '1350690';
-  const mottoText = booking.parsed_notes?.['Yearbook Motto'] || 'growing up';
-  const contactPhone = booking.parsed_notes?.['Participant Phone'] || booking.profile?.phone || '09102949414';
-  const contactEmail = booking.parsed_notes?.['Participant Email'] || booking.profile?.email || 'alimentomakie@gmail.com';
+  // Real student & participant data from notes (used in Studio Pass Modal)
+  const studentName = booking.parsed_notes?.['Student Name'] || booking.parsed_notes?.['Participant Name'] || booking.profile?.full_name || 'Studio Client';
 
-  const defaultHighlights = [
-    '1 piece 10×12" colored portrait with crystal wood frame',
-    '1 piece 8×10" Filipiniana or Barong portrait (unframed)',
-    '4 pieces Wallet-size colored prints with academic cap (2R)',
-    '4 pieces Wallet-size colored prints in Filipiniana or Barong (2R)',
-    '6 pieces Passport-size colored ID prints (TESDA standard)',
-    '6 pieces 2×2" colored ID prints in formal attire',
-    'Free professional makeup session included',
-  ];
-  const tierHighlights = tierDetails?.highlights || defaultHighlights;
-
-  // Milestone Progress
-  const statusMeta = STATUS_META[String(booking.status || 'PENDING').toUpperCase()] || STATUS_META.PENDING;
-  const liveStep = Math.max(0, statusMeta?.step ?? 0);
+  // Milestone Progress (drives both summary card & perimeter border progress tracker)
+  const normalizedStatus = String(booking.status || 'PENDING').toUpperCase();
+  const statusMeta = STATUS_META[normalizedStatus] || STATUS_META.PENDING;
+  const rawMilestoneStep = statusMeta?.step ?? 0;
   const totalSteps = MILESTONE_STEPS.length;
-  const progressPct = Math.round((Math.min(liveStep, totalSteps - 1) / Math.max(totalSteps - 1, 1)) * 100);
+  const isTerminalNegative = rawMilestoneStep < 0;
+  const completedStepsCount = isTerminalNegative
+    ? 0
+    : rawMilestoneStep >= totalSteps
+      ? totalSteps
+      : rawMilestoneStep === totalSteps - 1
+        ? totalSteps - 1
+        : rawMilestoneStep + 1;
+  const progressRatio = isTerminalNegative
+    ? 0
+    : rawMilestoneStep >= totalSteps
+      ? 1
+      : rawMilestoneStep === totalSteps - 1
+        ? (totalSteps - 0.5) / totalSteps
+        : (rawMilestoneStep + 1) / totalSteps;
+  const progressPct = Math.round(progressRatio * 100);
+  const STATUS_PROGRESS_MESSAGES = {
+    PENDING: 'Your order is now received',
+    RESERVED: 'Your order is now received',
+    CONFIRMED: 'Your booking is approved & reserved',
+    PHOTOGRAPHER_ASSIGNED: 'Photographer assigned & slot reserved',
+    CAPTURE: 'Your pictorial session is ongoing',
+    IN_PROGRESS: 'Your pictorial session is ongoing',
+    EDITING: 'Your portraits are now in editing',
+    RETOUCHING: 'Fine-art retouching is now in progress',
+    FINALIZED: 'Your prints & package are finalized',
+    PRINTING: 'Your prints & package are finalized',
+    READY: 'Your order is ready for studio pickup',
+    UNDER_DELIVERY: 'Your order is now out for delivery',
+    COMPLETED: 'Your order is now complete',
+    CANCELLED: 'This booking has been cancelled',
+    REJECTED: 'This booking request was declined',
+  };
+  const statusProgressMessage = STATUS_PROGRESS_MESSAGES[normalizedStatus] || 'Your order is now received';
+
+  const handleMessageGmail = async () => {
+    try {
+      Haptics.selectionAsync().catch(() => { });
+    } catch { }
+    const studioEmail = studioSettings?.contact_email || 'contact@e-kodak.com';
+    const subject = `Booking Inquiry #${realBookingId} — ${selectedPackageName}`;
+    const body = [
+      'Hello E-Kodak Studio Team,',
+      '',
+      'I would like to inquire regarding my booking:',
+      `• Reference: #${realBookingId}`,
+      `• Client: ${studentName}`,
+      `• Package: ${selectedPackageName} (${selectedSetName})`,
+      `• Current Status: ${statusMeta.label}`,
+      '',
+      'Message:',
+      '',
+    ].join('\n');
+    const encSub = encodeURIComponent(subject);
+    const encBody = encodeURIComponent(body);
+    const encTo = encodeURIComponent(studioEmail);
+    const gmailIosAppUrl = `googlegmail:///co?to=${encTo}&subject=${encSub}&body=${encBody}`;
+    const mailtoUrl = `mailto:${studioEmail}?subject=${encSub}&body=${encBody}`;
+    const gmailWebUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encTo}&su=${encSub}&body=${encBody}`;
+
+    const candidates = Platform.OS === 'ios'
+      ? [gmailIosAppUrl, mailtoUrl, gmailWebUrl]
+      : Platform.OS === 'android'
+        ? [mailtoUrl, gmailWebUrl]
+        : [gmailWebUrl, mailtoUrl];
+
+    for (const url of candidates) {
+      try {
+        await Linking.openURL(url);
+        return;
+      } catch {
+        // Try next URL scheme if this client is unavailable
+      }
+    }
+  };
+
+  const handleCallStudio = () => {
+    try {
+      Haptics.selectionAsync().catch(() => { });
+    } catch { }
+    const rawPhone = studioSettings?.contact_phone && studioSettings.contact_phone !== '+63 917 123 4567'
+      ? studioSettings.contact_phone
+      : '09102949414';
+    const dialNumber = String(rawPhone).replace(/[^\d+]/g, '') || '09102949414';
+    Linking.openURL(`tel:${dialNumber}`).catch(() => { });
+  };
+  const scenerySunX = Math.round(72 + (progressPct / 100) * 224);
+  const scenerySunY = Math.round(56 - (progressPct / 100) * 28);
+  const progressSceneryPalette = isTerminalNegative
+    ? {
+      baseBg: '#3A141C',
+      skyTop: '#2E0F16',
+      skyMid: '#6E2432',
+      skyGlow: '#D67887',
+      sunCore: '#FFE4E8',
+      sunAura: '#F48A9B',
+      hillFar: '#5D202C',
+      hillMid: '#451620',
+      hillNear: '#2D0D14',
+      scrim: ['rgba(46, 15, 22, 0.74)', 'rgba(72, 24, 34, 0.34)', 'rgba(110, 36, 48, 0.08)'],
+      borderColor: 'rgba(255, 196, 206, 0.34)',
+    }
+    : progressPct >= 100
+      ? {
+        baseBg: '#103626',
+        skyTop: '#0B2E20',
+        skyMid: '#1C6E4B',
+        skyGlow: '#82E6B8',
+        sunCore: '#EDFFF7',
+        sunAura: '#6EE7B7',
+        hillFar: '#256147',
+        hillMid: '#174A35',
+        hillNear: '#0D3323',
+        scrim: ['rgba(12, 46, 31, 0.70)', 'rgba(18, 68, 46, 0.32)', 'rgba(30, 95, 65, 0.06)'],
+        borderColor: 'rgba(155, 245, 205, 0.42)',
+      }
+      : isDark
+        ? {
+          baseBg: '#191D2A',
+          skyTop: '#131724',
+          skyMid: '#2D273B',
+          skyGlow: '#BA8F49',
+          sunCore: '#FFF1D2',
+          sunAura: '#E5BA6D',
+          hillFar: '#39324A',
+          hillMid: '#252132',
+          hillNear: '#151822',
+          scrim: ['rgba(17, 20, 30, 0.76)', 'rgba(24, 27, 40, 0.36)', 'rgba(34, 36, 52, 0.08)'],
+          borderColor: 'rgba(255, 255, 255, 0.24)',
+        }
+        : isSage
+          ? {
+            baseBg: '#3D4D37',
+            skyTop: '#2E3E2B',
+            skyMid: '#597250',
+            skyGlow: '#DCE6CE',
+            sunCore: '#FFF9E8',
+            sunAura: '#E9D9AA',
+            hillFar: '#6C8462',
+            hillMid: '#4A6043',
+            hillNear: '#2E4029',
+            scrim: ['rgba(40, 54, 37, 0.68)', 'rgba(56, 74, 51, 0.30)', 'rgba(84, 105, 76, 0.06)'],
+            borderColor: 'rgba(255, 255, 255, 0.32)',
+          }
+          : {
+            baseBg: '#6E4C14',
+            skyTop: '#563B10',
+            skyMid: '#9B6E24',
+            skyGlow: '#F6DFAC',
+            sunCore: '#FFFDF5',
+            sunAura: '#F5D28A',
+            hillFar: '#8B6222',
+            hillMid: '#684715',
+            hillNear: '#452E0C',
+            scrim: ['rgba(68, 46, 12, 0.70)', 'rgba(105, 72, 20, 0.32)', 'rgba(145, 102, 32, 0.06)'],
+            borderColor: 'rgba(255, 255, 255, 0.32)',
+          };
+
+  const borderMetrics = (() => {
+    const { width: w, height: h } = timelineCardSize;
+    if (w <= 0 || h <= 0 || progressRatio <= 0) return null;
+    const sw = 4.5;
+    const inset = sw / 2;
+    const pw = Math.max(0, w - sw);
+    const ph = Math.max(0, h - sw);
+    const pr = Math.max(0, Math.min(Radius['2xl'] - inset, pw / 2, ph / 2));
+    const cx = w / 2;
+    const y0 = inset;
+    const d = [
+      `M ${cx} ${y0}`,
+      `L ${inset + pw - pr} ${inset}`,
+      `A ${pr} ${pr} 0 0 1 ${inset + pw} ${inset + pr}`,
+      `L ${inset + pw} ${inset + ph - pr}`,
+      `A ${pr} ${pr} 0 0 1 ${inset + pw - pr} ${inset + ph}`,
+      `L ${inset + pr} ${inset + ph}`,
+      `A ${pr} ${pr} 0 0 1 ${inset} ${inset + ph - pr}`,
+      `L ${inset} ${inset + pr}`,
+      `A ${pr} ${pr} 0 0 1 ${inset + pr} ${inset}`,
+      `L ${cx} ${y0}`,
+      'Z',
+    ].join(' ');
+    const perimeter = 2 * Math.max(0, pw - 2 * pr) + 2 * Math.max(0, ph - 2 * pr) + 2 * Math.PI * pr;
+    const dashOffset = Math.max(0, perimeter * (1 - progressRatio));
+    return { w, h, sw, d, perimeter, dashOffset };
+  })();
 
   const switchTrackerMode = (mode) => {
     if (mode === trackerMode) return;
     try {
-      Haptics.selectionAsync();
+      Haptics.selectionAsync().catch(() => { });
     } catch { }
     setTrackerMode(mode);
-  };
-
-  const toggleDossierSection = () => {
-    try {
-      Haptics.selectionAsync();
-    } catch { }
-    const nextState = !dossierOpen;
-    setDossierOpen(nextState);
-    if (nextState) {
-      setTimeout(() => {
-        scrollViewRef.current?.scrollTo({ y: 240, animated: true });
-      }, 120);
-    }
   };
 
   return (
@@ -826,7 +1044,7 @@ export default function BookingTrackerScreen({ route, navigation }) {
       {/* Ambient glass backdrop */}
       <GlassBackground />
 
-      {/* ── Frosted Editorial Header (No "Live Studio Sync", No "Senior High") ── */}
+      {/* ── Frosted Editorial Header ── */}
       <GlassHeader
         left={
           <PremiumIcon
@@ -839,97 +1057,32 @@ export default function BookingTrackerScreen({ route, navigation }) {
           />
         }
         right={
-          <View style={styles.headerRightActions}>
-            {/* Scan Another Pass Icon Button (Placed beside save icon) */}
-            <PremiumIcon
-              icon={QrCode}
-              size={19}
-              box={40}
-              tone="glass"
-              accessibilityLabel="Scan another pass"
-              onPress={() => navigation.navigate('Scanner')}
-            />
-            {/* Save Pass Icon Button */}
-            <PremiumIcon
-              icon={isSaved ? BookmarkCheck : Bookmark}
-              size={20}
-              box={40}
-              tone={isSaved ? 'gold' : 'glass'}
-              glow={isSaved}
-              accessibilityLabel="Save pass"
-              onPress={toggleSave}
-            />
-          </View>
+          <PremiumIcon
+            icon={isSaved ? BookmarkCheck : Bookmark}
+            size={20}
+            box={40}
+            tone={isSaved ? 'gold' : 'glass'}
+            glow={isSaved}
+            accessibilityLabel="Save pass"
+            onPress={toggleSave}
+          />
         }
       >
-        <Text style={[styles.headerTitle, { color: colors.text.primary }]} numberOfLines={1}>
-          {cleanPackageName}
-        </Text>
-        <Text style={[styles.headerSub, { color: colors.gold.light }]} numberOfLines={1}>
-          Graduation Portrait · Pass #{realBookingId}
+        <Text
+          style={[styles.headerTitle, { color: colors.text.primary }]}
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.82}
+        >
+          {selectedPackageName}
         </Text>
       </GlassHeader>
-
-      {/* ── Sticky Live Order State Bar (Pinned When Scrolling) ── */}
-      <Animated.View
-        pointerEvents="box-none"
-        style={[
-          styles.stickyStateBarWrap,
-          {
-            opacity: scrollY.interpolate({
-              inputRange: [120, 190],
-              outputRange: [0, 1],
-              extrapolate: 'clamp',
-            }),
-            transform: [
-              {
-                translateY: scrollY.interpolate({
-                  inputRange: [120, 190],
-                  outputRange: [-18, 0],
-                  extrapolate: 'clamp',
-                }),
-              },
-            ],
-          },
-        ]}
-      >
-        <View
-          style={[
-            styles.stickyStateBar,
-            {
-              backgroundColor: isDark ? 'rgba(22, 18, 14, 0.94)' : 'rgba(255, 252, 247, 0.96)',
-              borderColor: colors.gold.borderLight,
-            },
-          ]}
-        >
-          {/* Left: Crafted Luxury Status Pill with Live Pulse Beacon */}
-          <LuxuryStatusPill status={booking.status || 'PENDING'} size="sm" showStep={false} />
-
-          {/* Center: Selected Set & Pass ID */}
-          <View style={styles.stickyCenterInfo}>
-            <Text style={[styles.stickySetText, { color: colors.text.primary }]}>
-              {selectedSetName}
-            </Text>
-            <Text style={[styles.stickyIdText, { color: colors.gold.light }]}>
-              Pass #{realBookingId}
-            </Text>
-          </View>
-
-          {/* Right: Live Tracking Sign (Pure vector, zero text) */}
-          <LiveTrackingRadarSign size={28} colors={colors} isDark={isDark} />
-        </View>
-      </Animated.View>
 
       <ScrollView
         ref={scrollViewRef}
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: 130 }]}
         showsVerticalScrollIndicator={false}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: false }
-        )}
-        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -957,54 +1110,49 @@ export default function BookingTrackerScreen({ route, navigation }) {
           </View>
         )}
 
-        {/* ── Main Session Phase Card (Clean, Concise, No Clutter) ── */}
-        <GlassCard glow highlight style={styles.heroCard}>
-          {/* 1. Header: Luxury Status Pill + Live Tracking Vector Sign */}
-          <View style={styles.cardHeaderRow}>
-            <View style={{ flex: 1, gap: 5 }}>
-              <View style={[styles.categoryPill, { backgroundColor: colors.gold.bg, borderColor: colors.gold.borderLight }]}>
-                <Text style={[styles.categoryPillText, { color: colors.gold.DEFAULT }]}>
-                  GRADUATION PORTRAIT SESSION
-                </Text>
-              </View>
-              <LuxuryStatusPill status={booking.status || 'PENDING'} size="md" />
-            </View>
-
-            {/* Live Tracking Vector Sign (Pure vector, zero text) */}
-            <LiveTrackingRadarSign size={52} colors={colors} isDark={isDark} />
-          </View>
-
-          <View style={[styles.cardDivider, { backgroundColor: colors.gold.border }]} />
-
-          {/* 2. Customer Selected Set Name (PROMINENTLY BIGGER!) & Pricing */}
+        {/* ── Main Package Card (Selected Set + Pricing + Schedule & Venue) ── */}
+        <GlassCard opaque glow highlight style={styles.heroCard}>
           <View style={styles.setHeroSection}>
             <Text style={[styles.microHeader, { color: colors.gold.DEFAULT }]}>
-              CUSTOMER SELECTED SET
+              YOUR SET
             </Text>
             <View style={styles.setRow}>
-              <Text style={[styles.selectedSetTitle, { color: colors.text.primary }]}>
+              <Text
+                style={[styles.selectedSetTitle, { color: colors.text.primary }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.82}
+              >
                 {selectedSetName}
               </Text>
-              <View style={[styles.priceBadge, { backgroundColor: colors.gold.bg, borderColor: colors.gold.borderLight }]}>
-                <Text style={[styles.priceBadgeText, { color: isDark ? colors.gold.light : colors.gold.dark }]}>
-                  {priceDisplay}
-                </Text>
-              </View>
+              <Text
+                style={[
+                  styles.heroPriceValue,
+                  { color: isDark ? colors.gold.light : colors.gold.DEFAULT },
+                ]}
+                numberOfLines={1}
+              >
+                {priceDisplay}
+              </Text>
             </View>
-            <Text style={[styles.packageNameText, { color: colors.text.secondary }]}>
-              {cleanPackageName}
-            </Text>
           </View>
 
           <View style={[styles.cardDivider, { backgroundColor: colors.gold.border }]} />
 
-          {/* 3. Session Schedule & Locations (All DB-fetched) */}
+          {/* Session Schedule & Locations (All DB-fetched) */}
           <View style={styles.metadataStack}>
             <View style={styles.metaRow}>
-              <PremiumIcon icon={Calendar} size={15} box={34} tone="soft" />
-              <View style={{ flex: 1 }}>
+              <PremiumIcon
+                icon={Calendar}
+                size={16}
+                box={38}
+                tone="soft"
+                iconColor={isDark ? colors.gold.light : colors.gold.DEFAULT}
+                style={styles.metaIconOffset}
+              />
+              <View style={styles.metaTextCol}>
                 <Text style={[styles.metaLabel, { color: colors.text.muted }]}>SESSION SCHEDULE</Text>
-                <Text style={[styles.metaValue, { color: isScheduleTBA ? colors.gold.light : colors.text.primary }]}>
+                <Text style={[styles.metaValue, { color: isScheduleTBA ? colors.gold.DEFAULT : colors.text.primary }]}>
                   {scheduleDisplay}
                 </Text>
                 {isScheduleTBA && (
@@ -1016,10 +1164,17 @@ export default function BookingTrackerScreen({ route, navigation }) {
             </View>
 
             <View style={styles.metaRow}>
-              <PremiumIcon icon={MapPin} size={15} box={34} tone="soft" />
-              <View style={{ flex: 1 }}>
+              <PremiumIcon
+                icon={MapPin}
+                size={16}
+                box={38}
+                tone="soft"
+                iconColor={isDark ? colors.gold.light : colors.gold.DEFAULT}
+                style={styles.metaIconOffset}
+              />
+              <View style={styles.metaTextCol}>
                 <Text style={[styles.metaLabel, { color: colors.text.muted }]}>CAMPUS / SHOOT LOCATION</Text>
-                <Text style={[styles.metaValue, { color: isLocationPending ? colors.gold.light : colors.text.primary }]}>
+                <Text style={[styles.metaValue, { color: isLocationPending ? colors.gold.DEFAULT : colors.text.primary }]}>
                   {locationDisplay}
                 </Text>
                 <Text style={[styles.metaSubtext, { color: colors.text.muted }]}>
@@ -1029,8 +1184,15 @@ export default function BookingTrackerScreen({ route, navigation }) {
             </View>
 
             <View style={styles.metaRow}>
-              <PremiumIcon icon={Building2} size={15} box={34} tone="soft" />
-              <View style={{ flex: 1 }}>
+              <PremiumIcon
+                icon={Building2}
+                size={16}
+                box={38}
+                tone="soft"
+                iconColor={isDark ? colors.gold.light : colors.gold.DEFAULT}
+                style={styles.metaIconOffset}
+              />
+              <View style={styles.metaTextCol}>
                 <Text style={[styles.metaLabel, { color: colors.text.muted }]}>FLAGSHIP STUDIO</Text>
                 <Text style={[styles.metaValue, { color: colors.text.primary }]}>
                   {studioSettings.address}
@@ -1038,238 +1200,392 @@ export default function BookingTrackerScreen({ route, navigation }) {
               </View>
             </View>
           </View>
-
-          <View style={[styles.cardDivider, { backgroundColor: colors.gold.border }]} />
-
-          {/* 4. Action Button: Opens the dedicated section */}
-          <TouchableOpacity
-            style={[
-              styles.openDossierBtn,
-              {
-                backgroundColor: dossierOpen
-                  ? (isDark ? 'rgba(217, 180, 108, 0.16)' : 'rgba(176, 125, 30, 0.12)')
-                  : (isDark ? 'rgba(217, 180, 108, 0.08)' : 'rgba(176, 125, 30, 0.06)'),
-                borderColor: colors.gold.borderLight,
-              },
-            ]}
-            onPress={toggleDossierSection}
-            activeOpacity={0.8}
-          >
-            <View style={styles.openDossierLeft}>
-              <FileText size={17} color={colors.gold.DEFAULT} />
-              <View>
-                <Text style={[styles.openDossierTitle, { color: colors.text.primary }]}>
-                  {dossierOpen ? 'Hide Order & Student Dossier' : 'View Complete Order & Student Dossier'}
-                </Text>
-                <Text style={[styles.openDossierSub, { color: colors.text.muted }]}>
-                  Student verification · Set inclusions · Studio guarantees
-                </Text>
-              </View>
-            </View>
-            {dossierOpen ? (
-              <ChevronUp size={18} color={colors.gold.DEFAULT} />
-            ) : (
-              <ChevronDown size={18} color={colors.gold.DEFAULT} />
-            )}
-          </TouchableOpacity>
         </GlassCard>
 
-        {/* ── Dedicated Order & Student Dossier Section (Crafted UI Look) ── */}
-        {dossierOpen && (
-          <GlassCard glow highlight style={styles.dossierSectionCard}>
-            <View style={styles.dossierSectionHeader}>
-              <View style={styles.dossierHeaderLeft}>
-                <View style={[styles.dossierIconBox, { backgroundColor: colors.gold.bg, borderColor: colors.gold.borderLight }]}>
-                  <FileText size={18} color={colors.gold.DEFAULT} />
-                </View>
-                <View>
-                  <Text style={[styles.dossierSectionTitle, { color: colors.text.primary }]}>
-                    ORDER & STUDENT DOSSIER
-                  </Text>
-                  <Text style={[styles.dossierSectionSub, { color: colors.gold.light }]}>
-                    Verified Campus Record · Pass #{realBookingId}
-                  </Text>
-                </View>
-              </View>
+        {/* ── Studio Progress Timeline (Perimeter Edge Progress Tracker) ── */}
+        <View
+          style={styles.timelineCardWrap}
+          onLayout={(e) => {
+            const { width, height } = e.nativeEvent.layout;
+            setTimelineCardSize((prev) =>
+              Math.abs(prev.width - width) < 0.5 && Math.abs(prev.height - height) < 0.5
+                ? prev
+                : { width, height }
+            );
+          }}
+        >
+          <GlassCard opaque highlight style={styles.section}>
+            <View style={styles.timelineHeader}>
               <TouchableOpacity
-                onPress={() => setDossierOpen(false)}
-                style={[styles.dossierCloseBtn, { borderColor: colors.gold.border }]}
+                style={styles.sectionHeaderTitleWrap}
+                onPress={() => setStepperOpen(!stepperOpen)}
+                activeOpacity={0.75}
               >
-                <X size={15} color={colors.text.muted} />
+                <Text style={[styles.timelineKicker, { color: colors.gold.DEFAULT }]}>
+                  CLIENT PORTAL
+                </Text>
+                <Text
+                  style={[styles.timelineTitleMain, { color: colors.text.primary }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  Studio Progress
+                </Text>
+                <Text
+                  style={[
+                    styles.timelineTitleAccent,
+                    { color: isSage ? colors.accent.mint : isDark ? colors.gold.light : colors.gold.DEFAULT },
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  Timeline
+                </Text>
               </TouchableOpacity>
-            </View>
 
-            <View style={[styles.cardDivider, { backgroundColor: colors.gold.border }]} />
+              <View style={styles.timelineHeaderActions}>
+                <TouchableOpacity
+                  style={styles.timelineCircleBtn}
+                  onPress={() => {
+                    try {
+                      Haptics.selectionAsync().catch(() => { });
+                    } catch { }
+                    onRefresh();
+                  }}
+                  activeOpacity={0.75}
+                  accessibilityLabel="Refresh timeline"
+                >
+                  <RefreshCw size={15} color={colors.text.secondary} strokeWidth={2} />
+                </TouchableOpacity>
 
-            {/* Student Identification Grid (All DB-fetched) */}
-            <View style={styles.dossierGrid}>
-              <View style={styles.dossierItem}>
-                <Text style={[styles.dossierItemLabel, { color: colors.text.muted }]}>STUDENT NAME</Text>
-                <Text style={[styles.dossierItemValue, { color: colors.text.primary }]}>{studentName}</Text>
-              </View>
-
-              <View style={styles.dossierItem}>
-                <Text style={[styles.dossierItemLabel, { color: colors.text.muted }]}>STUDENT ID / BATCH</Text>
-                <Text style={[styles.dossierItemValue, { color: colors.text.primary }]}>
-                  #{studentIdNum} · {batchName}
-                </Text>
-              </View>
-
-              <View style={styles.dossierItem}>
-                <Text style={[styles.dossierItemLabel, { color: colors.text.muted }]}>SCHOOL & STRAND</Text>
-                <Text style={[styles.dossierItemValue, { color: colors.text.primary }]}>
-                  {schoolName} · {strandName} ({sectionName})
-                </Text>
-              </View>
-
-              {mottoText ? (
-                <View style={styles.dossierItem}>
-                  <Text style={[styles.dossierItemLabel, { color: colors.text.muted }]}>YEARBOOK MOTTO</Text>
-                  <Text style={[styles.dossierItemValue, { color: colors.gold.light, fontStyle: 'italic' }]}>
-                    "{mottoText}"
-                  </Text>
-                </View>
-              ) : null}
-
-              <View style={styles.dossierItem}>
-                <Text style={[styles.dossierItemLabel, { color: colors.text.muted }]}>CONTACT INFORMATION</Text>
-                <Text style={[styles.dossierItemValue, { color: colors.text.secondary }]}>
-                  {contactPhone} · {contactEmail}
-                </Text>
+                <TouchableOpacity
+                  style={styles.timelineCircleBtn}
+                  onPress={() => {
+                    try {
+                      Haptics.selectionAsync().catch(() => { });
+                    } catch { }
+                    setStepperOpen(!stepperOpen);
+                  }}
+                  activeOpacity={0.75}
+                  accessibilityLabel={stepperOpen ? 'Collapse timeline' : 'Expand timeline'}
+                >
+                  {stepperOpen ? (
+                    <ChevronUp size={16} color={colors.text.secondary} strokeWidth={2.2} />
+                  ) : (
+                    <ChevronDown size={16} color={colors.text.secondary} strokeWidth={2.2} />
+                  )}
+                </TouchableOpacity>
               </View>
             </View>
 
-            <View style={[styles.cardDivider, { backgroundColor: colors.gold.border }]} />
-
-            {/* Package Inclusions Breakdown (From DB) */}
-            <View style={{ marginTop: 4 }}>
-              <Text style={[styles.dossierItemLabel, { color: colors.text.muted, marginBottom: 8 }]}>
-                {selectedSetName.toUpperCase()} PRINTS & OUTPUT INCLUSIONS
-              </Text>
-              <View style={styles.inclusionsWrap}>
-                {tierHighlights.map((hl, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.inclusionChip,
-                      {
-                        backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-                        borderColor: colors.gold.border,
-                      },
-                    ]}
-                  >
-                    <CheckCircle2 size={13} color={colors.gold.DEFAULT} style={{ marginTop: 1 }} />
-                    <Text style={[styles.inclusionText, { color: colors.text.secondary }]}>
-                      {hl}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-
-            <View style={[styles.cardDivider, { backgroundColor: colors.gold.border }]} />
-
-            {/* Studio Flagship & Guarantees (Fetched from DB) */}
-            <View style={styles.studioInfoBox}>
-              <View style={styles.studioInfoRow}>
-                <MapPin size={14} color={colors.gold.DEFAULT} />
-                <Text style={[styles.studioInfoText, { color: colors.text.secondary }]}>
-                  Flagship Studio: {studioSettings.address}
-                </Text>
-              </View>
-              <View style={styles.studioInfoRow}>
-                <Phone size={14} color={colors.gold.DEFAULT} />
-                <Text style={[styles.studioInfoText, { color: colors.text.secondary }]}>
-                  Hotline: {studioSettings.contact_phone} ({studioSettings.business_hours})
-                </Text>
-              </View>
-            </View>
-          </GlassCard>
-        )}
-
-        {/* ── Studio Progress Timeline ── */}
-        <GlassCard highlight style={styles.section}>
-          <TouchableOpacity
-            style={styles.sectionHeader}
-            onPress={() => setStepperOpen(!stepperOpen)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.sectionHeaderLeft}>
-              <RefreshCw size={15} color={colors.gold.DEFAULT} />
-              <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Studio Progress Timeline</Text>
-            </View>
-            <PremiumIcon
-              icon={stepperOpen ? ChevronUp : ChevronDown}
-              size={14}
-              box={28}
-              tone="soft"
-            />
-          </TouchableOpacity>
-
-          {stepperOpen && (
-            <View>
-              {/* Progress summary */}
-              <View style={styles.progressSummary}>
-                <Text style={[styles.progressLabel, { color: colors.text.muted }]}>
-                  STEP {Math.min(liveStep + 1, totalSteps)} OF {totalSteps} · {progressPct}% COMPLETE
-                </Text>
-                <View style={[styles.progressTrack, { backgroundColor: 'rgba(127,127,140,0.18)' }]}>
-                  <View style={[styles.progressFill, { width: `${progressPct}%`, backgroundColor: colors.gold.DEFAULT }]} />
-                </View>
-              </View>
-
-              {/* Simple vs Interactive selector */}
+            {stepperOpen && (
               <View style={styles.segRow}>
                 <TouchableOpacity
                   onPress={() => switchTrackerMode('simple')}
-                  activeOpacity={0.8}
-                  accessibilityLabel="Simple Timeline"
+                  activeOpacity={0.85}
+                  accessibilityLabel="List view"
                   style={[
                     styles.segBtn,
                     trackerMode === 'simple' && styles.segBtnActive,
                   ]}
                 >
-                  <ListOrdered
-                    size={18}
-                    color={trackerMode === 'simple' ? colors.text.onGold : colors.text.secondary}
-                    strokeWidth={trackerMode === 'simple' ? 2.5 : 2}
+                  <List
+                    size={15}
+                    color={
+                      trackerMode === 'simple'
+                        ? colors.text.primary
+                        : isDark
+                          ? colors.text.secondary
+                          : isSage
+                            ? '#4F665B'
+                            : '#6B5836'
+                    }
+                    strokeWidth={2.2}
                   />
+                  <Text
+                    style={[
+                      styles.segBtnText,
+                      trackerMode === 'simple' && styles.segBtnTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    List view
+                  </Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   onPress={() => switchTrackerMode('interactive')}
-                  activeOpacity={0.8}
-                  accessibilityLabel="Interactive Tracker"
+                  activeOpacity={0.85}
+                  accessibilityLabel="Flow view"
                   style={[
                     styles.segBtn,
                     trackerMode === 'interactive' && styles.segBtnActive,
                   ]}
                 >
-                  <Route
-                    size={18}
-                    color={trackerMode === 'interactive' ? colors.text.onGold : colors.text.secondary}
-                    strokeWidth={trackerMode === 'interactive' ? 2.5 : 2}
+                  <GitBranch
+                    size={15}
+                    color={
+                      trackerMode === 'interactive'
+                        ? colors.text.primary
+                        : isDark
+                          ? colors.text.secondary
+                          : isSage
+                            ? '#4F665B'
+                            : '#6B5836'
+                    }
+                    strokeWidth={2.1}
                   />
+                  <Text
+                    style={[
+                      styles.segBtnText,
+                      trackerMode === 'interactive' && styles.segBtnTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Flow view
+                  </Text>
                 </TouchableOpacity>
               </View>
+            )}
 
-              {trackerMode === 'simple' ? (
-                <MilestoneStepper status={booking.status} />
+            {/* Frosted Scenery Progress Summary Card */}
+            <View
+              style={[
+                styles.progressStatusCard,
+                {
+                  backgroundColor: progressSceneryPalette.baseBg,
+                  borderColor: progressSceneryPalette.borderColor,
+                },
+                !stepperOpen && styles.progressStatusCardCollapsed,
+              ]}
+            >
+              {/* Scenery backdrop reflecting real progress sun/horizon */}
+              <Svg
+                viewBox="0 0 360 132"
+                preserveAspectRatio="xMidYMid slice"
+                pointerEvents="none"
+                style={StyleSheet.absoluteFill}
+              >
+                <Defs>
+                  <SvgLinearGradient id="progressSkyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <Stop offset="0%" stopColor={progressSceneryPalette.skyTop} />
+                    <Stop offset="55%" stopColor={progressSceneryPalette.skyMid} />
+                    <Stop offset="100%" stopColor={progressSceneryPalette.skyGlow} />
+                  </SvgLinearGradient>
+                  <RadialGradient
+                    id="progressSunGlow"
+                    cx={`${Math.round((scenerySunX / 360) * 100)}%`}
+                    cy={`${Math.round((scenerySunY / 132) * 100)}%`}
+                    r="46%"
+                  >
+                    <Stop offset="0%" stopColor={progressSceneryPalette.sunCore} stopOpacity="0.94" />
+                    <Stop offset="36%" stopColor={progressSceneryPalette.sunAura} stopOpacity="0.54" />
+                    <Stop offset="100%" stopColor={progressSceneryPalette.skyMid} stopOpacity="0" />
+                  </RadialGradient>
+                  <SvgLinearGradient id="progressMistGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0" />
+                    <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.22" />
+                  </SvgLinearGradient>
+                </Defs>
+
+                <Rect x="0" y="0" width="360" height="132" fill="url(#progressSkyGrad)" />
+                <Circle cx={scenerySunX} cy={scenerySunY} r="84" fill="url(#progressSunGlow)" />
+                <Circle
+                  cx={scenerySunX}
+                  cy={scenerySunY}
+                  r="14"
+                  fill={progressSceneryPalette.sunCore}
+                  fillOpacity="0.74"
+                />
+
+                {/* Woodland lightbeams filtering through pines */}
+                <Path
+                  d={`M ${scenerySunX - 24} ${Math.max(8, scenerySunY - 12)} L ${scenerySunX + 24} ${Math.max(8, scenerySunY - 12)} L ${scenerySunX - 42} 132 L ${scenerySunX - 106} 132 Z`}
+                  fill={progressSceneryPalette.sunCore}
+                  fillOpacity="0.10"
+                />
+
+                {/* Soft forest sky bokeh */}
+                <Circle cx="246" cy="24" r="8" fill={progressSceneryPalette.sunAura} fillOpacity="0.22" />
+                <Circle cx="326" cy="46" r="6" fill="#FFFFFF" fillOpacity="0.20" />
+
+                {/* Distant misty pine treeline */}
+                {PROGRESS_FOREST_TREES.far.map(([cx, topY, baseY, hw], i) => (
+                  <Path
+                    key={`far-${i}`}
+                    d={buildPineTreePath(cx, topY, baseY, hw)}
+                    fill={progressSceneryPalette.hillFar}
+                    fillOpacity="0.62"
+                  />
+                ))}
+                <Path
+                  d="M0 98 Q 90 88 184 96 T 360 88 L 360 132 L 0 132 Z"
+                  fill={progressSceneryPalette.hillFar}
+                  fillOpacity="0.55"
+                />
+
+                {/* Drifting woodland valley mist */}
+                <Rect x="0" y="56" width="360" height="44" fill="url(#progressMistGrad)" />
+
+                {/* Mid pine canopy silhouettes */}
+                {PROGRESS_FOREST_TREES.mid.map(([cx, topY, baseY, hw], i) => (
+                  <Path
+                    key={`mid-${i}`}
+                    d={buildPineTreePath(cx, topY, baseY, hw)}
+                    fill={progressSceneryPalette.hillMid}
+                    fillOpacity="0.82"
+                  />
+                ))}
+                <Path
+                  d="M0 112 Q 110 100 220 108 T 360 96 L 360 132 L 0 132 Z"
+                  fill={progressSceneryPalette.hillMid}
+                  fillOpacity="0.84"
+                />
+
+                {/* Foreground framing pines & forest floor */}
+                {PROGRESS_FOREST_TREES.near.map(([cx, topY, baseY, hw], i) => (
+                  <Path
+                    key={`near-${i}`}
+                    d={buildPineTreePath(cx, topY, baseY, hw)}
+                    fill={progressSceneryPalette.hillNear}
+                    fillOpacity="0.96"
+                  />
+                ))}
+                <Path
+                  d="M0 120 Q 120 112 240 116 T 360 108 L 360 132 L 0 132 Z"
+                  fill={progressSceneryPalette.hillNear}
+                  fillOpacity="0.98"
+                />
+              </Svg>
+
+              {/* Frosted glass blur + gradual contrast veil */}
+              {Platform.OS === 'ios' && (
+                <BlurView
+                  intensity={24}
+                  tint={isDark ? 'dark' : 'light'}
+                  pointerEvents="none"
+                  style={StyleSheet.absoluteFill}
+                />
+              )}
+              <LinearGradient
+                colors={progressSceneryPalette.scrim}
+                start={{ x: 0, y: 0.2 }}
+                end={{ x: 1, y: 0.8 }}
+                pointerEvents="none"
+                style={StyleSheet.absoluteFill}
+              />
+              <LinearGradient
+                colors={['rgba(255, 255, 255, 0.28)', 'rgba(255, 255, 255, 0)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                pointerEvents="none"
+                style={styles.progressFrostSheen}
+              />
+
+              <View style={styles.progressCardTopRow}>
+                <View style={styles.progressCountWrap}>
+                  <View style={styles.progressHeadlineRow}>
+                    <Text style={styles.progressCountNum}>
+                      {completedStepsCount}
+                    </Text>
+                    <Text style={styles.progressCountOf}>
+                      {' '}of {totalSteps} complete
+                    </Text>
+                  </View>
+                  <Text style={styles.progressStatusDesc} numberOfLines={2}>
+                    {statusProgressMessage}
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.progressPctPill,
+                    isTerminalNegative && {
+                      backgroundColor: 'rgba(224, 71, 90, 0.30)',
+                      borderColor: 'rgba(255, 175, 185, 0.48)',
+                    },
+                  ]}
+                >
+                  <Text style={styles.progressPctText}>
+                    {progressPct}%
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.progressBarTrack}>
+                {progressPct > 0 && (
+                  <LinearGradient
+                    colors={
+                      isTerminalNegative
+                        ? ['#FDA4AF', '#E11D48']
+                        : ['#9CF7CD', '#FFFFFF']
+                    }
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[styles.progressBarFill, { width: `${progressPct}%` }]}
+                  />
+                )}
+              </View>
+            </View>
+
+            {stepperOpen && (
+              trackerMode === 'simple' ? (
+                <MilestoneStepper status={booking.status} booking={booking} />
               ) : (
                 <InteractiveTracker status={booking.status} booking={booking} />
-              )}
-            </View>
-          )}
-        </GlassCard>
+              )
+            )}
+          </GlassCard>
 
-        {/* ── Studio Bay Assistance & Pass Actions Dock (Replacing former repetitive card) ── */}
-        <GlassCard highlight style={styles.assistanceCard}>
+          {borderMetrics && (
+            <Svg
+              width={borderMetrics.w}
+              height={borderMetrics.h}
+              pointerEvents="none"
+              style={styles.timelineBorderSvg}
+            >
+              <Defs>
+                <SvgLinearGradient id="timelineBorderProgressGrad" x1="50%" y1="0%" x2="100%" y2="100%">
+                  <Stop offset="0%" stopColor={colors.accent.mint} />
+                  <Stop offset="100%" stopColor={colors.gold.DEFAULT} />
+                </SvgLinearGradient>
+              </Defs>
+              {/* Soft outer highlight along completed border segment */}
+              <Path
+                d={borderMetrics.d}
+                fill="none"
+                stroke={progressRatio >= 1 ? colors.accent.mint : colors.gold.DEFAULT}
+                strokeWidth={borderMetrics.sw + 3}
+                strokeOpacity={isDark ? 0.22 : 0.16}
+                strokeDasharray={`${borderMetrics.perimeter} ${borderMetrics.perimeter}`}
+                strokeDashoffset={borderMetrics.dashOffset}
+                strokeLinecap="round"
+              />
+              {/* Crisp glowing edge progress line */}
+              <Path
+                d={borderMetrics.d}
+                fill="none"
+                stroke={progressRatio >= 1 ? colors.accent.mint : 'url(#timelineBorderProgressGrad)'}
+                strokeWidth={borderMetrics.sw}
+                strokeDasharray={`${borderMetrics.perimeter} ${borderMetrics.perimeter}`}
+                strokeDashoffset={borderMetrics.dashOffset}
+                strokeLinecap="round"
+              />
+            </Svg>
+          )}
+        </View>
+
+        {/* ── Studio Bay Check-In & Assistance ── */}
+        <GlassCard opaque highlight style={styles.assistanceCard}>
           <View style={styles.assistanceHeader}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.assistanceTitle, { color: colors.text.primary }]}>
                 Studio Bay Check-In & Assistance
               </Text>
               <Text style={[styles.assistanceSubtitle, { color: colors.text.secondary }]}>
-                Present your official pass at the E-Kodak reception desk or contact the studio bay.
+                Message E-Kodak directly via Gmail or call the studio bay.
               </Text>
             </View>
           </View>
@@ -1279,13 +1595,23 @@ export default function BookingTrackerScreen({ route, navigation }) {
               activeOpacity={0.85}
               style={[
                 styles.dockActionBtn,
-                { backgroundColor: colors.gold.bg, borderColor: colors.gold.DEFAULT },
+                {
+                  backgroundColor: isDark ? '#252118' : isSage ? '#E9EFE6' : '#FBF4E5',
+                  borderColor: colors.gold.DEFAULT,
+                  borderBottomColor: isDark ? 'rgba(0, 0, 0, 0.50)' : isSage ? '#58694B' : '#966A17',
+                },
               ]}
-              onPress={() => setShowQRModal(true)}
+              onPress={handleMessageGmail}
+              accessibilityLabel="Message E-Kodak via Gmail"
             >
-              <QrCode size={18} color={isDark ? colors.gold.light : colors.gold.dark} />
-              <Text style={[styles.dockActionBtnText, { color: isDark ? colors.gold.light : colors.gold.dark }]}>
-                View Studio Pass
+              <Mail size={17} color={isDark ? colors.gold.light : colors.gold.dark} strokeWidth={2.1} />
+              <Text
+                style={[styles.dockActionBtnText, { color: isDark ? colors.gold.light : colors.text.primary }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                Message Gmail
               </Text>
             </TouchableOpacity>
 
@@ -1294,26 +1620,24 @@ export default function BookingTrackerScreen({ route, navigation }) {
               style={[
                 styles.dockActionBtn,
                 {
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                  borderColor: colors.gold.border,
+                  backgroundColor: isDark ? '#212735' : '#F6F8F7',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : '#D5E0D9',
+                  borderBottomColor: isDark ? 'rgba(0, 0, 0, 0.50)' : '#BFCFC5',
                 },
               ]}
-              onPress={() => Linking.openURL('tel:09102949414')}
+              onPress={handleCallStudio}
+              accessibilityLabel="Call Studio Bay"
             >
-              <Phone size={17} color={colors.gold.DEFAULT} />
-              <Text style={[styles.dockActionBtnText, { color: colors.text.primary }]}>
+              <Phone size={17} color={isDark ? colors.accent.mint : '#2F6F52'} strokeWidth={2.1} />
+              <Text
+                style={[styles.dockActionBtnText, { color: colors.text.primary }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
                 Call Studio Bay
               </Text>
             </TouchableOpacity>
-          </View>
-
-          <View style={[styles.cardDivider, { backgroundColor: colors.gold.border, marginVertical: 10 }]} />
-
-          <View style={styles.studioInfoFooter}>
-            <MapPin size={13} color={colors.gold.DEFAULT} />
-            <Text style={[styles.studioInfoText, { color: colors.text.muted }]}>
-              Main Studio: 311 Rizal Ave, Cebu City · 9:00 AM – 7:00 PM Daily
-            </Text>
           </View>
         </GlassCard>
 
@@ -1363,7 +1687,7 @@ export default function BookingTrackerScreen({ route, navigation }) {
                 Student: {studentName}
               </Text>
               <Text style={[styles.modalMetaLine, { color: colors.text.secondary }]}>
-                {selectedSetName} · {cleanPackageName}
+                {selectedSetName} · {selectedPackageName}
               </Text>
               <Text style={[styles.modalMetaLine, { color: colors.gold.light }]}>
                 {scheduleDisplay}
@@ -1448,7 +1772,7 @@ const stylesLocal = StyleSheet.create({
   },
 });
 
-const getStyles = (colors, isDark) => StyleSheet.create({
+const getStyles = (colors, isDark, isSage) => StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg.base },
 
   headerTitle: {
@@ -1466,43 +1790,6 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-
-  // Sticky Order State Bar
-  stickyStateBarWrap: {
-    position: 'absolute',
-    top: 96,
-    left: Spacing[4],
-    right: Spacing[4],
-    zIndex: 99,
-  },
-  stickyStateBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: Radius.xl,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  stickyCenterInfo: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stickySetText: {
-    fontFamily: Typography.fontHeadingSemi,
-    fontSize: 14,
-    letterSpacing: 0.3,
-  },
-  stickyIdText: {
-    fontFamily: Typography.fontBodyBold,
-    fontSize: 9.5,
-    letterSpacing: 0.8,
   },
 
   // Open Dossier Button
@@ -1591,13 +1878,15 @@ const getStyles = (colors, isDark) => StyleSheet.create({
 
   scroll: { flex: 1, zIndex: 1 },
   scrollContent: {
-    padding: Spacing[4],
-    gap: Spacing[4],
+    paddingHorizontal: Spacing[4],
+    paddingTop: Spacing[1],
+    gap: Spacing[3] + 2,
   },
 
-  // Hero Dossier Card
+  // Hero Package Card
   heroCard: {
-    padding: Spacing[5],
+    paddingHorizontal: Spacing[5],
+    paddingVertical: Spacing[4] + 2,
     borderRadius: Radius['2xl'],
   },
   cardHeaderRow: {
@@ -1621,39 +1910,38 @@ const getStyles = (colors, isDark) => StyleSheet.create({
   cardDivider: {
     height: StyleSheet.hairlineWidth,
     marginVertical: Spacing[3] + 2,
-    opacity: 0.45,
+    opacity: 0.55,
   },
 
   // Selected Set Hero
   setHeroSection: {
-    gap: 3,
+    gap: 5,
   },
   microHeader: {
     fontFamily: Typography.fontBodyBold,
-    fontSize: 9.5,
-    letterSpacing: 1.4,
+    fontSize: 10.5,
+    letterSpacing: 1.35,
   },
   setRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
     justifyContent: 'space-between',
+    gap: 12,
     marginTop: 2,
   },
   selectedSetTitle: {
+    flexShrink: 1,
     fontFamily: Typography.fontHeading,
-    fontSize: 27,
-    letterSpacing: 0.3,
+    fontSize: 33,
+    lineHeight: 38,
+    letterSpacing: -0.2,
   },
-  priceBadge: {
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-  },
-  priceBadgeText: {
-    fontFamily: Typography.fontBodyBold,
-    fontSize: Typography.size.sm,
-    letterSpacing: 0.4,
+  heroPriceValue: {
+    fontFamily: Typography.fontHeading,
+    fontSize: 25,
+    lineHeight: 30,
+    letterSpacing: -0.3,
+    textAlign: 'right',
   },
   packageNameText: {
     fontFamily: Typography.fontBodyMedium,
@@ -1664,18 +1952,24 @@ const getStyles = (colors, isDark) => StyleSheet.create({
 
   // Metadata Stack
   metadataStack: {
-    gap: Spacing[3],
+    gap: Spacing[3] + 2,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
   },
+  metaIconOffset: {
+    marginTop: 1,
+  },
+  metaTextCol: {
+    flex: 1,
+    gap: 2,
+  },
   metaLabel: {
     fontFamily: Typography.fontBodyBold,
-    fontSize: 9,
-    letterSpacing: 1.1,
-    marginBottom: 1,
+    fontSize: 9.5,
+    letterSpacing: 1.05,
   },
   metaValue: {
     fontFamily: Typography.fontBodySemi,
@@ -1684,8 +1978,8 @@ const getStyles = (colors, isDark) => StyleSheet.create({
   },
   metaSubtext: {
     fontFamily: Typography.fontBody,
-    fontSize: 10.5,
-    lineHeight: 15,
+    fontSize: 11,
+    lineHeight: 16,
     marginTop: 1,
   },
 
@@ -1732,6 +2026,15 @@ const getStyles = (colors, isDark) => StyleSheet.create({
   },
 
   // Timeline section
+  timelineCardWrap: {
+    position: 'relative',
+  },
+  timelineBorderSvg: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    zIndex: 6,
+  },
   section: {
     padding: Spacing[5],
     borderRadius: Radius['2xl'],
@@ -1742,6 +2045,57 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: Spacing[3],
   },
+  timelineHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  sectionHeaderTitleWrap: {
+    flex: 1,
+    paddingRight: 4,
+  },
+  timelineKicker: {
+    fontFamily: Typography.fontBodyBold,
+    fontSize: 10.5,
+    letterSpacing: 1.5,
+    marginBottom: 4,
+  },
+  timelineTitleMain: {
+    fontFamily: Typography.fontHeading,
+    fontSize: 25,
+    lineHeight: 29,
+    letterSpacing: -0.3,
+  },
+  timelineTitleAccent: {
+    fontFamily: Typography.fontHeading,
+    fontSize: 25,
+    lineHeight: 29,
+    letterSpacing: -0.3,
+  },
+  timelineHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 2,
+  },
+  timelineCircleBtn: {
+    width: 39,
+    height: 39,
+    borderRadius: 19.5,
+    borderWidth: 1,
+    borderBottomWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: isDark ? '#232938' : isSage ? '#F6F9F7' : '#FAF7F1',
+    borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : isSage ? '#D5E0D9' : '#E4DAC7',
+    borderBottomColor: isDark ? 'rgba(0, 0, 0, 0.45)' : isSage ? '#BFCFC5' : '#CBBBA0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDark ? 0.25 : 0.08,
+    shadowRadius: 5,
+    elevation: 2,
+  },
   sectionHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1751,45 +2105,149 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     fontFamily: Typography.fontHeadingSemi,
     fontSize: Typography.size.base,
   },
-  progressSummary: {
-    gap: 8,
-    marginBottom: Spacing[3],
-  },
-  progressLabel: {
-    fontFamily: Typography.fontBodySemi,
-    fontSize: 10,
-    letterSpacing: 1.2,
-  },
-  progressTrack: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: 6,
-    borderRadius: 3,
-  },
   segRow: {
     flexDirection: 'row',
-    alignSelf: 'center',
-    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+    alignItems: 'center',
+    width: '100%',
+    backgroundColor: isDark ? '#1A1D28' : isSage ? '#DCE8DF' : '#EFE9DD',
     borderRadius: Radius.full,
-    padding: 3,
     borderWidth: 1,
-    borderColor: isDark ? 'rgba(212, 175, 55, 0.2)' : 'rgba(212, 175, 55, 0.25)',
+    borderColor: isDark ? 'rgba(217, 180, 108, 0.16)' : isSage ? '#CEE0D5' : '#DFD4BF',
+    padding: 4,
+    marginTop: Spacing[4],
     marginBottom: Spacing[4],
     gap: 4,
   },
   segBtn: {
-    width: 52,
-    height: 34,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  segBtnActive: {
+    backgroundColor: isDark ? '#242938' : '#FFFFFF',
+    borderColor: isDark ? 'rgba(217, 180, 108, 0.28)' : isSage ? '#D3E2D8' : '#DFD4BF',
+    borderBottomWidth: 1.5,
+    borderBottomColor: isDark ? 'rgba(0, 0, 0, 0.48)' : isSage ? '#BACFC2' : '#C5B495',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDark ? 0.24 : 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  segBtnText: {
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: 13,
+    color: isDark ? colors.text.secondary : isSage ? '#4F665B' : '#6B5836',
+  },
+  segBtnTextActive: {
+    fontFamily: Typography.fontBodySemi,
+    color: colors.text.primary,
+  },
+  progressStatusCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingVertical: 19,
+    paddingHorizontal: 19,
+    marginBottom: Spacing[5],
+    gap: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: isDark ? 0.30 : 0.16,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  progressFrostSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 26,
+  },
+  progressStatusCardCollapsed: {
+    marginTop: Spacing[4],
+    marginBottom: 0,
+  },
+  progressCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  progressCountWrap: {
+    flex: 1,
+    gap: 4,
+  },
+  progressHeadlineRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  progressCountNum: {
+    fontFamily: Typography.fontHeading,
+    fontSize: 29,
+    lineHeight: 33,
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.30)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  progressCountOf: {
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: 17,
+    lineHeight: 22,
+    color: 'rgba(255, 255, 255, 0.88)',
+    textShadowColor: 'rgba(0, 0, 0, 0.25)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  progressStatusDesc: {
+    fontFamily: Typography.fontBodyMedium,
+    fontSize: 14,
+    lineHeight: 19,
+    color: 'rgba(255, 255, 255, 0.92)',
+    textShadowColor: 'rgba(0, 0, 0, 0.25)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  progressPctPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    borderColor: 'rgba(255, 255, 255, 0.38)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  segBtnActive: {
-    backgroundColor: colors.gold.DEFAULT,
-    elevation: 2,
+  progressPctText: {
+    fontFamily: Typography.fontBodyBold,
+    fontSize: 15.5,
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.22)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  progressBarTrack: {
+    height: 10,
+    borderRadius: 5,
+    width: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    borderWidth: 0.75,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 5,
+    minWidth: 10,
   },
 
   // Assistance Dock
@@ -1823,25 +2281,21 @@ const getStyles = (colors, isDark) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 11,
-    paddingHorizontal: 12,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    borderRadius: Radius.full,
+    borderWidth: 1.2,
+    borderBottomWidth: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: isDark ? 0.24 : 0.06,
+    shadowRadius: 5,
+    elevation: 2,
   },
   dockActionBtnText: {
     fontFamily: Typography.fontBodyBold,
-    fontSize: Typography.size.xs + 1,
-    letterSpacing: 0.4,
-  },
-  studioInfoFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    justifyContent: 'center',
-  },
-  studioInfoText: {
-    fontFamily: Typography.fontBody,
-    fontSize: 10.5,
+    fontSize: 13,
+    letterSpacing: 0.2,
   },
 
   // Delivery

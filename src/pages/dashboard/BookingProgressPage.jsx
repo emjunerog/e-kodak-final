@@ -60,11 +60,11 @@ export default function BookingProgressPage() {
     }
   }, [outletContext?.bookings]);
 
-  const loadData = React.useCallback(async () => {
+  const loadData = React.useCallback(async (forceRefresh = true) => {
     if (!user) return;
     try {
       setError(null);
-      const { data, error: bErr } = await getCustomerBookings(user.id);
+      const { data, error: bErr } = await getCustomerBookings(user.id, { forceRefresh });
       if (bErr) {
         setError(bErr);
       } else {
@@ -88,7 +88,13 @@ export default function BookingProgressPage() {
       setBookings(initialBookings);
       setLoading(false);
     }
-    loadData();
+    loadData(true);
+
+    const handleBookingsUpdated = () => loadData(true);
+    window.addEventListener('ekodak_bookings_updated', handleBookingsUpdated);
+    return () => {
+      window.removeEventListener('ekodak_bookings_updated', handleBookingsUpdated);
+    };
   }, [user?.id, loadData]);
 
   // Active Selected Booking
@@ -97,43 +103,35 @@ export default function BookingProgressPage() {
     return bookings.find(b => b.id.toString() === selectedBookingId?.toString()) || bookings[0];
   }, [bookings, selectedBookingId]);
 
-  // Determine if admin has finished scheduling and confirming session
+  // Determine if admin has approved & confirmed the session
   const isSessionScheduledAndConfirmed = useMemo(() => {
     if (!activeBooking) return false;
     const s = (activeBooking.status || 'PENDING').toUpperCase();
-    if (['REJECTED', 'CANCELLED', 'PENDING', 'RESERVED'].includes(s)) return false;
-    if (s === 'CONFIRMED' || s === 'PHOTOGRAPHER_ASSIGNED') {
-      return Boolean(activeBooking.event_date && activeBooking.preferred_time);
-    }
-    return true; // CAPTURE, EDITING, RETOUCHING, FINALIZED, PRINTING, READY, UNDER_DELIVERY, COMPLETED
+    return !['REJECTED', 'CANCELLED', 'PENDING', 'RESERVED'].includes(s);
   }, [activeBooking]);
 
-  // Compute overall progress metrics across 7 stages with realistic percentage measurement
+  // Compute overall progress metrics across 8 stages matching studio status pipeline
   const progressStage = useMemo(() => {
-    if (!activeBooking) return { stage: 1, pct: 10, isAwaitingSchedule: false };
+    if (!activeBooking) return { stage: 1, pct: 12, isCompleted: false };
     const s = (activeBooking.status || 'PENDING').toUpperCase();
 
-    if (s === 'REJECTED' || s === 'CANCELLED') return { stage: 1, pct: 0, isAwaitingSchedule: false };
-    if (s === 'COMPLETED') return { stage: 7, pct: 100, isAwaitingSchedule: false };
-    if (s === 'READY' || s === 'UNDER_DELIVERY') return { stage: 7, pct: 95, isAwaitingSchedule: false };
-    if (s === 'FINALIZED' || s === 'PRINTING') return { stage: 6, pct: 85, isAwaitingSchedule: false };
-    if (s === 'RETOUCHING') return { stage: 5, pct: 70, isAwaitingSchedule: false };
-    if (s === 'EDITING') return { stage: 4, pct: 55, isAwaitingSchedule: false };
-    if (s === 'CAPTURE' || s === 'IN_PROGRESS') return { stage: 3, pct: 40, isAwaitingSchedule: false };
+    if (s === 'REJECTED' || s === 'CANCELLED') return { stage: 1, pct: 0, isCompleted: false };
+    if (s === 'COMPLETED') return { stage: 8, pct: 100, isCompleted: true };
+    if (s === 'READY' || s === 'UNDER_DELIVERY') return { stage: 8, pct: 95, isCompleted: false };
+    if (s === 'FINALIZED' || s === 'PRINTING') return { stage: 7, pct: 88, isCompleted: false };
+    if (s === 'RETOUCHING') return { stage: 6, pct: 75, isCompleted: false };
+    if (s === 'EDITING') return { stage: 5, pct: 62, isCompleted: false };
+    if (s === 'CAPTURE' || s === 'IN_PROGRESS') return { stage: 4, pct: 50, isCompleted: false };
+    if (s === 'PHOTOGRAPHER_ASSIGNED') return { stage: 3, pct: 38, isCompleted: false };
+    if (s === 'CONFIRMED') return { stage: 2, pct: 25, isCompleted: false };
 
-    // Stage 2 (Confirmed & Reserved) requires confirmed schedule
-    if (isSessionScheduledAndConfirmed) {
-      if (s === 'PHOTOGRAPHER_ASSIGNED') return { stage: 2, pct: 25, isAwaitingSchedule: false };
-      return { stage: 2, pct: 20, isAwaitingSchedule: false };
-    }
-
-    // Step 2 is in progress: Admin is coordinating schedule (10% real measurement for 2 initial updates)
+    // Stage 1: Booking Received (PENDING / RESERVED)
     return {
       stage: 1,
-      pct: 10,
-      isAwaitingSchedule: true
+      pct: 12,
+      isCompleted: false,
     };
-  }, [activeBooking, isSessionScheduledAndConfirmed]);
+  }, [activeBooking]);
 
   // Financial breakdown & downpayment state
   const financialInfo = useMemo(() => {
@@ -150,76 +148,82 @@ export default function BookingProgressPage() {
     return { totalAmount, downPaid, remBalance, needsDownpayment, downRequired };
   }, [activeBooking, isSessionScheduledAndConfirmed, progressStage.stage]);
 
-  // 7-step timeline matching the reference design exactly
+  // 8-step timeline matching the unified 8-stage studio pipeline
   const timelineSteps = useMemo(() => {
     if (!activeBooking) return [];
 
+    const rawStatus = (activeBooking.status || 'PENDING').toUpperCase();
     const isDelivery = Boolean(
       activeBooking.delivery_address ||
       activeBooking.fulfillment_type === 'DELIVERY' ||
-      activeBooking.status === 'UNDER_DELIVERY' ||
+      rawStatus === 'UNDER_DELIVERY' ||
       profile?.studio_specs?.fulfillment_mode === 'DELIVERY'
     );
 
     const s = progressStage.stage;
+    const isOrderCompleted = progressStage.isCompleted || rawStatus === 'COMPLETED';
+    const photographerName = activeBooking.photographer?.profile
+      ? `${activeBooking.photographer.profile.first_name || ''} ${activeBooking.photographer.profile.last_name || ''}`.trim()
+      : (activeBooking.photographer?.name || '');
 
-    // Step state calculation
     const getStepState = (stepNumber) => {
-      if (progressStage.isAwaitingSchedule) {
-        if (stepNumber === 1) return 'COMPLETED';
-        if (stepNumber === 2) return 'CURRENT';
-        return 'UPCOMING';
-      }
+      if (isOrderCompleted) return 'COMPLETED';
       if (stepNumber < s) return 'COMPLETED';
       if (stepNumber === s) return 'CURRENT';
       return 'UPCOMING';
     };
 
-    const createdFormatted = activeBooking.created_at ? fmtShortDate(activeBooking.created_at) : 'Oct 4';
+    const createdFormatted = activeBooking.created_at ? fmtShortDate(activeBooking.created_at) : 'Logged';
     const eventFormatted = activeBooking.event_date ? fmtShortDate(activeBooking.event_date) : (isSessionScheduledAndConfirmed ? 'Confirmed' : 'Pending');
 
     return [
       {
         num: 1,
-        title: 'Booking received',
+        title: 'Booking Received',
         subtitle: createdFormatted,
         state: getStepState(1),
       },
       {
         num: 2,
-        title: 'Schedule',
-        subtitle: progressStage.isAwaitingSchedule ? 'In progress' : (isSessionScheduledAndConfirmed ? 'Confirmed' : 'Pending'),
+        title: 'Approved & Reserved',
+        subtitle: s > 2 ? 'Approved' : s === 2 ? eventFormatted : 'Pending approval',
         state: getStepState(2),
       },
       {
         num: 3,
-        title: 'Reserved',
-        subtitle: isSessionScheduledAndConfirmed ? eventFormatted : 'Pending',
+        title: 'Photographer Assigned',
+        subtitle: photographerName || (s > 3 ? 'Assigned' : s === 3 ? 'Assigned' : 'Pending'),
         state: getStepState(3),
       },
       {
         num: 4,
-        title: 'Pictorial',
-        subtitle: 'Shoot day',
+        title: 'Ongoing Pictorial',
+        subtitle: s > 4 ? 'Completed' : s === 4 ? 'In studio bay' : eventFormatted,
         state: getStepState(4),
       },
       {
         num: 5,
         title: 'Editing',
-        subtitle: 'Studio edit',
+        subtitle: s > 5 ? 'Completed' : s === 5 ? 'In progress' : 'Color & curation',
         state: getStepState(5),
       },
       {
         num: 6,
-        title: 'Finalizing',
-        subtitle: 'Print & pack',
+        title: 'Retouching',
+        subtitle: s > 6 ? 'Completed' : s === 6 ? 'In progress' : 'Fine-art polish',
         state: getStepState(6),
       },
       {
         num: 7,
-        title: 'Ready',
-        subtitle: isDelivery ? 'Delivery' : 'Pickup',
+        title: 'Booking Finalized',
+        subtitle: s > 7 ? 'Completed' : s === 7 ? 'Print & pack' : 'Print lab',
         state: getStepState(7),
+      },
+      {
+        num: 8,
+        title: isOrderCompleted ? 'Completed' : (isDelivery ? 'Under Delivery' : 'Ready for Pickup'),
+        subtitle: isOrderCompleted ? 'Fulfilled' : (isDelivery ? 'Direct courier' : 'Studio pickup'),
+        state: getStepState(8),
       },
     ];
   }, [activeBooking, progressStage, isSessionScheduledAndConfirmed, profile]);
@@ -229,9 +233,9 @@ export default function BookingProgressPage() {
     if (!activeBooking) {
       return {
         badge: '01',
-        headline: <>Your shoot is being<br className="hidden sm:inline" /> scheduled.</>,
-        title: 'Awaiting schedule confirmation',
-        desc: "Our studio team is coordinating your pictorial date. You'll receive an app notification as soon as it is confirmed.",
+        headline: <>Your booking has<br className="hidden sm:inline" /> been received.</>,
+        title: 'Awaiting studio review & approval',
+        desc: "Your booking and payment details have been received. Our studio team will verify and approve your reservation shortly.",
       };
     }
 
@@ -242,98 +246,115 @@ export default function BookingProgressPage() {
       s === 'UNDER_DELIVERY' ||
       profile?.studio_specs?.fulfillment_mode === 'DELIVERY'
     );
+    const photographerName = activeBooking.photographer?.profile
+      ? `${activeBooking.photographer.profile.first_name || ''} ${activeBooking.photographer.profile.last_name || ''}`.trim()
+      : (activeBooking.photographer?.name || '');
 
-    // 1. Awaiting admin schedule & session confirmation
-    if (progressStage.isAwaitingSchedule) {
+    // 1. Stage 1: Booking Received (PENDING / RESERVED)
+    if (s === 'PENDING' || s === 'RESERVED') {
+      return {
+        badge: '01',
+        headline: <>Your booking has<br className="hidden sm:inline" /> been received.</>,
+        title: 'Awaiting studio approval & payment verification',
+        desc: "Your reservation and payment details have been logged. Our studio administrator will confirm your payment and approve your slot shortly.",
+      };
+    }
+
+    // 2. Stage 2: Approved & Reserved
+    if (s === 'CONFIRMED') {
       return {
         badge: '02',
-        headline: <>Your shoot is being<br className="hidden sm:inline" /> scheduled.</>,
-        title: 'Awaiting schedule confirmation',
-        desc: "Our studio team is coordinating your pictorial date. You'll receive an app notification as soon as it is confirmed.",
+        headline: <>Your session is approved<br className="hidden sm:inline" /> & reserved.</>,
+        title: 'Booking approved & slot reserved',
+        desc: 'Your payment has been confirmed and your pictorial session is officially reserved. Our studio team is assigning your lead photographer.',
       };
     }
 
-    // 2. Confirmed & Reserved
-    if (s === 'CONFIRMED' || s === 'PHOTOGRAPHER_ASSIGNED') {
-      const photographerName = activeBooking.photographer?.profile
-        ? `${activeBooking.photographer.profile.first_name || ''} ${activeBooking.photographer.profile.last_name || ''}`.trim()
-        : (activeBooking.photographer?.name || '');
-      const withPhotographer = photographerName ? ` with ${photographerName}` : '';
-
+    // 3. Stage 3: Photographer Assigned
+    if (s === 'PHOTOGRAPHER_ASSIGNED') {
       return {
         badge: '03',
-        headline: <>Your session is confirmed<br className="hidden sm:inline" /> & reserved.</>,
-        title: 'Pictorial approved & reserved',
-        desc: `Your studio pictorial session is officially reserved${withPhotographer}. Prepare your wardrobe, graduation toga, and visual pegs.`,
+        headline: <>Your lead photographer<br className="hidden sm:inline" /> is assigned.</>,
+        title: photographerName ? `Photographer assigned: ${photographerName}` : 'Lead photographer assigned',
+        desc: `Your order has been assigned to a studio photographer${photographerName ? ` (${photographerName})` : ''}. Prepare your wardrobe, graduation toga, and visual pegs for shoot day.`,
       };
     }
 
-    // 3. Ongoing Pictorial
+    // 4. Stage 4: Ongoing Pictorial
     if (s === 'CAPTURE' || s === 'IN_PROGRESS') {
       return {
         badge: '04',
         headline: <>Your pictorial is<br className="hidden sm:inline" /> underway.</>,
-        title: 'Studio pictorial in session',
+        title: 'Ongoing pictorial in studio bay',
         desc: 'Your photoshoot is currently taking place in our studio camera bay. Strike your best poses and capture milestone memories!',
       };
     }
 
-    // 4. Editing
+    // 5. Stage 5: Editing
     if (s === 'EDITING') {
       return {
         badge: '05',
         headline: <>Your photos are<br className="hidden sm:inline" /> being edited.</>,
-        title: 'Digital curation & editing',
-        desc: 'Our digital darkroom artists are reviewing RAW captures, balancing colors, and preparing proofs.',
+        title: 'Digital curation & color editing',
+        desc: 'Our digital darkroom artists are reviewing RAW captures, balancing studio exposure, and curating your strongest portraits.',
       };
     }
 
-    // 5. Retouching
+    // 6. Stage 6: Retouching
     if (s === 'RETOUCHING') {
       return {
-        badge: '05',
+        badge: '06',
         headline: <>Master retouching<br className="hidden sm:inline" /> in progress.</>,
         title: 'Fine-art master retouching',
-        desc: 'High-end aesthetic grading, blemish refinement, and portrait finishing are being applied to your proofs.',
+        desc: 'High-end aesthetic grading, skin refinement, and portrait finishing are being applied to your selected proofs.',
       };
     }
 
-    // 6. Finalized / Printing
+    // 7. Stage 7: Booking Finalized / Printing
     if (s === 'FINALIZED' || s === 'PRINTING') {
       return {
-        badge: '06',
+        badge: '07',
         headline: <>Finalizing prints<br className="hidden sm:inline" /> & packaging.</>,
-        title: 'Print production & assembly',
-        desc: 'Archival prints are coming off the press, framed, packaged, and inspected for delivery or pickup.',
+        title: 'Booking finalized & print production',
+        desc: 'Archival prints are coming off the press, framed, packaged, and inspected for release.',
       };
     }
 
-    // 7. Ready / Under Delivery / Completed
-    if (s === 'READY' || s === 'UNDER_DELIVERY' || s === 'COMPLETED') {
+    // 8. Stage 8: Ready / Under Delivery / Completed
+    if (s === 'COMPLETED') {
+      return {
+        badge: '08',
+        headline: <>Your order is<br className="hidden sm:inline" /> complete!</>,
+        title: 'Order fulfilled & completed',
+        desc: 'Your portraits and studio deliverables have been handed over. Thank you for celebrating your milestone with E-Kodak Studio!',
+      };
+    }
+
+    if (s === 'READY' || s === 'UNDER_DELIVERY') {
       if (isDelivery) {
         return {
-          badge: '07',
+          badge: '08',
           headline: <>Your order is<br className="hidden sm:inline" /> on its way.</>,
-          title: 'Out for direct delivery',
-          desc: 'Your packaged prints are in transit to your registered address. Keep your phone handy for rider updates.',
+          title: 'Booking under direct delivery',
+          desc: 'Your packaged prints are in transit to your registered address. Keep your phone handy for courier updates.',
         };
       }
       return {
-        badge: '07',
+        badge: '08',
         headline: <>Your package is<br className="hidden sm:inline" /> ready for pickup!</>,
-        title: 'Ready for studio claiming',
-        desc: 'Your photo package is complete and waiting for you at our Naga City studio desk. Present your QR code to claim.',
+        title: 'Ready for studio pickup',
+        desc: 'Your photo package is complete and waiting for you at our City of Naga studio counter. Present your QR pass to claim.',
       };
     }
 
-    // Concluded / Rejected
+    // Concluded / Cancelled / Rejected
     return {
       badge: '01',
-      headline: <>Order concluded.</>,
+      headline: <>Order {s.toLowerCase()}.</>,
       title: 'Booking status: ' + s.toLowerCase(),
-      desc: 'This booking has concluded. Please contact our studio desk if you have any questions.',
+      desc: 'This booking is no longer active. Please contact our studio desk if you have any questions.',
     };
-  }, [activeBooking, progressStage.isAwaitingSchedule, profile]);
+  }, [activeBooking, profile]);
 
   const effectiveBookingNumber = activeBooking?.booking_number || 'BK-2026-00002';
 
@@ -427,17 +448,17 @@ export default function BookingProgressPage() {
                 </div>
               </div>
 
-              {/* ── The 7-Step Milestone Tracker (Centered in Available Space) ─── */}
+              {/* ── The 8-Step Milestone Tracker (Centered in Available Space) ─── */}
               <div className="w-full relative my-auto py-8 sm:py-10 lg:py-12">
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-6 lg:gap-3 w-full relative">
+                <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-6 xl:gap-2.5 w-full relative">
                   {timelineSteps.map((step, idx) => {
                     const isCompleted = step.state === 'COMPLETED';
                     const isCurrent = step.state === 'CURRENT';
 
                     return (
                       <div key={step.num} className="relative flex flex-col">
-                        {/* Step Connecting Line (Desktop) */}
-                        <div className="hidden lg:flex items-center w-full mb-3.5 relative">
+                        {/* Step Connecting Line (Wide Desktop Single Row) */}
+                        <div className="hidden xl:flex items-center w-full mb-3.5 relative">
                           <div className="relative w-full flex items-center">
                             {/* Dot node */}
                             <div
@@ -457,7 +478,7 @@ export default function BookingProgressPage() {
                         </div>
 
                         {/* Step Content: Circle Badge + Bold Title & Subtitle */}
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-start gap-2.5">
                           {/* Node Circle */}
                           {isCompleted ? (
                             <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
@@ -476,14 +497,14 @@ export default function BookingProgressPage() {
                           {/* Text Placement & Boldness */}
                           <div className="min-w-0">
                             <p
-                              className={`text-xs sm:text-[13px] leading-tight font-bold truncate ${isCurrent
+                              className={`text-xs leading-snug font-bold ${isCurrent
                                   ? 'text-amber-600 dark:text-amber-500'
                                   : 'text-neutral-900 dark:text-white'
                                 }`}
                             >
                               {step.title}
                             </p>
-                            <p className="text-[11px] sm:text-xs text-neutral-400 dark:text-neutral-500 font-normal mt-0.5 truncate">
+                            <p className="text-[11px] text-neutral-400 dark:text-neutral-500 font-normal mt-0.5 truncate" title={step.subtitle}>
                               {step.subtitle}
                             </p>
                           </div>

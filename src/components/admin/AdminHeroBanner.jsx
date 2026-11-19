@@ -1,9 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { Link } from 'react-router-dom';
 import gsap from 'gsap';
 import {
-  ChevronDown,
   ShieldCheck,
   Camera,
   CalendarDays,
@@ -25,19 +23,12 @@ import DashboardHero from '../dashboard/DashboardHero';
  */
 export default function AdminHeroBanner({
   station = 'admin', // 'admin' | 'staff' | 'finance' | 'photographer'
-  badgeLabel,
   badgeIcon: CustomIcon,
   userName = 'Administrator',
   title,
   subtitle,
-  statusSummary,
-  primaryAction,
-  secondaryAction,
   onRefresh,
   isRefreshing = false,
-  onExport,
-  extraTools = [],
-  showBadge = true,
   creativeRemark,
 }) {
   const bannerRef = useRef(null);
@@ -100,7 +91,6 @@ export default function AdminHeroBanner({
     rawSummary.includes('Total Alerts')
   );
   const displaySummary = isDatabaseCount ? null : rawSummary;
-  const stationLinks = currentStation.links || [];
 
   return (
     <div ref={bannerRef} className="w-full">
@@ -120,9 +110,10 @@ export default function AdminHeroBanner({
             onClick={onRefresh || (() => window.location.reload())}
             disabled={isRefreshing}
             title="Refresh live metrics"
+            aria-label="Refresh live metrics"
             className="bg-white/[0.05] hover:bg-white/[0.09] active:scale-[0.98] text-neutral-300 hover:text-gold w-[48px] h-[48px] rounded-2xl transition-all backdrop-blur-md cursor-pointer flex items-center justify-center shadow-sm shadow-black/20 shrink-0"
           >
-            <RefreshCw size={16} className={isRefreshing ? 'animate-spin text-gold' : ''} />
+            <RefreshCw size={16} className={isRefreshing ? 'animate-spin text-gold' : ''} aria-hidden="true" />
           </button>
         }
       />

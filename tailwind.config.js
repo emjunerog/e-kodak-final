@@ -12,8 +12,7 @@
  * Design Philosophy:
  *  - Premium editorial photography aesthetic
  *  - Warm gold + near-black palette
- *  - Playfair Display (serif) for headings → elegance, editorial feel
- *  - Inter (sans-serif) for body text → clean, modern, readable
+ *  - Google Sans (sans-serif) for headings & body text → clean, modern, readable
  */
 
 /** @type {import('tailwindcss').Config} */
@@ -77,11 +76,11 @@ export default {
 
       // ─── Typography ────────────────────────────────────────────────────────
       fontFamily: {
-        heading: ["Playfair Display", "Georgia", "serif"],
-        serif:   ["Playfair Display", "Georgia", "serif"],
-        body:    ["Inter", "system-ui", "sans-serif"],
-        sans:    ["Inter", "system-ui", "sans-serif"],
-        mono:    ["Inter", "system-ui", "sans-serif"],
+        heading: ["Google Sans", "system-ui", "sans-serif"],
+        serif:   ["Google Sans", "system-ui", "sans-serif"],
+        body:    ["Google Sans", "system-ui", "sans-serif"],
+        sans:    ["Google Sans", "system-ui", "sans-serif"],
+        mono:    ["Google Sans", "system-ui", "sans-serif"],
       },
 
       // Normalized to the standard 16px root scale (100% browser zoom).

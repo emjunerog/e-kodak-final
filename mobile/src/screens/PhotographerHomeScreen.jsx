@@ -18,7 +18,6 @@ import {
   TouchableOpacity,
   RefreshControl,
   StatusBar,
-  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
@@ -28,21 +27,18 @@ import {
   Bell,
   Camera,
   CalendarDays,
-  Sparkles,
   MapPin,
   ChevronRight,
-  X,
   Radio,
 } from 'lucide-react-native';
 
-import GlassCard from '../components/GlassCard';
 import GlassBackground from '../components/GlassBackground';
-import GoldButton from '../components/GoldButton';
 import StudioMascotKit from '../components/StudioMascotKit';
 import CardDecorElements from '../components/CardDecorElements';
 import StudioShapeLoader from '../components/StudioShapeLoader';
 import StatusBadge from '../components/StatusBadge';
 import ShootDetailModal from '../components/ShootDetailModal';
+import NotificationsModal from '../components/NotificationsModal';
 import { verifyPhotographerSession } from '../services/bookingService';
 import {
   fetchAllAssignedShoots,
@@ -58,9 +54,18 @@ import {
   formatTime12,
   toLocalISODate,
 } from '../services/photographerService';
+import {
+  fetchPhotographerNotificationsFeed,
+  markNotificationRead,
+  markAllNotificationsRead,
+  clearNotificationsList,
+  announceNewNotificationsWithSound,
+  playNotificationBellCue,
+} from '../services/notificationService';
 import { useTheme } from '../context/ThemeContext';
 import { useDialog } from '../context/DialogContext';
 import { useRegisterTourTarget } from '../context/TourContext';
+import { useResponsiveLayout } from '../utils/responsive';
 import { Typography } from '../theme';
 
 const E_KODAK_LOGO = require('../../assets/ekodak-logo.png');
@@ -69,14 +74,19 @@ export default function PhotographerHomeScreen({ navigation }) {
   const { isDark, isSage, colors, gradients } = useTheme();
   const { showAlert } = useDialog();
   const insets = useSafeAreaInsets();
-  const styles = useMemo(() => getStyles(colors, isDark, isSage), [colors, isDark, isSage]);
+  const layout = useResponsiveLayout();
+  const styles = useMemo(
+    () => getStyles(colors, isDark, isSage, layout),
+    [colors, isDark, isSage, layout]
+  );
   const dutyBtnRef = useRegisterTourTarget('ph_btn_duty');
   const alertsBtnRef = useRegisterTourTarget('ph_btn_alerts');
   const heroCtaRef = useRegisterTourTarget('ph_btn_hero_cta');
 
   const [photographer, setPhotographer] = useState(null);
   const [bookings, setBookings] = useState([]);
-  const [alerts, setAlerts] = useState([]);
+  const [notifItems, setNotifItems] = useState([]);
+  const [notifUnreadCount, setNotifUnreadCount] = useState(0);
   const [isAvailable, setIsAvailable] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -100,16 +110,68 @@ export default function PhotographerHomeScreen({ navigation }) {
       ]);
 
       const mergedProfile = profileRes?.data || auth.profile;
+      const shootsData = shootsRes?.data || [];
+      const rawAlerts = alertsRes?.data || [];
+
       setPhotographer(mergedProfile);
       setIsAvailable(mergedProfile?.is_available ?? true);
-      setBookings(shootsRes?.data || []);
-      setAlerts(alertsRes?.data || []);
+      setBookings(shootsData);
+
+      const feed = await fetchPhotographerNotificationsFeed({
+        bookings: shootsData,
+        alerts: rawAlerts,
+      });
+      setNotifItems(feed.items);
+      setNotifUnreadCount(feed.unreadCount);
+      await announceNewNotificationsWithSound(feed.items);
     } catch (err) {
       console.warn('PhotographerHome load error:', err?.message || err);
     } finally {
       setInitialLoading(false);
     }
   }, []);
+
+  const handleOpenAlertsModal = useCallback(() => {
+    playNotificationBellCue(notifUnreadCount > 0).catch(() => { });
+    setShowAlertsModal(true);
+    loadDashboard();
+  }, [notifUnreadCount, loadDashboard]);
+
+  const handleMarkAlertRead = useCallback(async (item) => {
+    if (!item || item.isRead) return;
+    setNotifItems((prev) =>
+      prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
+    );
+    setNotifUnreadCount((c) => Math.max(0, c - 1));
+    await markNotificationRead(item.id);
+  }, []);
+
+  const handlePressNotifItem = useCallback(
+    async (item) => {
+      if (!item) return;
+      await handleMarkAlertRead(item);
+      if (item.booking) {
+        setShowAlertsModal(false);
+        setSelectedShoot(item.booking);
+      }
+    },
+    [handleMarkAlertRead]
+  );
+
+  const handleMarkAllAlertsRead = useCallback(async () => {
+    Haptics.selectionAsync().catch(() => { });
+    setNotifItems((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    setNotifUnreadCount(0);
+    await markAllNotificationsRead(notifItems);
+  }, [notifItems]);
+
+  const handleClearAllAlerts = useCallback(async () => {
+    Haptics.selectionAsync().catch(() => { });
+    const snapshot = notifItems;
+    setNotifItems([]);
+    setNotifUnreadCount(0);
+    await clearNotificationsList(snapshot);
+  }, [notifItems]);
 
   useFocusEffect(
     useCallback(() => {
@@ -118,7 +180,7 @@ export default function PhotographerHomeScreen({ navigation }) {
   );
 
   const onRefresh = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
     setRefreshing(true);
     await loadDashboard();
     setRefreshing(false);
@@ -126,7 +188,7 @@ export default function PhotographerHomeScreen({ navigation }) {
 
   const handleToggleDuty = async () => {
     if (!photographer?.id || togglingDuty) return;
-    Haptics.selectionAsync().catch(() => {});
+    Haptics.selectionAsync().catch(() => { });
     setTogglingDuty(true);
     const next = !isAvailable;
     const { error } = await toggleGeneralDutyAvailability(photographer.id, next);
@@ -157,7 +219,7 @@ export default function PhotographerHomeScreen({ navigation }) {
       });
       return;
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => { });
     setSelectedShoot(null);
     await loadDashboard();
   };
@@ -200,7 +262,7 @@ export default function PhotographerHomeScreen({ navigation }) {
       });
       return;
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => { });
     setSelectedShoot(null);
     await loadDashboard();
   };
@@ -270,22 +332,13 @@ export default function PhotographerHomeScreen({ navigation }) {
       />
       <GlassBackground />
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[
-          styles.scrollContent,
+      {/* Top Floating Glass-Pill Header (Fixed above scroll) */}
+      <View
+        style={[
+          styles.fixedHeaderWrap,
           { paddingTop: Math.max(insets.top, 16) + 8 },
         ]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.gold.DEFAULT}
-          />
-        }
       >
-        {/* Top Floating Glass-Pill Header */}
         <View style={styles.headerPillShadow}>
           <View style={styles.headerPillFrame}>
             <LinearGradient
@@ -354,21 +407,39 @@ export default function PhotographerHomeScreen({ navigation }) {
                   ref={alertsBtnRef}
                   collapsable={false}
                   activeOpacity={0.8}
-                  onPress={() => setShowAlertsModal(true)}
+                  onPress={handleOpenAlertsModal}
                   style={styles.headerIconBtn}
-                  accessibilityLabel="Studio alerts"
+                  accessibilityLabel={
+                    notifUnreadCount > 0
+                      ? `Studio alerts (${notifUnreadCount} unread)`
+                      : 'Studio alerts'
+                  }
                 >
                   <Bell
                     size={19}
                     color={isDark ? colors.text.primary : '#241D14'}
                     strokeWidth={1.85}
                   />
-                  {alerts.length > 0 && <View style={styles.notifBadgeDot} />}
+                  {notifUnreadCount > 0 && <View style={styles.notifBadgeDot} />}
                 </TouchableOpacity>
               </View>
             </View>
           </View>
         </View>
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.gold.DEFAULT}
+          />
+        }
+      >
 
         {(initialLoading || refreshing) && (
           <View style={styles.shapeLoaderBar}>
@@ -415,7 +486,7 @@ export default function PhotographerHomeScreen({ navigation }) {
             <View style={styles.mascotBox}>
               <StudioMascotKit
                 pose="camera_ready"
-                size={80}
+                size={layout.isCompact ? 68 : 80}
                 interactive={true}
                 showBadge={false}
               />
@@ -623,67 +694,16 @@ export default function PhotographerHomeScreen({ navigation }) {
       </ScrollView>
 
       {/* Studio Alerts Modal */}
-      <Modal
+      <NotificationsModal
         visible={showAlertsModal}
-        transparent
-        statusBarTranslucent
-        animationType="fade"
-        onRequestClose={() => setShowAlertsModal(false)}
-      >
-        <View style={styles.notifOverlay}>
-          <GlassCard opaque blurred={false} style={styles.notifCard}>
-            <View style={styles.notifHeader}>
-              <View>
-                <Text style={styles.notifTitle}>Studio Alerts</Text>
-                <Text style={styles.notifSub}>Dispatch notes & booking updates</Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => setShowAlertsModal(false)}
-                style={styles.notifCloseBtn}
-                accessibilityLabel="Close alerts"
-              >
-                <X size={18} color={colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
-              {alerts.length > 0 ? (
-                alerts.map((al) => (
-                  <View key={al.id} style={styles.notifItem}>
-                    <View style={styles.notifIconCircle}>
-                      <Bell size={15} color={colors.gold.DEFAULT} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.notifItemTitle}>{al.title}</Text>
-                      <Text style={styles.notifItemBody}>{al.message}</Text>
-                    </View>
-                  </View>
-                ))
-              ) : (
-                <View style={styles.notifItem}>
-                  <View style={styles.notifIconCircle}>
-                    <Sparkles size={15} color={colors.gold.DEFAULT} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.notifItemTitle}>Studio Floor Synced</Text>
-                    <Text style={styles.notifItemBody}>
-                      Pull down anytime to sync newly assigned bookings and schedule updates.
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </ScrollView>
-
-            <GoldButton
-              variant="outline"
-              onPress={() => setShowAlertsModal(false)}
-              style={{ marginTop: 14 }}
-            >
-              Close
-            </GoldButton>
-          </GlassCard>
-        </View>
-      </Modal>
+        onClose={() => setShowAlertsModal(false)}
+        items={notifItems}
+        unreadCount={notifUnreadCount}
+        onMarkItemRead={handleMarkAlertRead}
+        onPressItem={handlePressNotifItem}
+        onMarkAllRead={handleMarkAllAlertsRead}
+        onClearAll={handleClearAllAlerts}
+      />
 
       <ShootDetailModal
         visible={Boolean(selectedShoot)}
@@ -699,16 +719,18 @@ export default function PhotographerHomeScreen({ navigation }) {
   );
 }
 
-const getStyles = (colors, isDark, isSage) =>
+const getStyles = (colors, isDark, isSage, layout) =>
   StyleSheet.create({
     container: {
       flex: 1,
     },
     scrollView: {
       flex: 1,
+      zIndex: 1,
     },
     scrollContent: {
-      paddingHorizontal: 16,
+      paddingHorizontal: layout.isCompact ? 14 : 16,
+      paddingTop: 6,
     },
     shapeLoaderBar: {
       alignItems: 'center',
@@ -718,10 +740,14 @@ const getStyles = (colors, isDark, isSage) =>
     },
 
     // Header Pill (matches customer HomeScreen)
+    fixedHeaderWrap: {
+      paddingHorizontal: layout.isCompact ? 14 : 16,
+      paddingBottom: 10,
+      zIndex: 10,
+    },
     headerPillShadow: {
       borderRadius: 28,
       backgroundColor: 'transparent',
-      marginBottom: 16,
       shadowColor: isDark ? '#000000' : '#4E4332',
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: isDark ? 0.34 : 0.08,
@@ -735,7 +761,8 @@ const getStyles = (colors, isDark, isSage) =>
         ? 'rgba(180, 198, 224, 0.20)'
         : isSage
           ? '#D7DDD1'
-          : 'rgba(255, 255, 255, 0.90)',
+          : 'rgba(255, 255, 255, 0.95)',
+      backgroundColor: isDark ? '#181E29' : isSage ? '#FCFDFB' : '#FFFFFF',
       paddingHorizontal: 16,
       paddingVertical: 12,
       overflow: 'hidden',
@@ -827,8 +854,8 @@ const getStyles = (colors, isDark, isSage) =>
       alignItems: 'center',
       justifyContent: 'space-between',
       borderRadius: 21,
-      padding: 18,
-      gap: 12,
+      padding: layout.isCompact ? 14 : 18,
+      gap: layout.cardGap,
       position: 'relative',
     },
     heroOrbsClip: {
@@ -841,37 +868,38 @@ const getStyles = (colors, isDark, isSage) =>
     },
     heroHeading: {
       fontFamily: Typography.fontHeading,
-      fontSize: 22,
-      lineHeight: 27,
+      fontSize: layout.fs(22, 0.8),
+      lineHeight: layout.fs(27, 0.85),
       color: isDark ? colors.text.primary : '#181410',
     },
     heroBody: {
       fontFamily: Typography.fontBodyMedium,
-      fontSize: 12.5,
-      lineHeight: 18,
+      fontSize: layout.fs(12.5, 0.95),
+      lineHeight: layout.fs(18, 0.95),
       color: isDark ? colors.text.secondary : '#5C5346',
-      marginTop: 8,
+      marginTop: layout.pad(8, 0.5),
     },
     heroCtaWrap: {
-      marginTop: 14,
+      marginTop: layout.pad(14, 0.55),
       alignSelf: 'flex-start',
     },
     heroCtaGradient: {
       borderRadius: 999,
-      paddingHorizontal: 16,
-      paddingVertical: 10,
+      paddingHorizontal: layout.pad(16, 0.4),
+      paddingVertical: layout.pad(10, 0.45),
       flexDirection: 'row',
       alignItems: 'center',
     },
     heroCtaText: {
       fontFamily: Typography.fontBodyBold,
-      fontSize: 12.5,
+      fontSize: layout.fs(12.5, 0.9),
+      lineHeight: layout.fs(17, 0.9),
       color: isSage ? '#FFFFFF' : '#181410',
       letterSpacing: 0.2,
     },
     mascotBox: {
-      width: 102,
-      height: 102,
+      width: layout.isCompact ? 88 : 102,
+      height: layout.isCompact ? 88 : 102,
       borderRadius: 16,
       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
       borderWidth: 1,
@@ -883,19 +911,20 @@ const getStyles = (colors, isDark, isSage) =>
 
     sectionLabel: {
       fontFamily: Typography.fontHeading,
-      fontSize: 17,
+      fontSize: layout.fs(17, 0.8),
+      lineHeight: layout.fs(22, 0.8),
       color: isDark ? colors.text.primary : '#181410',
-      marginBottom: 12,
+      marginBottom: layout.pad(12, 0.5),
     },
 
     // Quick Actions
     quickActionsGrid: {
       flexDirection: 'row',
-      gap: 12,
+      gap: layout.cardGap,
     },
     quickActionCard: {
       flex: 1,
-      minHeight: 152,
+      minHeight: layout.pad(152, 0.65),
       borderRadius: 22,
       borderWidth: 1,
       borderColor: isDark ? 'rgba(180, 198, 224, 0.20)' : isSage ? '#D7DDD1' : '#DCDDE6',
@@ -908,7 +937,7 @@ const getStyles = (colors, isDark, isSage) =>
     },
     quickActionGradient: {
       flex: 1,
-      padding: 16,
+      padding: layout.cardPad,
       justifyContent: 'space-between',
       position: 'relative',
     },
@@ -931,27 +960,28 @@ const getStyles = (colors, isDark, isSage) =>
     },
     quickActionTitle: {
       fontFamily: Typography.fontHeading,
-      fontSize: 15.5,
+      fontSize: layout.fs(15.5, 0.9),
+      lineHeight: layout.fs(20, 0.9),
       color: isDark ? colors.text.primary : '#181410',
     },
     quickActionSub: {
       fontFamily: Typography.fontBodyMedium,
-      fontSize: 12,
-      lineHeight: 17,
+      fontSize: layout.fs(12, 0.95),
+      lineHeight: layout.fs(17, 0.95),
       color: isDark ? colors.text.secondary : '#6B6256',
-      marginTop: 4,
+      marginTop: layout.pad(4, 0.5),
     },
 
     // Centered 3 KPI Cards
     kpiCardsGrid: {
       flexDirection: 'row',
-      gap: 10,
-      marginTop: 12,
-      marginBottom: 24,
+      gap: layout.isCompact ? 8 : 10,
+      marginTop: layout.cardGap,
+      marginBottom: layout.pad(24, 0.5),
     },
     kpiMiniCard: {
       flex: 1,
-      minHeight: 112,
+      minHeight: layout.pad(112, 0.65),
       borderRadius: 20,
       borderWidth: 1,
       borderColor: isDark ? 'rgba(180, 198, 224, 0.20)' : isSage ? '#D7DDD1' : '#DCDDE6',
@@ -964,16 +994,16 @@ const getStyles = (colors, isDark, isSage) =>
     },
     kpiMiniGradient: {
       flex: 1,
-      paddingHorizontal: 8,
-      paddingVertical: 14,
+      paddingHorizontal: layout.pad(8, 0.35),
+      paddingVertical: layout.pad(14, 0.7),
       alignItems: 'center',
       justifyContent: 'center',
       position: 'relative',
     },
     kpiValue: {
       fontFamily: Typography.fontHeading,
-      fontSize: 34,
-      lineHeight: 38,
+      fontSize: layout.fs(34, 0.55),
+      lineHeight: layout.fs(38, 0.55),
       color: isDark ? colors.text.primary : '#181410',
       textAlign: 'center',
       includeFontPadding: false,
@@ -981,19 +1011,19 @@ const getStyles = (colors, isDark, isSage) =>
     },
     kpiMiniTitle: {
       fontFamily: Typography.fontBodyBold,
-      fontSize: 13,
-      lineHeight: 16,
+      fontSize: layout.fs(13, 0.85),
+      lineHeight: layout.fs(17, 0.85),
       color: isDark ? colors.text.primary : '#181410',
       textAlign: 'center',
       includeFontPadding: false,
     },
     kpiMiniSub: {
       fontFamily: Typography.fontBodyMedium,
-      fontSize: 10.5,
-      lineHeight: 14,
+      fontSize: layout.fs(10.5, 0.85),
+      lineHeight: layout.fs(14, 0.85),
       color: isDark ? colors.text.secondary : '#6B6256',
       textAlign: 'center',
-      marginTop: 1,
+      marginTop: layout.pad(2, 0.5),
       includeFontPadding: false,
     },
 
@@ -1064,77 +1094,5 @@ const getStyles = (colors, isDark, isSage) =>
       fontFamily: Typography.fontBodyMedium,
       fontSize: 11.5,
       color: isDark ? colors.text.secondary : '#6B6256',
-    },
-
-    // Alerts modal
-    notifOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(8, 10, 14, 0.66)',
-      justifyContent: 'center',
-      padding: 20,
-    },
-    notifCard: {
-      padding: 20,
-      borderRadius: 24,
-    },
-    notifHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 16,
-    },
-    notifTitle: {
-      fontFamily: Typography.fontHeading,
-      fontSize: 20,
-      color: colors.text.primary,
-    },
-    notifSub: {
-      fontFamily: Typography.fontBody,
-      fontSize: 12.5,
-      color: colors.text.secondary,
-      marginTop: 2,
-    },
-    notifCloseBtn: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      backgroundColor: isDark ? colors.bg.elevated : '#EEF1F6',
-      borderWidth: 1,
-      borderColor: isDark ? 'rgba(255,255,255,0.12)' : '#D9DFE8',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    notifItem: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: 12,
-      padding: 14,
-      borderRadius: 16,
-      backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(212,175,55,0.08)',
-      borderWidth: 1,
-      borderColor: colors.gold.border,
-      marginBottom: 10,
-    },
-    notifIconCircle: {
-      width: 34,
-      height: 34,
-      borderRadius: 11,
-      backgroundColor: colors.gold.bg,
-      borderWidth: 1,
-      borderColor: colors.gold.border,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    notifItemTitle: {
-      fontFamily: Typography.fontBodySemi,
-      fontSize: 13.5,
-      color: colors.text.primary,
-      marginBottom: 3,
-    },
-    notifItemBody: {
-      fontFamily: Typography.fontBody,
-      fontSize: 12.5,
-      lineHeight: 18,
-      color: colors.text.secondary,
     },
   });

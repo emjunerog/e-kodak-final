@@ -30,6 +30,8 @@ import { useAuth } from '../../context/AuthContext';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import StudioDropdown from '../../components/ui/StudioDropdown';
+import Toast from '../../components/ui/Toast';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import {
   getUnifiedAdminNotifications,
   markNotificationAsRead,
@@ -272,6 +274,8 @@ export default function AdminNotifications() {
   const [previewEmailModalOpen, setPreviewEmailModalOpen] = useState(false);
   const [previewEmailData, setPreviewEmailData] = useState(null);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   // Compact Compose Form State
   const [recipientGroup, setRecipientGroup] = useState('SPECIFIC_CUSTOMER'); // 'SPECIFIC_CUSTOMER' | 'ALL_CUSTOMERS' | 'ALL_STAFF' | 'ALL_PHOTOGRAPHERS'
@@ -519,11 +523,11 @@ export default function AdminNotifications() {
   const handleSendDispatch = async (e) => {
     e.preventDefault();
     if (!title.trim() || !message.trim()) {
-      alert('Please provide a notification title and message.');
+      setToast({ type: 'warning', message: 'Please provide a notification title and message.' });
       return;
     }
     if (!channels.inApp && !channels.email && !channels.sms) {
-      alert('Please select at least one delivery channel (In-App, Email, or SMS).');
+      setToast({ type: 'warning', message: 'Please select at least one delivery channel (In-App, Email, or SMS).' });
       return;
     }
 
@@ -570,7 +574,7 @@ export default function AdminNotifications() {
       loadData();
     } catch (err) {
       console.error('Dispatch error:', err);
-      alert('Failed to dispatch notification: ' + err.message);
+      setToast({ type: 'error', message: 'Failed to dispatch notification: ' + err.message });
     } finally {
       setSendingDispatch(false);
     }
@@ -623,24 +627,26 @@ export default function AdminNotifications() {
   };
 
   // Delete a notification/announcement
-  const handleDeleteNotification = async (id, notificationTitle = '') => {
-    const isConfirm = window.confirm(
-      `Are you sure you want to delete this notification?\n\n"${notificationTitle || 'Selected notification'}"\n\nThis will remove it from all notification feeds.`
-    );
-    if (!isConfirm) return;
-
-    try {
-      await deleteAdminNotification(id);
-      setActionSuccessMsg('Notification removed successfully.');
-      setTimeout(() => setActionSuccessMsg(null), 3500);
-      loadData();
-      if (inspectModalNotif?.id === id) {
-        setInspectModalNotif(null);
-      }
-    } catch (err) {
-      console.error('Failed to delete notification:', err);
-      alert('Error deleting notification: ' + err.message);
-    }
+  const handleDeleteNotification = (id, notificationTitle = '') => {
+    setConfirmDialog({
+      title: 'Delete Notification?',
+      message: `Remove "${notificationTitle || 'Selected notification'}" from all notification feeds?`,
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        try {
+          await deleteAdminNotification(id);
+          setActionSuccessMsg('Notification removed successfully.');
+          setTimeout(() => setActionSuccessMsg(null), 3500);
+          loadData();
+          if (inspectModalNotif?.id === id) {
+            setInspectModalNotif(null);
+          }
+        } catch (err) {
+          console.error('Failed to delete notification:', err);
+          setToast({ type: 'error', message: 'Error deleting notification: ' + err.message });
+        }
+      },
+    });
   };
 
   // Open Preview for a specific notification row or inspect modal
@@ -682,7 +688,7 @@ export default function AdminNotifications() {
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 3500);
     } else {
-      alert('Unable to copy automatically. Please copy the text from the preview.');
+      setToast({ type: 'warning', message: 'Unable to copy automatically. Please copy the text from the preview.' });
     }
   };
 
@@ -1605,6 +1611,8 @@ export default function AdminNotifications() {
           </div>
         </div>
       )}
+      <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
+      <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   );
 }

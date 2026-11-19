@@ -211,6 +211,23 @@ export default function AdminPhotographers() {
     return unsubscribe;
   }, []);
 
+  // Escape key dismissal for open modals
+  useEffect(() => {
+    if (!editingPh && !deletingPh && !selectedPh) return;
+    const handleKeyDown = (e) => {
+      if (e.key !== 'Escape') return;
+      if (deletingPh && !isDeleting) {
+        setDeletingPh(null);
+      } else if (editingPh && !isSavingEdit) {
+        setEditingPh(null);
+      } else if (selectedPh) {
+        setSelectedPh(null);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [editingPh, deletingPh, selectedPh, isDeleting, isSavingEdit]);
+
   // Load photographer roster
   const load = useCallback(async (isManualRefresh = false) => {
     const hasData = photographersRef.current.length > 0;
@@ -947,8 +964,17 @@ export default function AdminPhotographers() {
 
       {/* ── 5. EDIT PHOTOGRAPHER MODAL ───────────────────────────────────────── */}
       {editingPh && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-neutral-200 animate-scale-in">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-sm animate-fade-in overscroll-contain"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Edit Photographer Profile"
+          onClick={() => !isSavingEdit && setEditingPh(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90dvh] overflow-y-auto border border-neutral-200 animate-scale-in overscroll-contain"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Header */}
             <div className="p-4 sm:p-5 border-b border-neutral-100 flex items-center justify-between bg-neutral-50/70">
               <div className="flex items-center gap-2.5">
@@ -1087,8 +1113,17 @@ export default function AdminPhotographers() {
 
       {/* ── 6. DELETE CONFIRMATION MODAL ─────────────────────────────────────── */}
       {deletingPh && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-neutral-200 p-5 space-y-4 animate-scale-in font-body">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-sm animate-fade-in overscroll-contain"
+          role="alertdialog"
+          aria-modal="true"
+          aria-label="Delete Photographer"
+          onClick={() => !isDeleting && setDeletingPh(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-neutral-200 p-5 space-y-4 animate-scale-in font-body overscroll-contain"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
                 <AlertTriangle size={20} />
@@ -1150,8 +1185,17 @@ export default function AdminPhotographers() {
 
       {/* ── 7. DETAILS & SCHEDULE INSPECTION MODAL ────────────────────────────── */}
       {selectedPh && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-neutral-200 animate-scale-in font-body">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-sm animate-fade-in overscroll-contain"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Photographer details for ${selectedPh.first_name || ''} ${selectedPh.last_name || ''}`.trim()}
+          onClick={() => setSelectedPh(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90dvh] flex flex-col overflow-hidden border border-neutral-200 animate-scale-in font-body overscroll-contain"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-neutral-100 flex items-start justify-between bg-neutral-50/70">
               <div className="flex items-center gap-3">

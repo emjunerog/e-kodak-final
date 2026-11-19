@@ -42,6 +42,7 @@ import GlassCard from './GlassCard';
 import GoldButton from './GoldButton';
 import StatusBadge from './StatusBadge';
 import { formatReadableDate, formatTime12 } from '../services/photographerService';
+import { useResponsiveLayout } from '../utils/responsive';
 import { Typography, Spacing, Radius, Shadow } from '../theme';
 
 const { height } = Dimensions.get('window');
@@ -78,6 +79,7 @@ export default function ShootDetailModal({
 }) {
   const { isDark, isSage, colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { modalFrameStyle, sheetMaxHeight } = useResponsiveLayout();
   const styles = useMemo(() => getStyles(colors, isDark, isSage), [colors, isDark, isSage]);
 
   const [isMounted, setIsMounted] = useState(visible);
@@ -190,7 +192,9 @@ export default function ShootDetailModal({
         <Animated.View
           style={[
             styles.modalCard,
+            modalFrameStyle,
             {
+              maxHeight: sheetMaxHeight,
               paddingBottom: Math.max(insets.bottom, 16) + 8,
               transform: [{ translateY: slideAnim }],
             },

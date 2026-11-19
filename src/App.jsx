@@ -30,47 +30,61 @@ import Register from "./pages/auth/Register";
 import AuthCallback from "./pages/auth/AuthCallback";
 import PendingApproval from "./pages/auth/PendingApproval";
 
+// ── Resilient Lazy Loader (retries transient HMR / chunk fetch glitches) ─────
+function lazyWithRetry(importer) {
+  return lazy(() =>
+    importer().catch((err) => {
+      // Retry once after a short delay in case Vite HMR or dev server is mid-reload
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          importer().then(resolve).catch(reject);
+        }, 400);
+      });
+    })
+  );
+}
+
 // ── Customer Dashboard Pages (Lazy-loaded route chunks) ───────────────────────
-const DashboardLayout = lazy(() => import("./components/dashboard/DashboardLayout"));
-const DashboardHome = lazy(() => import("./pages/dashboard/DashboardHome"));
-const BookSessionPage = lazy(() => import("./pages/dashboard/BookSessionPage"));
-const BookingDetailsPage = lazy(() => import("./pages/dashboard/BookingDetailsPage"));
-const SoftCopiesPage = lazy(() => import("./pages/dashboard/SoftCopiesPage"));
-const NotificationsPage = lazy(() => import("./pages/dashboard/NotificationsPage"));
-const ActivityTrailPage = lazy(() => import("./pages/dashboard/ActivityTrailPage"));
-const ProfilePage = lazy(() => import("./pages/dashboard/ProfilePage"));
-const BookingProgressPage = lazy(() => import("./pages/dashboard/BookingProgressPage"));
-const PaymentsPage = lazy(() => import("./pages/dashboard/PaymentsPage"));
-const SettingsPage = lazy(() => import("./pages/dashboard/SettingsPage"));
+const DashboardLayout = lazyWithRetry(() => import("./components/dashboard/DashboardLayout"));
+const DashboardHome = lazyWithRetry(() => import("./pages/dashboard/DashboardHome"));
+const BookSessionPage = lazyWithRetry(() => import("./pages/dashboard/BookSessionPage"));
+const BookingDetailsPage = lazyWithRetry(() => import("./pages/dashboard/BookingDetailsPage"));
+const SoftCopiesPage = lazyWithRetry(() => import("./pages/dashboard/SoftCopiesPage"));
+const NotificationsPage = lazyWithRetry(() => import("./pages/dashboard/NotificationsPage"));
+const ActivityTrailPage = lazyWithRetry(() => import("./pages/dashboard/ActivityTrailPage"));
+const ProfilePage = lazyWithRetry(() => import("./pages/dashboard/ProfilePage"));
+const BookingProgressPage = lazyWithRetry(() => import("./pages/dashboard/BookingProgressPage"));
+const PaymentsPage = lazyWithRetry(() => import("./pages/dashboard/PaymentsPage"));
+const SettingsPage = lazyWithRetry(() => import("./pages/dashboard/SettingsPage"));
 
 // ── Admin Pages (Lazy-loaded route chunks) ────────────────────────────────────
-const AdminLayout = lazy(() => import("./components/admin/AdminLayout"));
-const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
-const AdminBookings = lazy(() => import("./pages/admin/AdminBookings"));
-const AdminCustomers = lazy(() => import("./pages/admin/AdminCustomers"));
-const AdminPhotographers = lazy(() => import("./pages/admin/AdminPhotographers"));
-const AdminPayments = lazy(() => import("./pages/admin/AdminPayments"));
-const AdminPhotos = lazy(() => import("./pages/admin/AdminPhotos"));
-const AdminNotifications = lazy(() => import("./pages/admin/AdminNotifications"));
-const AdminSmsLogs = lazy(() => import("./pages/admin/AdminSmsLogs"));
-const AdminSecurity = lazy(() => import("./pages/admin/AdminSecurity"));
-const AdminServices = lazy(() => import("./pages/admin/AdminServices"));
-const AdminSettings = lazy(() => import("./pages/admin/AdminSettings"));
-const AdminCMS = lazy(() => import("./pages/admin/AdminCMS"));
-const AdminBookingDetail = lazy(() => import("./pages/admin/AdminBookingDetail"));
-const AdminActivityLogsPage = lazy(() => import("./pages/admin/AdminActivityLogsPage"));
-const AdminStaff = lazy(() => import("./pages/admin/AdminStaff"));
-const AdminYearbookGenerator = lazy(() => import("./pages/admin/AdminYearbookGenerator"));
+const AdminLayout = lazyWithRetry(() => import("./components/admin/AdminLayout"));
+const AdminDashboard = lazyWithRetry(() => import("./pages/admin/AdminDashboard"));
+const AdminBookings = lazyWithRetry(() => import("./pages/admin/AdminBookings"));
+const AdminCustomers = lazyWithRetry(() => import("./pages/admin/AdminCustomers"));
+const AdminPhotographers = lazyWithRetry(() => import("./pages/admin/AdminPhotographers"));
+const AdminPayments = lazyWithRetry(() => import("./pages/admin/AdminPayments"));
+const AdminPhotos = lazyWithRetry(() => import("./pages/admin/AdminPhotos"));
+const AdminNotifications = lazyWithRetry(() => import("./pages/admin/AdminNotifications"));
+const AdminSmsLogs = lazyWithRetry(() => import("./pages/admin/AdminSmsLogs"));
+const AdminSecurity = lazyWithRetry(() => import("./pages/admin/AdminSecurity"));
+const AdminServices = lazyWithRetry(() => import("./pages/admin/AdminServices"));
+const AdminSettings = lazyWithRetry(() => import("./pages/admin/AdminSettings"));
+const AdminCMS = lazyWithRetry(() => import("./pages/admin/AdminCMS"));
+const AdminBookingDetail = lazyWithRetry(() => import("./pages/admin/AdminBookingDetail"));
+const AdminActivityLogsPage = lazyWithRetry(() => import("./pages/admin/AdminActivityLogsPage"));
+const AdminStaff = lazyWithRetry(() => import("./pages/admin/AdminStaff"));
+const AdminYearbookGenerator = lazyWithRetry(() => import("./pages/admin/AdminYearbookGenerator"));
 
 // ── Photographer Pages (Lazy-loaded route chunks) ─────────────────────────────
-const PhotographerLayout = lazy(() => import("./components/photographer/PhotographerLayout"));
-const PhotographerDashboard = lazy(() => import("./pages/photographer/PhotographerDashboard"));
-const PhotographerBookings = lazy(() => import("./pages/photographer/PhotographerBookings"));
-const PhotographerAvailability = lazy(() => import("./pages/photographer/PhotographerAvailability"));
-const PhotographerUploads = lazy(() => import("./pages/photographer/PhotographerUploads"));
-const PhotographerActivityLogs = lazy(() => import("./pages/photographer/PhotographerActivityLogs"));
-const PhotographerSettings = lazy(() => import("./pages/photographer/PhotographerSettings"));
-const PhotographerProfile = lazy(() => import("./pages/photographer/PhotographerProfile"));
+const PhotographerLayout = lazyWithRetry(() => import("./components/photographer/PhotographerLayout"));
+const PhotographerDashboard = lazyWithRetry(() => import("./pages/photographer/PhotographerDashboard"));
+const PhotographerBookings = lazyWithRetry(() => import("./pages/photographer/PhotographerBookings"));
+const PhotographerAvailability = lazyWithRetry(() => import("./pages/photographer/PhotographerAvailability"));
+const PhotographerUploads = lazyWithRetry(() => import("./pages/photographer/PhotographerUploads"));
+const PhotographerActivityLogs = lazyWithRetry(() => import("./pages/photographer/PhotographerActivityLogs"));
+const PhotographerSettings = lazyWithRetry(() => import("./pages/photographer/PhotographerSettings"));
+const PhotographerProfile = lazyWithRetry(() => import("./pages/photographer/PhotographerProfile"));
 
 function RouteFallback() {
   const [visible, setVisible] = React.useState(false);

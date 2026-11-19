@@ -140,7 +140,7 @@ export default function BrandLogo({
         <TouchableOpacity
           activeOpacity={0.88}
           onPress={() => {
-            try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+            try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); } catch {}
             triggerCameraFlash();
           }}
           style={styles.leftTopRow}
@@ -330,7 +330,7 @@ export default function BrandLogo({
         <TouchableOpacity
           activeOpacity={0.88}
           onPress={() => {
-            try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+            try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); } catch {}
             triggerCameraFlash();
           }}
         >

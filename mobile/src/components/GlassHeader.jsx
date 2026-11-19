@@ -13,6 +13,7 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
+import { useResponsiveLayout } from '../utils/responsive';
 import { Typography } from '../theme';
 import PremiumIcon from './PremiumIcon';
 
@@ -28,6 +29,7 @@ export default function GlassHeader({
 }) {
   const { isDark, isSage, highContrast, colors, gradients } = useTheme();
   const insets = useSafeAreaInsets();
+  const { isCompact, fs, pad } = useResponsiveLayout();
 
   const cardGradient =
     gradients?.header ||
@@ -50,12 +52,23 @@ export default function GlassHeader({
         styles.outerShadow,
         {
           marginTop: Math.max(insets.top, 10) + 8,
+          marginHorizontal: isCompact ? 14 : 16,
           shadowColor: isDark ? '#000000' : '#4E4332',
         },
         style,
       ]}
     >
-      <View style={[styles.pillFrame, { borderColor: cardBorder, borderWidth: highContrast ? 1.6 : 1 }]}>
+      <View
+        style={[
+          styles.pillFrame,
+          {
+            borderColor: cardBorder,
+            borderWidth: highContrast ? 1.6 : 1,
+            paddingHorizontal: isCompact ? 14 : 18,
+            paddingVertical: pad(14, 0.45),
+          },
+        ]}
+      >
         {Platform.OS === 'ios' ? (
           <BlurView
             intensity={isDark ? 42 : 30}
@@ -90,12 +103,32 @@ export default function GlassHeader({
             {children || (
               <>
                 {title ? (
-                  <Text style={[styles.title, { color: colors.text.primary }]} numberOfLines={1}>
+                  <Text
+                    style={[
+                      styles.title,
+                      {
+                        color: colors.text.primary,
+                        fontSize: fs(21, 0.75),
+                        lineHeight: fs(26, 0.75),
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
                     {title}
                   </Text>
                 ) : null}
                 {subtitle ? (
-                  <Text style={[styles.subtitle, { color: colors.text.secondary }]} numberOfLines={1}>
+                  <Text
+                    style={[
+                      styles.subtitle,
+                      {
+                        color: colors.text.secondary,
+                        fontSize: fs(12.5, 0.85),
+                        lineHeight: fs(17, 0.85),
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
                     {subtitle}
                   </Text>
                 ) : null}

@@ -9,6 +9,8 @@ import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
 import CustomDropdown from '../../components/ui/CustomDropdown';
 import Modal from '../../components/ui/Modal';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import Toast from '../../components/ui/Toast';
 import PhotographerQRModal from '../../components/admin/PhotographerQRModal';
 import {
   getAllWorkers,
@@ -87,6 +89,8 @@ export default function AdminStaff() {
   const [editingWorker, setEditingWorker] = useState(null);
   const [qrWorker, setQrWorker] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   const [formData, setFormData] = useState({
     firstName: '',
@@ -145,9 +149,13 @@ export default function AdminStaff() {
     loadData();
   }, [loadData]);
 
-  const showToast = (msg) => {
-    setActionSuccessMsg(msg);
-    setTimeout(() => setActionSuccessMsg(null), 3500);
+  const showToast = (msg, type = 'success') => {
+    if (type === 'success') {
+      setActionSuccessMsg(msg);
+      setTimeout(() => setActionSuccessMsg(null), 3500);
+    } else {
+      setToast({ type, message: msg });
+    }
   };
 
   // Stats calculation (real DB roles)
@@ -232,7 +240,7 @@ export default function AdminStaff() {
       showToast(`Worker "${worker.first_name} ${worker.last_name}" account is now ${nextStatus ? 'ACTIVE' : 'DEACTIVATED'}.`);
       loadData();
     } catch (err) {
-      alert('Failed to update worker status: ' + err.message);
+      showToast('Failed to update worker status: ' + err.message, 'error');
     }
   };
 
@@ -244,22 +252,27 @@ export default function AdminStaff() {
       showToast(`Photographer availability updated to ${nextAvail ? 'AVAILABLE' : 'OFF-DUTY'}.`);
       loadData();
     } catch (err) {
-      alert('Failed to update availability: ' + err.message);
+      showToast('Failed to update availability: ' + err.message, 'error');
     }
   };
 
   // Delete Worker
-  const handleDelete = async (worker) => {
+  const handleDelete = (worker) => {
     const fullName = `${worker.first_name} ${worker.last_name}`.trim() || worker.email;
-    if (window.confirm(`Are you sure you want to permanently delete the worker account for "${fullName}"? This action cannot be undone.`)) {
-      try {
-        await deleteWorkerProfile(worker.id);
-        showToast(`Worker account for "${fullName}" removed.`);
-        loadData();
-      } catch (err) {
-        alert('Failed to delete worker: ' + err.message);
-      }
-    }
+    setConfirmDialog({
+      title: 'Delete Team Member?',
+      message: `Are you sure you want to permanently delete the worker account for "${fullName}"? This action cannot be undone.`,
+      confirmLabel: 'Delete Account',
+      onConfirm: async () => {
+        try {
+          await deleteWorkerProfile(worker.id);
+          showToast(`Worker account for "${fullName}" removed.`);
+          loadData();
+        } catch (err) {
+          showToast('Failed to delete worker: ' + err.message, 'error');
+        }
+      },
+    });
   };
 
   // Form Submit (Create / Update)
@@ -285,7 +298,7 @@ export default function AdminStaff() {
       setModalOpen(false);
       loadData(true);
     } catch (err) {
-      alert('Error saving worker profile: ' + err.message);
+      showToast('Error saving worker profile: ' + err.message, 'error');
     } finally {
       setSaving(false);
     }
@@ -841,6 +854,9 @@ export default function AdminStaff() {
           }}
         />
       )}
+
+      <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
+      <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   );
 }

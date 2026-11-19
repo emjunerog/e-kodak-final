@@ -48,6 +48,16 @@ export function startOfDay(date) {
   return d;
 }
 
+/** Local YYYY-MM-DD key so date comparisons never shift by timezone (e.g. UTC vs Asia/Manila). */
+export function localDateKey(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export function addDays(date, amount) {
   const d = new Date(date);
   d.setDate(d.getDate() + amount);
@@ -122,6 +132,7 @@ const RANGE_CONFIG = {
 export const RANGE_OPTIONS = [
   { key: '7D', label: '7D' },
   { key: '30D', label: '30D' },
+  { key: '90D', label: '90D' },
   { key: 'ALL', label: 'All' },
 ];
 
@@ -216,20 +227,25 @@ export function buildTimeline(bookings = [], range = '30D', now = new Date()) {
   } else if (range === '90D') {
     start = addDays(startOfWeek(today), -12 * 7);
   } else {
-    const spanDays = Math.max(0, Math.round((today - startOfDay(earliest)) / DAY_MS));
+    const latestDate = dates.length
+      ? new Date(Math.max(today.getTime(), ...dates.map((d) => d.getTime())))
+      : today;
+    end = startOfDay(latestDate);
+    const spanDays = Math.max(0, Math.round((end - startOfDay(earliest)) / DAY_MS));
     if (spanDays <= 60) {
       size = 'day';
-      start = startOfDay(earliest);
+      // Guarantee at least 7 daily buckets so single-day histories render clear trend curves and sparklines.
+      const minWindowStart = addDays(end, -6);
+      start = new Date(Math.min(startOfDay(earliest).getTime(), minWindowStart.getTime()));
     } else if (spanDays <= 420) {
       size = 'week';
       start = startOfWeek(earliest);
     } else {
       size = 'month';
       // Keep long histories readable — cap at the last 36 months.
-      start = addMonths(startOfMonth(today), -35);
+      start = addMonths(startOfMonth(end), -35);
       start = new Date(Math.max(start.getTime(), startOfMonth(earliest).getTime()));
     }
-    end = today;
   }
 
   const buckets = aggregateBuckets(bucketize(start, end, size), dated);

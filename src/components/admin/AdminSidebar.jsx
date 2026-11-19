@@ -258,7 +258,7 @@ export default function AdminSidebar({ onClose, onOpenProfile, isCollapsed = fal
       </div>
 
       {/* Scrollable Navigation */}
-      <div className="flex-1 overflow-y-auto py-3.5 px-3.5 scrollbar-hide space-y-3.5">
+      <nav aria-label="Admin Portal" className="flex-1 overflow-y-auto py-3.5 px-3.5 scrollbar-hide space-y-3.5">
         
         {/* 1. Core Daily Workflow */}
         <div>
@@ -294,18 +294,20 @@ export default function AdminSidebar({ onClose, onOpenProfile, isCollapsed = fal
         {/* 4. Studio Management */}
         <NavSection label="Studio Management" items={mgmtNav} onClose={onClose} isCollapsed={isCollapsed} />
 
-      </div>
+      </nav>
 
       {/* Profile Footer */}
       <div className="flex-shrink-0 border-t border-neutral-100 p-3 pt-3 pb-3.5 bg-neutral-50/70 space-y-2 overflow-hidden">
         {/* Profile Card */}
-        <div
+        <button
+          type="button"
           onClick={() => {
             onClose?.();
             onOpenProfile?.();
           }}
-          className="h-12 w-full rounded-xl flex items-center px-2.5 transition-all duration-150 hover:bg-white hover:shadow-xs cursor-pointer select-none group min-w-0"
+          className="h-12 w-full rounded-xl flex items-center px-2.5 text-left transition-all duration-150 hover:bg-white hover:shadow-xs cursor-pointer select-none group min-w-0 border-0 outline-none"
           title={`${profile?.first_name || 'Admin'} ${profile?.last_name || ''} (${roleLabel}) - Edit Profile`}
+          aria-label={`Edit profile for ${profile?.first_name || 'Admin'} ${profile?.last_name || ''}`.trim()}
         >
           {/* Avatar slot - exactly anchored at 40px center */}
           <div className="w-9 h-9 flex items-center justify-center shrink-0 relative">
@@ -313,14 +315,14 @@ export default function AdminSidebar({ onClose, onOpenProfile, isCollapsed = fal
               {profile?.avatar_url ? (
                 <img
                   src={profile.avatar_url}
-                  alt="Avatar"
+                  alt=""
                   className="w-full h-full object-cover rounded-full block"
                 />
               ) : (
                 <span className="text-xs">{initial}</span>
               )}
             </div>
-            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
+            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" aria-hidden="true" />
           </div>
 
           {/* Sliding profile info */}
@@ -339,29 +341,18 @@ export default function AdminSidebar({ onClose, onOpenProfile, isCollapsed = fal
             </p>
           </div>
 
-          {/* Edit Profile Icon Button */}
-          <div
-            className={`overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.2,0,0,1)] shrink-0 ${
+          {/* Edit Profile Indicator */}
+          <span
+            aria-hidden="true"
+            className={`overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.2,0,0,1)] shrink-0 p-1.5 text-neutral-400 group-hover:text-gold rounded-lg ${
               isCollapsed
                 ? 'opacity-0 max-w-0 pointer-events-none'
                 : 'opacity-100 max-w-[32px] ml-1'
             }`}
           >
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose?.();
-                onOpenProfile?.();
-              }}
-              className="p-1.5 text-neutral-400 hover:text-gold hover:bg-neutral-200/60 rounded-lg transition-colors cursor-pointer border-0 outline-none"
-              title="Edit Profile"
-              aria-label="Edit Profile"
-            >
-              <Edit3 size={13} />
-            </button>
-          </div>
-        </div>
+            <Edit3 size={13} />
+          </span>
+        </button>
 
         {/* Sign Out Button */}
         <button

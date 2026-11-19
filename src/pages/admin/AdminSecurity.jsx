@@ -37,6 +37,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import AdminHeroBanner from '../../components/admin/AdminHeroBanner';
 import CategorizedMetricStrip from '../../components/admin/CategorizedMetricStrip';
+import Toast from '../../components/ui/Toast';
 import { 
   getQRScanAuditLogs, 
   getBookingAuditLogs,
@@ -107,6 +108,7 @@ export default function AdminSecurity() {
   // Unified Audit Trail Filter & Search
   const [logSearch, setLogSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL'); // 'ALL' | 'ADMIN_ACTION' | 'STATUS_CHANGE' | 'QR_SCAN' | 'PAYMENT'
+  const [toast, setToast] = useState(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -244,7 +246,7 @@ export default function AdminSecurity() {
   // Export Unified Audit Trail to CSV
   const handleExportCSV = () => {
     if (filteredLogs.length === 0) {
-      alert('No audit logs available to export.');
+      setToast({ type: 'warning', message: 'No audit logs available to export.' });
       return;
     }
 
@@ -888,6 +890,7 @@ export default function AdminSecurity() {
         </div>
       )}
       </div>
+      <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   );
 }
