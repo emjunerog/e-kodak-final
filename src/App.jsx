@@ -15,7 +15,6 @@ import AdminProtectedRoute from "./components/auth/AdminProtectedRoute";
 import AdminOnlyRoute from "./components/auth/AdminOnlyRoute";
 import PhotographerProtectedRoute from "./components/auth/PhotographerProtectedRoute";
 import ErrorBoundary from "./components/common/ErrorBoundary";
-import PwaInstallPrompt from "./components/ui/PwaInstallPrompt";
 import { SiteConfigProvider } from "./context/SiteConfigContext";
 
 // ── Public & Auth Pages (Eagerly loaded for instant first paint) ──────────────
@@ -161,7 +160,6 @@ export default function App() {
       <ScrollToTop />
       <RecoveryRedirectGuard />
       <AIAssistant />
-      <PwaInstallPrompt />
 
       <ErrorBoundary>
         <Suspense fallback={<RouteFallback />}>

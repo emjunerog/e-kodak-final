@@ -14,7 +14,7 @@
 - **Role-Based Access Control**: Granular Row Level Security (RLS) in PostgreSQL protecting client profiles, bookings, photographer schedules, and administrative logs.
 - **Automated Notifications & SMS**: Branded editorial HTML emails via Supabase Edge Functions (`send-email`) on every booking progress update, plus automatic TextBee Android SMS gateway alerts for downpayment verification, soft-copy release, and order completion.
 - **Walk-In Claiming & Soft Copy Release Workflow**: Photo Outputs soft-copy release gate, lightbox review for signed Supabase/Drive outputs, Admin Quick Inspector Undo/Redo stage controls, and persistent mobile/web **"Ready to Receive"** notifications on completion.
-- **Installable Mobile Experience**: Installable Web App (PWA with `manifest.webmanifest`, offline-safe Service Worker, and iOS/Android install banner) plus a native React Native / Expo Android Companion app (`mobile/`) ready for APK builds.
+- **Native Android Companion App (`mobile/`)**: React Native / Expo companion app (`com.ekodak.companion`) built automatically by GitHub Actions into a direct installable `ekodak-companion.apk` release for Android phones.
 
 ### 📅 Photographer Scheduling — Feature Roadmap
 

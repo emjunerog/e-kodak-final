@@ -1,6 +1,6 @@
-# Deployment, Mobile Installation & Operations Guide — E-Kodak Studio
+# Deployment, Mobile APK Installation & Operations Guide — E-Kodak Studio
 
-This document covers deploying **E-Kodak Studio** to **GitHub**, installing the app on **mobile phones** (both via **PWA Web App Install** and the **Native Android Companion APK**), and configuring Supabase / notifications.
+This document covers deploying the **E-Kodak Studio** web portal to **GitHub Pages** and building/installing the **Native Android Companion App (`mobile/`)** (`ekodak-companion.apk`) on Android phones.
 
 ---
 
@@ -12,59 +12,50 @@ Repository: `https://github.com/emjunerog/e-kodak-final`
 1. Open your GitHub repository → **Settings → Secrets and variables → Actions → New repository secret** and add:
    - `VITE_SUPABASE_URL` — your Supabase Project URL
    - `VITE_SUPABASE_ANON_KEY` — your Supabase `anon` public key
-   - `VITE_GEMINI_API_KEY` *(optional)* — Gemini API key for the AI Assistant
+   - `VITE_GROQ_API_KEY` *(optional)* — Groq AI Assistant key
+   - `VITE_GROQ_MODEL` *(optional)* — Groq AI model
+   - `VITE_GEMINI_API_KEY` *(optional)* — Gemini API key fallback for AI Assistant
    - `VITE_TEXTBEE_API_KEY` *(optional)* — TextBee API key for automatic SMS milestones
    - `VITE_TEXTBEE_DEVICE_ID` *(optional)* — TextBee Android gateway Device ID
+   - `VITE_XENDIT_SECRET_KEY` *(optional, sandbox only)* — Xendit test secret key
+   - `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` *(optional)* — Google Maps key for Mobile Companion
 2. Open **Settings → Pages → Build and deployment**:
    - Set **Source** to **GitHub Actions**.
-3. Pushing to `main` triggers [`.github/workflows/deploy-web.yml`](../.github/workflows/deploy-web.yml), which:
-   - Builds the Vite production bundle with `VITE_BASE_PATH=/e-kodak-final/`
-   - Copies `dist/index.html` to `dist/404.html` so SPA routes (`/admin/*`, `/photographer/*`, `/dashboard/*`) resolve cleanly on refresh
-   - Publishes the installable PWA to `https://emjunerog.github.io/e-kodak-final/`
+3. Pushing to `main` triggers [`.github/workflows/deploy-web.yml`](../.github/workflows/deploy-web.yml), which builds the Vite web portal with `VITE_BASE_PATH=/e-kodak-final/`, copies `dist/index.html` to `dist/404.html`, and publishes it to `https://emjunerog.github.io/e-kodak-final/`.
 
 > **Alternative Hosts (Vercel / Netlify):** Root configurations (`vercel.json` and `netlify.toml`) and `public/_redirects` are already included. Both build cleanly with `npm run build` and output `dist/` at root base `/`.
 
 ---
 
-## 2. Installing E-Kodak on Mobile Phones
+## 2. Installing the Native Android Companion App (`.apk`)
 
-Customers, Photographers, and Admins can install the system on phones using either the **Web App (PWA)** or the **Native Android APK**.
+The standalone React Native / Expo mobile companion app lives in [`mobile/`](../mobile/) (`com.ekodak.companion`).
 
-### Option A: Install Web App (PWA) on Android & iOS (Recommended for All Roles)
-The web portal includes `public/manifest.webmanifest`, `public/sw.js` (Service Worker), iOS web-app metadata in `index.html`, and an interactive install prompt (`PwaInstallPrompt.jsx`).
+### Option A: Direct Download from GitHub Releases (Built Automatically)
+1. Pushing changes in `mobile/` (or running **Actions → Build Android APK (Mobile App) → Run workflow**) generates `ekodak-companion.apk` via `expo prebuild --platform android` and Gradle `assembleRelease`.
+2. Download directly on your Android phone from:
+   `https://github.com/emjunerog/e-kodak-final/releases/download/companion-latest/ekodak-companion.apk`
+   *(Or download the `ekodak-companion-apk` artifact from the GitHub Actions run.)*
+3. Open `ekodak-companion.apk` on your Android phone, allow **"Install unknown apps"** if prompted, and tap **Install**.
 
-- **Android (Chrome / Edge / Samsung Internet):**
-  1. Open your deployed HTTPS URL (e.g. `https://emjunerog.github.io/e-kodak-final/`).
-  2. Tap **Install** on the bottom *"Install E-Kodak App"* prompt, or open browser menu (`⋮`) → **Install app** / **Add to Home screen**.
-  3. Launch **E-Kodak** directly from your home screen in standalone full-screen mode.
-- **iPhone / iPad (Safari):**
-  1. Open the deployed HTTPS URL in **Safari**.
-  2. Tap the **Share** button (`□↑`), then select **Add to Home Screen**.
-  3. Tap **Add** to place **E-Kodak Studio** on your iOS home screen.
+### Option B: Expo EAS Cloud Build
+```bash
+cd mobile
+npm install
+npx eas login
+npm run build:android
+```
+(`mobile/eas.json` configures the `preview` profile as `"buildType": "apk"` for direct phone installation.)
 
-### Option B: Install Native Android Companion App (`.apk`)
-The React Native / Expo app lives in [`mobile/`](../mobile/) (`com.ekodak.companion`) with EAS and Gradle configurations ready for APK generation.
-
-1. **Via GitHub Actions (No Local Android Studio Required):**
-   - Go to **GitHub → Actions → Build Android APK (Mobile App) → Run workflow** (or push a tag like `git tag mobile-v1.0.0 && git push origin mobile-v1.0.0`).
-   - Download the `ekodak-studio-android-apk` artifact (`ekodak-studio-android.apk`).
-   - Transfer to your Android phone and open the `.apk` file (allow *"Install unknown apps"* if prompted).
-2. **Via Expo EAS Cloud Build:**
-   ```bash
-   cd mobile
-   npm install
-   npx eas login
-   npm run build:android
-   ```
-   (`mobile/eas.json` configures the `preview` profile as `"buildType": "apk"` for direct phone installation.)
-3. **Via Local Android Gradle Build:**
-   ```bash
-   cd mobile
-   npm install
-   cd android
-   ./gradlew assembleRelease
-   ```
-   Output APK path: `mobile/android/app/build/outputs/apk/release/app-release.apk`.
+### Option C: Local Android Gradle Build
+```bash
+cd mobile
+npm install
+npx expo prebuild --platform android --no-install
+cd android
+./gradlew assembleRelease
+```
+Output APK path: `mobile/android/app/build/outputs/apk/release/app-release.apk`.
 
 ---
 
