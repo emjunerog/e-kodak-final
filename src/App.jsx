@@ -4,8 +4,8 @@
  * ROOT APPLICATION ROUTER
  */
 
-import React, { Suspense, lazy } from "react";
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import React, { Suspense, lazy, useEffect } from "react";
+import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 
 // ── Global Components ─────────────────────────────────────────────────────────
 import ScrollToTop from "./components/layout/ScrollToTop";
@@ -27,8 +27,10 @@ import Legal from "./pages/Legal";
 import PublicPassPage from "./pages/PublicPassPage";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
+import ResetPassword from "./pages/auth/ResetPassword";
 import AuthCallback from "./pages/auth/AuthCallback";
 import PendingApproval from "./pages/auth/PendingApproval";
+import { useAuth } from "./context/AuthContext";
 
 // ── Resilient Lazy Loader (retries transient HMR / chunk fetch glitches) ─────
 function lazyWithRetry(importer) {
@@ -135,10 +137,28 @@ function RedirectWithSearch({ to }) {
   return <Navigate to={`${to}${location.search}`} replace />;
 }
 
+/** Routes recovery links automatically to /reset-password even if Supabase falls back to the site root. */
+function RecoveryRedirectGuard() {
+  const { isPasswordRecovery } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    const isRecoveryHash = hash.includes("type=recovery");
+    if ((isPasswordRecovery || isRecoveryHash) && location.pathname !== "/reset-password") {
+      navigate(`/reset-password${location.search}${hash}`, { replace: true });
+    }
+  }, [isPasswordRecovery, location.pathname, location.search, navigate]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <SiteConfigProvider>
       <ScrollToTop />
+      <RecoveryRedirectGuard />
       <AIAssistant />
 
       <ErrorBoundary>
@@ -174,6 +194,7 @@ export default function App() {
 
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/admin-login" element={<Navigate to="/login" replace />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
 

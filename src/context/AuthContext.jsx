@@ -6,6 +6,7 @@ const AuthContext = createContext({});
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const loadedUserIdRef = useRef(null);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [profile, setProfile] = useState(() => {
     try {
       if (typeof window === 'undefined') return null;
@@ -33,8 +34,12 @@ export const AuthProvider = ({ children }) => {
       sessionStorage.setItem('ekodak_isolated_session', 'true');
       sessionStorage.removeItem('ekodak_user_profile');
       Object.keys(sessionStorage).forEach((key) => {
-        if (key.startsWith('sb-')) sessionStorage.removeItem(key);
+        if (key.startsWith('sb-') || key.startsWith('ekodak-auth-')) {
+          sessionStorage.removeItem(key);
+        }
       });
+      loadedUserIdRef.current = null;
+      setIsPasswordRecovery(false);
       setUser(null);
       setProfile(null);
       setLoading(false);
@@ -143,6 +148,13 @@ export const AuthProvider = ({ children }) => {
     // Guard against tab-visibility focus events re-triggering profile fetches and dashboard reloads
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (isMounted) {
+          if (event === 'PASSWORD_RECOVERY') {
+            setIsPasswordRecovery(true);
+          } else if (event === 'SIGNED_OUT') {
+            setIsPasswordRecovery(false);
+          }
+        }
         const currentUser = session?.user ?? null;
         if (isMounted) {
           setUser((prev) =>
@@ -271,6 +283,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const signOut = async () => {
+    loadedUserIdRef.current = null;
+    setIsPasswordRecovery(false);
     saveProfileCache(null);
     setProfile(null);
     setUser(null);
@@ -319,7 +333,10 @@ export const AuthProvider = ({ children }) => {
 
     const { data, error } = await supabase.auth.signInWithOtp({
       email: cleanEmail,
-      options: { shouldCreateUser: false },
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
     });
 
     if (error) {
@@ -360,6 +377,73 @@ export const AuthProvider = ({ children }) => {
     }
     return data;
   };
+
+  /**
+   * Sends a password reset email (supports both a 6-digit recovery code and /reset-password link).
+   */
+  const requestPasswordReset = async (email) => {
+    if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      throw new Error("Please enter a valid email address.");
+    }
+
+    const { data, error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+
+    if (error) {
+      const code = String(error.code || "").toLowerCase();
+      const msg = String(error.message || "").toLowerCase();
+      if (code === "over_email_send_rate_limit" || msg.includes("rate limit")) {
+        throw new Error("Too many reset requests. Please wait a minute before trying again.");
+      }
+      throw error;
+    }
+    return data;
+  };
+
+  /**
+   * Verifies a 6-digit password recovery code sent via resetPasswordForEmail.
+   */
+  const verifyRecoveryCode = async (email, token) => {
+    if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    const cleanToken = String(token || "").replace(/\D/g, "").slice(0, 6);
+    if (cleanToken.length !== 6) {
+      throw new Error("Please enter the 6-digit reset code from your email.");
+    }
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: cleanEmail,
+      token: cleanToken,
+      type: 'recovery',
+    });
+
+    if (error) throw error;
+    return data;
+  };
+
+  /**
+   * Updates the authenticated user's password (after recovery link or recovery OTP).
+   */
+  const updatePassword = async (newPassword) => {
+    if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error("Password must be at least 6 characters.");
+    }
+
+    const { data, error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+    if (error) throw error;
+    setIsPasswordRecovery(false);
+    return data;
+  };
+
+  const clearPasswordRecovery = useCallback(() => {
+    setIsPasswordRecovery(false);
+  }, []);
 
   // ── Profile actions ───────────────────────────────────────────────────────────
 
@@ -458,6 +542,8 @@ export const AuthProvider = ({ children }) => {
     user,
     profile,
     loading,
+    isPasswordRecovery,
+    clearPasswordRecovery,
     signIn,
     signUp,
     signInWithGoogle,
@@ -465,6 +551,9 @@ export const AuthProvider = ({ children }) => {
     verifyEmailCode,
     sendLoginCode,
     resendVerification,
+    requestPasswordReset,
+    verifyRecoveryCode,
+    updatePassword,
     updateProfile,
     uploadAvatar,
     refreshProfile,

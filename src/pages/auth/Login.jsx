@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useLocation, Navigate } from "react-router-dom";
-import { Camera, Mail, Lock, ArrowRight, ArrowLeft, Loader2, RefreshCw, AlertCircle, CheckCircle2, Eye, EyeOff, Sun, Moon } from "lucide-react";
+import { Camera, Mail, Lock, ArrowRight, ArrowLeft, Loader2, RefreshCw, AlertCircle, CheckCircle2, Eye, EyeOff, Sun, Moon, KeyRound } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import Toast from "../../components/ui/Toast";
@@ -111,6 +111,13 @@ export default function Login() {
   const [verificationMode, setVerificationMode] = useState("email"); // 'signup' | 'email'
   const [toast, setToast] = useState(null);
 
+  // Forgot Password / Reset state (steps 3 & 4)
+  const [resetCode, setResetCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showNewPwd, setShowNewPwd] = useState(false);
+  const [showConfirmNewPwd, setShowConfirmNewPwd] = useState(false);
+
   // Camera Flash capture animation state & direction ('to-dark' | 'to-light')
   const [isFlashing, setIsFlashing] = useState(false);
   const [transitionDirection, setTransitionDirection] = useState(null);
@@ -169,7 +176,19 @@ export default function Login() {
     }
   }, [isDark]);
 
-  const { user, profile, loading, signInWithGoogle, verifyEmailCode, sendLoginCode, resendVerification, startIsolatedSession } = useAuth();
+  const {
+    user,
+    profile,
+    loading,
+    signInWithGoogle,
+    verifyEmailCode,
+    sendLoginCode,
+    resendVerification,
+    requestPasswordReset,
+    verifyRecoveryCode,
+    updatePassword,
+    startIsolatedSession,
+  } = useAuth();
   const navigate  = useNavigate();
   const location  = useLocation();
 
@@ -329,7 +348,7 @@ export default function Login() {
       if (authErr) throw authErr;
 
       const { data: profileData } = await supabase
-        .from('profiles').select('*').eq('id', data.user.id).single();
+        .from('profiles').select('*').eq('id', data.user.id).maybeSingle();
 
       if (profileData) {
         try {
@@ -337,18 +356,21 @@ export default function Login() {
         } catch {}
       }
 
-      const role = profileData?.role || 'customer';
+      const role = profileData?.role || data.user?.user_metadata?.role || 'customer';
       navigate(from || getDefaultRoute(role), { replace: true });
     } catch (err) {
       const msg = err.message || "Failed to sign in.";
-      setError(msg);
       const lowerMsg = msg.toLowerCase();
       if (!isStaffOrAdminEmail && lowerMsg.includes("email not confirmed")) {
+        setError("Your email address is not confirmed yet. Send a 6-digit verification code below to activate your account.");
         setVerificationMode("signup");
         setNeedsVerification(true);
       } else if (!isStaffOrAdminEmail && lowerMsg.includes("invalid login")) {
+        setError("Incorrect email or password. Reset your password if needed, or sign in with a 6-digit email code.");
         setVerificationMode("email");
         setNeedsVerification(true);
+      } else {
+        setError(msg);
       }
     } finally {
       setIsSubmitting(false);
@@ -374,25 +396,119 @@ export default function Login() {
     if (!code || code.length !== 6) { setError("Please enter the 6-digit code."); return; }
     setIsSubmitting(true);
     try {
-      const authData = await verifyEmailCode(cleanEmail, code, verificationMode);
+      let authData;
+      try {
+        authData = await verifyEmailCode(cleanEmail, code, verificationMode);
+      } catch (primaryErr) {
+        if (verificationMode === "signup") {
+          authData = await verifyEmailCode(cleanEmail, code, "email");
+        } else {
+          throw primaryErr;
+        }
+      }
       const userId = authData?.user?.id;
-      let role = "customer";
+      let role = authData?.user?.user_metadata?.role || "customer";
       if (userId) {
         const { data: profileData } = await supabase
           .from("profiles")
           .select("*")
           .eq("id", userId)
-          .single();
+          .maybeSingle();
         if (profileData) {
           try {
             sessionStorage.setItem("ekodak_user_profile", JSON.stringify(profileData));
           } catch {}
-          role = profileData.role || "customer";
+          role = profileData.role || role;
         }
       }
       navigate(from || getDefaultRoute(role), { replace: true });
     } catch (err) {
       setError(err.message || "Invalid or expired code. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ── Forgot Password Flow (Steps 3 & 4) ───────────────────────────────────────
+  const openForgotPassword = () => {
+    setError("");
+    setResendStatus("");
+    setNeedsVerification(false);
+    setResetCode("");
+    setNewPassword("");
+    setConfirmNewPassword("");
+    setStep(3);
+  };
+
+  const handleForgotRequest = async (e) => {
+    if (e) e.preventDefault();
+    setError("");
+    setResendStatus("");
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await requestPasswordReset(cleanEmail);
+      setResetCode("");
+      setResendCooldown(60);
+      setResendStatus(
+        "Reset instructions sent! Enter the 6-digit code from your email below, or click the reset link in your inbox."
+      );
+      setStep(4);
+    } catch (err) {
+      setError(err.message || "Failed to send password reset email.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleForgotComplete = async (e) => {
+    e.preventDefault();
+    setError("");
+    setResendStatus("");
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!resetCode || resetCode.length !== 6) {
+      setError("Please enter the 6-digit reset code from your email.");
+      return;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const authData = await verifyRecoveryCode(cleanEmail, resetCode);
+      await updatePassword(newPassword);
+
+      const userId = authData?.user?.id;
+      let role = authData?.user?.user_metadata?.role || "customer";
+      if (userId) {
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", userId)
+          .maybeSingle();
+        if (profileData) {
+          try {
+            sessionStorage.setItem("ekodak_user_profile", JSON.stringify(profileData));
+          } catch {}
+          role = profileData.role || role;
+        }
+      }
+
+      navigate(from || getDefaultRoute(role), { replace: true });
+    } catch (err) {
+      setError(err.message || "Invalid or expired reset code. Request a new code or use the link in your email.");
     } finally {
       setIsSubmitting(false);
     }
@@ -725,9 +841,17 @@ export default function Login() {
                   <>
                     Welcome <span className={`italic font-normal ${isDark ? 'text-gold' : 'text-[#87550e]'}`}>back</span>
                   </>
-                ) : (
+                ) : step === 2 ? (
                   <>
                     Verify your <span className={`italic font-normal ${isDark ? 'text-gold' : 'text-[#87550e]'}`}>email</span>
+                  </>
+                ) : step === 3 ? (
+                  <>
+                    Reset your <span className={`italic font-normal ${isDark ? 'text-gold' : 'text-[#87550e]'}`}>password</span>
+                  </>
+                ) : (
+                  <>
+                    Create new <span className={`italic font-normal ${isDark ? 'text-gold' : 'text-[#87550e]'}`}>password</span>
                   </>
                 )}
               </h1>
@@ -735,10 +859,16 @@ export default function Login() {
                 <p className={`font-body text-sm ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
                   Please enter your details to sign in.
                 </p>
+              ) : step === 3 ? (
+                <p className={`font-body text-sm ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
+                  Enter your account email and we will send a 6-digit reset code and link.
+                </p>
               ) : (
                 <div className="space-y-2.5">
                   <p className={`font-body text-sm ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
-                    Enter the 6-digit code sent to your inbox.
+                    {step === 4
+                      ? "Enter the 6-digit reset code from your email (or click the reset link sent to you) and set your new password."
+                      : "Enter the 6-digit code sent to your inbox."}
                   </p>
                   <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border max-w-full ${
                     isDark
@@ -864,7 +994,7 @@ export default function Login() {
                       </label>
                       <button
                         type="button"
-                        onClick={() => setToast({ type: 'info', message: 'Password reset: Contact support or use the Supabase dashboard.' })}
+                        onClick={openForgotPassword}
                         className={`text-xs ${isDark ? 'text-gold hover:text-gold-light' : 'text-[#87550e] hover:text-[#694206]'} font-semibold font-body hover:underline underline-offset-4 decoration-gold/40 cursor-pointer`}
                       >
                         Forgot password?
@@ -929,24 +1059,40 @@ export default function Login() {
                       <p className="text-xs sm:text-sm font-body leading-snug">
                         {verificationMode === "signup"
                           ? "Your email hasn't been confirmed yet. Send a 6-digit verification code to activate your account."
-                          : "Trouble signing in? If you already registered with this email, we can send a 6-digit sign-in code."}
+                          : "Forgot your password or registered with Google? You can reset your password for future logins, or sign in with a 6-digit code now."}
                       </p>
-                      <button
-                        type="button"
-                        onClick={handleResend}
-                        disabled={isSubmitting || resendCooldown > 0}
-                        className={`w-full h-10 rounded-lg text-xs sm:text-sm font-semibold transition-colors cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed ${
-                          isDark
-                            ? 'bg-gold/15 hover:bg-gold/25 text-gold-light border border-gold/35'
-                            : 'bg-neutral-900 hover:bg-neutral-800 text-[#e8cf9d]'
-                        }`}
-                      >
-                        {isSubmitting
-                          ? "Sending code…"
-                          : verificationMode === "signup"
-                            ? "Send Verification Code"
-                            : "Email Me a Sign-In Code"}
-                      </button>
+                      <div className={verificationMode === "signup" ? "space-y-2" : "grid grid-cols-1 sm:grid-cols-2 gap-2"}>
+                        {verificationMode !== "signup" && (
+                          <button
+                            type="button"
+                            onClick={openForgotPassword}
+                            disabled={isSubmitting}
+                            className={`w-full h-10 rounded-lg text-xs sm:text-sm font-semibold transition-colors cursor-pointer disabled:opacity-55 ${
+                              isDark
+                                ? 'bg-white/10 hover:bg-white/15 text-white border border-white/20'
+                                : 'bg-white hover:bg-neutral-100 text-neutral-900 border border-neutral-300'
+                            }`}
+                          >
+                            Reset Password
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleResend}
+                          disabled={isSubmitting || resendCooldown > 0}
+                          className={`w-full h-10 rounded-lg text-xs sm:text-sm font-semibold transition-colors cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed ${
+                            isDark
+                              ? 'bg-gold/15 hover:bg-gold/25 text-gold-light border border-gold/35'
+                              : 'bg-neutral-900 hover:bg-neutral-800 text-[#e8cf9d]'
+                          }`}
+                        >
+                          {isSubmitting
+                            ? "Sending code…"
+                            : verificationMode === "signup"
+                              ? "Send Verification Code"
+                              : "Email Sign-In Code"}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </form>
@@ -1033,6 +1179,276 @@ export default function Login() {
                     <RefreshCw size={12} className={isSubmitting ? 'animate-spin' : ''} />
                     <span>
                       {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── STEP 3: FORGOT PASSWORD (REQUEST EMAIL) ── */}
+            {step === 3 && (
+              <div className="animate-fade-in">
+                <form onSubmit={handleForgotRequest} className="space-y-4">
+                  <div>
+                    <label
+                      htmlFor="forgot-email"
+                      className={`block text-xs font-semibold uppercase tracking-wider font-body mb-2 ${
+                        isDark ? 'text-neutral-200' : 'text-neutral-800'
+                      }`}
+                    >
+                      Email Address
+                    </label>
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-400 group-focus-within:text-gold transition-colors duration-200">
+                        <Mail size={17} strokeWidth={1.8} />
+                      </div>
+                      <input
+                        id="forgot-email"
+                        name="forgotEmail"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        autoComplete="username"
+                        autoCapitalize="none"
+                        spellCheck="false"
+                        inputMode="email"
+                        disabled={isSubmitting}
+                        placeholder="you@example.com"
+                        className={`w-full pl-11 pr-4 py-3 min-h-[50px] rounded-xl outline-none font-body text-sm font-medium transition-all duration-200 disabled:opacity-60 border ${
+                          isDark
+                            ? 'auth-input-dark bg-[#1a1c20] border-[#373b44] focus:border-gold focus:ring-1 focus:ring-gold text-white placeholder:text-neutral-400'
+                            : 'auth-input-light bg-white border-neutral-300 focus:border-gold focus:ring-1 focus:ring-gold text-neutral-900 placeholder:text-neutral-400 shadow-xs'
+                        }`}
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full min-h-[50px] flex items-center justify-center gap-2 rounded-xl mt-2 bg-gradient-to-r from-[#e5be70] via-[#c9a96e] to-[#e8d5b0] hover:from-[#ecc77a] hover:to-[#f0ddbc] text-neutral-950 font-body font-bold text-sm tracking-wide shadow-lg shadow-gold/20 hover:shadow-xl hover:shadow-gold/30 transition-all duration-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 size={17} className="animate-spin text-neutral-950" />
+                        <span>Sending Reset Email…</span>
+                      </>
+                    ) : (
+                      <>
+                        <KeyRound size={16} />
+                        <span>Send Reset Code &amp; Link</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                <div className={`mt-6 pt-4 border-t flex items-center justify-between gap-3 ${
+                  isDark ? 'border-white/10' : 'border-neutral-200/80'
+                }`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep(1);
+                      setError("");
+                      setResendStatus("");
+                    }}
+                    className={`inline-flex items-center gap-1.5 text-xs font-semibold font-body transition-colors cursor-pointer ${
+                      isDark ? 'text-neutral-400 hover:text-neutral-200' : 'text-neutral-600 hover:text-neutral-900'
+                    }`}
+                  >
+                    <ArrowLeft size={13} />
+                    <span>Back to Sign In</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── STEP 4: FORGOT PASSWORD (CODE + NEW PASSWORD) ── */}
+            {step === 4 && (
+              <div className="animate-fade-in">
+                <form onSubmit={handleForgotComplete} className="space-y-4">
+                  <div>
+                    <label
+                      htmlFor="reset-otp-0"
+                      className={`block text-xs font-semibold uppercase tracking-wider font-body mb-2.5 ${
+                        isDark ? 'text-neutral-300' : 'text-neutral-600'
+                      }`}
+                    >
+                      6-Digit Reset Code
+                    </label>
+                    <OtpCodeInput
+                      value={resetCode}
+                      onChange={setResetCode}
+                      disabled={isSubmitting}
+                      isDark={isDark}
+                      idPrefix="reset-otp"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="forgot-new-password"
+                      className={`block text-xs font-semibold uppercase tracking-wider font-body mb-2 ${
+                        isDark ? 'text-neutral-200' : 'text-neutral-800'
+                      }`}
+                    >
+                      New Password
+                    </label>
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-400 group-focus-within:text-gold transition-colors duration-200">
+                        <Lock size={17} strokeWidth={1.8} />
+                      </div>
+                      <input
+                        id="forgot-new-password"
+                        type={showNewPwd ? "text" : "password"}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        required
+                        minLength={6}
+                        autoComplete="new-password"
+                        disabled={isSubmitting}
+                        placeholder="At least 6 characters"
+                        className={`w-full pl-11 pr-11 py-3 min-h-[48px] rounded-xl outline-none font-body text-sm font-medium transition-all duration-200 disabled:opacity-60 border ${
+                          isDark
+                            ? 'auth-input-dark bg-[#1a1c20] border-[#373b44] focus:border-gold focus:ring-1 focus:ring-gold text-white placeholder:text-neutral-400'
+                            : 'auth-input-light bg-white border-neutral-300 focus:border-gold focus:ring-1 focus:ring-gold text-neutral-900 placeholder:text-neutral-400 shadow-xs'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPwd((v) => !v)}
+                        aria-label={showNewPwd ? "Hide password" : "Show password"}
+                        className={`absolute inset-y-0 right-0 pr-3.5 flex items-center cursor-pointer ${
+                          isDark ? 'text-neutral-400 hover:text-neutral-200' : 'text-neutral-500 hover:text-neutral-800'
+                        }`}
+                      >
+                        {showNewPwd ? <EyeOff size={17} /> : <Eye size={17} />}
+                      </button>
+                    </div>
+                    {newPassword && (
+                      <div className="flex items-center gap-3 mt-2">
+                        {[
+                          { label: "6+ characters", ok: newPassword.length >= 6 },
+                          { label: "Letter", ok: /[a-zA-Z]/.test(newPassword) },
+                          { label: "Number", ok: /[0-9]/.test(newPassword) },
+                        ].map((c) => (
+                          <div key={c.label} className="flex items-center gap-1.5">
+                            <div
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                c.ok ? 'bg-emerald-500' : isDark ? 'bg-neutral-700' : 'bg-neutral-300'
+                              }`}
+                            />
+                            <span
+                              className={`text-[11px] font-body ${
+                                c.ok
+                                  ? isDark
+                                    ? 'text-emerald-400 font-medium'
+                                    : 'text-emerald-700 font-semibold'
+                                  : 'text-neutral-500'
+                              }`}
+                            >
+                              {c.label}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="forgot-confirm-password"
+                      className={`block text-xs font-semibold uppercase tracking-wider font-body mb-2 ${
+                        isDark ? 'text-neutral-200' : 'text-neutral-800'
+                      }`}
+                    >
+                      Confirm New Password
+                    </label>
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-400 group-focus-within:text-gold transition-colors duration-200">
+                        <Lock size={17} strokeWidth={1.8} />
+                      </div>
+                      <input
+                        id="forgot-confirm-password"
+                        type={showConfirmNewPwd ? "text" : "password"}
+                        value={confirmNewPassword}
+                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                        required
+                        minLength={6}
+                        autoComplete="new-password"
+                        disabled={isSubmitting}
+                        placeholder="Re-enter new password"
+                        className={`w-full pl-11 pr-11 py-3 min-h-[48px] rounded-xl outline-none font-body text-sm font-medium transition-all duration-200 disabled:opacity-60 border ${
+                          confirmNewPassword && confirmNewPassword !== newPassword
+                            ? 'border-red-400 focus:border-red-500 focus:ring-1 focus:ring-red-500'
+                            : isDark
+                              ? 'auth-input-dark bg-[#1a1c20] border-[#373b44] focus:border-gold focus:ring-1 focus:ring-gold text-white placeholder:text-neutral-400'
+                              : 'auth-input-light bg-white border-neutral-300 focus:border-gold focus:ring-1 focus:ring-gold text-neutral-900 placeholder:text-neutral-400 shadow-xs'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmNewPwd((v) => !v)}
+                        aria-label={showConfirmNewPwd ? "Hide confirm password" : "Show confirm password"}
+                        className={`absolute inset-y-0 right-0 pr-3.5 flex items-center cursor-pointer ${
+                          isDark ? 'text-neutral-400 hover:text-neutral-200' : 'text-neutral-500 hover:text-neutral-800'
+                        }`}
+                      >
+                        {showConfirmNewPwd ? <EyeOff size={17} /> : <Eye size={17} />}
+                      </button>
+                    </div>
+                    {confirmNewPassword && confirmNewPassword !== newPassword && (
+                      <p className="text-xs text-red-500 font-body mt-1.5 font-medium">Passwords do not match</p>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || resetCode.length !== 6}
+                    className="w-full min-h-[48px] flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#e5be70] via-[#c9a96e] to-[#e8d5b0] hover:from-[#ecc77a] hover:to-[#f0ddbc] text-neutral-950 font-body font-bold text-sm tracking-wide shadow-md shadow-gold/20 hover:shadow-lg hover:shadow-gold/30 transition-all duration-200 disabled:opacity-55 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 size={17} className="animate-spin text-neutral-950" />
+                        <span>Updating Password…</span>
+                      </>
+                    ) : (
+                      <span>Reset Password &amp; Sign In</span>
+                    )}
+                  </button>
+                </form>
+
+                <div className={`mt-6 pt-4 border-t flex items-center justify-between gap-3 ${
+                  isDark ? 'border-white/10' : 'border-neutral-200/80'
+                }`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep(1);
+                      setError("");
+                      setResendStatus("");
+                      setResetCode("");
+                    }}
+                    className={`inline-flex items-center gap-1.5 text-xs font-semibold font-body transition-colors cursor-pointer ${
+                      isDark ? 'text-neutral-400 hover:text-neutral-200' : 'text-neutral-600 hover:text-neutral-900'
+                    }`}
+                  >
+                    <ArrowLeft size={13} />
+                    <span>Back to Sign In</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleForgotRequest()}
+                    disabled={isSubmitting || resendCooldown > 0}
+                    className={`inline-flex items-center gap-1.5 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                      isDark ? 'text-gold hover:text-gold-light' : 'text-[#87550e] hover:text-[#694206]'
+                    }`}
+                  >
+                    <RefreshCw size={12} className={isSubmitting ? 'animate-spin' : ''} />
+                    <span>
+                      {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Reset"}
                     </span>
                   </button>
                 </div>
