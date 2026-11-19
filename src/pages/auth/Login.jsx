@@ -487,7 +487,16 @@ export default function Login() {
 
     setIsSubmitting(true);
     try {
-      const authData = await verifyRecoveryCode(cleanEmail, resetCode);
+      let authData;
+      try {
+        authData = await verifyRecoveryCode(cleanEmail, resetCode);
+      } catch (recoveryErr) {
+        try {
+          authData = await verifyEmailCode(cleanEmail, resetCode, "email");
+        } catch {
+          throw recoveryErr;
+        }
+      }
       await updatePassword(newPassword);
 
       const userId = authData?.user?.id;
@@ -508,7 +517,14 @@ export default function Login() {
 
       navigate(from || getDefaultRoute(role), { replace: true });
     } catch (err) {
-      setError(err.message || "Invalid or expired reset code. Request a new code or use the link in your email.");
+      const raw = String(err?.message || "");
+      if (raw.toLowerCase().includes("expired") || raw.toLowerCase().includes("invalid")) {
+        setError(
+          "This code is expired or was replaced. Open the newest email at the bottom of your Gmail thread (only the latest unclicked code works) or click Resend Reset."
+        );
+      } else {
+        setError(raw || "Invalid or expired reset code. Request a new code or use the link in your email.");
+      }
     } finally {
       setIsSubmitting(false);
     }

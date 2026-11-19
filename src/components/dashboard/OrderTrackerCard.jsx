@@ -2,7 +2,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
-import { getStatusLabel } from '../../lib/bookingUtils';
+import { getStatusLabel, formatBookingTime } from '../../lib/bookingUtils';
 
 function parseLocal(d) {
   if (!d) return null;
@@ -71,7 +71,10 @@ export default function OrderTrackerCard({ sessions, selectedId, onSelect }) {
   const totalAmt = Number(session.total_amount ?? 0);
 
   const scheduleDate = fmtDate(session.event_date);
-  const scheduleTime = session.event_time ? session.event_time : (session.event_date ? 'Time TBD' : '');
+  const scheduleTime =
+    session.event_time ||
+    formatBookingTime(session.preferred_time) ||
+    (session.event_date ? 'Time TBD' : '');
   const shootSchedule = scheduleDate === 'Date pending'
     ? 'Date pending'
     : (scheduleTime ? `${scheduleDate} · ${scheduleTime}` : scheduleDate);

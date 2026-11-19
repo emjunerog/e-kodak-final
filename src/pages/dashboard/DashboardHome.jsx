@@ -98,10 +98,22 @@ export default function DashboardHome() {
     () => approvedBookings.filter((b) => !['COMPLETED', 'CANCELLED', 'REJECTED'].includes(String(b.status || '').toUpperCase())),
     [approvedBookings]
   );
+  const liveBookings = useMemo(
+    () => bookings.filter((b) => !['CANCELLED', 'REJECTED'].includes(String(b.status || '').toUpperCase())),
+    [bookings]
+  );
+  const liveScheduleBookings = useMemo(
+    () => liveBookings.filter((b) => String(b.status || '').toUpperCase() !== 'COMPLETED'),
+    [liveBookings]
+  );
   const completedCount = approvedBookings.filter((b) => String(b.status || '').toUpperCase() === 'COMPLETED').length;
 
-  // Orders shown in the tracker: admin-approved active ones first, else most recent approved
-  const trackerSessions = activeBookings.length > 0 ? activeBookings : approvedBookings.slice(0, 1);
+  // Orders shown in the tracker: approved active orders first, then pending/reserved submissions, then completed
+  const trackerSessions = useMemo(() => {
+    if (activeBookings.length > 0) return activeBookings;
+    if (pendingApprovalBookings.length > 0) return pendingApprovalBookings;
+    return approvedBookings.slice(0, 1);
+  }, [activeBookings, pendingApprovalBookings, approvedBookings]);
 
   // Outstanding balance across live orders (approved + pending)
   const outstanding = useMemo(
@@ -244,10 +256,10 @@ export default function DashboardHome() {
                 ))}
               </nav>
 
-              <StudioExperienceBanner bookings={approvedBookings} className="shrink-0" />
+              <StudioExperienceBanner bookings={liveBookings} className="shrink-0" />
 
               <SessionCredentialsCard
-                bookings={approvedBookings}
+                bookings={liveBookings}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 className="lg:h-[660px] mt-auto shrink-0"
@@ -256,7 +268,7 @@ export default function DashboardHome() {
 
             {/* ── Side column ─────────────────────────────────────────── */}
             <aside className="lg:col-span-4 flex flex-col gap-6 h-full min-w-0">
-              <UpcomingDatesCard bookings={approvedBookings} className="shrink-0" />
+              <UpcomingDatesCard bookings={liveScheduleBookings} className="shrink-0" />
 
               <LookbookAppReminder className="flex-1 min-h-[260px]" />
 

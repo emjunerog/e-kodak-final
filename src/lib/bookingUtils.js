@@ -278,6 +278,20 @@ export function isPaymentVerifiedByAdmin(booking) {
  * @param {object} booking
  * @returns {null | { type: 'CONFIRM_PAYMENT' | 'APPROVE_AND_RESERVE' | 'ASSIGN_PHOTOGRAPHER' | 'ADVANCE_STAGE', label: string, nextStatus: string, nextLabel: string }}
  */
+/** Format HH:MM or HH:MM:SS into clean 12-hour studio display (e.g., 10:00 AM). */
+export function formatBookingTime(value) {
+  if (!value) return '';
+  const raw = String(value).trim();
+  const match = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return raw;
+  const hour24 = Number(match[1]);
+  const mins = match[2];
+  if (Number.isNaN(hour24) || hour24 < 0 || hour24 > 23) return raw;
+  const period = hour24 >= 12 ? 'PM' : 'AM';
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${hour12}:${mins} ${period}`;
+}
+
 export function getNextBookingAction(booking) {
   if (!booking) return null;
   const status = String(booking.status || 'PENDING').toUpperCase();

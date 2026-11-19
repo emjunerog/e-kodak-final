@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { Link } from 'react-router-dom';
-import { getStatusLabel } from '../../lib/bookingUtils';
+import { getStatusLabel, formatBookingTime } from '../../lib/bookingUtils';
 
 function parseLocal(d) {
   if (!d) return null;
@@ -174,7 +174,10 @@ export default function UpcomingDatesCard({ bookings = [], className = '' }) {
                 {upcomingSchedule.booking.service?.name || 'Photoshoot session'}
               </p>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 font-sans font-light truncate">
-                {upcomingSchedule.booking.event_time || 'Time to be confirmed'} &middot; {getStatusLabel(upcomingSchedule.booking.status)}
+                {upcomingSchedule.booking.event_time ||
+                  formatBookingTime(upcomingSchedule.booking.preferred_time) ||
+                  'Time to be confirmed'}{' '}
+                &middot; {getStatusLabel(upcomingSchedule.booking.status)}
               </p>
               <Link
                 to={`/dashboard/bookings/${upcomingSchedule.booking.id}`}

@@ -305,11 +305,18 @@ export default function SessionCredentialsCard({
               )}
             </button>
 
-            {/* Ready to scan live indicator (Centered) */}
-            <div className="flex items-center justify-center gap-2 mt-1.5 text-xs text-neutral-600 dark:text-neutral-400 font-light">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 ring-4 ring-emerald-500/20" />
-              <span>Ready to scan in the mobile app</span>
-            </div>
+            {/* Live status indicator (Centered) */}
+            {['PENDING', 'RESERVED'].includes(String(currentBooking?.status || '').toUpperCase()) ? (
+              <div className="flex items-center justify-center gap-2 mt-1.5 text-xs text-amber-700 dark:text-amber-300 font-light">
+                <span className="w-2 h-2 rounded-full bg-amber-500 ring-4 ring-amber-500/20" />
+                <span>QR pass activates upon studio approval</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-2 mt-1.5 text-xs text-neutral-600 dark:text-neutral-400 font-light">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 ring-4 ring-emerald-500/20" />
+                <span>Ready to scan in the mobile app</span>
+              </div>
+            )}
           </div>
         </div>
 
