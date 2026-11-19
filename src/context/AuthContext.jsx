@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
-import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { supabase, isSupabaseConfigured, buildAppRedirectUrl } from "../lib/supabase";
 
 /** Extract first_name, last_name, and avatar_url from Supabase auth metadata (supports Google OAuth). */
 function extractAuthMetadataProfile(authUser) {
@@ -341,7 +341,7 @@ export const AuthProvider = ({ children }) => {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: buildAppRedirectUrl("auth/callback"),
         queryParams: { access_type: 'offline', prompt: 'consent' },
       },
     });
@@ -402,7 +402,7 @@ export const AuthProvider = ({ children }) => {
       email: cleanEmail,
       options: {
         shouldCreateUser: false,
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: buildAppRedirectUrl("auth/callback"),
       },
     });
 
@@ -456,7 +456,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     const { data, error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: buildAppRedirectUrl("reset-password"),
     });
 
     if (error) {

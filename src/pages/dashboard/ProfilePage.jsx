@@ -11,7 +11,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getCustomerBookings } from '../../services/bookingService';
 import { recordCustomerAction } from '../../services/customerAuditService';
-import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import { supabase, isSupabaseConfigured, buildAppRedirectUrl } from '../../lib/supabase';
 import Toast from '../../components/ui/Toast';
 import StudioDropdown from '../../components/ui/StudioDropdown';
 
@@ -324,7 +324,7 @@ export default function ProfilePage() {
                 return;
             }
             const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-                redirectTo: `${window.location.origin}/reset-password`,
+                redirectTo: buildAppRedirectUrl('reset-password'),
             });
             if (error) throw error;
             setToast({ type: 'success', message: `Password reset instructions sent to ${user.email}.` });

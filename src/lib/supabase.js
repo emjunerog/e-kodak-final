@@ -44,6 +44,18 @@ export const isSupabaseConfigured =
   supabaseKey !== "your_supabase_anon_key_here";
 
 /**
+ * Builds an absolute redirect URL honoring Vite's BASE_URL (e.g. `/` on Netlify,
+ * `/e-kodak-final/` on GitHub Pages) so OAuth and password reset callbacks work everywhere.
+ */
+export function buildAppRedirectUrl(subpath) {
+  if (typeof window === "undefined") return "";
+  const rawBase = import.meta.env?.BASE_URL || "/";
+  const basePath = rawBase.endsWith("/") ? rawBase : `${rawBase}/`;
+  const cleanSub = String(subpath || "").replace(/^\/+/, "");
+  return `${window.location.origin}${basePath}${cleanSub}`;
+}
+
+/**
  * getTabStorageKey()
  * ------------------
  * Returns a stable, unique key for this tab stored in sessionStorage.
