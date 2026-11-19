@@ -20,8 +20,18 @@ export default function ClientHeroBanner({
   showStudioStatus = true,
   extraActions = null,
 }) {
-  const { profile } = useAuth();
-  const displayName = profile?.first_name || 'Client';
+  const { profile, user } = useAuth();
+  const metaFullName = String(
+    user?.user_metadata?.full_name || user?.user_metadata?.name || ''
+  ).trim();
+  const metaFirstName =
+    String(
+      user?.user_metadata?.first_name ||
+      user?.user_metadata?.given_name ||
+      metaFullName.split(/\s+/)[0] ||
+      ''
+    ).trim();
+  const displayName = String(profile?.first_name || '').trim() || metaFirstName || 'Client';
 
   return (
     <DashboardHero

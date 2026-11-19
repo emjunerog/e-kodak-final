@@ -2,6 +2,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { getEffectivePaymentStatus } from '../lib/bookingUtils';
 import { ADD_ONS } from '../data/servicesData';
 import { sendTextBeeSms } from './textbeeService';
+import { sendCustomerDeletionNoticeEmail } from './emailService';
 
 // ── In-Memory Fast Cache with TTL ───────────────────────────────────────────
 const serviceCache = new Map();
@@ -372,26 +373,74 @@ export async function getCustomerDetail(id) {
 /**
  * deleteCustomer
  * --------------
- * Deletes a customer profile record from the database.
- * Cascading constraints will clean up related records.
+ * Sends a Gmail deletion notice to the customer, then invokes the atomic
+ * `admin_delete_customer_account` RPC to permanently delete all customer
+ * bookings/orders, profile, auth sessions, and auth.users credentials.
  */
-export async function deleteCustomer(id) {
+export async function deleteCustomer(id, { reason = '', customerRecord = null } = {}) {
   if (!isSupabaseConfigured) {
-    return { error: new Error('Database connection is not configured.') };
+    return { data: null, error: new Error('Database connection is not configured.') };
   }
   try {
-    const { error } = await supabase
-      .from('profiles')
-      .delete()
-      .eq('id', id);
+    // 1. Resolve customer contact + orders prior to deletion so Gmail notice lists them accurately
+    const [{ data: profileRow }, { data: bookingRows }] = await Promise.all([
+      customerRecord?.email
+        ? Promise.resolve({ data: customerRecord })
+        : supabase.from('profiles').select('id, first_name, last_name, email').eq('id', id).maybeSingle(),
+      supabase
+        .from('bookings')
+        .select('id, booking_number, tier_name, event_date')
+        .eq('customer_id', id),
+    ]);
 
-    if (error) throw error;
+    const recipientEmail = String(profileRow?.email || customerRecord?.email || '').trim();
+    const recipientName =
+      `${profileRow?.first_name || customerRecord?.first_name || ''} ${profileRow?.last_name || customerRecord?.last_name || ''}`.trim() ||
+      recipientEmail ||
+      'Valued Client';
+    const deletedBookings = Array.isArray(bookingRows) ? bookingRows : [];
+
+    let emailSent = false;
+    let emailError = null;
+    if (recipientEmail) {
+      const mailRes = await sendCustomerDeletionNoticeEmail({
+        recipientEmail,
+        recipientName,
+        deletedBookings,
+        reason,
+      });
+      emailSent = Boolean(mailRes?.success);
+      if (!emailSent) {
+        emailError = mailRes?.error || 'Could not deliver deletion email.';
+      }
+    } else {
+      emailError = 'No email address on record for this customer.';
+    }
+
+    // 2. Permanently wipe orders, profile, sessions, and auth.users account in Postgres
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('admin_delete_customer_account', {
+      p_customer_id: id,
+    });
+
+    if (rpcErr) throw rpcErr;
+
     invalidateAdminCache('admin:customers');
+    invalidateAdminCache('admin:bookings');
     invalidateAdminCache('admin:dashboard_stats');
-    return { error: null };
+    invalidateAdminCache('admin:payments');
+
+    return {
+      data: {
+        deletedOrdersCount: rpcData?.deleted_orders ?? deletedBookings.length,
+        emailSent,
+        recipientEmail: recipientEmail || null,
+        emailError,
+      },
+      error: null,
+    };
   } catch (error) {
     console.error('deleteCustomer error:', error);
-    return { error };
+    return { data: null, error };
   }
 }
 

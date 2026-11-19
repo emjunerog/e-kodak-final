@@ -141,9 +141,19 @@ export default function Header({
     }
   };
 
-  const fullName = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Valued Client';
-  const initial = (profile?.first_name?.charAt(0) || user?.email?.charAt(0) || 'C').toUpperCase();
-  const initials = `${profile?.first_name?.charAt(0) || ''}${profile?.last_name?.charAt(0) || ''}`.toUpperCase() || 'EK';
+  const metaFullName = String(user?.user_metadata?.full_name || user?.user_metadata?.name || '').trim();
+  const metaParts = metaFullName ? metaFullName.split(/\s+/) : [];
+  const resolvedFirst = String(profile?.first_name || user?.user_metadata?.first_name || user?.user_metadata?.given_name || metaParts[0] || '').trim();
+  const resolvedLast = String(
+    profile?.last_name ||
+    user?.user_metadata?.last_name ||
+    user?.user_metadata?.family_name ||
+    (metaParts.length > 1 ? metaParts.slice(1).join(' ') : '')
+  ).trim();
+
+  const fullName = `${resolvedFirst} ${resolvedLast}`.trim() || metaFullName || 'Valued Client';
+  const initial = (resolvedFirst.charAt(0) || user?.email?.charAt(0) || 'C').toUpperCase();
+  const initials = `${resolvedFirst.charAt(0) || ''}${resolvedLast.charAt(0) || ''}`.toUpperCase() || initial || 'EK';
 
   return (
     <header className="relative h-16 bg-gradient-to-r from-[#14100c] via-[#21180f] via-[#16151a] to-[#0f1726] border-none px-4 sm:px-6 lg:px-8 sticky top-0 z-30 flex-shrink-0 font-body before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-gold/50 before:to-transparent">

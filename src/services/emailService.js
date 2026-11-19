@@ -590,3 +590,123 @@ export async function sendBookingConfirmationEmail({
     return { success: false, error: fnErr.message };
   }
 }
+
+function escapeEmailHtml(val) {
+  return String(val || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Sends a formal Gmail notification via the send-email Edge Function when an
+ * administrator permanently deletes a customer's account and associated orders.
+ */
+export async function sendCustomerDeletionNoticeEmail({
+  recipientEmail,
+  recipientName = 'Valued Client',
+  deletedBookings = [],
+  reason = '',
+}) {
+  if (!recipientEmail || !isSupabaseConfigured) {
+    return { success: false, error: 'Recipient email or database not configured' };
+  }
+
+  const cleanEmail = String(recipientEmail).trim();
+  const safeName = escapeEmailHtml(recipientName || 'Valued Client');
+  const safeEmail = escapeEmailHtml(cleanEmail);
+  const safeReason = reason ? escapeEmailHtml(String(reason).trim()) : '';
+
+  const ordersBlock =
+    Array.isArray(deletedBookings) && deletedBookings.length > 0
+      ? `<div style="background:#fbf8f1;border:1px solid #e6d7b8;border-radius:12px;padding:16px;margin:20px 0;text-align:left;">
+          <p style="margin:0 0 8px 0;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#87550e;">
+            Removed Orders (${deletedBookings.length})
+          </p>
+          <ul style="margin:0;padding-left:18px;font-size:13px;color:#3f3a34;line-height:1.6;">
+            ${deletedBookings
+              .map((b) => {
+                const ref = escapeEmailHtml(b?.booking_number || 'Booking');
+                const tier = b?.tier_name ? ` — ${escapeEmailHtml(b.tier_name)}` : '';
+                return `<li><strong>#${ref}</strong>${tier}</li>`;
+              })
+              .join('')}
+          </ul>
+        </div>`
+      : '';
+
+  const reasonBlock = safeReason
+    ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 14px;margin:16px 0;text-align:left;">
+        <p style="margin:0 0 4px 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#991b1b;">
+          Administrative Note
+        </p>
+        <p style="margin:0;font-size:13px;color:#7f1d1d;line-height:1.5;">${safeReason}</p>
+      </div>`
+    : '';
+
+  const subject = 'Account & Booking Deletion Notice — E-Kodak Studio';
+  const htmlBody = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Account &amp; Booking Removal Notice — E-Kodak Studios</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f6f4ee;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#1a1714;">
+  <div style="max-width:580px;margin:32px auto;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #e7ded0;">
+    <div style="background:#141413;padding:30px 24px;text-align:center;border-bottom:4px solid #c9a96e;">
+      <h1 style="margin:0;color:#ffffff;font-size:24px;letter-spacing:2.5px;text-transform:uppercase;">E-Kodak Studio</h1>
+    </div>
+    <div style="padding:32px 28px;text-align:left;">
+      <h2 style="margin:0 0 12px 0;font-size:20px;color:#141413;">Account Deletion Notice</h2>
+      <p style="font-size:14px;line-height:1.6;color:#4a453e;margin:0 0 14px 0;">
+        Hello <strong>${safeName}</strong>,
+      </p>
+      <p style="font-size:14px;line-height:1.6;color:#4a453e;margin:0 0 14px 0;">
+        This is to inform you that your E-Kodak Photography Studio customer account (<strong>${safeEmail}</strong>) and all associated booking orders have been permanently deleted by studio administration.
+      </p>
+      <p style="font-size:14px;line-height:1.6;color:#4a453e;margin:0 0 14px 0;">
+        Access to the customer dashboard for this account is now closed and your order records are no longer active.
+      </p>
+      ${ordersBlock}
+      ${reasonBlock}
+      <p style="font-size:13px;line-height:1.6;color:#6b645c;margin:20px 0 0 0;">
+        If you believe this was done in error or have any questions, please contact E-Kodak Studio directly.
+      </p>
+    </div>
+    <div style="background:#faf8f4;padding:18px 24px;text-align:center;border-top:1px solid #eee7da;">
+      <p style="margin:0;font-size:11px;color:#8c847a;">
+        &copy; ${new Date().getFullYear()} E-Kodak Photography Studio. Automated administrative notification.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const plainText = `Hello ${recipientName || 'Valued Client'}, your E-Kodak Photography Studio account (${cleanEmail}) and ${deletedBookings.length} associated booking order(s) have been permanently deleted by studio administration. Your customer dashboard access is now closed.${reason ? ` Note: ${reason}` : ''}`;
+
+  try {
+    const { data, error } = await supabase.functions.invoke('send-email', {
+      body: {
+        to: cleanEmail,
+        subject,
+        html: htmlBody,
+        text: plainText,
+        recipientName: recipientName || cleanEmail,
+        bookingId: null,
+        notificationType: 'ACCOUNT_DELETION_NOTICE',
+      },
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    if (data && !data.success) {
+      return { success: false, error: data.error || 'Email delivery failed' };
+    }
+    return { success: true, data };
+  } catch (err) {
+    return { success: false, error: err?.message || 'Email dispatch failed' };
+  }
+}

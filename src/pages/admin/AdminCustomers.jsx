@@ -163,6 +163,7 @@ export default function AdminCustomers() {
 
   // Customer Deletion Modal & Action state
   const [customerToDelete, setCustomerToDelete]     = useState(null);
+  const [deletionReason, setDeletionReason]         = useState('');
   const [isDeleting, setIsDeleting]                 = useState(false);
 
   // ── 1. Subscribe to Live Customer Presence Channel ─────────────────────────
@@ -447,7 +448,10 @@ export default function AdminCustomers() {
     if (!customerToDelete) return;
     setIsDeleting(true);
     try {
-      const { error: delErr } = await deleteCustomer(customerToDelete.id);
+      const { data: delRes, error: delErr } = await deleteCustomer(customerToDelete.id, {
+        reason: deletionReason,
+        customerRecord: customerToDelete,
+      });
       if (delErr) throw delErr;
 
       setRows((prev) => prev.filter((r) => r.id !== customerToDelete.id));
@@ -456,9 +460,18 @@ export default function AdminCustomers() {
         setSelectedCustomerRecord(null);
       }
       const deletedName = `${customerToDelete.first_name || 'Customer'} ${customerToDelete.last_name || ''}`.trim();
+      const orderCount = Number(delRes?.deletedOrdersCount || 0);
+      const emailNote = delRes?.emailSent
+        ? ` Notice emailed to ${delRes.recipientEmail}.`
+        : delRes?.emailError
+          ? ` (Email notice skipped: ${delRes.emailError})`
+          : '';
       setCustomerToDelete(null);
-      setActionSuccessMsg(`Customer account "${deletedName}" was successfully deleted.`);
-      setTimeout(() => setActionSuccessMsg(null), 4500);
+      setDeletionReason('');
+      setActionSuccessMsg(
+        `Customer account "${deletedName}" and ${orderCount} order(s) permanently deleted.${emailNote}`
+      );
+      setTimeout(() => setActionSuccessMsg(null), 5500);
     } catch (err) {
       console.error('Delete customer error:', err);
       setError(`Failed to delete customer: ${err.message || 'Database error'}`);
@@ -1295,20 +1308,40 @@ export default function AdminCustomers() {
                   <p className="font-bold text-neutral-900 text-sm truncate">
                     {customerToDelete.first_name || 'Guest'} {customerToDelete.last_name || ''}
                   </p>
-                  <p className="text-neutral-500 font-mono text-[11px] truncate">
-                    ID: {customerToDelete.id}
+                  <p className="text-neutral-500 text-[11px] truncate">
+                    {customerToDelete.email || `ID: ${customerToDelete.id}`}
                   </p>
                 </div>
               </div>
               <p className="text-neutral-600 leading-relaxed pt-1 border-t border-neutral-200/60">
-                Are you sure you want to permanently delete this customer profile? All associated bookings, specifications, and client records will be permanently removed from the system.
+                Permanently deleting this customer will remove their login account, close dashboard access, delete all associated bookings &amp; records, and send a removal notice to{' '}
+                <span className="font-semibold text-neutral-900">
+                  {customerToDelete.email || 'their email on file'}
+                </span>.
               </p>
+              <div className="pt-1">
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-500 mb-1.5" htmlFor="delete-customer-reason">
+                  Reason / Note for Customer Email (Optional)
+                </label>
+                <input
+                  id="delete-customer-reason"
+                  type="text"
+                  value={deletionReason}
+                  onChange={(e) => setDeletionReason(e.target.value)}
+                  disabled={isDeleting}
+                  placeholder="e.g., Duplicate account or cancelled request"
+                  className="w-full h-9 px-3 rounded-lg border border-neutral-200 bg-white text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-amber-500"
+                />
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-2.5 pt-1">
               <button
                 type="button"
-                onClick={() => setCustomerToDelete(null)}
+                onClick={() => {
+                  setCustomerToDelete(null);
+                  setDeletionReason('');
+                }}
                 disabled={isDeleting}
                 className="h-10 px-4 text-xs font-bold text-neutral-600 hover:text-neutral-900 border border-neutral-200 hover:bg-neutral-100 rounded-xl transition-colors cursor-pointer"
               >

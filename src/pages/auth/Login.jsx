@@ -102,7 +102,16 @@ export default function Login() {
   const [showPwd, setShowPwd]     = useState(false);
   const [code, setCode]           = useState("");
 
-  const [error, setError]           = useState("");
+  const [error, setError]           = useState(() => {
+    try {
+      const removedNotice = sessionStorage.getItem('ekodak_account_removed_notice');
+      if (removedNotice) {
+        sessionStorage.removeItem('ekodak_account_removed_notice');
+        return removedNotice;
+      }
+    } catch {}
+    return "";
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [resendStatus, setResendStatus] = useState("");

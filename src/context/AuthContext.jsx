@@ -1,6 +1,23 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 
+/** Extract first_name, last_name, and avatar_url from Supabase auth metadata (supports Google OAuth). */
+function extractAuthMetadataProfile(authUser) {
+  const meta = authUser?.user_metadata || {};
+  const fullName = String(meta.full_name || meta.name || "").trim();
+  const nameParts = fullName ? fullName.split(/\s+/) : [];
+  const first_name =
+    String(meta.first_name || meta.given_name || nameParts[0] || "").trim();
+  const last_name =
+    String(
+      meta.last_name ||
+      meta.family_name ||
+      (nameParts.length > 1 ? nameParts.slice(1).join(" ") : "")
+    ).trim();
+  const avatar_url = String(meta.avatar_url || meta.picture || "").trim();
+  return { first_name, last_name, avatar_url };
+}
+
 const AuthContext = createContext({});
 
 export const AuthProvider = ({ children }) => {
@@ -50,44 +67,77 @@ export const AuthProvider = ({ children }) => {
   const fetchProfile = useCallback(async (userId) => {
     if (!isSupabaseConfigured || !userId) return;
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+      const [{ data, error }, { data: authData, error: authErr }] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
+        supabase.auth.getUser(),
+      ]);
+
+      const authUser = authData?.user ?? null;
+
+      // If the auth user no longer exists (e.g., deleted by an admin), revoke access immediately
+      if (authErr || !authUser) {
+        loadedUserIdRef.current = null;
+        setProfile(null);
+        setUser(null);
+        saveProfileCache(null);
+        try {
+          sessionStorage.setItem(
+            'ekodak_account_removed_notice',
+            'Your account and associated bookings were deleted by studio administration. Please check your email for details.'
+          );
+        } catch {}
+        try {
+          await supabase.auth.signOut();
+        } catch {}
+        return;
+      }
 
       if (error && error.code !== 'PGRST116') {
         console.error("Error fetching profile:", error.message);
       }
 
+      const metaProfile = extractAuthMetadataProfile(authUser);
+
       if (data) {
-        setProfile((prev) => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data));
-        saveProfileCache(data);
+        // Backfill missing Google OAuth name / avatar onto profile if still empty
+        const needsPatch =
+          (!data.first_name && metaProfile.first_name) ||
+          (!data.last_name && metaProfile.last_name) ||
+          (!data.avatar_url && metaProfile.avatar_url);
+
+        let mergedData = data;
+        if (needsPatch) {
+          const patch = {
+            ...(data.first_name ? {} : { first_name: metaProfile.first_name || null }),
+            ...(data.last_name ? {} : { last_name: metaProfile.last_name || null }),
+            ...(data.avatar_url ? {} : { avatar_url: metaProfile.avatar_url || null }),
+          };
+          mergedData = { ...data, ...patch };
+          try {
+            await supabase.from('profiles').update(patch).eq('id', userId);
+          } catch {}
+        }
+
+        setProfile((prev) => (JSON.stringify(prev) === JSON.stringify(mergedData) ? prev : mergedData));
+        saveProfileCache(mergedData);
         loadedUserIdRef.current = userId;
       } else {
-        // Fallback: use only sessionStorage (tab-scoped — never localStorage)
-        let fallback = null;
-        try {
-          const sessionCached = sessionStorage.getItem('ekodak_user_profile');
-          if (sessionCached) fallback = JSON.parse(sessionCached);
-        } catch {}
-
-        if (!fallback) {
-          const { data: { user: authUser } } = await supabase.auth.getUser();
-          fallback = {
-            id: userId,
-            first_name: authUser?.user_metadata?.first_name || '',
-            last_name: authUser?.user_metadata?.last_name || '',
-            role: authUser?.user_metadata?.role || 'customer',
-            studio_specs: {},
-            created_at: new Date().toISOString()
-          };
-        }
+        // Never recreate a deleted customer profile if authUser is verified missing;
+        // authUser above is confirmed valid, so build from auth metadata.
+        const fallback = {
+          id: userId,
+          email: authUser.email || null,
+          first_name: metaProfile.first_name || '',
+          last_name: metaProfile.last_name || '',
+          avatar_url: metaProfile.avatar_url || null,
+          role: authUser?.user_metadata?.role || 'customer',
+          studio_specs: {},
+          created_at: new Date().toISOString(),
+        };
 
         setProfile(fallback);
         saveProfileCache(fallback);
 
-        // Attempt background insert if missing
         try {
           await supabase.from('profiles').insert([fallback]);
         } catch {}
@@ -192,12 +242,29 @@ export const AuthProvider = ({ children }) => {
       .on(
         'postgres_changes',
         {
-          event: 'UPDATE',
+          event: '*',
           schema: 'public',
           table: 'profiles',
           filter: `id=eq.${user.id}`,
         },
-        (payload) => {
+        async (payload) => {
+          if (payload?.eventType === 'DELETE') {
+            loadedUserIdRef.current = null;
+            saveProfileCache(null);
+            setProfile(null);
+            setUser(null);
+            try {
+              sessionStorage.setItem(
+                'ekodak_account_removed_notice',
+                'Your account and associated bookings were deleted by studio administration. Please check your email for details.'
+              );
+            } catch {}
+            try {
+              await supabase.auth.signOut();
+            } catch {}
+            return;
+          }
+
           const updatedRow = payload?.new;
           if (!updatedRow) return;
           setProfile((prev) => {
