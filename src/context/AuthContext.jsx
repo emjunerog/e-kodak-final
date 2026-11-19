@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
-import { supabase, isSupabaseConfigured, buildAppRedirectUrl } from "../lib/supabase";
+import { supabase, isSupabaseConfigured, buildAppRedirectUrl, isIsolatedTabSession } from "../lib/supabase";
 
 /** Extract first_name, last_name, and avatar_url from Supabase auth metadata (supports Google OAuth). */
 function extractAuthMetadataProfile(authUser) {
@@ -27,8 +27,16 @@ export const AuthProvider = ({ children }) => {
   const [profile, setProfile] = useState(() => {
     try {
       if (typeof window === 'undefined') return null;
+      const isolated = isIsolatedTabSession();
       const sessionCached = sessionStorage.getItem('ekodak_user_profile');
       if (sessionCached) return JSON.parse(sessionCached);
+      if (!isolated) {
+        const persistentCached = localStorage.getItem('ekodak_user_profile');
+        if (persistentCached) {
+          sessionStorage.setItem('ekodak_user_profile', persistentCached);
+          return JSON.parse(persistentCached);
+        }
+      }
       return null;
     } catch {
       return null;
@@ -38,10 +46,18 @@ export const AuthProvider = ({ children }) => {
 
   const saveProfileCache = (data) => {
     try {
+      const isolated = isIsolatedTabSession();
       if (data) {
-        sessionStorage.setItem('ekodak_user_profile', JSON.stringify(data));
+        const serialized = JSON.stringify(data);
+        sessionStorage.setItem('ekodak_user_profile', serialized);
+        if (!isolated) {
+          localStorage.setItem('ekodak_user_profile', serialized);
+        }
       } else {
         sessionStorage.removeItem('ekodak_user_profile');
+        if (!isolated) {
+          localStorage.removeItem('ekodak_user_profile');
+        }
       }
     } catch {}
   };
@@ -49,6 +65,10 @@ export const AuthProvider = ({ children }) => {
   const startIsolatedSession = useCallback(() => {
     try {
       sessionStorage.setItem('ekodak_isolated_session', 'true');
+      sessionStorage.setItem(
+        'ekodak_tab_storage_key',
+        `ekodak-auth-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      );
       sessionStorage.removeItem('ekodak_user_profile');
       Object.keys(sessionStorage).forEach((key) => {
         if (key.startsWith('sb-') || key.startsWith('ekodak-auth-')) {
@@ -144,10 +164,11 @@ export const AuthProvider = ({ children }) => {
       }
     } catch (err) {
       console.error("Unexpected error fetching profile:", err);
-      // Never read from localStorage — that would bleed cross-tab
       try {
-        const sessionCached = sessionStorage.getItem('ekodak_user_profile');
-        if (sessionCached) setProfile(JSON.parse(sessionCached));
+        const cached =
+          sessionStorage.getItem('ekodak_user_profile') ||
+          (!isIsolatedTabSession() ? localStorage.getItem('ekodak_user_profile') : null);
+        if (cached) setProfile(JSON.parse(cached));
       } catch {}
     }
   }, []);
@@ -369,7 +390,8 @@ export const AuthProvider = ({ children }) => {
       });
     } catch {}
     if (!isSupabaseConfigured) return;
-    const { error } = await supabase.auth.signOut();
+    const isolated = isIsolatedTabSession();
+    const { error } = await supabase.auth.signOut(isolated ? { scope: 'local' } : undefined);
     if (error) throw error;
   };
 

@@ -101,7 +101,10 @@ export default function ResetPassword() {
         } else if (code) {
           const { data: current } = await supabase.auth.getSession();
           if (!current?.session) {
-            await supabase.auth.exchangeCodeForSession(code);
+            const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
+            if (exErr && active) {
+              setError(exErr.message || "This reset link has expired or was opened in another browser.");
+            }
           }
         }
 
@@ -287,6 +290,16 @@ export default function ResetPassword() {
               )}
 
               <form onSubmit={handleUpdateSubmit} className="space-y-4">
+                <input
+                  type="email"
+                  name="email"
+                  value={user?.email || ""}
+                  readOnly
+                  autoComplete="username"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  className="sr-only"
+                />
                 <div>
                   <label
                     htmlFor="reset-new-password"

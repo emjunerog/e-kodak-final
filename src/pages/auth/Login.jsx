@@ -235,7 +235,9 @@ export default function Login() {
   };
 
   // If already authenticated and not explicitly requesting a new isolated session
-  if (user && profile && !isNewSessionRequest) {
+  // Never hijack step 3/4 (forgot/reset password) or an active auth submission before updatePassword finishes
+  const isResetOrSubmitting = step === 3 || step === 4 || isSubmitting;
+  if (user && profile && !isNewSessionRequest && !isResetOrSubmitting) {
     return (
       <div className={`min-h-screen flex items-center justify-center p-6 relative overflow-hidden transition-colors duration-300 ${isDark ? 'bg-[#0a0a0c]' : 'bg-[#faf9f7]'}`}>
         <div className={`w-full max-w-md rounded-3xl p-8 sm:p-9 text-center relative z-10 overflow-hidden border backdrop-blur-2xl transition-all duration-300 ${
@@ -290,14 +292,14 @@ export default function Login() {
     );
   }
 
-  if (loading && user && !isNewSessionRequest) {
+  if (loading && user && !isNewSessionRequest && !isResetOrSubmitting) {
     return (
       <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-[#0a0a0c]' : 'bg-[#faf9f7]'}`}>
         <Loader2 className="animate-spin text-gold" size={32} />
       </div>
     );
   }
-  if (user && !profile && !isNewSessionRequest) {
+  if (user && !profile && !isNewSessionRequest && !isResetOrSubmitting) {
     return <Navigate to={from || '/dashboard'} replace />;
   }
 
@@ -330,7 +332,7 @@ export default function Login() {
         password 
       });
 
-      if (authErr && isStaffOrAdminEmail) {
+      if (authErr) {
         const cleanPassword = password.trim();
         if (cleanPassword !== password) {
           const retryRes = await supabase.auth.signInWithPassword({
@@ -342,7 +344,7 @@ export default function Login() {
             authErr = null;
           }
         }
-        if (authErr && cleanPassword.toLowerCase() !== cleanPassword) {
+        if (authErr && isStaffOrAdminEmail && cleanPassword.toLowerCase() !== cleanPassword) {
           const retryRes = await supabase.auth.signInWithPassword({
             email: cleanEmail,
             password: cleanPassword.toLowerCase()
@@ -496,20 +498,22 @@ export default function Login() {
 
     setIsSubmitting(true);
     try {
-      let authData;
-      try {
-        authData = await verifyRecoveryCode(cleanEmail, resetCode);
-      } catch (recoveryErr) {
+      let authData = user?.email?.toLowerCase() === cleanEmail ? { user } : null;
+      if (!authData) {
         try {
-          authData = await verifyEmailCode(cleanEmail, resetCode, "email");
-        } catch {
-          throw recoveryErr;
+          authData = await verifyRecoveryCode(cleanEmail, resetCode);
+        } catch (recoveryErr) {
+          try {
+            authData = await verifyEmailCode(cleanEmail, resetCode, "email");
+          } catch {
+            throw recoveryErr;
+          }
         }
       }
       await updatePassword(newPassword);
 
-      const userId = authData?.user?.id;
-      let role = authData?.user?.user_metadata?.role || "customer";
+      const userId = authData?.user?.id || user?.id;
+      let role = authData?.user?.user_metadata?.role || user?.user_metadata?.role || "customer";
       if (userId) {
         const { data: profileData } = await supabase
           .from("profiles")
@@ -518,7 +522,11 @@ export default function Login() {
           .maybeSingle();
         if (profileData) {
           try {
-            sessionStorage.setItem("ekodak_user_profile", JSON.stringify(profileData));
+            const serialized = JSON.stringify(profileData);
+            sessionStorage.setItem("ekodak_user_profile", serialized);
+            if (!sessionStorage.getItem("ekodak_isolated_session")) {
+              localStorage.setItem("ekodak_user_profile", serialized);
+            }
           } catch {}
           role = profileData.role || role;
         }
@@ -1293,6 +1301,16 @@ export default function Login() {
             {step === 4 && (
               <div className="animate-fade-in">
                 <form onSubmit={handleForgotComplete} className="space-y-4">
+                  <input
+                    type="email"
+                    name="email"
+                    value={email.trim().toLowerCase()}
+                    readOnly
+                    autoComplete="username"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    className="sr-only"
+                  />
                   <div>
                     <label
                       htmlFor="reset-otp-0"

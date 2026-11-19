@@ -55,58 +55,93 @@ export function buildAppRedirectUrl(subpath) {
   return `${window.location.origin}${basePath}${cleanSub}`;
 }
 
+const PERSISTENT_STORAGE_KEY = 'ekodak-supabase-auth';
+const ISOLATED_FLAG_KEY = 'ekodak_isolated_session';
+const ISOLATED_TAB_KEY_ID = 'ekodak_tab_storage_key';
+
 /**
- * getTabStorageKey()
- * ------------------
- * Returns a stable, unique key for this tab stored in sessionStorage.
- *
- * Why this works:
- *   1. sessionStorage is tab-scoped - no other tab shares it.
- *   2. Supabase uses `storageKey` as both the token prefix AND the
- *      BroadcastChannel name. Different storageKey = different channel.
- *   3. On first load: generates a new key, wipes any inherited tokens,
- *      then stamps the tab with that key.
- *   4. On refresh: finds the existing key and reuses it - session intact.
- *   5. On window.open(): new tab has no key yet -> fresh start.
+ * Returns true only when this tab was explicitly isolated (e.g. multi-portal
+ * admin tab via `?new_session=true` or "Different Account in this Tab").
  */
-function getTabStorageKey() {
-  if (typeof window === 'undefined') return 'ekodak-supabase-auth';
+export function isIsolatedTabSession() {
+  if (typeof window === 'undefined') return false;
   try {
-    const KEY_ID = 'ekodak_tab_storage_key';
-    let tabKey = window.sessionStorage.getItem(KEY_ID);
-
-    if (!tabKey) {
-      // New tab or opened via window.open() - always start fresh.
-      // Clear ALL inherited Supabase tokens before creating client.
-      const inherited = Object.keys(window.sessionStorage).filter(
-        (k) => k.startsWith('sb-') || k.startsWith('supabase') || k === 'ekodak_user_profile'
-      );
-      inherited.forEach((k) => window.sessionStorage.removeItem(k));
-
-      // Unique key: timestamp + random suffix ensures uniqueness across tabs.
-      tabKey = `ekodak-auth-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      window.sessionStorage.setItem(KEY_ID, tabKey);
+    if (window.location.search.includes('new_session=true')) {
+      window.sessionStorage.setItem(ISOLATED_FLAG_KEY, 'true');
+      return true;
     }
-
-    return tabKey;
+    return window.sessionStorage.getItem(ISOLATED_FLAG_KEY) === 'true';
   } catch {
-    return 'ekodak-supabase-auth';
+    return false;
   }
 }
 
-const TAB_STORAGE_KEY = getTabStorageKey();
+function getIsolatedStorageKey() {
+  if (typeof window === 'undefined') return PERSISTENT_STORAGE_KEY;
+  try {
+    let tabKey = window.sessionStorage.getItem(ISOLATED_TAB_KEY_ID);
+    if (!tabKey) {
+      tabKey = `ekodak-auth-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      window.sessionStorage.setItem(ISOLATED_TAB_KEY_ID, tabKey);
+    }
+    return tabKey;
+  } catch {
+    return PERSISTENT_STORAGE_KEY;
+  }
+}
 
 /**
- * Supabase client - fully tab-isolated.
- *
- * storageKey: unique per tab -> unique BroadcastChannel -> no cross-tab events
- * storage: sessionStorage -> tokens never leave this tab
+ * Adaptive Supabase storage:
+ * - Normal users / customers: uses window.localStorage so sessions survive
+ *   closing the browser, opening new tabs/windows, or device power-off.
+ * - Explicitly isolated multi-portal tabs: uses per-tab window.sessionStorage
+ *   so logging into another role does not disconnect existing open tabs.
+ */
+const adaptiveAuthStorage = typeof window !== 'undefined'
+  ? {
+      getItem: (key) => {
+        try {
+          if (isIsolatedTabSession()) {
+            const tabKey = `${getIsolatedStorageKey()}:${key}`;
+            return window.sessionStorage.getItem(tabKey);
+          }
+          return window.localStorage.getItem(key);
+        } catch {
+          return null;
+        }
+      },
+      setItem: (key, value) => {
+        try {
+          if (isIsolatedTabSession()) {
+            const tabKey = `${getIsolatedStorageKey()}:${key}`;
+            window.sessionStorage.setItem(tabKey, value);
+          } else {
+            window.localStorage.setItem(key, value);
+          }
+        } catch {}
+      },
+      removeItem: (key) => {
+        try {
+          if (isIsolatedTabSession()) {
+            const tabKey = `${getIsolatedStorageKey()}:${key}`;
+            window.sessionStorage.removeItem(tabKey);
+          } else {
+            window.localStorage.removeItem(key);
+          }
+        } catch {}
+      },
+    }
+  : undefined;
+
+/**
+ * Supabase client: persistent across browser restarts by default,
+ * with opt-in per-tab isolation for multi-portal admin switching.
  */
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseKey, {
       auth: {
-        storage: typeof window !== 'undefined' ? window.sessionStorage : undefined,
-        storageKey: TAB_STORAGE_KEY,
+        storage: adaptiveAuthStorage,
+        storageKey: PERSISTENT_STORAGE_KEY,
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
