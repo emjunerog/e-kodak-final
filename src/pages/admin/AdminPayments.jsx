@@ -83,11 +83,74 @@ const TYPE_LABELS = {
   OTHER: 'Add-on / Other',
 };
 
+/**
+ * Extracts customer checkout/gateway receipt metadata stored inside bookings.notes
+ * (e.g. [50% RESERVATION DOWNPAYMENT] or [FULL RESERVATION PAYMENT] blocks).
+ */
+function parseBookingReceiptNotes(notesText) {
+  if (!notesText) return { gateway: '', amountPaid: '', referenceNo: '', paymentDate: '', lines: [] };
+  const text = String(notesText);
+  const blockMatch = text.match(/\[(?:50%\s*RESERVATION\s*DOWNPAYMENT|FULL\s*RESERVATION\s*PAYMENT|PAYMENT(?:\s*&\s*RECEIPT|\s*RECEIPT|\s*DETAILS)?)\]([\s\S]*?)(?=\n\[|$)/i);
+  const rawBlock = blockMatch ? blockMatch[1] : '';
+  const lines = rawBlock
+    .split('\n')
+    .map((line) => line.replace(/^[•\-*\s]+/, '').trim())
+    .filter(Boolean)
+    .map((line) => {
+      const idx = line.indexOf(':');
+      if (idx === -1) return { label: 'Detail', value: line };
+      return { label: line.slice(0, idx).trim(), value: line.slice(idx + 1).trim() };
+    });
+
+  const findVal = (regex) => lines.find((item) => regex.test(item.label))?.value || '';
+  return {
+    gateway: findVal(/gateway|method|channel/i),
+    amountPaid: findVal(/amount/i),
+    referenceNo: findVal(/reference|ref/i),
+    paymentDate: findVal(/date|time/i),
+    lines,
+  };
+}
+
+function getBookingReceiptSummary(booking, bookingPayments = []) {
+  const parsed = parseBookingReceiptNotes(booking?.notes);
+  const latestPayment = bookingPayments[0] || null;
+  const total = Number(booking?.total_amount || 0);
+  const recordedSum = bookingPayments.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const paid = Math.max(Number(booking?.down_payment_amount || 0), recordedSum);
+  const remaining =
+    booking?.remaining_balance !== undefined && booking?.remaining_balance !== null
+      ? Number(booking.remaining_balance)
+      : Math.max(0, total - paid);
+
+  return {
+    total,
+    paid,
+    remaining,
+    latestPayment,
+    parsedNotes: parsed,
+    referenceNo:
+      latestPayment?.reference_number ||
+      parsed.referenceNo ||
+      (booking?.down_payment_confirmed ? 'VERIFIED' : ''),
+    channel:
+      (latestPayment?.payment_method ? METHOD_LABELS[latestPayment.payment_method] || latestPayment.payment_method : '') ||
+      parsed.gateway ||
+      (booking?.down_payment_confirmed ? 'Verified Deposit' : 'Pending Payment'),
+    paymentDate:
+      latestPayment?.payment_date ||
+      booking?.payment_confirmed_at ||
+      parsed.paymentDate ||
+      booking?.created_at,
+  };
+}
+
 export default function AdminPayments() {
   const { user, profile } = useAuth();
 
   // Primary data state
   const [rows, setRows]         = useState([]);
+  const [allPaymentLogs, setAllPaymentLogs] = useState([]);
   const [stats, setStats]       = useState(null);
   const [total, setTotal]       = useState(0);
   const [page, setPage]         = useState(1);
@@ -124,6 +187,12 @@ export default function AdminPayments() {
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [copiedRef, setCopiedRef]             = useState(false);
 
+  // Per-Booking Customer Receipt & All Payment Logs Modal State
+  const [selectedBookingLedger, setSelectedBookingLedger] = useState(null);
+  const [ledgerModalTab, setLedgerModalTab]               = useState('receipt'); // 'receipt' | 'logs'
+  const [bookingAuditLogs, setBookingAuditLogs]           = useState([]);
+  const [loadingBookingLogs, setLoadingBookingLogs]       = useState(false);
+
   // Delete Payment Confirmation State
   const [deletingPayment, setDeletingPayment] = useState(null);
   const [isDeleting, setIsDeleting]           = useState(false);
@@ -143,8 +212,19 @@ export default function AdminPayments() {
     setLoading(true);
     setError(null);
     try {
-      const [payRes, statRes, bookRes] = await Promise.all([
+      const [payRes, allPayRes, statRes, bookRes] = await Promise.all([
         getPayments({ page, pageSize: PAGE_SIZE }),
+        supabase
+          .from('payments')
+          .select(`
+            id, booking_id, amount, payment_type, payment_method, reference_number, payment_date, notes, created_at, recorded_by,
+            booking:bookings(id, booking_number, customer_id, total_amount, remaining_balance, payment_status, is_deleted,
+              customer:profiles!bookings_customer_id_fkey(first_name, last_name, phone, email)
+            ),
+            recorder:profiles!payments_recorded_by_fkey(first_name, last_name)
+          `)
+          .order('payment_date', { ascending: false })
+          .limit(500),
         getPaymentStats(),
         supabase
           .from('bookings')
@@ -160,6 +240,10 @@ export default function AdminPayments() {
             event_date,
             preferred_time,
             status,
+            tier_name,
+            location,
+            notes,
+            created_at,
             booking_for,
             participant_name,
             participant_phone,
@@ -177,12 +261,14 @@ export default function AdminPayments() {
           .limit(100)
       ]);
 
-      if (payRes.error || statRes.error || bookRes.error) {
-        console.warn('Booking query error:', bookRes.error);
+      if (payRes.error || allPayRes.error || statRes.error || bookRes.error) {
+        console.warn('Booking query error:', bookRes.error || allPayRes.error);
         setError('Some payment or treasury records could not be loaded.');
       }
+      const cleanedAllPayments = (allPayRes.data || []).filter((p) => !p.booking || !p.booking.is_deleted);
       setRows(payRes.data || []);
-      setTotal(payRes.count || 0);
+      setAllPaymentLogs(cleanedAllPayments);
+      setTotal(payRes.count || cleanedAllPayments.length || 0);
       setStats(statRes.data);
       setBookingsList(bookRes.data || []);
     } catch (err) {
@@ -298,6 +384,38 @@ export default function AdminPayments() {
     }
   };
 
+  const paymentsByBookingId = useMemo(() => {
+    const map = {};
+    allPaymentLogs.forEach((item) => {
+      const bId = item.booking_id || item.booking?.id;
+      if (!bId) return;
+      if (!map[bId]) map[bId] = [];
+      map[bId].push(item);
+    });
+    return map;
+  }, [allPaymentLogs]);
+
+  const openBookingLedger = async (booking, initialTab = 'receipt') => {
+    if (!booking) return;
+    setSelectedBookingLedger(booking);
+    setLedgerModalTab(initialTab);
+    setBookingAuditLogs([]);
+    setLoadingBookingLogs(true);
+    try {
+      const { data: historyRows } = await supabase
+        .from('booking_status_history')
+        .select('id, previous_status, new_status, reason, created_at, changed_by, changer:profiles!booking_status_history_changed_by_fkey(first_name, last_name, role)')
+        .eq('booking_id', booking.id)
+        .order('created_at', { ascending: false })
+        .limit(40);
+      setBookingAuditLogs(historyRows || []);
+    } catch (err) {
+      console.warn('Could not load booking payment audit history:', err);
+    } finally {
+      setLoadingBookingLogs(false);
+    }
+  };
+
   const ledgerFilterOptions = useMemo(() => [
     {
       value: 'ALL',
@@ -316,10 +434,10 @@ export default function AdminPayments() {
     },
     {
       value: 'CONFIRMED',
-      label: `Confirmed Receipts (${rows.length})`,
+      label: `All Payment Logs (${allPaymentLogs.length || rows.length})`,
       icon: CheckCircle2,
     },
-  ], [unsettledBookings.length, stats?.unpaidCount, stats?.partialCount, rows.length]);
+  ], [unsettledBookings.length, stats?.unpaidCount, stats?.partialCount, allPaymentLogs.length, rows.length]);
 
   const handleBookingSelect = (bookingId) => {
     setSelectedBookingId(bookingId);
@@ -570,9 +688,10 @@ export default function AdminPayments() {
 
   const handleExportCSV = handleExportExcel;
 
-  // Filter & sort rows locally
+  // Filter & sort all payment logs locally
   const filteredRows = useMemo(() => {
-    let result = rows.filter(r => {
+    const sourceRows = allPaymentLogs.length > 0 ? allPaymentLogs : rows;
+    let result = sourceRows.filter(r => {
       // Search
       if (searchTerm.trim()) {
         const s = searchTerm.toLowerCase();
@@ -609,7 +728,7 @@ export default function AdminPayments() {
     });
 
     return result;
-  }, [rows, searchTerm, typeFilter, channelFilter, amountTier, sortBy]);
+  }, [allPaymentLogs, rows, searchTerm, typeFilter, channelFilter, amountTier, sortBy]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -723,14 +842,40 @@ export default function AdminPayments() {
         {/* Header Controls Bar */}
         <div className="p-4 sm:p-5 border-b border-neutral-100 flex-shrink-0 bg-white space-y-3.5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            {/* Left: Station Icon & Station Title */}
-            <div className="flex items-center gap-3.5">
+            {/* Left: Station Icon, Title & Direct Ledger Mode Switcher */}
+            <div className="flex items-center gap-3.5 flex-wrap">
               <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white shadow-sm ring-1 ring-amber-600/30 shrink-0">
                 <Receipt size={22} />
               </div>
-              <h3 className="font-heading text-xl sm:text-2xl font-bold text-neutral-900 tracking-tight">
-                {activeLedgerTab === 'pending_receivables' ? 'Remaining Balances' : 'Confirmed Receipts'}
-              </h3>
+              <div>
+                <h3 className="font-heading text-xl sm:text-2xl font-bold text-neutral-900 tracking-tight">
+                  {activeLedgerTab === 'pending_receivables' ? 'Remaining Balances' : 'All Payment Logs & Receipts'}
+                </h3>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setActiveLedgerTab('pending_receivables')}
+                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors cursor-pointer ${
+                      activeLedgerTab === 'pending_receivables'
+                        ? 'bg-neutral-900 text-[#c9a96e] border-neutral-900'
+                        : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:text-neutral-900'
+                    }`}
+                  >
+                    Remaining Balances ({unsettledBookings.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveLedgerTab('confirmed')}
+                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors cursor-pointer ${
+                      activeLedgerTab === 'confirmed'
+                        ? 'bg-neutral-900 text-[#c9a96e] border-neutral-900'
+                        : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:text-neutral-900'
+                    }`}
+                  >
+                    All Payment Logs ({allPaymentLogs.length || rows.length})
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Right: Actions & View Toggles */}
@@ -942,6 +1087,9 @@ export default function AdminPayments() {
                       : Math.max(0, total - paid);
                     const isUnpaid = !b.payment_status || (b.payment_status || '').toUpperCase() === 'UNPAID';
                     const cName = `${b.customer?.first_name || ''} ${b.customer?.last_name || ''}`.trim() || 'Valued Client';
+                    const bookingLogs = paymentsByBookingId[b.id] || [];
+                    const parsedReceipt = parseBookingReceiptNotes(b.notes);
+                    const hasReceiptData = bookingLogs.length > 0 || Boolean(parsedReceipt.referenceNo) || paid > 0;
 
                     return (
                       <tr key={b.id} className="hover:bg-amber-50/20 transition-colors group">
@@ -999,6 +1147,21 @@ export default function AdminPayments() {
                         {/* Actions */}
                         <td className="px-5 sm:px-6 py-4 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openBookingLedger(b, 'receipt')}
+                              className="h-8 px-3 rounded-xl bg-white hover:bg-[#faf7f2] text-neutral-800 hover:text-neutral-950 border border-neutral-200 hover:border-[#c9a96e] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                              title={hasReceiptData ? 'View customer receipt & payment logs' : 'View billing receipt & payment logs'}
+                            >
+                              <Receipt size={12} className="text-[#a8843a]" />
+                              <span>Receipt &amp; Logs</span>
+                              {bookingLogs.length > 0 && (
+                                <span className="px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold">
+                                  {bookingLogs.length}
+                                </span>
+                              )}
+                            </button>
+
                             <button
                               type="button"
                               onClick={() => openRecordModal(b)}
@@ -1120,6 +1283,16 @@ export default function AdminPayments() {
 
                     {/* Card Actions */}
                     <div className="pt-2 border-t border-neutral-100 flex items-center justify-between gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openBookingLedger(b, 'receipt')}
+                        className="px-3 py-2 text-xs font-semibold text-neutral-800 bg-white hover:bg-[#faf7f2] border border-neutral-200 hover:border-[#c9a96e] rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                        title="View customer receipt & payment logs"
+                      >
+                        <Receipt size={13} className="text-[#a8843a]" />
+                        <span>Receipt &amp; Logs</span>
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => openRecordModal(b)}
@@ -1535,7 +1708,7 @@ export default function AdminPayments() {
 
       {/* ── 6. OFFICIAL TRANSACTION RECEIPT / VOUCHER MODAL ─────────────────── */}
       {selectedReceipt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-sm animate-fade-in font-body">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-sm animate-fade-in font-body">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-neutral-200 animate-scale-in">
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-neutral-100 flex items-center justify-between bg-neutral-50/70">
@@ -1648,7 +1821,7 @@ export default function AdminPayments() {
 
       {/* ── 7. DELETE / VOID PAYMENT CONFIRMATION MODAL ───────────────────────── */}
       {deletingPayment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-sm animate-fade-in font-body">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-sm animate-fade-in font-body">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-neutral-200 p-5 space-y-4 animate-scale-in">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
@@ -1699,6 +1872,384 @@ export default function AdminPayments() {
           </div>
         </div>
       )}
+      {/* ── 8. CUSTOMER RECEIPT & PER-BOOKING PAYMENT LOGS MODAL ──────────────── */}
+      {selectedBookingLedger && (() => {
+        const booking = selectedBookingLedger;
+        const bookingPayments = paymentsByBookingId[booking.id] || [];
+        const summary = getBookingReceiptSummary(booking, bookingPayments);
+        const cName = `${booking.customer?.first_name || ''} ${booking.customer?.last_name || ''}`.trim() || 'Valued Client';
+        const pStatus = (booking.payment_status || 'UNPAID').toUpperCase();
+        const paymentRelatedAudit = bookingAuditLogs.filter((entry) => {
+          const text = `${entry.previous_status || ''} ${entry.new_status || ''} ${entry.reason || ''}`.toLowerCase();
+          return text.includes('pay') || text.includes('deposit') || text.includes('confirm') || text.includes('settle') || text.includes('void');
+        });
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-sm animate-fade-in font-body">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-neutral-200 animate-scale-in">
+              {/* Modal Header */}
+              <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between gap-3 bg-[#faf7f2]">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-neutral-900 text-[#c9a96e] flex items-center justify-center shrink-0">
+                    <Receipt size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-heading font-bold text-base sm:text-lg text-neutral-900 truncate">
+                        #{booking.booking_number} · {cName}
+                      </h3>
+                      <span
+                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                          pStatus === 'PAID'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : pStatus === 'PARTIAL'
+                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                              : 'bg-neutral-100 text-neutral-600 border-neutral-200'
+                        }`}
+                      >
+                        {pStatus}
+                      </span>
+                    </div>
+                    <p className="text-xs text-neutral-500 truncate">
+                      {booking.service?.name || 'Studio Package'}{booking.tier_name ? ` · ${booking.tier_name}` : ''}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBookingLedger(null)}
+                  className="p-1.5 text-neutral-400 hover:text-neutral-700 rounded-xl hover:bg-neutral-100 cursor-pointer shrink-0"
+                  aria-label="Close modal"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Modal Tab Switcher */}
+              <div className="px-5 pt-3 border-b border-neutral-100 bg-white flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLedgerModalTab('receipt')}
+                  className={`px-3.5 py-2 text-xs font-bold border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    ledgerModalTab === 'receipt'
+                      ? 'border-[#c9a96e] text-neutral-900'
+                      : 'border-transparent text-neutral-500 hover:text-neutral-800'
+                  }`}
+                >
+                  <Receipt size={13} className={ledgerModalTab === 'receipt' ? 'text-[#a8843a]' : ''} />
+                  <span>User Receipt</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLedgerModalTab('logs')}
+                  className={`px-3.5 py-2 text-xs font-bold border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    ledgerModalTab === 'logs'
+                      ? 'border-[#c9a96e] text-neutral-900'
+                      : 'border-transparent text-neutral-500 hover:text-neutral-800'
+                  }`}
+                >
+                  <History size={13} className={ledgerModalTab === 'logs' ? 'text-[#a8843a]' : ''} />
+                  <span>Payment Logs ({bookingPayments.length})</span>
+                </button>
+              </div>
+
+              {/* Scrollable Modal Body */}
+              <div className="p-5 overflow-y-auto space-y-4 flex-1 text-xs">
+                {ledgerModalTab === 'receipt' ? (
+                  <>
+                    {/* Official Customer Receipt View */}
+                    <div className="rounded-2xl border border-[#c9a96e]/35 bg-gradient-to-b from-[#faf7f2] to-white p-5 space-y-4 shadow-2xs">
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-4 border-b border-dashed border-neutral-200">
+                        <div>
+                          <p className="font-heading font-bold text-base text-neutral-900 tracking-wide uppercase">
+                            E-Kodak Photography Studio
+                          </p>
+                          <p className="text-[11px] text-neutral-500 mt-0.5">
+                            311 Rizal Street, City of Naga, Cebu · Official Customer Receipt
+                          </p>
+                        </div>
+                        <div className="sm:text-right">
+                          <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 block">
+                            Reference No.
+                          </span>
+                          <div className="inline-flex items-center gap-1.5 font-mono font-bold text-neutral-900 text-xs mt-0.5">
+                            <span>{summary.referenceNo || 'PENDING SETTLEMENT'}</span>
+                            {summary.referenceNo && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyRef(summary.referenceNo)}
+                                className="p-0.5 text-neutral-400 hover:text-[#a8843a] cursor-pointer"
+                                title="Copy reference number"
+                              >
+                                <Copy size={11} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Financial Summary Trio */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                        <div className="p-3 rounded-xl bg-white border border-neutral-200/80">
+                          <span className="text-[11px] text-neutral-400 font-medium block">Total Invoiced</span>
+                          <span className="font-heading font-bold text-base text-neutral-900">{peso(summary.total)}</span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
+                          <span className="text-[11px] text-emerald-700 font-medium block">Paid So Far</span>
+                          <span className="font-heading font-bold text-base text-emerald-700">{peso(summary.paid)}</span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200/80">
+                          <span className="text-[11px] text-amber-800 font-medium block">Remaining Balance</span>
+                          <span className="font-heading font-bold text-base text-amber-900">{peso(summary.remaining)}</span>
+                        </div>
+                      </div>
+
+                      {/* Customer & Gateway Details */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 pt-1 text-xs">
+                        <div className="flex justify-between gap-2 border-b border-neutral-100 pb-1.5">
+                          <span className="text-neutral-400">Client Name</span>
+                          <span className="font-semibold text-neutral-900 text-right">{cName}</span>
+                        </div>
+                        <div className="flex justify-between gap-2 border-b border-neutral-100 pb-1.5">
+                          <span className="text-neutral-400">Contact</span>
+                          <span className="font-medium text-neutral-800 text-right">
+                            {booking.customer?.phone || booking.customer?.email || '—'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-2 border-b border-neutral-100 pb-1.5">
+                          <span className="text-neutral-400">Package</span>
+                          <span className="font-medium text-neutral-900 text-right">
+                            {booking.service?.name || 'Studio Package'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-2 border-b border-neutral-100 pb-1.5">
+                          <span className="text-neutral-400">Session Date</span>
+                          <span className="font-medium text-neutral-800 text-right">
+                            {fmt(booking.event_date)}{booking.preferred_time ? ` · ${booking.preferred_time.substring(0, 5)}` : ''}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-2 border-b border-neutral-100 pb-1.5">
+                          <span className="text-neutral-400">Payment Channel</span>
+                          <span className="font-semibold text-neutral-900 text-right">{summary.channel}</span>
+                        </div>
+                        <div className="flex justify-between gap-2 border-b border-neutral-100 pb-1.5">
+                          <span className="text-neutral-400">Payment Date</span>
+                          <span className="font-medium text-neutral-800 text-right">
+                            {summary.paymentDate ? fmtDateTime(summary.paymentDate) : '—'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Checkout / Gateway Receipt Lines parsed from booking.notes */}
+                      {summary.parsedNotes.lines.length > 0 && (
+                        <div className="rounded-xl bg-neutral-50 border border-neutral-200/80 p-3.5 space-y-1.5">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                            Customer Checkout Receipt Record
+                          </p>
+                          <div className="space-y-1">
+                            {summary.parsedNotes.lines.map((line, idx) => (
+                              <div key={idx} className="flex items-start justify-between gap-3 text-[11px]">
+                                <span className="text-neutral-500">{line.label}</span>
+                                <span className="font-medium text-neutral-900 text-right">{line.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {summary.latestPayment?.notes && (
+                        <div className="text-[11px] text-neutral-600 italic bg-neutral-50/70 rounded-xl px-3 py-2 border border-neutral-100">
+                          Remarks: {summary.latestPayment.notes}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Recorded Payments Table/List for this Booking */}
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-heading font-bold text-sm text-neutral-900">
+                          Transaction Payment Logs ({bookingPayments.length})
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const targetNum = booking.booking_number || '';
+                            setSelectedBookingLedger(null);
+                            setActiveLedgerTab('confirmed');
+                            if (targetNum) setSearchTerm(targetNum);
+                          }}
+                          className="text-xs font-semibold text-[#a8843a] hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>View in All Studio Payment Logs</span>
+                          <ExternalLink size={11} />
+                        </button>
+                      </div>
+
+                      {bookingPayments.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-neutral-200 p-6 text-center text-neutral-500 space-y-1">
+                          <p className="font-semibold text-neutral-700">No transaction rows logged yet</p>
+                          <p className="text-[11px]">
+                            Use &ldquo;Record Payment&rdquo; to log a deposit or cash/e-wallet installment for this booking.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {bookingPayments.map((p) => {
+                            const MIcon = METHOD_ICONS[p.payment_method] || CreditCard;
+                            const recordedByName = p.recorder
+                              ? `${p.recorder.first_name || ''} ${p.recorder.last_name || ''}`.trim()
+                              : 'Customer Checkout';
+                            return (
+                              <div
+                                key={p.id}
+                                className="rounded-2xl border border-neutral-200/90 bg-white p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-[#c9a96e]/70 transition-colors"
+                              >
+                                <div className="space-y-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-heading font-bold text-sm text-neutral-900">
+                                      {peso(p.amount)}
+                                    </span>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${TYPE_COLORS[p.payment_type] || TYPE_COLORS.OTHER}`}>
+                                      {TYPE_LABELS[p.payment_type] || p.payment_type}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-600">
+                                      <MIcon size={12} className="text-[#a8843a]" />
+                                      {METHOD_LABELS[p.payment_method] || p.payment_method}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-wrap text-[11px] text-neutral-500">
+                                    <span>{fmtDateTime(p.payment_date)}</span>
+                                    <span>·</span>
+                                    <span className="font-mono text-neutral-700">
+                                      Ref: {p.reference_number || p.id.slice(0, 8)}
+                                    </span>
+                                    <span>·</span>
+                                    <span>By: {recordedByName}</span>
+                                  </div>
+                                  {p.notes && (
+                                    <p className="text-[11px] text-neutral-500 italic truncate" title={p.notes}>
+                                      {p.notes}
+                                    </p>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedReceipt({
+                                      ...p,
+                                      booking: {
+                                        ...booking,
+                                        customer: booking.customer,
+                                      },
+                                    })}
+                                    className="px-2.5 py-1.5 rounded-lg border border-neutral-200 hover:border-[#c9a96e] bg-white hover:bg-[#faf7f2] text-xs font-semibold text-neutral-800 inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Receipt size={12} className="text-[#a8843a]" />
+                                    <span>Voucher</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeletingPayment({
+                                      ...p,
+                                      booking,
+                                    })}
+                                    className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Void payment entry"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Booking Payment Audit History */}
+                    <div className="space-y-2 pt-2 border-t border-neutral-100">
+                      <h4 className="font-heading font-bold text-sm text-neutral-900">
+                        Booking Payment &amp; Status Audit Trail
+                      </h4>
+                      {loadingBookingLogs ? (
+                        <p className="text-xs text-neutral-400">Loading audit history…</p>
+                      ) : (paymentRelatedAudit.length > 0 ? paymentRelatedAudit : bookingAuditLogs).length === 0 ? (
+                        <p className="text-[11px] text-neutral-400">No status/payment audit events recorded for this booking yet.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {(paymentRelatedAudit.length > 0 ? paymentRelatedAudit : bookingAuditLogs).map((log) => (
+                            <div key={log.id} className="p-2.5 rounded-xl bg-neutral-50 border border-neutral-200/70 flex items-start justify-between gap-3 text-[11px]">
+                              <div className="space-y-0.5">
+                                <span className="font-semibold text-neutral-800 block">
+                                  {log.previous_status ? `${log.previous_status} → ${log.new_status}` : log.new_status}
+                                </span>
+                                {log.reason && <span className="text-neutral-500 block">{log.reason}</span>}
+                              </div>
+                              <span className="text-neutral-400 whitespace-nowrap shrink-0">{fmtDateTime(log.created_at)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-5 py-3.5 border-t border-neutral-100 bg-neutral-50/80 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-3 py-1.5 text-xs font-semibold text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <Printer size={13} />
+                    <span>Print Receipt</span>
+                  </button>
+                  {summary.latestPayment && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedReceipt({
+                        ...summary.latestPayment,
+                        booking,
+                      })}
+                      className="px-3 py-1.5 text-xs font-semibold text-neutral-700 bg-white border border-neutral-200 hover:border-[#c9a96e] rounded-xl flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    >
+                      <Receipt size={13} className="text-[#a8843a]" />
+                      <span>Voucher</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedBookingLedger(null);
+                      openRecordModal(booking);
+                    }}
+                    className="px-3.5 py-1.5 text-xs font-bold text-[#c9a96e] bg-neutral-900 hover:bg-neutral-800 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <Plus size={13} />
+                    <span>Record Payment</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBookingLedger(null)}
+                    className="px-3.5 py-1.5 text-xs font-semibold text-neutral-600 hover:text-neutral-900 bg-white border border-neutral-200 rounded-xl hover:bg-neutral-100 cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   );
