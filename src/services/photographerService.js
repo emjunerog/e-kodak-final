@@ -278,30 +278,101 @@ export async function updateBookingStatusByPhotographer(bookingIdOrOptions, mayb
 
   if (!isSupabaseConfigured || !bookingId || !newStatus) return { data: null, error: null };
   try {
-    const { data: updatedBooking, error: updateError } = await supabase
+    const statusUpper = String(newStatus).toUpperCase().trim();
+    const cleanRemarks = remarks.trim() || `Status updated to ${statusUpper} by photographer.`;
+    let updatedBooking = null;
+
+    const { data: directUpdated, error: updateError } = await supabase
       .from('bookings')
       .update({
-        status: newStatus,
+        status: statusUpper,
         updated_at: new Date().toISOString(),
       })
       .eq('id', bookingId)
       .select()
-      .single();
+      .maybeSingle();
 
-    if (updateError) throw updateError;
+    if (!updateError && directUpdated) {
+      updatedBooking = directUpdated;
+      // Log in booking_status_history
+      const { error: histErr } = await supabase.from('booking_status_history').insert({
+        booking_id: bookingId,
+        status: statusUpper,
+        remarks: cleanRemarks,
+        changed_by: photographerId,
+      });
+      if (histErr) {
+        console.warn('booking_status_history insert warning:', histErr.message);
+      }
+    } else {
+      // 2nd tier: Security-definer RPC (from migration 20)
+      const { data: rpcUpdated, error: rpcErr } = await supabase.rpc(
+        'photographer_update_assigned_booking_status',
+        {
+          target_booking_id: bookingId,
+          new_status: statusUpper,
+          remarks_text: cleanRemarks,
+        }
+      );
 
-    // Log in booking_status_history
-    await supabase.from('booking_status_history').insert({
-      booking_id: bookingId,
-      status: newStatus,
-      remarks: remarks.trim() || `Status updated to ${newStatus} by photographer.`,
-      changed_by: photographerId,
-    });
+      if (!rpcErr && rpcUpdated) {
+        updatedBooking = rpcUpdated;
+      } else {
+        // 3rd tier: Existing QR-token RPC fallback (from migration 15) works even before running migration 20
+        let fallbackBooking = null;
+        if (photographerId) {
+          const { data: phRow } = await supabase
+            .from('photographer_profiles')
+            .select('qr_login_token')
+            .eq('id', photographerId)
+            .maybeSingle();
+          if (phRow?.qr_login_token) {
+            const { data: tokenRes, error: tokenErr } = await supabase.rpc(
+              'update_photographer_shoot_by_token',
+              {
+                lookup_token: phRow.qr_login_token,
+                target_booking_id: bookingId,
+                action_type: 'status',
+                new_status: statusUpper,
+                remarks_text: cleanRemarks,
+              }
+            );
+            if (!tokenErr && tokenRes && !tokenRes.error) {
+              fallbackBooking = tokenRes.data || tokenRes.booking || { id: bookingId, status: statusUpper };
+            }
+          }
+        }
+        if (!fallbackBooking) {
+          throw rpcErr || updateError || new Error('Permission denied updating assigned booking status.');
+        }
+        updatedBooking = fallbackBooking;
+      }
+    }
+
+    const bNum = updatedBooking?.booking_number || 'Booking';
+
+    // Notify Customer in-app (Web Dashboard + Mobile Companion App) on live capture/editing transitions
+    if (updatedBooking?.customer_id && (statusUpper === 'CAPTURE' || statusUpper === 'IN_PROGRESS' || statusUpper === 'EDITING')) {
+      const isCapture = statusUpper === 'CAPTURE' || statusUpper === 'IN_PROGRESS';
+      try {
+        await supabase.from('notifications').insert({
+          user_id: updatedBooking.customer_id,
+          booking_id: bookingId,
+          type: isCapture ? 'PICTORIAL_STARTED' : 'BOOKING_UPDATE',
+          title: isCapture
+            ? `Pictorial Started · #${bNum}`
+            : `Editing Started · #${bNum}`,
+          message: isCapture
+            ? `Your photographer has started your pictorial session for booking #${bNum}!`
+            : `Your pictorial for #${bNum} is wrapped up and your photos are now moving into post-production editing.`,
+        });
+      } catch (notifErr) {
+        console.warn('Customer in-app notification insert warning:', notifErr?.message || notifErr);
+      }
+    }
 
     // Record photographer activity log & notify Admin on key custody transitions
     if (photographerId) {
-      const bNum = updatedBooking?.booking_number || 'Booking';
-      const statusUpper = String(newStatus).toUpperCase();
       await recordPhotographerActivity({
         photographerId,
         actionType: 'STATUS_CHANGE',
@@ -309,7 +380,7 @@ export async function updateBookingStatusByPhotographer(bookingIdOrOptions, mayb
         entityId: bookingId,
         entityLabel: `#${bNum}`,
         description: `Updated booking #${bNum} lifecycle status to ${statusUpper}.`,
-        details: { booking_number: bNum, newStatus: statusUpper, remarks },
+        details: { booking_number: bNum, newStatus: statusUpper, remarks: cleanRemarks },
       });
 
       if (statusUpper === 'CAPTURE' || statusUpper === 'EDITING') {
@@ -343,8 +414,8 @@ export async function updateBookingStatusByPhotographer(bookingIdOrOptions, mayb
 
     notifyBookingProgressUpdate({
       bookingId,
-      newStatus: String(newStatus).toUpperCase(),
-      remarks,
+      newStatus: statusUpper,
+      remarks: cleanRemarks,
     }).catch(() => {});
 
     return { data: updatedBooking, error: null };

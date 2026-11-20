@@ -27,6 +27,7 @@ import PhotographerBookingCard from '../../components/photographer/PhotographerB
 import PhotographerQRPassCard from '../../components/photographer/PhotographerQRPassCard';
 import StationShortcutsCard from '../../components/photographer/StationShortcutsCard';
 import PhotographerQRModal from '../../components/admin/PhotographerQRModal';
+import Toast from '../../components/ui/Toast';
 import { supabase } from '../../lib/supabase';
 import {
   getAssignedBookings,
@@ -261,11 +262,14 @@ export default function PhotographerDashboard() {
             : `Status updated to ${targetStatus} by photographer.`;
       const { error } = await updateBookingStatusByPhotographer(bookingId, targetStatus, remarks, user.id);
       if (error) throw error;
+      setUpcomingBookings((prev) =>
+        prev.map((item) => (item.id === bookingId ? { ...item, status: targetStatus } : item))
+      );
       setFeedback({
         type: 'success',
         message:
           targetStatus === 'CAPTURE'
-            ? 'Pictorial session started!'
+            ? 'Pictorial session started! Customer & studio notified.'
             : targetStatus === 'EDITING'
               ? 'Pictorial confirmed done! Now edit the photos and send them to Admin when ready.'
               : `Session status progressed to ${targetStatus}!`,
@@ -946,6 +950,7 @@ export default function PhotographerDashboard() {
         )}
       </AnimatePresence>
 
+      <Toast toast={feedback} onClose={() => setFeedback(null)} />
     </div>
   );
 }

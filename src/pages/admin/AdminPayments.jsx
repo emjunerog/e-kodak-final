@@ -398,7 +398,7 @@ export default function AdminPayments() {
     try {
       const { data: historyRows } = await supabase
         .from('booking_status_history')
-        .select('id, previous_status, new_status, reason, created_at, changed_by, changer:profiles!booking_status_history_changed_by_fkey(first_name, last_name, role)')
+        .select('id, status, remarks, created_at, changed_by, changer:profiles!booking_status_history_changed_by_fkey(first_name, last_name, role)')
         .eq('booking_id', booking.id)
         .order('created_at', { ascending: false })
         .limit(40);
@@ -1847,7 +1847,7 @@ export default function AdminPayments() {
         const cName = `${booking.customer?.first_name || ''} ${booking.customer?.last_name || ''}`.trim() || 'Valued Client';
         const pStatus = (booking.payment_status || 'UNPAID').toUpperCase();
         const paymentRelatedAudit = bookingAuditLogs.filter((entry) => {
-          const text = `${entry.previous_status || ''} ${entry.new_status || ''} ${entry.reason || ''}`.toLowerCase();
+          const text = `${entry.status || ''} ${entry.remarks || ''}`.toLowerCase();
           return text.includes('pay') || text.includes('deposit') || text.includes('confirm') || text.includes('settle') || text.includes('void');
         });
         const auditRows = paymentRelatedAudit.length > 0 ? paymentRelatedAudit : bookingAuditLogs;
@@ -2092,11 +2092,11 @@ export default function AdminPayments() {
                         <div className="divide-y divide-neutral-100 border border-neutral-200/70 rounded-xl bg-neutral-50/50">
                           {auditRows.map((log) => (
                             <div key={log.id} className="px-3.5 py-2 flex items-center justify-between gap-3 text-[11px]">
-                              <span className="text-neutral-700 truncate" title={log.reason || log.new_status}>
+                              <span className="text-neutral-700 truncate" title={log.remarks || log.status}>
                                 <strong className="font-semibold text-neutral-900">
-                                  {log.previous_status ? `${log.previous_status} → ${log.new_status}` : log.new_status}
+                                  {log.status}
                                 </strong>
-                                {log.reason ? ` · ${log.reason}` : ''}
+                                {log.remarks ? ` · ${log.remarks}` : ''}
                               </span>
                               <span className="text-neutral-400 whitespace-nowrap shrink-0">{fmtDateTime(log.created_at)}</span>
                             </div>
