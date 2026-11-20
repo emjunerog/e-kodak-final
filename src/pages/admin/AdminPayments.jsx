@@ -369,12 +369,6 @@ export default function AdminPayments() {
     return list;
   }, [unsettledBookings, searchTerm, unsettledFilter]);
 
-  // Unified Ledger & Balances Filter (combines Remaining Balances options + Confirmed Receipts)
-  const ledgerFilterValue = useMemo(() => {
-    if (activeLedgerTab === 'confirmed') return 'CONFIRMED';
-    return unsettledFilter; // 'ALL' | 'UNPAID' | 'PARTIAL'
-  }, [activeLedgerTab, unsettledFilter]);
-
   const handleLedgerFilterChange = (val) => {
     if (val === 'CONFIRMED') {
       setActiveLedgerTab('confirmed');
@@ -415,29 +409,6 @@ export default function AdminPayments() {
       setLoadingBookingLogs(false);
     }
   };
-
-  const ledgerFilterOptions = useMemo(() => [
-    {
-      value: 'ALL',
-      label: `Remaining Balances (${unsettledBookings.length})`,
-      icon: AlertCircle,
-    },
-    {
-      value: 'UNPAID',
-      label: `Awaiting Downpayment (${stats?.unpaidCount || 0})`,
-      icon: Clock,
-    },
-    {
-      value: 'PARTIAL',
-      label: `Partially Settled (${stats?.partialCount || 0})`,
-      icon: CircleDollarSign,
-    },
-    {
-      value: 'CONFIRMED',
-      label: `All Payment Logs (${allPaymentLogs.length || rows.length})`,
-      icon: CheckCircle2,
-    },
-  ], [unsettledBookings.length, stats?.unpaidCount, stats?.partialCount, allPaymentLogs.length, rows.length]);
 
   const handleBookingSelect = (bookingId) => {
     setSelectedBookingId(bookingId);
@@ -842,37 +813,37 @@ export default function AdminPayments() {
         {/* Header Controls Bar */}
         <div className="p-4 sm:p-5 border-b border-neutral-100 flex-shrink-0 bg-white space-y-3.5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            {/* Left: Station Icon, Title & Direct Ledger Mode Switcher */}
+            {/* Left: Station Icon, Title & Segmented View Tabs */}
             <div className="flex items-center gap-3.5 flex-wrap">
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white shadow-sm ring-1 ring-amber-600/30 shrink-0">
-                <Receipt size={22} />
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white shadow-sm ring-1 ring-amber-600/30 shrink-0">
+                <Receipt size={20} />
               </div>
-              <div>
+              <div className="flex items-center gap-3 flex-wrap">
                 <h3 className="font-heading text-xl sm:text-2xl font-bold text-neutral-900 tracking-tight">
-                  {activeLedgerTab === 'pending_receivables' ? 'Remaining Balances' : 'All Payment Logs & Receipts'}
+                  {activeLedgerTab === 'pending_receivables' ? 'Remaining Balances' : 'Payment Logs'}
                 </h3>
-                <div className="flex items-center gap-1.5 mt-1">
+                <div className="inline-flex items-center p-0.5 rounded-xl bg-neutral-100 border border-neutral-200/80">
                   <button
                     type="button"
                     onClick={() => setActiveLedgerTab('pending_receivables')}
-                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors cursor-pointer ${
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                       activeLedgerTab === 'pending_receivables'
-                        ? 'bg-neutral-900 text-[#c9a96e] border-neutral-900'
-                        : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:text-neutral-900'
+                        ? 'bg-white text-neutral-900 shadow-2xs'
+                        : 'text-neutral-500 hover:text-neutral-900'
                     }`}
                   >
-                    Remaining Balances ({unsettledBookings.length})
+                    Balances ({unsettledBookings.length})
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveLedgerTab('confirmed')}
-                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors cursor-pointer ${
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                       activeLedgerTab === 'confirmed'
-                        ? 'bg-neutral-900 text-[#c9a96e] border-neutral-900'
-                        : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:text-neutral-900'
+                        ? 'bg-white text-neutral-900 shadow-2xs'
+                        : 'text-neutral-500 hover:text-neutral-900'
                     }`}
                   >
-                    All Payment Logs ({allPaymentLogs.length || rows.length})
+                    All Logs ({allPaymentLogs.length || rows.length})
                   </button>
                 </div>
               </div>
@@ -974,21 +945,22 @@ export default function AdminPayments() {
 
             {/* Dropdown Filters */}
             <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
-              {/* Primary Ledger Filter: Remaining Balances vs Confirmed Receipts (Replaces All Balances) */}
-              <div className="w-full sm:w-72 shrink-0">
-                <CustomDropdown
-                  value={ledgerFilterValue}
-                  onChange={handleLedgerFilterChange}
-                  options={ledgerFilterOptions}
-                  placeholder="Filter Balances & Receipts"
-                  icon={Filter}
-                  className="w-full text-xs sm:text-sm"
-                  popoverWidth="w-full min-w-[290px]"
-                />
-              </div>
-
-              {/* Additional filters when viewing Confirmed Receipts */}
-              {activeLedgerTab === 'confirmed' && (
+              {activeLedgerTab === 'pending_receivables' ? (
+                <div className="w-full sm:w-60 shrink-0">
+                  <CustomDropdown
+                    value={unsettledFilter}
+                    onChange={(val) => setUnsettledFilter(val)}
+                    options={[
+                      { value: 'ALL', label: `All Balances (${unsettledBookings.length})`, icon: AlertCircle },
+                      { value: 'UNPAID', label: `Awaiting Downpayment (${stats?.unpaidCount || 0})`, icon: Clock },
+                      { value: 'PARTIAL', label: `Partially Settled (${stats?.partialCount || 0})`, icon: CircleDollarSign },
+                    ]}
+                    placeholder="Filter status"
+                    icon={Filter}
+                    className="w-full text-xs sm:text-sm"
+                  />
+                </div>
+              ) : (
                 <>
                   <div className="w-38 sm:w-44">
                     <CustomDropdown
@@ -1146,36 +1118,31 @@ export default function AdminPayments() {
 
                         {/* Actions */}
                         <td className="px-5 sm:px-6 py-4 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center justify-end gap-1.5">
                             <button
                               type="button"
                               onClick={() => openBookingLedger(b, 'receipt')}
-                              className="h-8 px-3 rounded-xl bg-white hover:bg-[#faf7f2] text-neutral-800 hover:text-neutral-950 border border-neutral-200 hover:border-[#c9a96e] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                              className="h-8 px-2.5 rounded-lg bg-white hover:bg-[#faf7f2] text-neutral-700 hover:text-neutral-950 border border-neutral-200 hover:border-[#c9a96e] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                               title={hasReceiptData ? 'View customer receipt & payment logs' : 'View billing receipt & payment logs'}
                             >
-                              <Receipt size={12} className="text-[#a8843a]" />
-                              <span>Receipt &amp; Logs</span>
-                              {bookingLogs.length > 0 && (
-                                <span className="px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold">
-                                  {bookingLogs.length}
-                                </span>
-                              )}
+                              <Receipt size={13} className="text-[#a8843a]" />
+                              <span>Receipt{bookingLogs.length > 0 ? ` (${bookingLogs.length})` : ''}</span>
                             </button>
 
                             <button
                               type="button"
                               onClick={() => openRecordModal(b)}
-                              className="h-8 px-3 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-[#c9a96e] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                              className="h-8 px-3 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-[#c9a96e] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                               title={isUnpaid ? 'Record payment for this booking' : 'Update remaining balance payment record'}
                             >
                               <CreditCard size={12} />
-                              <span>{isUnpaid ? 'Record Payment' : 'Update'}</span>
+                              <span>{isUnpaid ? 'Record' : 'Update'}</span>
                             </button>
 
                             <button
                               type="button"
                               onClick={() => handleSendReminder(b)}
-                              className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-400 hover:text-amber-700 hover:bg-amber-50/80 transition-colors border border-neutral-200/90 hover:border-amber-400/70 cursor-pointer shadow-2xs"
+                              className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-amber-700 hover:bg-amber-50 transition-colors border border-neutral-200 cursor-pointer"
                               title="Send payment reminder to client"
                             >
                               <Send size={13} />
@@ -1183,8 +1150,8 @@ export default function AdminPayments() {
 
                             <Link
                               to={`/admin/bookings/${b.id}`}
-                              className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 transition-colors border border-neutral-200/90 hover:border-neutral-400 cursor-pointer shadow-2xs"
-                              title="View full booking dossier"
+                              className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 transition-colors border border-neutral-200 cursor-pointer"
+                              title="Open full booking details"
                             >
                               <Eye size={13} />
                             </Link>
@@ -1286,11 +1253,11 @@ export default function AdminPayments() {
                       <button
                         type="button"
                         onClick={() => openBookingLedger(b, 'receipt')}
-                        className="px-3 py-2 text-xs font-semibold text-neutral-800 bg-white hover:bg-[#faf7f2] border border-neutral-200 hover:border-[#c9a96e] rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                        className="px-3 py-2 text-xs font-semibold text-neutral-800 bg-white hover:bg-[#faf7f2] border border-neutral-200 hover:border-[#c9a96e] rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                         title="View customer receipt & payment logs"
                       >
                         <Receipt size={13} className="text-[#a8843a]" />
-                        <span>Receipt &amp; Logs</span>
+                        <span>Receipt</span>
                       </button>
 
                       <button
@@ -1883,346 +1850,274 @@ export default function AdminPayments() {
           const text = `${entry.previous_status || ''} ${entry.new_status || ''} ${entry.reason || ''}`.toLowerCase();
           return text.includes('pay') || text.includes('deposit') || text.includes('confirm') || text.includes('settle') || text.includes('void');
         });
+        const auditRows = paymentRelatedAudit.length > 0 ? paymentRelatedAudit : bookingAuditLogs;
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-sm animate-fade-in font-body">
-            <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-neutral-200 animate-scale-in">
-              {/* Modal Header */}
-              <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between gap-3 bg-[#faf7f2]">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-neutral-900 text-[#c9a96e] flex items-center justify-center shrink-0">
-                    <Receipt size={18} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/65 backdrop-blur-sm animate-fade-in font-body">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[88vh] flex flex-col overflow-hidden border border-neutral-200/90 animate-scale-in">
+              {/* Minimal Modal Header */}
+              <div className="px-6 py-4 border-b border-neutral-100 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-heading font-bold text-lg text-neutral-900 truncate">
+                      #{booking.booking_number} · {cName}
+                    </h3>
+                    <span
+                      className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                        pStatus === 'PAID'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : pStatus === 'PARTIAL'
+                            ? 'bg-amber-50 text-amber-800 border-amber-200'
+                            : 'bg-neutral-100 text-neutral-600 border-neutral-200'
+                      }`}
+                    >
+                      {pStatus}
+                    </span>
                   </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-heading font-bold text-base sm:text-lg text-neutral-900 truncate">
-                        #{booking.booking_number} · {cName}
-                      </h3>
-                      <span
-                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                          pStatus === 'PAID'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : pStatus === 'PARTIAL'
-                              ? 'bg-amber-50 text-amber-800 border-amber-200'
-                              : 'bg-neutral-100 text-neutral-600 border-neutral-200'
-                        }`}
-                      >
-                        {pStatus}
-                      </span>
-                    </div>
-                    <p className="text-xs text-neutral-500 truncate">
-                      {booking.service?.name || 'Studio Package'}{booking.tier_name ? ` · ${booking.tier_name}` : ''}
-                    </p>
-                  </div>
+                  <p className="text-xs text-neutral-500 truncate mt-0.5">
+                    {booking.service?.name || 'Studio Package'}{booking.tier_name ? ` · ${booking.tier_name}` : ''}
+                  </p>
                 </div>
+
                 <button
                   type="button"
                   onClick={() => setSelectedBookingLedger(null)}
-                  className="p-1.5 text-neutral-400 hover:text-neutral-700 rounded-xl hover:bg-neutral-100 cursor-pointer shrink-0"
+                  className="p-1.5 text-neutral-400 hover:text-neutral-800 rounded-lg hover:bg-neutral-100 cursor-pointer shrink-0"
                   aria-label="Close modal"
                 >
-                  <X size={18} />
+                  <X size={17} />
                 </button>
               </div>
 
-              {/* Modal Tab Switcher */}
-              <div className="px-5 pt-3 border-b border-neutral-100 bg-white flex items-center gap-2">
+              {/* Clean Segmented Sub-Navigation */}
+              <div className="px-6 pt-3 pb-0 border-b border-neutral-100 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-5">
+                  <button
+                    type="button"
+                    onClick={() => setLedgerModalTab('receipt')}
+                    className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
+                      ledgerModalTab === 'receipt'
+                        ? 'border-neutral-900 text-neutral-900'
+                        : 'border-transparent text-neutral-400 hover:text-neutral-700'
+                    }`}
+                  >
+                    <Receipt size={13} />
+                    <span>User Receipt</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLedgerModalTab('logs')}
+                    className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
+                      ledgerModalTab === 'logs'
+                        ? 'border-neutral-900 text-neutral-900'
+                        : 'border-transparent text-neutral-400 hover:text-neutral-700'
+                    }`}
+                  >
+                    <History size={13} />
+                    <span>Payment Logs ({bookingPayments.length})</span>
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  onClick={() => setLedgerModalTab('receipt')}
-                  className={`px-3.5 py-2 text-xs font-bold border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
-                    ledgerModalTab === 'receipt'
-                      ? 'border-[#c9a96e] text-neutral-900'
-                      : 'border-transparent text-neutral-500 hover:text-neutral-800'
-                  }`}
+                  onClick={() => {
+                    const targetNum = booking.booking_number || '';
+                    setSelectedBookingLedger(null);
+                    setActiveLedgerTab('confirmed');
+                    if (targetNum) setSearchTerm(targetNum);
+                  }}
+                  className="pb-2.5 text-[11px] font-semibold text-[#9a732a] hover:underline flex items-center gap-1 cursor-pointer"
                 >
-                  <Receipt size={13} className={ledgerModalTab === 'receipt' ? 'text-[#a8843a]' : ''} />
-                  <span>User Receipt</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLedgerModalTab('logs')}
-                  className={`px-3.5 py-2 text-xs font-bold border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
-                    ledgerModalTab === 'logs'
-                      ? 'border-[#c9a96e] text-neutral-900'
-                      : 'border-transparent text-neutral-500 hover:text-neutral-800'
-                  }`}
-                >
-                  <History size={13} className={ledgerModalTab === 'logs' ? 'text-[#a8843a]' : ''} />
-                  <span>Payment Logs ({bookingPayments.length})</span>
+                  <span>All Studio Logs</span>
+                  <ExternalLink size={11} />
                 </button>
               </div>
 
-              {/* Scrollable Modal Body */}
-              <div className="p-5 overflow-y-auto space-y-4 flex-1 text-xs">
+              {/* Body */}
+              <div className="p-6 overflow-y-auto flex-1 text-xs space-y-5">
                 {ledgerModalTab === 'receipt' ? (
-                  <>
-                    {/* Official Customer Receipt View */}
-                    <div className="rounded-2xl border border-[#c9a96e]/35 bg-gradient-to-b from-[#faf7f2] to-white p-5 space-y-4 shadow-2xs">
-                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-4 border-b border-dashed border-neutral-200">
-                        <div>
-                          <p className="font-heading font-bold text-base text-neutral-900 tracking-wide uppercase">
-                            E-Kodak Photography Studio
-                          </p>
-                          <p className="text-[11px] text-neutral-500 mt-0.5">
-                            311 Rizal Street, City of Naga, Cebu · Official Customer Receipt
-                          </p>
-                        </div>
-                        <div className="sm:text-right">
-                          <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 block">
-                            Reference No.
-                          </span>
-                          <div className="inline-flex items-center gap-1.5 font-mono font-bold text-neutral-900 text-xs mt-0.5">
-                            <span>{summary.referenceNo || 'PENDING SETTLEMENT'}</span>
-                            {summary.referenceNo && (
-                              <button
-                                type="button"
-                                onClick={() => handleCopyRef(summary.referenceNo)}
-                                className="p-0.5 text-neutral-400 hover:text-[#a8843a] cursor-pointer"
-                                title="Copy reference number"
-                              >
-                                <Copy size={11} />
-                              </button>
-                            )}
-                          </div>
+                  <div className="space-y-5">
+                    {/* Crisp Paper Studio Header */}
+                    <div className="flex items-start justify-between gap-4 pb-4 border-b border-dashed border-neutral-200">
+                      <div>
+                        <p className="font-heading font-bold text-sm text-neutral-900 tracking-wide uppercase">
+                          E-Kodak Photography Studio
+                        </p>
+                        <p className="text-[11px] text-neutral-500 mt-0.5">
+                          311 Rizal Street, City of Naga, Cebu
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 block">
+                          Ref #
+                        </span>
+                        <div className="inline-flex items-center gap-1.5 font-mono font-semibold text-neutral-900 text-xs mt-0.5">
+                          <span>{summary.referenceNo || 'PENDING'}</span>
+                          {summary.referenceNo && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyRef(summary.referenceNo)}
+                              className="p-0.5 text-neutral-400 hover:text-[#9a732a] cursor-pointer"
+                              title="Copy reference number"
+                            >
+                              {copiedRef ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                            </button>
+                          )}
                         </div>
                       </div>
+                    </div>
 
-                      {/* Financial Summary Trio */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                        <div className="p-3 rounded-xl bg-white border border-neutral-200/80">
-                          <span className="text-[11px] text-neutral-400 font-medium block">Total Invoiced</span>
-                          <span className="font-heading font-bold text-base text-neutral-900">{peso(summary.total)}</span>
-                        </div>
-                        <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
-                          <span className="text-[11px] text-emerald-700 font-medium block">Paid So Far</span>
-                          <span className="font-heading font-bold text-base text-emerald-700">{peso(summary.paid)}</span>
-                        </div>
-                        <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200/80">
-                          <span className="text-[11px] text-amber-800 font-medium block">Remaining Balance</span>
-                          <span className="font-heading font-bold text-base text-amber-900">{peso(summary.remaining)}</span>
-                        </div>
+                    {/* Clean 3-Column Financial Totals Strip */}
+                    <div className="grid grid-cols-3 divide-x divide-neutral-200/80 rounded-xl border border-neutral-200/80 bg-[#faf9f6] py-3.5 text-center">
+                      <div className="px-3">
+                        <span className="text-[11px] text-neutral-500 block">Invoiced</span>
+                        <span className="font-heading font-bold text-base text-neutral-900 tabular-nums">{peso(summary.total)}</span>
                       </div>
-
-                      {/* Customer & Gateway Details */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 pt-1 text-xs">
-                        <div className="flex justify-between gap-2 border-b border-neutral-100 pb-1.5">
-                          <span className="text-neutral-400">Client Name</span>
-                          <span className="font-semibold text-neutral-900 text-right">{cName}</span>
-                        </div>
-                        <div className="flex justify-between gap-2 border-b border-neutral-100 pb-1.5">
-                          <span className="text-neutral-400">Contact</span>
-                          <span className="font-medium text-neutral-800 text-right">
-                            {booking.customer?.phone || booking.customer?.email || '—'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between gap-2 border-b border-neutral-100 pb-1.5">
-                          <span className="text-neutral-400">Package</span>
-                          <span className="font-medium text-neutral-900 text-right">
-                            {booking.service?.name || 'Studio Package'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between gap-2 border-b border-neutral-100 pb-1.5">
-                          <span className="text-neutral-400">Session Date</span>
-                          <span className="font-medium text-neutral-800 text-right">
-                            {fmt(booking.event_date)}{booking.preferred_time ? ` · ${booking.preferred_time.substring(0, 5)}` : ''}
-                          </span>
-                        </div>
-                        <div className="flex justify-between gap-2 border-b border-neutral-100 pb-1.5">
-                          <span className="text-neutral-400">Payment Channel</span>
-                          <span className="font-semibold text-neutral-900 text-right">{summary.channel}</span>
-                        </div>
-                        <div className="flex justify-between gap-2 border-b border-neutral-100 pb-1.5">
-                          <span className="text-neutral-400">Payment Date</span>
-                          <span className="font-medium text-neutral-800 text-right">
-                            {summary.paymentDate ? fmtDateTime(summary.paymentDate) : '—'}
-                          </span>
-                        </div>
+                      <div className="px-3">
+                        <span className="text-[11px] text-emerald-700 block">Paid</span>
+                        <span className="font-heading font-bold text-base text-emerald-700 tabular-nums">{peso(summary.paid)}</span>
                       </div>
+                      <div className="px-3">
+                        <span className="text-[11px] text-amber-800 block">Balance</span>
+                        <span className="font-heading font-bold text-base text-amber-900 tabular-nums">{peso(summary.remaining)}</span>
+                      </div>
+                    </div>
 
-                      {/* Checkout / Gateway Receipt Lines parsed from booking.notes */}
-                      {summary.parsedNotes.lines.length > 0 && (
-                        <div className="rounded-xl bg-neutral-50 border border-neutral-200/80 p-3.5 space-y-1.5">
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
-                            Customer Checkout Receipt Record
-                          </p>
-                          <div className="space-y-1">
-                            {summary.parsedNotes.lines.map((line, idx) => (
-                              <div key={idx} className="flex items-start justify-between gap-3 text-[11px]">
-                                <span className="text-neutral-500">{line.label}</span>
-                                <span className="font-medium text-neutral-900 text-right">{line.value}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
+                    {/* Single Clean Key-Value Receipt Details List */}
+                    <div className="divide-y divide-neutral-100 text-xs">
+                      <div className="py-2.5 flex justify-between gap-4">
+                        <span className="text-neutral-400">Client</span>
+                        <span className="font-semibold text-neutral-900 text-right">
+                          {cName}{booking.customer?.phone ? ` · ${booking.customer.phone}` : ''}
+                        </span>
+                      </div>
+                      <div className="py-2.5 flex justify-between gap-4">
+                        <span className="text-neutral-400">Session</span>
+                        <span className="font-medium text-neutral-800 text-right">
+                          {fmt(booking.event_date)}{booking.preferred_time ? ` · ${booking.preferred_time.substring(0, 5)}` : ''}
+                        </span>
+                      </div>
+                      <div className="py-2.5 flex justify-between gap-4">
+                        <span className="text-neutral-400">Channel</span>
+                        <span className="font-semibold text-neutral-900 text-right">{summary.channel}</span>
+                      </div>
+                      <div className="py-2.5 flex justify-between gap-4">
+                        <span className="text-neutral-400">Payment Date</span>
+                        <span className="font-medium text-neutral-800 text-right">
+                          {summary.paymentDate ? fmtDateTime(summary.paymentDate) : '—'}
+                        </span>
+                      </div>
                       {summary.latestPayment?.notes && (
-                        <div className="text-[11px] text-neutral-600 italic bg-neutral-50/70 rounded-xl px-3 py-2 border border-neutral-100">
-                          Remarks: {summary.latestPayment.notes}
+                        <div className="py-2.5 flex justify-between gap-4">
+                          <span className="text-neutral-400 shrink-0">Notes</span>
+                          <span className="text-neutral-600 text-right italic">{summary.latestPayment.notes}</span>
                         </div>
                       )}
                     </div>
-                  </>
+                  </div>
                 ) : (
-                  <div className="space-y-4">
-                    {/* Recorded Payments Table/List for this Booking */}
-                    <div className="space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-heading font-bold text-sm text-neutral-900">
-                          Transaction Payment Logs ({bookingPayments.length})
-                        </h4>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const targetNum = booking.booking_number || '';
-                            setSelectedBookingLedger(null);
-                            setActiveLedgerTab('confirmed');
-                            if (targetNum) setSearchTerm(targetNum);
-                          }}
-                          className="text-xs font-semibold text-[#a8843a] hover:underline flex items-center gap-1 cursor-pointer"
-                        >
-                          <span>View in All Studio Payment Logs</span>
-                          <ExternalLink size={11} />
-                        </button>
+                  <div className="space-y-5">
+                    {bookingPayments.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-neutral-200 p-8 text-center text-neutral-500">
+                        <p className="font-semibold text-neutral-700 text-sm">No payment logs yet</p>
+                        <p className="text-xs mt-1">Click &ldquo;Record Payment&rdquo; below to add a deposit or settlement.</p>
                       </div>
-
-                      {bookingPayments.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-neutral-200 p-6 text-center text-neutral-500 space-y-1">
-                          <p className="font-semibold text-neutral-700">No transaction rows logged yet</p>
-                          <p className="text-[11px]">
-                            Use &ldquo;Record Payment&rdquo; to log a deposit or cash/e-wallet installment for this booking.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {bookingPayments.map((p) => {
-                            const MIcon = METHOD_ICONS[p.payment_method] || CreditCard;
-                            const recordedByName = p.recorder
-                              ? `${p.recorder.first_name || ''} ${p.recorder.last_name || ''}`.trim()
-                              : 'Customer Checkout';
-                            return (
-                              <div
-                                key={p.id}
-                                className="rounded-2xl border border-neutral-200/90 bg-white p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-[#c9a96e]/70 transition-colors"
-                              >
-                                <div className="space-y-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-heading font-bold text-sm text-neutral-900">
-                                      {peso(p.amount)}
-                                    </span>
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${TYPE_COLORS[p.payment_type] || TYPE_COLORS.OTHER}`}>
-                                      {TYPE_LABELS[p.payment_type] || p.payment_type}
-                                    </span>
-                                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-600">
-                                      <MIcon size={12} className="text-[#a8843a]" />
-                                      {METHOD_LABELS[p.payment_method] || p.payment_method}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2 flex-wrap text-[11px] text-neutral-500">
-                                    <span>{fmtDateTime(p.payment_date)}</span>
-                                    <span>·</span>
-                                    <span className="font-mono text-neutral-700">
-                                      Ref: {p.reference_number || p.id.slice(0, 8)}
-                                    </span>
-                                    <span>·</span>
-                                    <span>By: {recordedByName}</span>
-                                  </div>
-                                  {p.notes && (
-                                    <p className="text-[11px] text-neutral-500 italic truncate" title={p.notes}>
-                                      {p.notes}
-                                    </p>
-                                  )}
+                    ) : (
+                      <div className="divide-y divide-neutral-100 border border-neutral-200/80 rounded-xl overflow-hidden">
+                        {bookingPayments.map((p) => {
+                          const MIcon = METHOD_ICONS[p.payment_method] || CreditCard;
+                          const recorderName = p.recorder
+                            ? `${p.recorder.first_name || ''} ${p.recorder.last_name || ''}`.trim()
+                            : 'Checkout';
+                          return (
+                            <div
+                              key={p.id}
+                              className="px-4 py-3 bg-white hover:bg-neutral-50/70 transition-colors flex items-center justify-between gap-3"
+                            >
+                              <div className="min-w-0 space-y-0.5">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-heading font-bold text-sm text-neutral-900 tabular-nums">
+                                    {peso(p.amount)}
+                                  </span>
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-700">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${p.payment_type === 'DOWN_PAYMENT' ? 'bg-blue-500' : p.payment_type === 'FINAL_PAYMENT' ? 'bg-emerald-500' : 'bg-neutral-400'}`} />
+                                    {TYPE_LABELS[p.payment_type] || p.payment_type}
+                                  </span>
+                                  <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500">
+                                    <MIcon size={11} className="text-[#a8843a]" />
+                                    {METHOD_LABELS[p.payment_method] || p.payment_method}
+                                  </span>
                                 </div>
-
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => setSelectedReceipt({
-                                      ...p,
-                                      booking: {
-                                        ...booking,
-                                        customer: booking.customer,
-                                      },
-                                    })}
-                                    className="px-2.5 py-1.5 rounded-lg border border-neutral-200 hover:border-[#c9a96e] bg-white hover:bg-[#faf7f2] text-xs font-semibold text-neutral-800 inline-flex items-center gap-1 cursor-pointer"
-                                  >
-                                    <Receipt size={12} className="text-[#a8843a]" />
-                                    <span>Voucher</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setDeletingPayment({
-                                      ...p,
-                                      booking,
-                                    })}
-                                    className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                    title="Void payment entry"
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
+                                <div className="flex items-center gap-2 flex-wrap text-[11px] text-neutral-400">
+                                  <span>{fmtDateTime(p.payment_date)}</span>
+                                  <span>·</span>
+                                  <span className="font-mono text-neutral-600">{p.reference_number || p.id.slice(0, 8)}</span>
+                                  <span>·</span>
+                                  <span>{recorderName}</span>
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
 
-                    {/* Booking Payment Audit History */}
-                    <div className="space-y-2 pt-2 border-t border-neutral-100">
-                      <h4 className="font-heading font-bold text-sm text-neutral-900">
-                        Booking Payment &amp; Status Audit Trail
-                      </h4>
-                      {loadingBookingLogs ? (
-                        <p className="text-xs text-neutral-400">Loading audit history…</p>
-                      ) : (paymentRelatedAudit.length > 0 ? paymentRelatedAudit : bookingAuditLogs).length === 0 ? (
-                        <p className="text-[11px] text-neutral-400">No status/payment audit events recorded for this booking yet.</p>
-                      ) : (
-                        <div className="space-y-1.5">
-                          {(paymentRelatedAudit.length > 0 ? paymentRelatedAudit : bookingAuditLogs).map((log) => (
-                            <div key={log.id} className="p-2.5 rounded-xl bg-neutral-50 border border-neutral-200/70 flex items-start justify-between gap-3 text-[11px]">
-                              <div className="space-y-0.5">
-                                <span className="font-semibold text-neutral-800 block">
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedReceipt({ ...p, booking })}
+                                  className="px-2.5 py-1 rounded-lg border border-neutral-200 hover:border-[#c9a96e] text-xs font-semibold text-neutral-700 hover:text-neutral-900 bg-white cursor-pointer"
+                                  title="Open official printable voucher"
+                                >
+                                  Voucher
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeletingPayment({ ...p, booking })}
+                                  className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Void entry"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Concise Audit Trail (if present) */}
+                    {loadingBookingLogs ? (
+                      <p className="text-[11px] text-neutral-400">Loading audit trail…</p>
+                    ) : auditRows.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+                          Status &amp; Verification History
+                        </p>
+                        <div className="divide-y divide-neutral-100 border border-neutral-200/70 rounded-xl bg-neutral-50/50">
+                          {auditRows.map((log) => (
+                            <div key={log.id} className="px-3.5 py-2 flex items-center justify-between gap-3 text-[11px]">
+                              <span className="text-neutral-700 truncate" title={log.reason || log.new_status}>
+                                <strong className="font-semibold text-neutral-900">
                                   {log.previous_status ? `${log.previous_status} → ${log.new_status}` : log.new_status}
-                                </span>
-                                {log.reason && <span className="text-neutral-500 block">{log.reason}</span>}
-                              </div>
+                                </strong>
+                                {log.reason ? ` · ${log.reason}` : ''}
+                              </span>
                               <span className="text-neutral-400 whitespace-nowrap shrink-0">{fmtDateTime(log.created_at)}</span>
                             </div>
                           ))}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
-              {/* Modal Footer */}
-              <div className="px-5 py-3.5 border-t border-neutral-100 bg-neutral-50/80 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => window.print()}
-                    className="px-3 py-1.5 text-xs font-semibold text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                  >
-                    <Printer size={13} />
-                    <span>Print Receipt</span>
-                  </button>
-                  {summary.latestPayment && (
-                    <button
-                      type="button"
-                      onClick={() => setSelectedReceipt({
-                        ...summary.latestPayment,
-                        booking,
-                      })}
-                      className="px-3 py-1.5 text-xs font-semibold text-neutral-700 bg-white border border-neutral-200 hover:border-[#c9a96e] rounded-xl flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                    >
-                      <Receipt size={13} className="text-[#a8843a]" />
-                      <span>Voucher</span>
-                    </button>
-                  )}
-                </div>
+              {/* Clean Footer */}
+              <div className="px-6 py-3.5 border-t border-neutral-100 bg-neutral-50/70 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 text-xs font-semibold text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer size={13} />
+                  <span>Print Receipt</span>
+                </button>
 
                 <div className="flex items-center gap-2">
                   <button
@@ -2231,7 +2126,7 @@ export default function AdminPayments() {
                       setSelectedBookingLedger(null);
                       openRecordModal(booking);
                     }}
-                    className="px-3.5 py-1.5 text-xs font-bold text-[#c9a96e] bg-neutral-900 hover:bg-neutral-800 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    className="px-3.5 py-1.5 text-xs font-bold text-[#c9a96e] bg-neutral-900 hover:bg-neutral-800 rounded-lg flex items-center gap-1.5 cursor-pointer"
                   >
                     <Plus size={13} />
                     <span>Record Payment</span>
@@ -2239,7 +2134,7 @@ export default function AdminPayments() {
                   <button
                     type="button"
                     onClick={() => setSelectedBookingLedger(null)}
-                    className="px-3.5 py-1.5 text-xs font-semibold text-neutral-600 hover:text-neutral-900 bg-white border border-neutral-200 rounded-xl hover:bg-neutral-100 cursor-pointer"
+                    className="px-3 py-1.5 text-xs font-semibold text-neutral-600 hover:text-neutral-900 bg-white border border-neutral-200 rounded-lg hover:bg-neutral-100 cursor-pointer"
                   >
                     Close
                   </button>
