@@ -11,6 +11,8 @@ import { Mail, Lock, User, ArrowRight, ArrowLeft, Loader2, RefreshCw, Eye, EyeOf
 import { useAuth } from "../../context/AuthContext";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import OtpCodeInput from "../../components/auth/OtpCodeInput";
+import TurnstileWidget from "../../components/common/TurnstileWidget";
+import { isTurnstileConfigured } from "../../lib/turnstile";
 
 // Google "G" SVG icon
 function GoogleIcon({ size = 19 }) {
@@ -128,6 +130,8 @@ export default function Register() {
   const [confirmPwd, setConfirmPwd] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
 
   // Step 2 state
   const [code, setCode] = useState("");
@@ -239,17 +243,23 @@ export default function Register() {
     if (!firstName || !lastName || !email || !password) { setError("Please fill in all fields."); return; }
     if (password !== confirmPwd) { setError("Passwords do not match."); return; }
     if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
+    if (isTurnstileConfigured && !captchaToken) {
+      setError("Please complete the human verification check first.");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
       const cleanEmail = email.trim().toLowerCase();
-      await signUp(cleanEmail, password, firstName, lastName, role);
+      await signUp(cleanEmail, password, firstName, lastName, role, captchaToken);
       setCode("");
       setResendStatus("");
       setResendCooldown(60);
       setStep(2);
     } catch (err) {
       setError(err.message || "Registration failed. Please try again.");
+      setCaptchaToken("");
+      setCaptchaResetKey((k) => k + 1);
     } finally {
       setIsSubmitting(false);
     }
@@ -820,10 +830,18 @@ export default function Register() {
                     )}
                   </div>
 
+                  {/* Human Verification */}
+                  <TurnstileWidget
+                    theme={isDark ? "dark" : "light"}
+                    resetKey={captchaResetKey}
+                    onTokenChange={setCaptchaToken}
+                    className="pt-1"
+                  />
+
                   {/* Create Account Button — Arrow removed */}
                   <button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || (isTurnstileConfigured && !captchaToken)}
                     className="w-full min-h-[50px] flex items-center justify-center gap-2 rounded-xl mt-5 bg-gradient-to-r from-[#e5be70] via-[#c9a96e] to-[#e8d5b0] hover:from-[#ecc77a] hover:to-[#f0ddbc] text-neutral-950 font-body font-bold text-sm tracking-wide shadow-lg shadow-gold/20 hover:shadow-xl hover:shadow-gold/30 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99] transition-all duration-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 group"
                   >
                     {isSubmitting ? (

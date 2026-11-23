@@ -11,6 +11,8 @@ import { useAuth } from "../../context/AuthContext";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import Toast from "../../components/ui/Toast";
 import OtpCodeInput from "../../components/auth/OtpCodeInput";
+import TurnstileWidget from "../../components/common/TurnstileWidget";
+import { isTurnstileConfigured } from "../../lib/turnstile";
 
 // Google "G" SVG icon
 function GoogleIcon({ size = 19 }) {
@@ -126,6 +128,8 @@ export default function Login() {
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [showNewPwd, setShowNewPwd] = useState(false);
   const [showConfirmNewPwd, setShowConfirmNewPwd] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
 
   // Camera Flash capture animation state & direction ('to-dark' | 'to-light')
   const [isFlashing, setIsFlashing] = useState(false);
@@ -310,6 +314,10 @@ export default function Login() {
 
     if (!isSupabaseConfigured) { setError("Supabase is not configured."); return; }
     if (!email || !password)   { setError("Please enter your email and password."); return; }
+    if (isTurnstileConfigured && !captchaToken) {
+      setError("Please complete the human verification check first.");
+      return;
+    }
 
     let cleanEmail = email.trim().toLowerCase();
     if (
@@ -327,9 +335,11 @@ export default function Login() {
 
     setIsSubmitting(true);
     try {
+      const signInOptions = captchaToken ? { options: { captchaToken } } : {};
       let { data, error: authErr } = await supabase.auth.signInWithPassword({ 
         email: cleanEmail, 
-        password 
+        password,
+        ...signInOptions,
       });
 
       if (authErr) {
@@ -337,7 +347,8 @@ export default function Login() {
         if (cleanPassword !== password) {
           const retryRes = await supabase.auth.signInWithPassword({
             email: cleanEmail,
-            password: cleanPassword
+            password: cleanPassword,
+            ...signInOptions,
           });
           if (!retryRes.error) {
             data = retryRes.data;
@@ -347,7 +358,8 @@ export default function Login() {
         if (authErr && isStaffOrAdminEmail && cleanPassword.toLowerCase() !== cleanPassword) {
           const retryRes = await supabase.auth.signInWithPassword({
             email: cleanEmail,
-            password: cleanPassword.toLowerCase()
+            password: cleanPassword.toLowerCase(),
+            ...signInOptions,
           });
           if (!retryRes.error) {
             data = retryRes.data;
@@ -383,6 +395,8 @@ export default function Login() {
       } else {
         setError(msg);
       }
+      setCaptchaToken("");
+      setCaptchaResetKey((k) => k + 1);
     } finally {
       setIsSubmitting(false);
     }
@@ -448,6 +462,8 @@ export default function Login() {
     setResetCode("");
     setNewPassword("");
     setConfirmNewPassword("");
+    setCaptchaToken("");
+    setCaptchaResetKey((k) => k + 1);
     setStep(3);
   };
 
@@ -460,10 +476,14 @@ export default function Login() {
       setError("Please enter a valid email address.");
       return;
     }
+    if (isTurnstileConfigured && !captchaToken) {
+      setError("Please complete the human verification check first.");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
-      await requestPasswordReset(cleanEmail);
+      await requestPasswordReset(cleanEmail, captchaToken);
       setResetCode("");
       setResendCooldown(60);
       setResendStatus(
@@ -472,6 +492,8 @@ export default function Login() {
       setStep(4);
     } catch (err) {
       setError(err.message || "Failed to send password reset email.");
+      setCaptchaToken("");
+      setCaptchaResetKey((k) => k + 1);
     } finally {
       setIsSubmitting(false);
     }
@@ -1063,10 +1085,17 @@ export default function Login() {
                     </div>
                   </div>
 
+                  {/* Human Verification */}
+                  <TurnstileWidget
+                    theme={isDark ? "dark" : "light"}
+                    resetKey={captchaResetKey}
+                    onTokenChange={setCaptchaToken}
+                  />
+
                   {/* Sign In Button matching mockup — Arrow removed */}
                   <button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || (isTurnstileConfigured && !captchaToken)}
                     className="w-full min-h-[52px] flex items-center justify-center gap-2 rounded-xl mt-6 bg-gradient-to-r from-[#e5be70] via-[#c9a96e] to-[#e8d5b0] hover:from-[#ecc77a] hover:to-[#f0ddbc] text-neutral-950 font-body font-bold text-sm tracking-wide shadow-lg shadow-gold/20 hover:shadow-xl hover:shadow-gold/30 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99] transition-all duration-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 group"
                   >
                     {isSubmitting ? (
@@ -1253,9 +1282,15 @@ export default function Login() {
                     </div>
                   </div>
 
+                  <TurnstileWidget
+                    theme={isDark ? "dark" : "light"}
+                    resetKey={captchaResetKey}
+                    onTokenChange={setCaptchaToken}
+                  />
+
                   <button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || (isTurnstileConfigured && !captchaToken)}
                     className="w-full min-h-[50px] flex items-center justify-center gap-2 rounded-xl mt-2 bg-gradient-to-r from-[#e5be70] via-[#c9a96e] to-[#e8d5b0] hover:from-[#ecc77a] hover:to-[#f0ddbc] text-neutral-950 font-body font-bold text-sm tracking-wide shadow-lg shadow-gold/20 hover:shadow-xl hover:shadow-gold/30 transition-all duration-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isSubmitting ? (

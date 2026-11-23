@@ -532,6 +532,15 @@ a.text-primary {
     }
   }
 
+  /* Continuous real-time creative 3D shutter-prism cascade across hero letters */
+  .hero-letter-creative {
+    display: inline-block;
+    transform-origin: center 60%;
+    @media (prefers-reduced-motion: no-preference) {
+      animation: heroLetterAperture 5.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    }
+  }
+
   /* Compositor-only transform shimmer sweep */
   .animate-shimmer-sweep {
     @media (prefers-reduced-motion: no-preference) {
@@ -744,6 +753,25 @@ a.text-primary {
   100% {
     transform: translate3d(calc(100cqi - 7px), 0, 0);
     opacity: 0;
+  }
+}
+
+@keyframes heroLetterAperture {
+  0%,
+  32%,
+  100% {
+    transform: perspective(560px) translate3d(0, 0, 0) rotateX(0deg) rotateY(0deg) scale(1);
+    opacity: 1;
+  }
+
+  10% {
+    transform: perspective(560px) translate3d(0, -6px, 0) rotateX(58deg) rotateY(-18deg) scale(0.9);
+    opacity: 0.3;
+  }
+
+  20% {
+    transform: perspective(560px) translate3d(0, 2px, 0) rotateX(-14deg) rotateY(6deg) scale(1.06);
+    opacity: 1;
   }
 }
 

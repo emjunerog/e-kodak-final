@@ -28,6 +28,8 @@ import { MapPin, Phone, Mail, Clock, Send, CheckCircle, AlertCircle, ArrowRight,
 import { motion, AnimatePresence } from "framer-motion";
 
 import Navbar from "../components/layout/Navbar";
+import TurnstileWidget from "../components/common/TurnstileWidget";
+import { isTurnstileConfigured } from "../lib/turnstile";
 import Footer from "../components/layout/Footer";
 import PageHero from "../components/ui/PageHero";
 import ServiceFAQ from "../components/services/ServiceFAQ";
@@ -139,6 +141,8 @@ export default function Contact() {
   const [form, setForm]       = useState(EMPTY_FORM);
   const [errors, setErrors]   = useState({});
   const [status, setStatus]   = useState("idle"); // idle | loading | success | error
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
 
   // ── Validation ───────────────────────────────────────────────────────────────
   const validate = () => {
@@ -149,6 +153,7 @@ export default function Contact() {
     if (!form.subject)               e.subject = "Please select a subject.";
     if (!form.message.trim())        e.message = "Please enter your message.";
     else if (form.message.trim().length < 20) e.message = "Message must be at least 20 characters.";
+    if (isTurnstileConfigured && !captchaToken) e.captcha = "Please complete human verification before sending.";
     return e;
   };
 
@@ -162,13 +167,15 @@ export default function Contact() {
     setStatus("loading");
 
     // PLACEHOLDER: Simulated network delay
-    // FUTURE: Replace with Supabase Edge Function call
-    //   const { error } = await supabase.functions.invoke('send-contact-email', { body: form })
+    // FUTURE: Replace with Supabase Edge Function call (passing `captchaToken` for server verification)
+    //   const { error } = await supabase.functions.invoke('send-contact-email', { body: { ...form, captchaToken } })
     await new Promise((r) => setTimeout(r, 1800));
 
     // Simulate success (always succeeds in demo mode)
     setStatus("success");
     setForm(EMPTY_FORM);
+    setCaptchaToken("");
+    setCaptchaResetKey((k) => k + 1);
   };
 
   const handleChange = (e) => {
@@ -398,10 +405,29 @@ export default function Contact() {
                         </div>
                       </motion.div>
 
+                      {/* Human Verification */}
+                      <motion.div variants={staggerChild} className="space-y-1.5">
+                        <TurnstileWidget
+                          theme="light"
+                          resetKey={captchaResetKey}
+                          onTokenChange={(token) => {
+                            setCaptchaToken(token);
+                            if (token && errors.captcha) {
+                              setErrors((prev) => ({ ...prev, captcha: "" }));
+                            }
+                          }}
+                        />
+                        {errors.captcha && (
+                          <p role="alert" className="font-body text-red-500 text-xs">
+                            {errors.captcha}
+                          </p>
+                        )}
+                      </motion.div>
+
                       {/* Submit */}
                       <motion.button
                         type="submit"
-                        disabled={status === "loading"}
+                        disabled={status === "loading" || (isTurnstileConfigured && !captchaToken)}
                         variants={staggerChild}
                         whileHover={{ y: -3 }}
                         whileTap={{ scale: 0.98 }}

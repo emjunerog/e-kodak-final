@@ -310,15 +310,19 @@ export const AuthProvider = ({ children }) => {
 
   // ── Auth actions ─────────────────────────────────────────────────────────────
 
-  const signIn = async (email, password) => {
+  const signIn = async (email, password, captchaToken) => {
     if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
     const cleanEmail = String(email || "").trim().toLowerCase();
-    const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+      ...(captchaToken ? { options: { captchaToken } } : {}),
+    });
     if (error) throw error;
     return data;
   };
 
-  const signUp = async (email, password, firstName, lastName, role = 'customer') => {
+  const signUp = async (email, password, firstName, lastName, role = 'customer', captchaToken) => {
     if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
     const cleanEmail = String(email || "").trim().toLowerCase();
     const { data, error } = await supabase.auth.signUp({
@@ -326,6 +330,7 @@ export const AuthProvider = ({ children }) => {
       password,
       options: {
         data: { first_name: firstName.trim(), last_name: lastName.trim(), role },
+        ...(captchaToken ? { captchaToken } : {}),
         // emailRedirectTo is intentionally omitted so Supabase sends an OTP code
         // instead of a magic link. Make sure "Email OTP" is enabled in
         // Authentication → Email Settings in your Supabase project dashboard.
@@ -457,7 +462,7 @@ export const AuthProvider = ({ children }) => {
   /**
    * Sends a password reset email (supports both a 6-digit recovery code and /reset-password link).
    */
-  const requestPasswordReset = async (email) => {
+  const requestPasswordReset = async (email, captchaToken) => {
     if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
     const cleanEmail = String(email || "").trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes("@")) {
@@ -466,6 +471,7 @@ export const AuthProvider = ({ children }) => {
 
     const { data, error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
       redirectTo: buildAppRedirectUrl("reset-password"),
+      ...(captchaToken ? { captchaToken } : {}),
     });
 
     if (error) {

@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import TurnstileWidget from "../../components/common/TurnstileWidget";
+import { isTurnstileConfigured } from "../../lib/turnstile";
 
 export default function ResetPassword() {
   const { user, profile, updatePassword, requestPasswordReset, clearPasswordRecovery } = useAuth();
@@ -52,6 +54,8 @@ export default function ResetPassword() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
 
   useEffect(() => {
     if (isDark) document.documentElement.classList.add("dark");
@@ -172,12 +176,18 @@ export default function ResetPassword() {
     e.preventDefault();
     setError("");
     setResendMessage("");
+    if (isTurnstileConfigured && !captchaToken) {
+      setError("Please complete the human verification check first.");
+      return;
+    }
     setIsSubmitting(true);
     try {
-      await requestPasswordReset(resetEmail);
+      await requestPasswordReset(resetEmail, captchaToken);
       setResendMessage("Password reset instructions sent! Check your inbox.");
     } catch (err) {
       setError(err?.message || "Failed to dispatch reset email.");
+      setCaptchaToken("");
+      setCaptchaResetKey((k) => k + 1);
     } finally {
       setIsSubmitting(false);
     }
@@ -510,9 +520,15 @@ export default function ResetPassword() {
                   </div>
                 </div>
 
+                <TurnstileWidget
+                  theme={isDark ? "dark" : "light"}
+                  resetKey={captchaResetKey}
+                  onTokenChange={setCaptchaToken}
+                />
+
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || (isTurnstileConfigured && !captchaToken)}
                   className="w-full min-h-[50px] flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#e5be70] via-[#c9a96e] to-[#e8d5b0] hover:from-[#ecc77a] hover:to-[#f0ddbc] text-neutral-950 font-body font-bold text-sm tracking-wide shadow-lg shadow-gold/20 cursor-pointer disabled:opacity-60"
                 >
                   {isSubmitting ? (

@@ -35,9 +35,6 @@ function GradPackageSpotlight({ service, index = 0 }) {
   const displayName = isCollege
     ? "College / Graduation Packages"
     : "Senior High / Milestone Packages";
-  const deliverables = isCollege
-    ? "Crystal Frame · Filipiniana · Family"
-    : "Toga Portraits · Complete IDs · Frames";
   const targetLink = `${siteConfig.routes.services}#sets-${service.slug}`;
 
   // Clean description for graduation cards (2-3 lines)
@@ -96,11 +93,8 @@ function GradPackageSpotlight({ service, index = 0 }) {
             {defaultDesc}
           </p>
 
-          {/* Deliverables / Feature Tag + CTA */}
-          <div className="flex items-center justify-between mt-auto pt-4 border-t border-neutral-100">
-            <span className="font-body text-neutral-400 text-xs font-medium uppercase tracking-wider">
-              {deliverables}
-            </span>
+          {/* CTA Footer */}
+          <div className="flex items-center justify-end mt-auto pt-4 border-t border-neutral-100">
             <Link
               to={targetLink}
               className="
@@ -184,10 +178,7 @@ function GradPackageSpotlight({ service, index = 0 }) {
           </div>
 
           {/* Stacked Footer */}
-          <div className="flex items-center justify-between pt-4 border-t border-neutral-100 mt-2">
-            <span className="font-body text-neutral-400 text-xs font-medium uppercase tracking-wider truncate mr-2">
-              {deliverables}
-            </span>
+          <div className="flex items-center justify-end pt-4 border-t border-neutral-100 mt-2">
             <Link
               to={targetLink}
               className="

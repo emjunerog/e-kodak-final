@@ -26,7 +26,6 @@ import { Menu, X, LayoutDashboard } from "lucide-react";
 import { siteConfig } from "../../config/siteConfig";
 import { useAuth } from "../../context/AuthContext";
 import AnnouncementBar from "../landing/AnnouncementBar";
-import { Magnetic } from "../ui/Interactive";
 
 // Desktop nav links (excludes Login and CTA which are styled separately)
 const navLinks = [
@@ -175,11 +174,11 @@ export default function Navbar() {
 
   const closeMenu = () => setMenuOpen(false);
 
-  // ── Navbar class — transparent at top, dark frosted glass on scroll ───────
+  // ── Navbar class — subtle studio scrim at top, rich frosted glass on scroll ─
   const navClass =
     scrolled || lightTop
-      ? "bg-neutral-950/85 backdrop-blur-xl border-b border-white/10 shadow-[0_18px_44px_-18px_rgba(0,0,0,0.65)]"
-      : "bg-transparent";
+      ? "bg-neutral-950/90 backdrop-blur-xl border-b border-white/10 shadow-[0_18px_44px_-18px_rgba(0,0,0,0.7)]"
+      : "bg-gradient-to-b from-neutral-950/70 via-neutral-950/35 to-transparent";
 
   return (
     <>
@@ -198,26 +197,26 @@ export default function Navbar() {
       >
         <AnnouncementBar />
         <nav
-          className="container-custom flex items-center justify-between h-16 md:h-20 gap-3 sm:gap-4 lg:gap-8"
+          className="w-full max-w-screen-2xl mx-auto px-5 sm:px-8 lg:px-12 flex items-center justify-between md:grid md:grid-cols-[1fr_auto_1fr] h-18 md:h-20 gap-4"
           aria-label="Main navigation"
         >
-          {/* ── Logo ──────────────────────────────────────────────────────── */}
+          {/* ── Left: Logo ─────────────────────────────────────────────────── */}
           <motion.div
             variants={navLinkItem}
             initial="hidden"
             animate="show"
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            transition={{ type: "spring", stiffness: 420, damping: 18 }}
-            className="shrink-0 mr-2 sm:mr-4 lg:mr-8"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            transition={{ type: "spring", stiffness: 420, damping: 20 }}
+            className="shrink-0 justify-self-start"
           >
             <Link
               to={siteConfig.routes.home}
-              className="flex items-center gap-2 sm:gap-2.5 font-heading font-semibold text-lg sm:text-xl tracking-tight text-white hover:text-gold transition-colors duration-300 whitespace-nowrap"
+              className="flex items-center gap-2 sm:gap-2.5 font-heading font-semibold text-lg sm:text-xl tracking-tight text-white hover:text-gold-light transition-colors duration-200 whitespace-nowrap"
               aria-label={`${siteConfig.name} — Home`}
             >
-              <span className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-neutral-950 border border-neutral-800 p-1 shadow-md shrink-0">
-                <img src="/logo-mark.png" alt="E-Kodak" className="w-full h-full object-contain" />
+              <span className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 bg-transparent shrink-0">
+                <img src="/logo-mark.png" alt="E-Kodak" className="w-full h-full object-contain drop-shadow-sm" />
               </span>
               <span className="font-heading font-semibold tracking-tight">
                 {siteConfig.name}
@@ -225,9 +224,9 @@ export default function Navbar() {
             </Link>
           </motion.div>
 
-          {/* ── Desktop Navigation ────────────────────────────────────────── */}
+          {/* ── Center: Desktop Navigation Pill Dock ──────────────────────── */}
           <motion.ul
-            className="hidden md:flex items-center justify-center gap-0.5 lg:gap-1.5 flex-1 max-w-xl mx-auto"
+            className="hidden md:inline-flex items-center justify-center gap-1 lg:gap-2 px-2 py-1.5 rounded-full bg-neutral-950/55 border border-white/12 backdrop-blur-md shadow-[0_8px_28px_-8px_rgba(0,0,0,0.45)] justify-self-center"
             role="list"
             variants={navLinkList}
             initial="hidden"
@@ -238,10 +237,13 @@ export default function Navbar() {
                 <NavLink
                   to={link.to}
                   className={({ isActive }) => `
-                    relative block px-2.5 py-1.5 lg:px-4 lg:py-2 rounded-full
+                    relative block px-3.5 py-1.5 lg:px-4.5 lg:py-2 rounded-full
                     font-body text-xs lg:text-sm font-medium whitespace-nowrap
                     transition-colors duration-200
-                    ${isActive ? "text-gold" : "text-neutral-200/90 hover:text-white"}
+                    ${isActive
+                      ? "text-primary font-semibold"
+                      : "text-white/80 hover:text-white hover:bg-white/8"
+                    }
                   `}
                 >
                   {({ isActive }) => (
@@ -249,8 +251,8 @@ export default function Navbar() {
                       {isActive && (
                         <motion.span
                           layoutId="nav-active-pill"
-                          className="absolute inset-0 rounded-full bg-gold/15 border border-gold/40 backdrop-blur-sm"
-                          transition={{ type: "spring", stiffness: 480, damping: 34 }}
+                          className="absolute inset-0 rounded-full bg-gradient-to-r from-gold to-gold-light shadow-sm"
+                          transition={{ type: "spring", stiffness: 460, damping: 32 }}
                         />
                       )}
                       <span className="relative z-10">{link.label}</span>
@@ -261,48 +263,37 @@ export default function Navbar() {
             ))}
           </motion.ul>
 
-          {/* ── Desktop Auth CTA ──────────────────────────────────────────── */}
+          {/* ── Right: Desktop Auth CTA ───────────────────────────────────── */}
           <motion.div
-            className="hidden md:flex items-center gap-2 lg:gap-3 shrink-0 ml-2 sm:ml-4 lg:ml-8"
+            className="hidden md:flex items-center gap-2.5 lg:gap-3 shrink-0 justify-self-end"
             variants={navLinkItem}
             initial="hidden"
             animate="show"
           >
             {isCustomer ? (
-              /* Customer logged in: show My Dashboard */
-              <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }} transition={{ type: "spring", stiffness: 420, damping: 20 }}>
-                <Link
-                  to="/dashboard"
-                  className="flex items-center gap-1.5 lg:gap-2 font-body text-xs lg:text-sm font-medium px-3 lg:px-4 py-1.5 rounded-full border border-white/25 bg-white/5 text-white backdrop-blur-sm hover:border-gold hover:text-gold transition-all duration-300 whitespace-nowrap"
-                >
-                  <LayoutDashboard size={15} />
-                  My Dashboard
-                </Link>
-              </motion.div>
+              /* Customer logged in: compact balanced studio pill matching nav item scale */
+              <Link
+                to="/dashboard"
+                className="inline-flex items-center gap-1.5 font-body text-xs lg:text-sm font-medium px-3.5 py-1.5 lg:px-4 lg:py-2 rounded-full bg-neutral-950/55 border border-white/15 text-white/95 backdrop-blur-md shadow-sm hover:border-gold/60 hover:bg-gold hover:text-primary transition-[background-color,color,border-color] duration-200 whitespace-nowrap group"
+              >
+                <LayoutDashboard size={14} className="text-gold group-hover:text-primary transition-colors duration-200 shrink-0" />
+                My Dashboard
+              </Link>
             ) : (
               /* Guests & Administrative users: Login + Book a Session */
               <>
-                <motion.div whileHover={{ y: -2 }} transition={{ type: "spring", stiffness: 420, damping: 20 }}>
-                  <Link
-                    to={siteConfig.routes.login}
-                    className="font-body text-xs lg:text-sm font-medium px-3 lg:px-4 py-1.5 rounded-full border border-white/25 text-neutral-200 hover:border-gold hover:text-gold transition-all duration-200 whitespace-nowrap"
-                  >
-                    {siteConfig.nav.login}
-                  </Link>
-                </motion.div>
-                <Magnetic strength={0.3} pull={1.06}>
-                  <motion.div
-                    whileTap={{ scale: 0.95 }}
-                    transition={{ type: "spring", stiffness: 420, damping: 18 }}
-                  >
-                    <Link
-                      to={siteConfig.routes.register}
-                      className="font-body text-xs lg:text-sm font-semibold px-4 lg:px-5 py-1.5 lg:py-2 rounded-full bg-gradient-to-r from-gold to-gold-light text-primary hover:shadow-gold-lg transition-all duration-300 whitespace-nowrap"
-                    >
-                      {siteConfig.nav.bookCta}
-                    </Link>
-                  </motion.div>
-                </Magnetic>
+                <Link
+                  to={siteConfig.routes.login}
+                  className="font-body text-xs lg:text-sm font-medium px-3.5 py-1.5 lg:px-4 lg:py-2 rounded-full bg-neutral-950/55 border border-white/15 text-white/90 backdrop-blur-md hover:border-gold hover:text-gold-light transition-[border-color,color,background-color] duration-200 whitespace-nowrap"
+                >
+                  {siteConfig.nav.login}
+                </Link>
+                <Link
+                  to={siteConfig.routes.register}
+                  className="font-body text-xs lg:text-sm font-semibold px-3.5 py-1.5 lg:px-4.5 lg:py-2 rounded-full bg-gradient-to-r from-gold to-gold-light text-primary shadow-gold hover:shadow-gold-lg hover:-translate-y-0.5 transition-[transform,box-shadow] duration-200 whitespace-nowrap"
+                >
+                  {siteConfig.nav.bookCta}
+                </Link>
               </>
             )}
           </motion.div>
@@ -383,7 +374,7 @@ export default function Navbar() {
                   onClick={closeMenu}
                 >
                   <motion.span
-                    className="flex items-center justify-center w-8 h-8 rounded-xl bg-neutral-950 border border-neutral-800 p-1 shadow-md shrink-0"
+                    className="flex items-center justify-center w-8 h-8 bg-transparent shrink-0"
                     initial={{ rotate: -25, scale: 0.7 }}
                     animate={{ rotate: 0, scale: 1 }}
                     transition={{ delay: 0.18, type: "spring", stiffness: 460, damping: 16 }}

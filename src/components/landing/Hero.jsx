@@ -19,10 +19,10 @@ import {
   useMotionTemplate,
   useReducedMotion,
 } from "framer-motion";
-import { ArrowDown, ArrowRight, Star } from "lucide-react";
-import { stagger, staggerChild, lineReveal, ease } from "../../lib/motion";
+import { Star } from "lucide-react";
+import { stagger, staggerChild, ease } from "../../lib/motion";
 import { siteConfig } from "../../config/siteConfig";
-import { Magnetic, Counter } from "../ui/Interactive";
+import { Counter } from "../ui/Interactive";
 
 const HERO_IMG_768 =
   "https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?auto=format&fit=crop&w=768&q=75";
@@ -36,9 +36,14 @@ const canHoverFine = () =>
   window.matchMedia?.("(hover: hover) and (pointer: fine)").matches;
 
 const metrics = [
-  { value: 500, suffix: "+", label: "Sessions Completed" },
-  { value: 4.9, decimals: 1, label: "Average Rating", highlight: true, star: true },
-  { value: 3, suffix: "+", label: "Years of Experience" },
+  { value: 120, suffix: "+", label: "Graduates & Families" },
+  { value: 4.8, decimals: 1, label: "45+ Client Reviews", highlight: true, star: true },
+  { value: 4, suffix: "+", label: "Years in Cebu" },
+];
+
+const headlineLines = [
+  { text: "Moments Worth", em: false },
+  { text: "Remembering.", em: true },
 ];
 
 export default function Hero() {
@@ -108,9 +113,27 @@ export default function Hero() {
         />
       )}
 
-      {/* Overlay */}
+      {/* ── Frosty whiter bottom blur transitioning smoothly to soft top blur */}
+      <div
+        className="absolute inset-0 z-[1] pointer-events-none backdrop-blur-[2px]"
+        aria-hidden="true"
+      />
+      <div
+        className="absolute inset-0 z-[1] pointer-events-none backdrop-blur-[16px]"
+        style={{
+          background:
+            "linear-gradient(to top, rgba(255,255,255,0.22) 0%, rgba(250,248,244,0.13) 34%, rgba(255,255,255,0.03) 68%, rgba(255,255,255,0) 100%)",
+          maskImage:
+            "linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 36%, rgba(0,0,0,0.32) 68%, rgba(0,0,0,0) 100%)",
+          WebkitMaskImage:
+            "linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.85) 36%, rgba(0,0,0,0.32) 68%, rgba(0,0,0,0) 100%)",
+        }}
+        aria-hidden="true"
+      />
+
+      {/* Balanced contrast scrim — keeps top clear and bottom milky-frost readable */}
       <motion.div
-        className="absolute inset-0 z-1 bg-gradient-to-b from-black/65 via-black/40 to-black/92"
+        className="absolute inset-0 z-1 bg-gradient-to-b from-black/50 via-black/32 to-neutral-950/60"
         style={{ opacity: overlayO }}
         aria-hidden="true"
       />
@@ -161,70 +184,56 @@ export default function Hero() {
         />
       </svg>
 
-      {/* ── Hero Content ──────────────────────────────────────────────────── */}
+      {/* ── Hero Content (centered vertically & balanced) ─────────────────── */}
       <motion.div
-        className="relative z-10 container-custom text-center text-white pt-28 pb-24 sm:pb-28 px-4"
+        className="relative z-10 container-custom text-center text-white pt-20 pb-10 sm:pt-24 sm:pb-12 px-4"
         style={{ y: contentY }}
       >
-        {/* Eyebrow — compositor scaleX lines */}
-        <motion.div
-          className="flex items-center justify-center gap-3 mb-8"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.35 }}
+        {/* Headline — continuous real-time letter wave animation */}
+        <h1
+          className="font-heading text-white text-4xl sm:text-5xl md:text-6xl lg:text-display-xl xl:text-display-2xl leading-[1.08] tracking-tight drop-shadow-md mb-2"
+          aria-label="Moments Worth Remembering."
         >
-          <motion.span
-            className="w-12 h-px bg-gradient-to-r from-transparent to-gold/70 origin-right"
-            initial={{ scaleX: 0 }}
-            animate={{ scaleX: 1 }}
-            transition={{ duration: 0.6, delay: 0.15, ease: ease.expo }}
-          />
-          <span className="font-body text-gold text-[11px] font-semibold uppercase tracking-[0.3em] whitespace-nowrap">
-            E-Kodak Studio · Cebu
-          </span>
-          <motion.span
-            className="w-12 h-px bg-gradient-to-l from-transparent to-gold/70 origin-left"
-            initial={{ scaleX: 0 }}
-            animate={{ scaleX: 1 }}
-            transition={{ duration: 0.6, delay: 0.15, ease: ease.expo }}
-          />
-        </motion.div>
-
-        {/* Headline — crisp line reveal */}
-        <div className="overflow-hidden mb-2">
-          <motion.h1
-            className="font-heading text-white text-4xl sm:text-5xl md:text-6xl lg:text-display-xl xl:text-display-2xl leading-[1.06] tracking-tight drop-shadow-md"
-            variants={stagger(0.1, 0.08)}
-            initial="hidden"
-            animate="show"
-          >
-            {[
-              { text: "Moments Worth", em: false },
-              { text: "Remembering.", em: true },
-            ].map((line, i) => (
-              <span key={i} className="overflow-hidden block">
-                <motion.span
-                  className={`block ${line.em ? "text-gold-light italic text-sheen" : ""}`}
-                  style={
-                    line.em
-                      ? {
-                        backgroundImage:
-                          "linear-gradient(100deg, #c9a96e 8%, #fff3d8 28%, #e8d5b0 44%, #f7e7c6 58%, #c9a96e 88%)",
-                      }
-                      : undefined
-                  }
-                  variants={lineReveal}
-                >
-                  {line.text}
-                </motion.span>
-              </span>
-            ))}
-          </motion.h1>
-        </div>
+          {(() => {
+            let charOffset = 0;
+            return headlineLines.map((line, lineIdx) => (
+              <motion.span
+                key={lineIdx}
+                className={`block ${line.em ? "text-gold-light italic" : ""}`}
+                aria-hidden="true"
+                initial={reduceMotion ? false : { opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.45, delay: lineIdx * 0.1, ease: ease.expo }}
+              >
+                {line.text.split(" ").map((word, wordIdx, wordsArr) => (
+                  <span key={wordIdx} className="inline-block whitespace-nowrap">
+                    {Array.from(word).map((char, cIdx) => {
+                      const stepIndex = charOffset++;
+                      return (
+                        <span
+                          key={cIdx}
+                          className="hero-letter-creative"
+                          style={
+                            reduceMotion
+                              ? undefined
+                              : { animationDelay: `${(0.15 + stepIndex * 0.055).toFixed(3)}s` }
+                          }
+                        >
+                          {char}
+                        </span>
+                      );
+                    })}
+                    {wordIdx < wordsArr.length - 1 ? "\u00A0" : ""}
+                  </span>
+                ))}
+              </motion.span>
+            ));
+          })()}
+        </h1>
 
         {/* Description */}
         <motion.p
-          className="font-body text-white/80 text-base sm:text-lg lg:text-xl leading-relaxed max-w-2xl mx-auto mt-6 mb-10 drop-shadow"
+          className="font-body text-white/90 text-base sm:text-lg lg:text-xl leading-relaxed max-w-2xl mx-auto mt-5 mb-8 drop-shadow"
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2, ease: ease.smooth }}
@@ -234,38 +243,30 @@ export default function Hero() {
           and download your high-resolution proofs instantly.
         </motion.p>
 
-        {/* ── Primary CTAs — magnetic pull + shine sweep ─────────────────── */}
+        {/* ── Primary CTAs — equal sizing, close balanced spacing ─────────── */}
         <motion.div
-          className="flex flex-wrap items-center justify-center gap-4"
+          className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4"
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45, delay: 0.25, ease: ease.expo }}
         >
-          <Magnetic strength={0.3} pull={1.05}>
-            <Link
-              to={siteConfig.routes.register}
-              className="btn-primary group relative overflow-hidden shine-on-hover"
-            >
-              {siteConfig.nav.bookCta}
-              <ArrowRight size={16} className="transition-transform duration-300 group-hover:translate-x-1" />
-            </Link>
-          </Magnetic>
-          <Magnetic strength={0.3} pull={1.05}>
-            <Link
-              to={siteConfig.routes.services}
-              className="btn-outline group inline-flex items-center gap-2"
-            >
-              Explore Our Services
-              <span className="transition-transform duration-300 group-hover:translate-y-0.5">
-                <ArrowDown size={15} />
-              </span>
-            </Link>
-          </Magnetic>
+          <Link
+            to={siteConfig.routes.register}
+            className="w-56 inline-flex items-center justify-center px-6 py-3.5 rounded-xl bg-gradient-to-r from-gold to-gold-light text-primary font-body font-semibold text-sm tracking-wide shadow-gold hover:shadow-gold-lg hover:-translate-y-0.5 active:scale-[0.98] transition-[transform,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold whitespace-nowrap"
+          >
+            {siteConfig.nav.bookCta}
+          </Link>
+          <Link
+            to={siteConfig.routes.services}
+            className="w-56 inline-flex items-center justify-center px-6 py-3.5 rounded-xl border border-white/35 bg-white/12 text-white backdrop-blur-sm font-body font-medium text-sm tracking-wide hover:border-gold hover:bg-gold/15 hover:text-gold-light hover:-translate-y-0.5 active:scale-[0.98] transition-[transform,background-color,border-color,color] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold whitespace-nowrap"
+          >
+            Explore Our Services
+          </Link>
         </motion.div>
 
         {/* Animated divider */}
         <motion.div
-          className="h-px max-w-xs mx-auto mb-10 bg-gradient-to-r from-transparent via-gold/40 to-transparent"
+          className="h-px max-w-xs mx-auto mt-8 mb-7 bg-gradient-to-r from-transparent via-gold/40 to-transparent"
           initial={{ scaleX: 0 }}
           animate={{ scaleX: 1 }}
           transition={{ duration: 0.6, delay: 0.3, ease: ease.expo }}
@@ -273,8 +274,8 @@ export default function Hero() {
 
         {/* Metrics strip — frosted glass panel, fast reveal */}
         <motion.div
-          className="inline-flex flex-wrap items-center justify-center gap-7 sm:gap-12 max-w-3xl mx-auto mt-2 mb-4 rounded-2xl border border-white/12 bg-black/45 backdrop-blur-md px-6 py-5 sm:px-8 shadow-warm-xl"
-          variants={stagger(0.08, 0.35)}
+          className="inline-flex flex-wrap items-center justify-center gap-7 sm:gap-12 max-w-3xl mx-auto rounded-2xl border border-white/15 bg-black/50 backdrop-blur-md px-6 py-5 sm:px-8 shadow-warm-xl"
+          variants={stagger(0.08, 0.32)}
           initial="hidden"
           animate="show"
         >
@@ -296,35 +297,11 @@ export default function Hero() {
                   {stat.star && <Star size={16} className="fill-gold text-gold -mt-0.5" />}
                 </span>
               </div>
-              <p className="font-body text-white/70 text-[11px] mt-1 uppercase tracking-widest font-medium drop-shadow-sm">
+              <p className="font-body text-white/75 text-[11px] mt-1 uppercase tracking-widest font-medium drop-shadow-sm">
                 {stat.label}
               </p>
             </motion.div>
           ))}
-        </motion.div>
-      </motion.div>
-
-      {/* ── Scroll Indicator — compositor transform-only (zero height reflow) */}
-      <motion.div
-        className="absolute bottom-7 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center gap-2"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.6, duration: 0.5 }}
-        aria-hidden="true"
-      >
-        <span className="font-body text-white/60 text-[10px] uppercase tracking-[0.25em] drop-shadow-md">
-          Scroll
-        </span>
-        <motion.div
-          className="w-px h-8 origin-top bg-gradient-to-b from-white/50 to-transparent"
-          animate={reduceMotion ? undefined : { scaleY: [0.55, 1, 0.55], opacity: [0.5, 1, 0.5] }}
-          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div
-          animate={reduceMotion ? undefined : { y: [0, 4, 0] }}
-          transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
-        >
-          <ArrowDown size={13} className="text-white/40" />
         </motion.div>
       </motion.div>
     </section>

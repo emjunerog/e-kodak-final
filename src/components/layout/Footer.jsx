@@ -18,6 +18,7 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { MapPin, Phone, Mail, Clock } from "lucide-react";
 import { stagger, staggerChild, viewport, ease } from "../../lib/motion";
+import { openCookiePreferences } from "../../lib/cookies";
 
 // ── Inline SVG Social Icons (lucide-react v0.5+ removed brand icons) ─────────
 function FacebookIcon({ size = 16 }) {
@@ -102,7 +103,7 @@ export default function Footer() {
               aria-label={`${siteConfig.name} — Home`}
             >
               <motion.span
-                className="flex items-center justify-center w-8 h-8 rounded-lg bg-neutral-950 border border-neutral-800 p-1"
+                className="flex items-center justify-center w-8 h-8 bg-transparent shrink-0"
                 whileHover={{ rotate: [0, -14, 14, 0], scale: 1.12 }}
                 transition={{ duration: 0.6, ease: ease.spring }}
               >
@@ -320,6 +321,15 @@ export default function Footer() {
               >
                 Terms of Service
               </Link>
+            </motion.div>
+            <motion.div whileHover={{ y: -2 }}>
+              <button
+                type="button"
+                onClick={openCookiePreferences}
+                className="font-body text-xs text-neutral-500 hover:text-gold transition-colors cursor-pointer"
+              >
+                Cookie Settings
+              </button>
             </motion.div>
           </div>
         </div>

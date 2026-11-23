@@ -34,8 +34,9 @@ function lazyWithRetry(importer) {
   );
 }
 
-// ── Floating Concierge (deferred chunk so it never blocks landing first paint) ─
+// ── Floating Concierge & Privacy Banner (deferred chunk so landing paint stays fast) ─
 const AIAssistant = lazyWithRetry(() => import("./components/ai/AIAssistant"));
+const CookieConsent = lazyWithRetry(() => import("./components/common/CookieConsent"));
 
 // ── Secondary Public & Auth Pages (Lazy-loaded route chunks) ─────────────────
 const Services = lazyWithRetry(() => import("./pages/Services"));
@@ -181,6 +182,9 @@ export default function App() {
           <AIAssistant />
         </Suspense>
       )}
+      <Suspense fallback={null}>
+        <CookieConsent />
+      </Suspense>
 
       <ErrorBoundary>
         <Suspense fallback={<RouteFallback />}>
