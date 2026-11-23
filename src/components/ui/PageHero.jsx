@@ -63,6 +63,7 @@ export default function PageHero({
             alt={imageAlt}
             className="w-full h-full scale-110 object-cover object-center no-drag animate-ken-burns"
             loading="eager"
+            fetchPriority="high"
           />
         ) : (
           <div className="w-full h-full bg-primary" />

@@ -15,15 +15,17 @@
  *     view and floats over the packages (pill → expandable wizard panel)
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, GraduationCap, Sparkles, Crown, X } from "lucide-react";
-import { FinderCard } from "./PackageFinder";
+import { ArrowRight, GraduationCap, Sparkles, X } from "lucide-react";
 import { siteConfig } from "../../config/siteConfig";
+import { SERVICES } from "../../data/servicesData";
 import { getServices } from "../../services/contentService";
 import { stagger, staggerChild, viewport, ease } from "../../lib/motion";
 import { SplitReveal, TiltCard } from "../ui/Interactive";
+
+const FinderCard = lazy(() => import("./PackageFinder"));
 
 // ── Stacked Hoverable Card for College & Senior High Packages ────────────────
 function GradPackageSpotlight({ service, index = 0 }) {
@@ -36,7 +38,6 @@ function GradPackageSpotlight({ service, index = 0 }) {
   const deliverables = isCollege
     ? "Crystal Frame · Filipiniana · Family"
     : "Toga Portraits · Complete IDs · Frames";
-  const categoryBadge = isCollege ? "COLLEGE-PACKAGE" : "SENIOR-HIGH";
   const targetLink = `${siteConfig.routes.services}#sets-${service.slug}`;
 
   // Clean description for graduation cards (2-3 lines)
@@ -59,48 +60,31 @@ function GradPackageSpotlight({ service, index = 0 }) {
           shine-on-hover h-full transition-all duration-300 rounded-2xl shadow-warm-md hover:shadow-warm-lg
         "
         aria-label={`${displayName} photography package`}
-        initial={{ opacity: 0, y: 38, scale: 0.97, filter: "blur(8px)" }}
-        whileInView={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+        initial={{ opacity: 0, y: 24, scale: 0.985 }}
+        whileInView={{ opacity: 1, y: 0, scale: 1 }}
         viewport={viewport}
-        transition={{ duration: 0.75, delay: index * 0.12, ease: ease.spring }}
+        transition={{ duration: 0.45, delay: index * 0.08, ease: ease.expo }}
       >
         {/* ── Base Layer: Card cover image ──────────────── */}
         <div className="relative overflow-hidden aspect-[4/3]">
-          <motion.img
+          <img
             src={service.coverImage}
             alt={service.name}
-            className="w-full h-full object-cover no-drag transition-transform duration-700 ease-out group-hover:scale-108"
+            className={`w-full h-full object-cover no-drag transition-transform duration-700 ease-out group-hover:scale-105 ${
+              String(service.coverImage || "").includes("family-graduation")
+                ? "object-center"
+                : String(service.coverImage || "").includes("filipiniana-portrait")
+                ? "object-[50%_24%]"
+                : "object-top"
+            }`}
             loading="lazy"
-            initial={{ scale: 1.15 }}
-            whileInView={{ scale: 1 }}
-            viewport={viewport}
-            transition={{ duration: 1.4, ease: ease.expo }}
+            decoding="async"
           />
           {/* Subtle dark overlay on hover */}
           <div
             className="absolute inset-0 bg-primary/0 group-hover:bg-primary/25 transition-all duration-500"
             aria-hidden="true"
           />
-
-          {/* Top-Left Category Badge */}
-          <span className="absolute top-4 left-4 font-body text-[10px] font-semibold uppercase tracking-[0.15em] px-3 py-1.5 rounded-full bg-white/95 text-primary backdrop-blur-sm shadow-sm">
-            {categoryBadge}
-          </span>
-
-          {/* Top-Right Value Badge */}
-          <span className="absolute top-4 right-4 font-body text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-full bg-neutral-900/90 text-gold border border-gold/40 backdrop-blur-sm shadow-sm flex items-center gap-1.5">
-            {isCollege ? (
-              <>
-                <Crown size={11} className="text-gold" />
-                Most Complete
-              </>
-            ) : (
-              <>
-                <Sparkles size={11} className="text-gold" />
-                Best Value
-              </>
-            )}
-          </span>
         </div>
 
         {/* ── Card Body (Default View) ──────────────────────────────────── */}
@@ -157,25 +141,6 @@ function GradPackageSpotlight({ service, index = 0 }) {
         >
           {/* Header Row */}
           <div>
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <span className="font-body text-[10px] font-bold uppercase tracking-[0.15em] px-2.5 py-1 rounded-full bg-gold/15 text-gold-dark border border-gold/30">
-                {categoryBadge}
-              </span>
-              <span className="font-body text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-neutral-900 text-gold border border-gold/40 flex items-center gap-1">
-                {isCollege ? (
-                  <>
-                    <Crown size={10} className="text-gold" />
-                    Most Complete
-                  </>
-                ) : (
-                  <>
-                    <Sparkles size={10} className="text-gold" />
-                    Best Value
-                  </>
-                )}
-              </span>
-            </div>
-
             <h3 className="font-heading text-primary text-xl font-semibold mb-2">
               {displayName}
             </h3>
@@ -252,8 +217,8 @@ function GradPackageSpotlight({ service, index = 0 }) {
 }
 
 export default function ServicesPreview() {
-  const [services, setServices] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Seed immediately from local SERVICES to eliminate skeleton flash & CLS on first paint
+  const [services, setServices] = useState(SERVICES);
   const sectionRef = useRef(null);
   const [finderVisible, setFinderVisible] = useState(false);
   const [finderOpen, setFinderOpen] = useState(false);
@@ -261,9 +226,8 @@ export default function ServicesPreview() {
   useEffect(() => {
     let mounted = true;
     getServices().then((res) => {
-      if (mounted) {
+      if (mounted && Array.isArray(res?.data) && res.data.length > 0) {
         setServices(res.data);
-        setIsLoading(false);
       }
     });
     return () => { mounted = false; };
@@ -315,32 +279,10 @@ export default function ServicesPreview() {
           </motion.p>
         </motion.div>
 
-        {/* ── Loading Skeleton ─────────────────────────────────────────────── */}
-        {isLoading && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-            {[1, 2].map((i) => (
-              <div key={i} className="bg-surface rounded-2xl border border-neutral-100 overflow-hidden animate-pulse">
-                <div className="h-44 bg-neutral-200" />
-                <div className="p-5 space-y-3">
-                  <div className="h-5 bg-neutral-200 rounded w-1/2" />
-                  <div className="h-3 bg-neutral-100 rounded w-3/4" />
-                  <div className="h-3 bg-neutral-100 rounded w-full" />
-                  <div className="h-3 bg-neutral-100 rounded w-5/6" />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* ── Graduation Spotlight ─────────────────────────────────────────── */}
-        {!isLoading && gradServices.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            viewport={viewport}
-            transition={{ duration: 0.4 }}
-          >
-            {/* Graduation category header (No emojis) */}
+        {gradServices.length > 0 && (
+          <div>
+            {/* Graduation category header */}
             <div className="flex items-center gap-4 mb-6">
               <motion.div
                 className="flex items-center gap-3"
@@ -385,7 +327,7 @@ export default function ServicesPreview() {
                 <GradPackageSpotlight key={s.slug} service={s} index={i} />
               ))}
             </div>
-          </motion.div>
+          </div>
         )}
 
         {/* ── View All CTA ────────────────────────────────────────────────── */}
@@ -452,10 +394,18 @@ export default function ServicesPreview() {
                     </button>
                   </div>
                   <div className="overflow-y-auto overscroll-contain">
-                    <FinderCard
-                      className="!rounded-none !border-0 !shadow-none"
-                      onNavigate={() => setFinderOpen(false)}
-                    />
+                    <Suspense
+                      fallback={
+                        <div className="p-6 text-center text-xs font-body text-neutral-400">
+                          Loading Package Finder…
+                        </div>
+                      }
+                    >
+                      <FinderCard
+                        className="!rounded-none !border-0 !shadow-none"
+                        onNavigate={() => setFinderOpen(false)}
+                      />
+                    </Suspense>
                   </div>
                 </motion.div>
               ) : (

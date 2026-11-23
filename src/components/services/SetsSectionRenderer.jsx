@@ -8,13 +8,14 @@
  * Rendered BELOW the parent PackageCard overview.
  */
 
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  Check, ArrowRight, X, Sparkles, CreditCard,
-  Frame, Image, GraduationCap, Shirt, Users, Camera
+  ArrowRight, Sparkles, CreditCard, BookOpen
 } from "lucide-react";
 import { SET_THEMES } from "./PackageCard";
+import PackageBrochureModal from "./PackageBrochureModal";
 import {
   stagger,
   staggerChild,
@@ -41,111 +42,49 @@ function toNumber(price) {
   return Number.isFinite(n) ? n : null;
 }
 
-// ── Semantic icon & typography mapping for inclusions ─────────────────────────
-function getInclusionMeta(text) {
+// ── Typography mapping for inclusions ────────────────────────────────────────
+function getInclusionTextClass(text) {
   const lower = text.toLowerCase();
 
-  // Negative inclusions (e.g., "No free make up")
   if (lower.includes("no free") || lower.startsWith("no ") || lower.includes("without make up")) {
-    return {
-      Icon: X,
-      iconColor: "text-neutral-400",
-      bgColor: "bg-neutral-100",
-      textColor: "text-neutral-400 line-through decoration-neutral-300",
-      isNegative: true,
-    };
+    return "text-neutral-400 line-through decoration-neutral-300";
   }
 
-  // Free makeup / hair styling
-  if (lower.includes("make up") || lower.includes("hair style") || lower.includes("make-up")) {
-    return {
-      Icon: Sparkles,
-      iconColor: "text-amber-600",
-      bgColor: "bg-amber-500/10",
-      textColor: "text-neutral-900 font-medium",
-    };
+  if (
+    lower.includes("make up") ||
+    lower.includes("hair style") ||
+    lower.includes("make-up") ||
+    lower.includes("crystal") ||
+    (lower.includes("frame") && !lower.includes("without frame")) ||
+    lower.includes("family") ||
+    lower.includes("group")
+  ) {
+    return "text-neutral-900 font-medium";
   }
 
-  // Crystal wood frames & portraits
-  if (lower.includes("crystal") || (lower.includes("frame") && !lower.includes("without frame"))) {
-    return {
-      Icon: Frame,
-      iconColor: "text-amber-700",
-      bgColor: "bg-amber-50",
-      textColor: "text-neutral-900 font-medium",
-    };
+  if (
+    lower.includes("toga") ||
+    lower.includes("cap") ||
+    lower.includes("graduat") ||
+    lower.includes("pilipiñ") ||
+    lower.includes("filipin") ||
+    lower.includes("barong") ||
+    lower.includes("attire") ||
+    lower.includes("camera") ||
+    lower.includes("video") ||
+    lower.includes("movie") ||
+    lower.includes("mtv") ||
+    lower.includes("usb") ||
+    lower.includes("drive")
+  ) {
+    return "text-neutral-800";
   }
 
-  // Graduation cap / toga
-  if (lower.includes("toga") || lower.includes("cap") || lower.includes("graduat")) {
-    return {
-      Icon: GraduationCap,
-      iconColor: "text-neutral-700",
-      bgColor: "bg-neutral-100",
-      textColor: "text-neutral-800",
-    };
-  }
-
-  // Filipiniana / Barong / Formal attire
-  if (lower.includes("pilipiñ") || lower.includes("filipin") || lower.includes("barong") || lower.includes("attire")) {
-    return {
-      Icon: Shirt,
-      iconColor: "text-neutral-700",
-      bgColor: "bg-neutral-100",
-      textColor: "text-neutral-800",
-    };
-  }
-
-  // Family portraits
-  if (lower.includes("family") || lower.includes("group")) {
-    return {
-      Icon: Users,
-      iconColor: "text-neutral-700",
-      bgColor: "bg-neutral-100",
-      textColor: "text-neutral-800 font-medium",
-    };
-  }
-
-  // Identification prints (Tesda, Passport, 2x2, 1x1)
-  if (lower.includes("passport") || lower.includes("tesda") || lower.includes("2x2") || lower.includes("1x1") || lower.includes("i.d")) {
-    return {
-      Icon: CreditCard,
-      iconColor: "text-neutral-600",
-      bgColor: "bg-neutral-100",
-      textColor: "text-neutral-700",
-    };
-  }
-
-  // Media, Camera, Video, Delivery
-  if (lower.includes("camera") || lower.includes("video") || lower.includes("movie") || lower.includes("mtv") || lower.includes("usb") || lower.includes("drive")) {
-    return {
-      Icon: Camera,
-      iconColor: "text-neutral-700",
-      bgColor: "bg-neutral-100",
-      textColor: "text-neutral-800",
-    };
-  }
-
-  // Photo prints & sizes
-  if (lower.includes("size") || lower.includes("wallet") || lower.includes("print") || lower.includes("colored") || lower.includes("8x10") || lower.includes("12x18") || lower.includes("10x12") || lower.includes("soft copies")) {
-    return {
-      Icon: Image,
-      iconColor: "text-neutral-600",
-      bgColor: "bg-neutral-100",
-      textColor: "text-neutral-700",
-    };
-  }
-
-  return {
-    Icon: Check,
-    iconColor: "text-gold",
-    bgColor: "bg-gold/10",
-    textColor: "text-neutral-700",
-  };
+  return "text-neutral-700";
 }
 
 // ── Individual Tier/Set Card (2-Column Balanced Layout) ───────────────────────
-function TierSectionCard({ tier, themeIndex, serviceName, serviceSlug }) {
+function TierSectionCard({ tier, themeIndex, serviceName, serviceSlug, onOpenBrochure }) {
   const theme = SET_THEMES[themeIndex] || SET_THEMES[0];
   const ThemeIcon = theme.icon;
   const amount = toNumber(tier.price);
@@ -245,33 +184,24 @@ function TierSectionCard({ tier, themeIndex, serviceName, serviceSlug }) {
                 whileInView="show"
                 viewport={{ once: true, margin: "-40px" }}
               >
-                {highlights.map((h) => {
-                  const meta = getInclusionMeta(h);
-                  return (
-                    <motion.li
-                      key={h}
-                      variants={staggerChild}
-                      className="flex items-center gap-2.5 py-1 px-1.5 rounded-lg hover:bg-neutral-50 transition-colors"
-                    >
-                      <span
-                        className={`shrink-0 w-6 h-6 rounded-md flex items-center justify-center ${meta.bgColor}`}
-                        aria-hidden="true"
-                      >
-                        <meta.Icon size={12} className={meta.iconColor} strokeWidth={2.2} />
-                      </span>
-                      <span className={`font-body text-xs sm:text-[13px] leading-snug tracking-tight antialiased ${meta.textColor}`}>
-                        {h}
-                      </span>
-                    </motion.li>
-                  );
-                })}
+                {highlights.map((h) => (
+                  <motion.li
+                    key={h}
+                    variants={staggerChild}
+                    className="py-1 px-1.5 rounded-lg hover:bg-neutral-50 transition-colors"
+                  >
+                    <span className={`font-body text-xs sm:text-[13px] leading-snug tracking-tight antialiased ${getInclusionTextClass(h)}`}>
+                      {h}
+                    </span>
+                  </motion.li>
+                ))}
               </motion.ul>
             ) : (
               <p className="font-body text-neutral-400 text-sm italic">No inclusions listed.</p>
             )}
           </div>
 
-          {/* Card Footer — down payment note + CTA (Equalized Baseline) */}
+          {/* Card Footer — down payment note + Size Brochure View + Bigger Book CTA */}
           <div className="mt-auto pt-4 border-t border-dashed border-neutral-200 shrink-0">
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between text-[11px] font-body text-neutral-500">
@@ -280,15 +210,23 @@ function TierSectionCard({ tier, themeIndex, serviceName, serviceSlug }) {
                 </span>
                 <span>Balance on shoot day</span>
               </div>
+              <button
+                type="button"
+                onClick={() => onOpenBrochure(tier.name)}
+                className="w-full h-11 inline-flex items-center justify-center gap-2 px-5 rounded-xl border border-neutral-300 bg-white hover:border-gold hover:bg-gold/5 text-primary font-body text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
+              >
+                <BookOpen size={15} className="text-gold-dark shrink-0" />
+                <span>Size Brochure View</span>
+              </button>
               <Magnetic strength={0.25} pull={1.04} className="w-full">
                 <Link
                   to={`/dashboard/book?service=${serviceSlug}&tier=${encodeURIComponent(tier.name)}`}
-                  className={`group/btn w-full h-12 inline-flex items-center justify-center gap-2 px-5 rounded-xl text-xs sm:text-sm font-body font-semibold transition-all duration-300 active:scale-95 whitespace-nowrap shadow-sm ${theme.ctaBg}`}
+                  className={`group/btn w-full h-14 sm:h-16 inline-flex items-center justify-center gap-2.5 px-6 rounded-2xl text-sm sm:text-base font-body font-bold transition-all duration-300 active:scale-95 whitespace-nowrap shadow-md ${theme.ctaBg}`}
                   aria-label={`Book ${tier.name} — ${serviceName}`}
                 >
                   Book {tier.name}
                   <ArrowRight
-                    size={14}
+                    size={18}
                     className="transition-transform duration-300 group-hover/btn:translate-x-1"
                   />
                 </Link>
@@ -303,6 +241,14 @@ function TierSectionCard({ tier, themeIndex, serviceName, serviceSlug }) {
 
 // ── Main Export ───────────────────────────────────────────────────────────────
 export default function SetsSectionRenderer({ service }) {
+  const [brochureTierName, setBrochureTierName] = useState(null);
+  // One package-level seed per visit so Set A / Set B / Set C / Set D never share the same portrait
+  const [brochureSeed] = useState(() => Math.floor(Math.random() * 1e9) + 1);
+
+  const openBrochure = (tierName) => {
+    setBrochureTierName(tierName);
+  };
+
   const tiers = service.tiers || [];
   if (tiers.length === 0) return null;
 
@@ -317,47 +263,58 @@ export default function SetsSectionRenderer({ service }) {
       : "grid-cols-1 md:grid-cols-2";
 
   return (
-    <motion.div
-      id={`sets-${service.slug}`}
-      className="space-y-5 scroll-mt-[calc(var(--nav-h)_+_var(--viewing-h)_+_24px)]"
-      variants={stagger(0.14, 0.05)}
-      initial="hidden"
-      whileInView="show"
-      viewport={{ once: true, margin: "-40px" }}
-    >
-      {/* Section label */}
-      <motion.div variants={fadeUp} className="flex items-center gap-3">
-        <motion.div
-          className="w-1 h-8 bg-gold rounded-full shrink-0 origin-top"
-          variants={{
-            hidden: { scaleY: 0, opacity: 0 },
-            show: {
-              scaleY: 1,
-              opacity: 1,
-              transition: { duration: 0.7, ease: [0.16, 1, 0.3, 1] },
-            },
-          }}
-        />
-        <div>
-          <h3 className="font-heading text-primary text-xl font-semibold leading-snug">
-            Available Sets
-          </h3>
+    <>
+      <motion.div
+        id={`sets-${service.slug}`}
+        className="space-y-5 scroll-mt-[calc(var(--nav-h)_+_var(--viewing-h)_+_24px)]"
+        variants={stagger(0.14, 0.05)}
+        initial="hidden"
+        whileInView="show"
+        viewport={{ once: true, margin: "-40px" }}
+      >
+        {/* Section label */}
+        <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-3">
+          <motion.div
+            className="w-1 h-8 bg-gold rounded-full shrink-0 origin-top"
+            variants={{
+              hidden: { scaleY: 0, opacity: 0 },
+              show: {
+                scaleY: 1,
+                opacity: 1,
+                transition: { duration: 0.7, ease: [0.16, 1, 0.3, 1] },
+              },
+            }}
+          />
+          <div>
+            <h3 className="font-heading text-primary text-xl font-semibold leading-snug">
+              Available Sets
+            </h3>
+          </div>
+          <div className="hidden sm:flex-1 h-px bg-gradient-to-r from-neutral-200 to-transparent ml-2" />
+        </motion.div>
+
+        {/* Individual tier/set cards — 2-column layout with equalized row heights */}
+        <div className={`grid ${gridClass} gap-6 items-stretch auto-rows-fr`}>
+          {sorted.map((tier, i) => (
+            <TierSectionCard
+              key={tier.name}
+              tier={tier}
+              themeIndex={getThemeIndex(i, sorted.length)}
+              serviceName={service.name}
+              serviceSlug={service.slug}
+              onOpenBrochure={openBrochure}
+            />
+          ))}
         </div>
-        <div className="hidden sm:flex-1 h-px bg-gradient-to-r from-neutral-200 to-transparent ml-2" />
       </motion.div>
 
-      {/* Individual tier/set cards — 2-column layout with equalized row heights */}
-      <div className={`grid ${gridClass} gap-6 items-stretch auto-rows-fr`}>
-        {sorted.map((tier, i) => (
-          <TierSectionCard
-            key={tier.name}
-            tier={tier}
-            themeIndex={getThemeIndex(i, sorted.length)}
-            serviceName={service.name}
-            serviceSlug={service.slug}
-          />
-        ))}
-      </div>
-    </motion.div>
+      <PackageBrochureModal
+        isOpen={Boolean(brochureTierName)}
+        service={service}
+        selectedTierName={brochureTierName}
+        brochureSeed={brochureSeed}
+        onClose={() => setBrochureTierName(null)}
+      />
+    </>
   );
 }

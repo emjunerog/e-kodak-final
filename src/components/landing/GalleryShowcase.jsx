@@ -21,7 +21,7 @@
  *  - A gold hairline draws around the tile on hover
  *  - The featured tile parallax-shifts slightly as it scrolls by
  *
- * Images: Unsplash placeholders — clearly labeled for replacement.
+ * Images: Local studio portfolio assets in public/images/brochure/grad/ & public/images/.
  *
  * Future: In Phase 10, the public gallery page will have
  * full filtering, lightbox, and Supabase-backed image data.
@@ -29,94 +29,113 @@
 
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { motion, useScroll, useTransform } from "framer-motion";
+import { motion, useScroll, useTransform, useReducedMotion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import { siteConfig } from "../../config/siteConfig";
 import { stagger, staggerChild, viewport, ease } from "../../lib/motion";
 
 // Last-resort image if a tile's URL ever fails to load in the browser
-const FALLBACK_IMAGE =
-  "https://images.unsplash.com/photo-1529070538774-1843cb3265df?w=900&q=80&auto=format&fit=crop";
+const FALLBACK_IMAGE = "/images/brochure/grad/family-graduation.jpg";
 
-// ─── Curated Showcase Photos ────────────────────────────────────────────────
+// ─── Curated Showcase Photos (Studio Resources) ─────────────────────────────
 const galleryImages = [
   {
     id: 1,
-    src: "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=1000&q=80&auto=format&fit=crop",
-    alt: "Portrait photography — woman in soft natural light",
-    caption: "Natural Light Portrait",
-    category: "Portrait",
+    src: "/images/brochure/grad/family-graduation.jpg",
+    alt: "Family graduation portrait in studio",
+    caption: "Family Graduation Portrait",
+    category: "Family & Group",
+    objectPos: "object-center",
     featured: true,
   },
   {
     id: 2,
-    src: "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?w=800&q=80&auto=format&fit=crop",
-    alt: "Graduation milestone — academic portrait and regalia",
-    caption: "Academic Milestone",
+    src: "/images/brochure/grad/toga-cap-formal.jpg",
+    alt: "Graduate wearing black toga and academic cap portrait",
+    caption: "Academic Cap & Toga",
     category: "Graduation",
+    objectPos: "object-top",
   },
   {
     id: 3,
-    src: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&q=80&auto=format&fit=crop",
-    alt: "Studio photography — formal studio portrait",
-    caption: "Studio Portrait",
-    category: "Studio",
+    src: "/images/brochure/grad/toga-hood-portrait.jpg",
+    alt: "Graduate wearing black toga with blue academic hood and medal",
+    caption: "Regalia & Honors Hood",
+    category: "College Portrait",
+    objectPos: "object-[50%_18%]",
   },
   {
     id: 4,
-    src: "https://images.unsplash.com/photo-1606216794074-735e91aa2c92?w=800&q=80&auto=format&fit=crop",
-    alt: "Outdoor photography — celebratory milestone portrait",
-    caption: "Milestone Celebration",
-    category: "Milestone",
+    src: "/images/brochure/grad/filipiniana-portrait.jpg",
+    alt: "Graduate portrait wearing formal cream embroidered Filipiniana",
+    caption: "Filipiniana Formal Portrait",
+    category: "Filipiniana",
+    objectPos: "object-[50%_22%]",
   },
   {
     id: 5,
-    src: "https://images.unsplash.com/photo-1529070538774-1843cb3265df?w=800&q=80&auto=format&fit=crop",
-    alt: "Couple photography — golden hour romance",
-    caption: "Sunset Romance",
-    category: "Couple",
+    src: "/images/brochure/grad/barong-portrait.jpg",
+    alt: "Graduate portrait wearing embroidered Barong Tagalog",
+    caption: "Classic Barong Tagalog",
+    category: "Barong",
+    objectPos: "object-[50%_18%]",
   },
   {
     id: 6,
-    src: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&q=80&auto=format&fit=crop",
-    alt: "Camera equipment — professional mirrorless gear and lenses",
-    caption: "Cinematic 4K Gear",
-    category: "Equipment",
+    src: "/images/brochure/grad/toga-cap-pose.jpg",
+    alt: "Graduate posing in black toga and gold academic hood",
+    caption: "Studio Milestone Pose",
+    category: "Milestone",
+    objectPos: "object-[50%_15%]",
   },
   {
     id: 7,
-    src: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=800&q=80&auto=format&fit=crop",
-    alt: "Editorial portrait — smiling professional woman",
-    caption: "Editorial Session",
-    category: "Portrait",
+    src: "/images/brochure/grad/toga-formal.jpg",
+    alt: "Formal studio graduation portrait against dark textured backdrop",
+    caption: "Classic Dark Backdrop",
+    category: "Senior High",
+    objectPos: "object-[50%_15%]",
   },
   {
     id: 8,
-    src: "https://images.unsplash.com/photo-1519741497674-611481863552?w=800&q=80&auto=format&fit=crop",
-    alt: "Event photography — graduation ceremony celebration",
-    caption: "Special Celebration",
-    category: "Event",
+    src: "/images/login-dark.jpg",
+    alt: "Mirrorless studio camera and printed photographs on wooden table",
+    caption: "Studio Camera & Prints",
+    category: "Studio Craft",
+    objectPos: "object-center",
   },
 ];
 
-// Single gallery item with mask-reveal + hover choreography
-function GalleryItem({ image, className = "", index = 0, parallax = false }) {
-  const frameRef = useRef(null);
+// Separate parallax wrapper so only the single featured tile attaches a scroll listener
+function ParallaxGalleryImg({ frameRef, src, alt, objectPos = "object-center", onError }) {
+  const reduceMotion = useReducedMotion();
   const { scrollYProgress } = useScroll({
     target: frameRef,
     offset: ["start end", "end start"],
   });
-  // Tighter drift + deeper base zoom so the frame is never exposed
-  const imgY = useTransform(scrollYProgress, [0, 1], parallax ? ["-4%", "4%"] : ["0%", "0%"]);
+  const imgY = useTransform(scrollYProgress, [0, 1], reduceMotion ? ["0%", "0%"] : ["-4%", "4%"]);
 
-  // Two-stage image recovery: cache-busted retry first, known-good photo second
+  return (
+    <motion.img
+      src={src}
+      alt={alt}
+      onError={onError}
+      className={`w-full h-full object-cover ${objectPos} no-drag scale-110 transition-transform duration-700 ease-out group-hover:scale-115`}
+      style={{ y: imgY }}
+      loading="lazy"
+      decoding="async"
+    />
+  );
+}
+
+// Single gallery item with lightweight compositor reveal + hover choreography
+function GalleryItem({ image, className = "", index = 0, parallax = false }) {
+  const frameRef = useRef(null);
+
+  // Fallback recovery to curated local studio photo
   const [imgSrc, setImgSrc] = useState(image.src);
-  const retriedRef = useRef(false);
   const handleImgError = () => {
-    if (!retriedRef.current) {
-      retriedRef.current = true;
-      setImgSrc(`${image.src}${image.src.includes("?") ? "&" : "?"}retry=1`);
-    } else {
+    if (imgSrc !== FALLBACK_IMAGE) {
       setImgSrc(FALLBACK_IMAGE);
     }
   };
@@ -126,26 +145,29 @@ function GalleryItem({ image, className = "", index = 0, parallax = false }) {
       ref={frameRef}
       className={`group relative overflow-hidden rounded-xl bg-neutral-200 ${className}`}
       aria-label={image.caption}
-      initial={{ opacity: 0, y: 44, clipPath: "inset(14% 8% 14% 8% round 12px)" }}
-      whileInView={{ opacity: 1, y: 0, clipPath: "inset(0% 0% 0% 0% round 12px)" }}
-      viewport={{ once: true, amount: 0.12 }}
-      transition={{ duration: 0.95, delay: index * 0.1, ease: ease.expo }}
-      whileHover={{ scale: 1.012, transition: { duration: 0.4, ease: ease.smooth } }}
+      initial={{ opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={viewport}
+      transition={{ duration: 0.45, delay: Math.min(index * 0.05, 0.25), ease: ease.expo }}
     >
-      {/* Image — settles from a zoomed state, drifts on scroll, zooms on hover */}
-      <motion.img
-        src={imgSrc}
-        alt={image.alt}
-        onError={handleImgError}
-        className="w-full h-full object-cover no-drag"
-        style={{ y: imgY }}
-        loading="lazy"
-        initial={{ scale: 1.24 }}
-        whileInView={{ scale: 1.12 }}
-        viewport={{ once: true, amount: 0.12 }}
-        transition={{ duration: 1.6, delay: index * 0.1, ease: ease.expo }}
-        whileHover={{ scale: 1.2, transition: { duration: 0.9, ease: ease.smooth } }}
-      />
+      {parallax ? (
+        <ParallaxGalleryImg
+          frameRef={frameRef}
+          src={imgSrc}
+          alt={image.alt}
+          objectPos={image.objectPos}
+          onError={handleImgError}
+        />
+      ) : (
+        <img
+          src={imgSrc}
+          alt={image.alt}
+          onError={handleImgError}
+          className={`w-full h-full object-cover ${image.objectPos || "object-center"} no-drag transition-transform duration-700 ease-out group-hover:scale-105`}
+          loading="lazy"
+          decoding="async"
+        />
+      )}
 
       {/* Hover overlay with caption */}
       <div

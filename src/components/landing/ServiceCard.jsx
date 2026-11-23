@@ -39,7 +39,7 @@ export default function ServiceCard({
   category,
   title,
   description,
-  price,
+  price: _price,
   to = "/services",
   index = 0,
 }) {
@@ -58,23 +58,19 @@ export default function ServiceCard({
           shine-on-hover h-full
         "
         aria-label={`${title} photography service`}
-        initial={{ opacity: 0, y: 38, scale: 0.97, filter: "blur(8px)" }}
-        whileInView={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+        initial={{ opacity: 0, y: 24, scale: 0.985 }}
+        whileInView={{ opacity: 1, y: 0, scale: 1 }}
         viewport={viewport}
-        transition={{ duration: 0.75, delay: index * 0.12, ease: ease.spring }}
+        transition={{ duration: 0.45, delay: index * 0.08, ease: ease.expo }}
       >
       {/* ── Image Container ──────────────────────────────────────────────── */}
       <div className="relative overflow-hidden aspect-[4/3]">
-        <motion.img
+        <img
           src={image}
           alt={imageAlt}
-          className="w-full h-full object-cover no-drag"
+          className="w-full h-full object-cover no-drag transition-transform duration-700 ease-out group-hover:scale-105"
           loading="lazy"
-          initial={{ scale: 1.22 }}
-          whileInView={{ scale: 1 }}
-          viewport={viewport}
-          transition={{ duration: 1.5, ease: ease.expo }}
-          whileHover={{ scale: 1.08, transition: { duration: 0.8, ease: ease.smooth } }}
+          decoding="async"
         />
         {/* Dark overlay on hover */}
         <div

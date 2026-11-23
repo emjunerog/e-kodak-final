@@ -56,27 +56,31 @@ export default function AnnouncementBar() {
   const [dismissed, setDismissed]        = useState(
     typeof window !== 'undefined' && sessionStorage.getItem(SESSION_KEY) === "true"
   );
-  const [isVisible, setIsVisible]        = useState(false);
+  const [isVisible, setIsVisible]        = useState(true);
+  const [paused, setPaused]              = useState(false);
   const intervalRef = useRef(null);
 
-  // ── Fetch announcements ───────────────────────────────────────────────────
+  // ── Fetch announcements immediately (no artificial 500ms layout shift) ────
   useEffect(() => {
+    if (dismissed) return;
+    let alive = true;
     getAnnouncements().then((res) => {
+      if (!alive) return;
       const data = res.data?.length > 0 ? res.data : DEFAULT_ANNOUNCEMENTS;
       setAnnouncements(data);
-      // Slight delay so the bar slides in smoothly after page loads
-      setTimeout(() => setIsVisible(true), 500);
     });
-  }, []);
+    return () => { alive = false; };
+  }, [dismissed]);
 
-  // ── Auto-cycle every 5 seconds ────────────────────────────────────────────
+  // ── Auto-cycle every 5 seconds (pauses on hover/focus/hidden tab) ────────
   useEffect(() => {
-    if (announcements.length <= 1 || dismissed) return;
+    if (announcements.length <= 1 || dismissed || paused) return;
     intervalRef.current = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
       setCurrentIndex((prev) => (prev + 1) % announcements.length);
     }, 5000);
     return () => clearInterval(intervalRef.current);
-  }, [announcements, dismissed]);
+  }, [announcements, dismissed, paused]);
 
   // ── Dismiss handler ───────────────────────────────────────────────────────
   function handleDismiss() {
@@ -85,7 +89,7 @@ export default function AnnouncementBar() {
     setTimeout(() => {
       setDismissed(true);
       sessionStorage.setItem(SESSION_KEY, "true");
-    }, 300); // wait for slide-out animation
+    }, 220);
   }
 
   if (dismissed || announcements.length === 0) return null;
@@ -95,29 +99,31 @@ export default function AnnouncementBar() {
 
   return (
     <motion.div
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
       className={`
         w-full z-50 relative overflow-hidden
         ${isPromo
-          ? "bg-gradient-to-r from-gold-dark via-gold to-gold-dark animate-gradient-drift"
+          ? "bg-gradient-to-r from-gold-dark via-gold to-gold-dark"
           : "bg-primary"
         }
       `}
       initial={{ y: "-100%", opacity: 0 }}
       animate={isVisible ? { y: "0%", opacity: 1 } : { y: "-100%", opacity: 0 }}
-      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-      role="banner"
+      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      role="region"
       aria-label="Announcements"
     >
       <div className="container-custom py-2 flex items-center justify-between gap-4">
-        {/* Sparkle icon — gentle twinkle */}
-        <motion.span
+        {/* Sparkle icon */}
+        <span
           className={`shrink-0 ${isPromo ? "text-primary/70" : "text-gold"}`}
-          animate={{ rotate: [0, 18, 0, -18, 0], scale: [1, 1.18, 1] }}
-          transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
           aria-hidden="true"
         >
           <Sparkles size={14} />
-        </motion.span>
+        </span>
 
         {/* Announcement text */}
         <div className="flex-1 flex items-center justify-center gap-3 min-w-0 text-center">
@@ -127,58 +133,43 @@ export default function AnnouncementBar() {
                 isPromo ? "text-primary font-medium" : "text-white"
               }`}
               key={currentIndex}
-              initial={{ opacity: 0, y: 12, filter: "blur(3px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              exit={{ opacity: 0, y: -12, filter: "blur(3px)" }}
-              transition={{ duration: 0.34, ease: [0.25, 0.46, 0.45, 0.94] }}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
             >
               {current?.text}
             </motion.p>
           </AnimatePresence>
 
           {current?.ctaText && current?.ctaLink && (
-            <motion.span
-              className="shrink-0 hidden sm:inline-flex"
-              initial={false}
-              animate={{ opacity: 1 }}
-            >
+            <span className="shrink-0 hidden sm:inline-flex">
               <Link
                 to={current.ctaLink}
-                className={`inline-flex items-center gap-1 text-xs font-body font-semibold underline-offset-2 hover:underline ${
+                className={`inline-flex items-center gap-1 text-xs font-body font-semibold underline-offset-2 hover:underline group ${
                   isPromo ? "text-primary" : "text-gold"
                 }`}
               >
                 {current.ctaText}
-                <motion.span
-                  className="inline-flex"
-                  whileHover={{ x: 3 }}
-                  transition={{ type: "spring", stiffness: 400, damping: 18 }}
-                >
-                  <ArrowRight size={11} />
-                </motion.span>
+                <ArrowRight size={11} className="transition-transform duration-200 group-hover:translate-x-0.5" />
               </Link>
-            </motion.span>
+            </span>
           )}
         </div>
 
-        {/* Dot indicators (only if >1 announcements) */}
+        {/* Dot indicators (compositor-friendly width classes, no layout animation) */}
         {announcements.length > 1 && (
           <div className="hidden sm:flex items-center gap-1.5 shrink-0" aria-hidden="true">
             {announcements.map((_, i) => (
-              <motion.button
+              <button
                 key={i}
+                type="button"
                 onClick={() => setCurrentIndex(i)}
-                className={`h-1.5 rounded-full ${
+                className={`h-1.5 rounded-full transition-all duration-200 ${
                   i === currentIndex
-                    ? isPromo ? "bg-primary" : "bg-gold"
-                    : "bg-white/30"
+                    ? `${isPromo ? "bg-primary" : "bg-gold"} w-4 opacity-100`
+                    : "bg-white/35 w-1.5 opacity-70 hover:opacity-100"
                 }`}
-                animate={{
-                  width: i === currentIndex ? 18 : 6,
-                  opacity: i === currentIndex ? 1 : 0.65,
-                }}
-                whileHover={{ scale: 1.3 }}
-                transition={{ type: "spring", stiffness: 420, damping: 26 }}
                 aria-label={`Announcement ${i + 1}`}
               />
             ))}

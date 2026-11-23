@@ -33,7 +33,33 @@ import { FAQS } from "../data/faqData";
 import { LEGAL_DOCS } from "../data/legalData";
 import { TEAM } from "../data/aboutData";
 
-// ── Helper ────────────────────────────────────────────────────────────────────
+// ── Helper & Short-TTL Request Deduplication ──────────────────────────────────
+
+const _readCache = new Map();
+const _inFlightReads = new Map();
+
+function cachedRead(key, fetcher, ttlMs = 30000) {
+  const now = Date.now();
+  const cached = _readCache.get(key);
+  if (cached && now - cached.ts < ttlMs) {
+    return Promise.resolve(cached.value);
+  }
+  if (_inFlightReads.has(key)) {
+    return _inFlightReads.get(key);
+  }
+  const promise = fetcher()
+    .then((res) => {
+      if (!res?.error) {
+        _readCache.set(key, { value: res, ts: Date.now() });
+      }
+      return res;
+    })
+    .finally(() => {
+      _inFlightReads.delete(key);
+    });
+  _inFlightReads.set(key, promise);
+  return promise;
+}
 
 /** Builds a consistent return object */
 function result(data, isFromDatabase = false, error = null) {
@@ -74,87 +100,115 @@ async function fetchWithFallback({ query, fallbackData, transform }) {
  *   is_active, sort_order)
  */
 export async function getServices() {
-  return fetchWithFallback({
-    query: () =>
-      supabase
-        .from("services")
-        .select("*")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true }),
-    fallbackData: SERVICES,
-    transform: (rows) => {
-      if (!rows || rows.length === 0) return SERVICES;
+  return cachedRead("services", () =>
+    fetchWithFallback({
+      query: () =>
+        supabase
+          .from("services")
+          .select("*")
+          .eq("is_active", true)
+          .order("sort_order", { ascending: true }),
+      fallbackData: SERVICES,
+      transform: (rows) => {
+        if (!rows || rows.length === 0) return SERVICES;
 
-      // Check if both 'senior-high-packages' and legacy 'studio-packages' exist
-      const hasSeniorHigh = rows.some((r) => r.slug === "senior-high-packages");
+        // Check if both 'senior-high-packages' and legacy 'studio-packages' exist
+        const hasSeniorHigh = rows.some((r) => r.slug === "senior-high-packages");
 
-      const results = [];
-      const seenSlugs = new Set();
+        const results = [];
+        const seenSlugs = new Set();
 
-      for (const row of rows) {
-        // Skip duplicate legacy alias row if senior-high-packages is present
-        if (row.slug === "studio-packages" && hasSeniorHigh) {
-          continue;
+        for (const row of rows) {
+          // Skip duplicate legacy alias row if senior-high-packages is present
+          if (row.slug === "studio-packages" && hasSeniorHigh) {
+            continue;
+          }
+
+          const canonicalSlug = row.slug === "studio-packages" ? "senior-high-packages" : row.slug;
+          if (seenSlugs.has(canonicalSlug)) continue;
+          seenSlugs.add(canonicalSlug);
+
+          // Find optional fallback template from static data for any unpopulated field
+          const fallback = SERVICES.find(
+            (s) => s.slug === canonicalSlug || s.id === canonicalSlug || s.slug === row.slug
+          );
+
+          const SERVICE_SLUG_TO_UUID = {
+            "senior-high-packages": "1471388e-b74f-41ec-96c8-1d220d557a89",
+            "studio-packages": "1471388e-b74f-41ec-96c8-1d220d557a89",
+            "college-packages": "e2415838-06be-4e80-aa7a-9f4d3b47a8a5",
+          };
+
+          const resolvedId = row.id || fallback?.id || SERVICE_SLUG_TO_UUID[canonicalSlug] || canonicalSlug;
+
+          const isExternalUrl = (url) => /^https?:\/\//i.test(String(url || ""));
+
+          const effectiveCover =
+            fallback?.coverImage ||
+            fallback?.cover_image ||
+            (!isExternalUrl(row.cover_image) ? row.cover_image : "") ||
+            row.cover_image ||
+            "";
+
+          const rawGallery = Array.isArray(row.gallery_images)
+            ? row.gallery_images.filter((url) => url && !isExternalUrl(url))
+            : [];
+          const effectiveGallery =
+            (fallback?.galleryImages?.length ? fallback.galleryImages : null) ||
+            (rawGallery.length > 0 ? rawGallery : []);
+
+          const rawTiers =
+            Array.isArray(row.tiers) && row.tiers.length > 0
+              ? row.tiers
+              : (fallback?.tiers || []);
+          const effectiveTiers = rawTiers.map((tier, tIdx) => {
+            const fallbackTier =
+              fallback?.tiers?.find((ft) => ft.name === tier.name) || fallback?.tiers?.[tIdx];
+            const tierCover =
+              fallbackTier?.cover_image ||
+              (tier.cover_image && !isExternalUrl(tier.cover_image) ? tier.cover_image : "") ||
+              effectiveGallery[tIdx % (effectiveGallery.length || 1)] ||
+              effectiveCover;
+            return {
+              ...tier,
+              cover_image: tierCover,
+            };
+          });
+
+          results.push({
+            id: resolvedId,
+            slug: canonicalSlug,
+            category: row.category || fallback?.category || "general",
+            name: row.name || fallback?.name || "Photography Service",
+            tagline: row.tagline || fallback?.tagline || "",
+            description: row.description || fallback?.description || "",
+            coverImage: effectiveCover,
+            cover_image: effectiveCover,
+            galleryImages: effectiveGallery,
+            gallery_images: effectiveGallery,
+            inclusions: (Array.isArray(row.inclusions) && row.inclusions.length > 0)
+              ? row.inclusions
+              : (fallback?.inclusions || []),
+            tiers: effectiveTiers,
+            paymentPolicy: row.payment_policy || fallback?.paymentPolicy || "Mode of Payment: 50% Down payment upon booking. Full payment on the day of the event.",
+            payment_policy: row.payment_policy || fallback?.paymentPolicy || "Mode of Payment: 50% Down payment upon booking. Full payment on the day of the event.",
+            turnaround: row.turnaround || fallback?.turnaround || "5–7 business days",
+            location: row.location || fallback?.location || "Studio",
+            sortOrder: row.sort_order ?? fallback?.sortOrder ?? 0,
+            sort_order: row.sort_order ?? fallback?.sortOrder ?? 0,
+            isActive: row.is_active ?? true,
+            is_active: row.is_active ?? true,
+            basePrice: row.base_price ?? fallback?.basePrice ?? 0,
+            base_price: row.base_price ?? fallback?.basePrice ?? 0,
+            downPaymentAmount: row.down_payment_amount ?? fallback?.downPaymentAmount ?? 0,
+            down_payment_amount: row.down_payment_amount ?? fallback?.downPaymentAmount ?? 0,
+          });
         }
 
-        const canonicalSlug = row.slug === "studio-packages" ? "senior-high-packages" : row.slug;
-        if (seenSlugs.has(canonicalSlug)) continue;
-        seenSlugs.add(canonicalSlug);
-
-        // Find optional fallback template from static data for any unpopulated field
-        const fallback = SERVICES.find(
-          (s) => s.slug === canonicalSlug || s.id === canonicalSlug || s.slug === row.slug
-        );
-
-        const SERVICE_SLUG_TO_UUID = {
-          "senior-high-packages": "1471388e-b74f-41ec-96c8-1d220d557a89",
-          "studio-packages": "1471388e-b74f-41ec-96c8-1d220d557a89",
-          "college-packages": "e2415838-06be-4e80-aa7a-9f4d3b47a8a5",
-        };
-
-        const resolvedId = row.id || fallback?.id || SERVICE_SLUG_TO_UUID[canonicalSlug] || canonicalSlug;
-
-        const effectiveCover = row.cover_image || fallback?.coverImage || fallback?.cover_image || "";
-
-        results.push({
-          id: resolvedId,
-          slug: canonicalSlug,
-          category: row.category || fallback?.category || "general",
-          name: row.name || fallback?.name || "Photography Service",
-          tagline: row.tagline || fallback?.tagline || "",
-          description: row.description || fallback?.description || "",
-          coverImage: effectiveCover,
-          cover_image: effectiveCover,
-          galleryImages: (Array.isArray(row.gallery_images) && row.gallery_images.length > 0)
-            ? row.gallery_images
-            : (fallback?.galleryImages || []),
-          gallery_images: (Array.isArray(row.gallery_images) && row.gallery_images.length > 0)
-            ? row.gallery_images
-            : (fallback?.galleryImages || []),
-          inclusions: (Array.isArray(row.inclusions) && row.inclusions.length > 0)
-            ? row.inclusions
-            : (fallback?.inclusions || []),
-          tiers: (Array.isArray(row.tiers) && row.tiers.length > 0)
-            ? row.tiers
-            : (fallback?.tiers || []),
-          paymentPolicy: row.payment_policy || fallback?.paymentPolicy || "Mode of Payment: 50% Down payment upon booking. Full payment on the day of the event.",
-          payment_policy: row.payment_policy || fallback?.paymentPolicy || "Mode of Payment: 50% Down payment upon booking. Full payment on the day of the event.",
-          turnaround: row.turnaround || fallback?.turnaround || "5–7 business days",
-          location: row.location || fallback?.location || "Studio",
-          sortOrder: row.sort_order ?? fallback?.sortOrder ?? 0,
-          sort_order: row.sort_order ?? fallback?.sortOrder ?? 0,
-          isActive: row.is_active ?? true,
-          is_active: row.is_active ?? true,
-          basePrice: row.base_price ?? fallback?.basePrice ?? 0,
-          base_price: row.base_price ?? fallback?.basePrice ?? 0,
-          downPaymentAmount: row.down_payment_amount ?? fallback?.downPaymentAmount ?? 0,
-          down_payment_amount: row.down_payment_amount ?? fallback?.downPaymentAmount ?? 0,
-        });
-      }
-
-      return results.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-    },
-  });
+        return results.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      },
+    })
+  );
 }
 
 // ── Add-Ons ───────────────────────────────────────────────────────────────────
@@ -208,31 +262,96 @@ export async function getAddOns() {
 
 // ── Gallery ───────────────────────────────────────────────────────────────────
 
+const GALLERY_RESOURCE_POOLS = {
+  portrait: [
+    "/images/brochure/grad/filipiniana-portrait.jpg",
+    "/images/brochure/grad/barong-portrait.jpg",
+    "/images/brochure/grad/toga-cap-formal.jpg",
+    "/images/brochure/grad/toga-hood-portrait.jpg",
+    "/images/brochure/grad/toga-formal.jpg",
+  ],
+  graduation: [
+    "/images/brochure/grad/toga-cap-formal.jpg",
+    "/images/brochure/grad/toga-hood-portrait.jpg",
+    "/images/brochure/grad/toga-cap-pose.jpg",
+    "/images/brochure/grad/toga-formal.jpg",
+    "/images/brochure/grad/family-graduation.jpg",
+  ],
+  community: [
+    "/images/brochure/grad/toga-hood-portrait.jpg",
+    "/images/brochure/grad/toga-cap-pose.jpg",
+    "/images/brochure/grad/family-graduation.jpg",
+  ],
+  family: [
+    "/images/brochure/grad/family-graduation.jpg",
+    "/images/login-light.jpg",
+  ],
+  event: [
+    "/images/brochure/grad/family-graduation.jpg",
+    "/images/brochure/grad/toga-cap-pose.jpg",
+    "/images/brochure/grad/filipiniana-portrait.jpg",
+  ],
+  couple: [
+    "/images/brochure/grad/filipiniana-portrait.jpg",
+    "/images/brochure/grad/barong-portrait.jpg",
+  ],
+  commercial: [
+    "/images/login-dark.jpg",
+    "/images/login-light.jpg",
+  ],
+  default: [
+    "/images/brochure/grad/family-graduation.jpg",
+    "/images/brochure/grad/toga-cap-formal.jpg",
+    "/images/brochure/grad/filipiniana-portrait.jpg",
+    "/images/brochure/grad/barong-portrait.jpg",
+    "/images/brochure/grad/toga-hood-portrait.jpg",
+    "/images/brochure/grad/toga-cap-pose.jpg",
+    "/images/brochure/grad/toga-formal.jpg",
+    "/images/login-dark.jpg",
+  ],
+};
+
 /**
  * Fetch all public gallery items.
- * Supabase table: `gallery_items` (columns: id, title, category,
- *   image_url, is_public, sort_order)
+ * Replaces seeded Unsplash placeholder URLs with curated local studio assets
+ * while preserving uploaded storage captures and user-added paths.
  */
 export async function getGalleryItems() {
-  return fetchWithFallback({
-    query: () =>
-      supabase
-        .from("gallery_items")
-        .select("*")
-        .order("sort_order", { ascending: true }),
-    fallbackData: GALLERY_ITEMS,
-    transform: (rows) =>
-      rows.map((row) => ({
-        id:          row.id,
-        title:       row.title,
-        category:    row.category,
-        image:       row.image_url,
-        beforeImage: row.before_image,
-        description: row.description,
-        likes:       row.likes || 0,
-        badges:      row.badges || [],
-      })),
-  });
+  return cachedRead("gallery_items", () =>
+    fetchWithFallback({
+      query: () =>
+        supabase
+          .from("gallery_items")
+          .select("*")
+          .order("sort_order", { ascending: true }),
+      fallbackData: GALLERY_ITEMS,
+      transform: (rows) =>
+        rows.map((row, idx) => {
+          const isPlaceholderUrl =
+            !row.image_url || /images\.unsplash\.com/i.test(String(row.image_url));
+          const catKey = String(row.category || "").toLowerCase();
+          const pool = GALLERY_RESOURCE_POOLS[catKey] || GALLERY_RESOURCE_POOLS.default;
+          const resolvedImage = isPlaceholderUrl
+            ? pool[idx % pool.length]
+            : row.image_url;
+          const resolvedBefore =
+            row.before_image && !/images\.unsplash\.com/i.test(String(row.before_image))
+              ? row.before_image
+              : null;
+
+          return {
+            id: row.id,
+            title: row.title,
+            category: row.category,
+            image: resolvedImage,
+            beforeImage: resolvedBefore,
+            description: row.description,
+            likes: row.likes || 0,
+            badges: row.badges || [],
+          };
+        }),
+    })
+  );
 }
 
 /**
@@ -279,8 +398,8 @@ export async function submitCustomerBestCapture({
       title: (title || 'My Graduation Milestone').trim(),
       category: (category || 'graduation').toLowerCase(),
       image_url: resolvedImageUrl,
-      description: description.trim() 
-        ? `${description.trim()}${customerName ? ` — Shared by ${customerName}` : ''}` 
+      description: description.trim()
+        ? `${description.trim()}${customerName ? ` — Shared by ${customerName}` : ''}`
         : (customerName ? `Shared by client ${customerName}` : ''),
       is_public: true,
       likes: 0,
@@ -335,23 +454,25 @@ export async function getCustomerBestCaptures(bookingId = null) {
  *   cta_link, type, is_active, sort_order)
  */
 export async function getAnnouncements() {
-  return fetchWithFallback({
-    query: () =>
-      supabase
-        .from("announcements")
-        .select("*")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true }),
-    fallbackData: [], // AnnouncementBar has its own default array
-    transform: (rows) =>
-      rows.map((row) => ({
-        id:      row.id,
-        text:    row.text,
-        ctaText: row.cta_text,
-        ctaLink: row.cta_link,
-        type:    row.type ?? "info",
-      })),
-  });
+  return cachedRead("announcements", () =>
+    fetchWithFallback({
+      query: () =>
+        supabase
+          .from("announcements")
+          .select("*")
+          .eq("is_active", true)
+          .order("sort_order", { ascending: true }),
+      fallbackData: [], // AnnouncementBar has its own default array
+      transform: (rows) =>
+        rows.map((row) => ({
+          id: row.id,
+          text: row.text,
+          ctaText: row.cta_text,
+          ctaLink: row.cta_link,
+          type: row.type ?? "info",
+        })),
+    })
+  );
 }
 
 // ── FAQs ──────────────────────────────────────────────────────────────────────
@@ -361,36 +482,38 @@ export async function getAnnouncements() {
  * Supabase table: `faqs` (columns: id, question, answer, topic, sort_order)
  */
 export async function getFaqs() {
-  return fetchWithFallback({
-    query: () =>
-      supabase
-        .from("faqs")
-        .select("*")
-        .order("sort_order", { ascending: true }),
-    fallbackData: FAQS,
-    transform: (rows) => {
-      // 1) The `category` column defaults to 'General' for every row and used to
-      //    mask the real topic — prefer the dedicated `topic` column.
-      // 2) Deduplicate repeated rows (same question seeded multiple times).
-      const seen = new Set();
-      const items = [];
-      for (const row of rows) {
-        const question = (row.question || "").trim();
-        const key = question.toLowerCase();
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        const topic = (row.topic || row.category || "general").trim().toLowerCase();
-        items.push({
-          id:       row.id,
-          question,
-          answer:   row.answer,
-          topic,
-          category: topic,
-        });
-      }
-      return items;
-    },
-  });
+  return cachedRead("faqs", () =>
+    fetchWithFallback({
+      query: () =>
+        supabase
+          .from("faqs")
+          .select("*")
+          .order("sort_order", { ascending: true }),
+      fallbackData: FAQS,
+      transform: (rows) => {
+        // 1) The `category` column defaults to 'General' for every row and used to
+        //    mask the real topic — prefer the dedicated `topic` column.
+        // 2) Deduplicate repeated rows (same question seeded multiple times).
+        const seen = new Set();
+        const items = [];
+        for (const row of rows) {
+          const question = (row.question || "").trim();
+          const key = question.toLowerCase();
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          const topic = (row.topic || row.category || "general").trim().toLowerCase();
+          items.push({
+            id: row.id,
+            question,
+            answer: row.answer,
+            topic,
+            category: topic,
+          });
+        }
+        return items;
+      },
+    })
+  );
 }
 
 // ── Studio Settings ───────────────────────────────────────────────────────────
@@ -425,7 +548,7 @@ export async function getSetting(key, fallback = null) {
  */
 export async function getLegalDoc(slug) {
   const fallback = LEGAL_DOCS[slug] || { title: "Not Found", content: "Document not found." };
-  
+
   if (!isSupabaseConfigured) {
     return result(fallback, false);
   }
@@ -436,7 +559,7 @@ export async function getLegalDoc(slug) {
       .eq("slug", slug)
       .single();
     if (error || !data) return result(fallback, false, error);
-    
+
     return result({
       title: data.title,
       content: data.content,
@@ -463,10 +586,10 @@ export async function getTeamMembers() {
     fallbackData: TEAM,
     transform: (rows) =>
       rows.map((row) => ({
-        id:    row.id,
-        name:  row.name,
-        role:  row.role,
-        bio:   row.bio,
+        id: row.id,
+        name: row.name,
+        role: row.role,
+        bio: row.bio,
         image: row.image,
         specializations: [],
         initials: row.name ? row.name.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase() : "??",

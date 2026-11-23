@@ -1189,24 +1189,28 @@ function AIAssistantPanel({ portal, isOpen, setIsOpen }) {
   const [isTyping, setIsTyping] = useState(false);
   const [hasActivity, setHasActivity] = useState(false);
   const [catalog, setCatalog] = useState({ services: [], faqs: [] });
+  const catalogLoadedRef = useRef(false);
   const panelRef = useRef(null);
   // Bumped whenever the conversation is discarded (reset / portal switch) so
   // in-flight replies from the previous conversation are dropped.
   const epochRef = useRef(0);
 
   // Live catalog + FAQs power the matcher, rates, FAQ screen and model context.
+  // Deferred until the panel is opened so closed widget never blocks landing load.
   useEffect(() => {
+    if (!isOpen || catalogLoadedRef.current) return;
     let alive = true;
     Promise.all([getServices(), getFaqs()])
       .then(([svcRes, faqRes]) => {
         if (!alive) return;
+        catalogLoadedRef.current = true;
         setCatalog({ services: svcRes.data || [], faqs: faqRes.data || [] });
       })
       .catch((err) => console.error("AI context load failed:", err));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [isOpen]);
 
   // Close when clicking outside
   useEffect(() => {

@@ -19,16 +19,20 @@ import {
   useMotionTemplate,
   useReducedMotion,
 } from "framer-motion";
-import { ease, viewport } from "../../lib/motion";
+import { ease } from "../../lib/motion";
 
-const SPRING = { stiffness: 220, damping: 20, mass: 0.5 };
+const SPRING = { stiffness: 260, damping: 24, mass: 0.5 };
+
+const canHoverFine = () =>
+  typeof window !== "undefined" &&
+  window.matchMedia?.("(hover: hover) and (pointer: fine)").matches;
 
 /* ── SplitReveal ─────────────────────────────────────────────────────────── */
 export function SplitReveal({
   text,
   className = "",
   delay = 0,
-  stagger = 0.06,
+  stagger = 0.045,
   as: Tag = "span",
   once = true,
 }) {
@@ -46,12 +50,12 @@ export function SplitReveal({
           className="inline-block mr-[0.28em] last:mr-0 align-baseline"
         >
           <motion.span
-            className="inline-block will-change-transform"
-            initial={{ y: 20, opacity: 0 }}
+            className="inline-block"
+            initial={{ y: 16, opacity: 0 }}
             whileInView={{ y: 0, opacity: 1 }}
-            viewport={{ once: true, margin: "0px" }}
+            viewport={{ once, margin: "0px" }}
             transition={{
-              duration: 0.7,
+              duration: 0.45,
               ease: ease.expo,
               delay: delay + i * stagger,
             }}
@@ -72,31 +76,44 @@ export function Magnetic({
   className = "",
 }) {
   const ref = useRef(null);
+  const rectRef = useRef(null);
   const reduce = useReducedMotion();
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const sx = useSpring(x, SPRING);
   const sy = useSpring(y, SPRING);
 
+  const handleEnter = () => {
+    if (reduce || !canHoverFine() || !ref.current) return;
+    rectRef.current = ref.current.getBoundingClientRect();
+  };
+
   const handleMove = (e) => {
-    if (reduce || !ref.current) return;
-    const r = ref.current.getBoundingClientRect();
+    if (reduce || !canHoverFine()) return;
+    const r = rectRef.current || ref.current?.getBoundingClientRect();
+    if (!r) return;
+    rectRef.current = r;
     x.set((e.clientX - (r.left + r.width / 2)) * strength);
     y.set((e.clientY - (r.top + r.height / 2)) * strength);
   };
-  const reset = () => { x.set(0); y.set(0); };
+  const reset = () => {
+    rectRef.current = null;
+    x.set(0);
+    y.set(0);
+  };
 
   return (
     <motion.div
       ref={ref}
       style={{ x: sx, y: sy }}
+      onMouseEnter={handleEnter}
       onMouseMove={handleMove}
       onMouseLeave={reset}
-      className={`inline-block will-change-transform ${className}`}
+      className={`inline-block ${className}`}
     >
       <motion.div
         whileHover={reduce ? undefined : { scale: pull }}
-        transition={{ type: "spring", stiffness: 300, damping: 18 }}
+        transition={{ type: "spring", stiffness: 320, damping: 20 }}
       >
         {children}
       </motion.div>
@@ -108,12 +125,13 @@ export function Magnetic({
 export function TiltCard({
   children,
   className = "",
-  max = 9,
+  max = 7,
   pull = 1.015,
   glare = true,
-  glareColor = "rgba(255,255,255,0.18)",
+  glareColor = "rgba(255,255,255,0.16)",
 }) {
   const ref = useRef(null);
+  const rectRef = useRef(null);
   const reduce = useReducedMotion();
   const rx = useMotionValue(0);
   const ry = useMotionValue(0);
@@ -121,13 +139,18 @@ export function TiltCard({
   const gy = useMotionValue(50);
   const srx = useSpring(rx, SPRING);
   const sry = useSpring(ry, SPRING);
-  const sgx = useSpring(gx, { stiffness: 160, damping: 22 });
-  const sgy = useSpring(gy, { stiffness: 160, damping: 22 });
-  const sheen = useMotionTemplate`radial-gradient(420px circle at ${sgx}% ${sgy}%, ${glareColor}, transparent 62%)`;
+  const sheen = useMotionTemplate`radial-gradient(380px circle at ${gx}% ${gy}%, ${glareColor}, transparent 62%)`;
+
+  const enter = () => {
+    if (reduce || !canHoverFine() || !ref.current) return;
+    rectRef.current = ref.current.getBoundingClientRect();
+  };
 
   const move = (e) => {
-    if (reduce || !ref.current) return;
-    const r = ref.current.getBoundingClientRect();
+    if (reduce || !canHoverFine()) return;
+    const r = rectRef.current || ref.current?.getBoundingClientRect();
+    if (!r || !r.width || !r.height) return;
+    rectRef.current = r;
     const px = (e.clientX - r.left) / r.width;
     const py = (e.clientY - r.top) / r.height;
     ry.set((px - 0.5) * max * 2);
@@ -135,11 +158,18 @@ export function TiltCard({
     gx.set(px * 100);
     gy.set(py * 100);
   };
-  const leave = () => { rx.set(0); ry.set(0); gx.set(50); gy.set(50); };
+  const leave = () => {
+    rectRef.current = null;
+    rx.set(0);
+    ry.set(0);
+    gx.set(50);
+    gy.set(50);
+  };
 
   return (
     <motion.div
       ref={ref}
+      onMouseEnter={enter}
       onMouseMove={move}
       onMouseLeave={leave}
       whileHover={reduce ? undefined : { scale: pull }}
@@ -147,9 +177,8 @@ export function TiltCard({
         rotateX: srx,
         rotateY: sry,
         transformPerspective: 1000,
-        transformStyle: "preserve-3d",
       }}
-      className={`relative will-change-transform ${className}`}
+      className={`relative ${className}`}
     >
       {children}
       {glare && (
@@ -173,15 +202,23 @@ export function Spotlight({
   showOnHover = true,
 }) {
   const ref = useRef(null);
+  const rectRef = useRef(null);
   const [on, setOn] = useState(false);
   const reduce = useReducedMotion();
   const mx = useMotionValue(-600);
   const my = useMotionValue(-600);
   const glow = useMotionTemplate`radial-gradient(${size}px circle at ${mx}px ${my}px, ${color}, transparent 65%)`;
 
+  const enter = () => {
+    if (showOnHover && canHoverFine()) setOn(true);
+    if (ref.current) rectRef.current = ref.current.getBoundingClientRect();
+  };
+
   const move = (e) => {
-    if (reduce || !ref.current) return;
-    const r = ref.current.getBoundingClientRect();
+    if (reduce || !canHoverFine()) return;
+    const r = rectRef.current || ref.current?.getBoundingClientRect();
+    if (!r) return;
+    rectRef.current = r;
     mx.set(e.clientX - r.left);
     my.set(e.clientY - r.top);
   };
@@ -189,9 +226,12 @@ export function Spotlight({
   return (
     <div
       ref={ref}
+      onMouseEnter={enter}
       onMouseMove={move}
-      onMouseEnter={() => showOnHover && setOn(true)}
-      onMouseLeave={() => setOn(false)}
+      onMouseLeave={() => {
+        rectRef.current = null;
+        setOn(false);
+      }}
       className={`relative overflow-hidden ${className}`}
     >
       <motion.span
@@ -204,42 +244,55 @@ export function Spotlight({
   );
 }
 
-/* ── Counter ─────────────────────────────────────────────────────────────── */
+/* ── Counter (updates textContent directly to avoid 60fps React re-renders) ─ */
+const formatCounterValue = (val, decimals) =>
+  Number(val || 0).toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+
 export function Counter({
   value,
   prefix = "",
   suffix = "",
   decimals = 0,
-  duration = 1.7,
+  duration = 1.2,
   className = "",
 }) {
   const ref = useRef(null);
-  const inView = useInView(ref, { once: true, margin: "-40px" });
+  const numRef = useRef(null);
+  const inView = useInView(ref, { once: true, margin: "-24px" });
   const reduce = useReducedMotion();
-  const [n, setN] = useState(0);
-  const display = reduce ? value : n;
 
   useEffect(() => {
-    if (!inView || reduce) return;
+    if (!inView || !numRef.current) return;
+    if (reduce) {
+      numRef.current.textContent = formatCounterValue(value, decimals);
+      return;
+    }
     let raf;
     const start = performance.now();
+    const totalMs = Math.max(duration * 1000, 1);
     const tick = (now) => {
-      const t = Math.min((now - start) / (duration * 1000), 1);
+      const t = Math.min((now - start) / totalMs, 1);
       const eased = 1 - Math.pow(1 - t, 3);
-      setN(value * eased);
-      if (t < 1) raf = requestAnimationFrame(tick);
+      if (numRef.current) {
+        numRef.current.textContent = formatCounterValue(value * eased, decimals);
+      }
+      if (t < 1) {
+        raf = requestAnimationFrame(tick);
+      }
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [inView, value, duration, reduce]);
+  }, [inView, value, decimals, duration, reduce]);
 
   return (
     <span ref={ref} className={className}>
       {prefix}
-      {display.toLocaleString(undefined, {
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals,
-      })}
+      <span ref={numRef}>
+        {reduce ? formatCounterValue(value, decimals) : formatCounterValue(0, decimals)}
+      </span>
       {suffix}
     </span>
   );

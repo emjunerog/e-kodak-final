@@ -108,7 +108,6 @@ a.text-primary {
     /* Standard 16px root — matches browser 100% zoom so every rem-based
        size (text, cards, spacing) renders at its designed value. */
     font-size: 16px;
-    scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -520,57 +519,83 @@ a.text-primary {
     scrollbar-width: none;
   }
 
-  /* ── Landing animation utilities ─────────────────────────────────────── */
+  /* ── Landing animation utilities (compositor-only, reduced-motion safe) ── */
+  .landing-deferred-section {
+    content-visibility: auto;
+    contain-intrinsic-size: auto none auto 680px;
+  }
 
   /* Continuous slow ken-burns zoom on imagery */
   .animate-ken-burns {
-    animation: kenBurns 26s ease-in-out infinite;
+    @media (prefers-reduced-motion: no-preference) {
+      animation: kenBurns 26s ease-in-out infinite;
+    }
   }
 
-  /* Gold light sweeping across an element (needs a gradient background) */
+  /* Compositor-only transform shimmer sweep */
+  .animate-shimmer-sweep {
+    @media (prefers-reduced-motion: no-preference) {
+      animation: shimmerTransform 9s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+  }
+
+  /* Gold light sweeping across an element (static gradient; transform if needed) */
   .animate-shimmer {
     background-size: 220% 100%;
-    animation: shimmerSweep 3.4s linear infinite;
+    @media (prefers-reduced-motion: no-preference) {
+      animation: shimmerSweep 3.4s linear infinite;
+    }
   }
 
   /* Soft pulsing halo */
   .animate-halo {
-    animation: haloPulse 4.5s ease-in-out infinite;
+    @media (prefers-reduced-motion: no-preference) {
+      animation: haloPulse 4.5s ease-in-out infinite;
+    }
   }
 
   /* Decorative sparkle twinkle */
   .animate-twinkle {
-    animation: twinkle 2.6s ease-in-out infinite;
+    @media (prefers-reduced-motion: no-preference) {
+      animation: twinkle 2.6s ease-in-out infinite;
+    }
   }
 
-  /* Gradient drift — promo bar / progress accents */
+  /* Promo bar surface gradient (no infinite background-position repaint) */
   .animate-gradient-drift {
-    background-size: 200% 200%;
-    animation: gradientDrift 8s ease-in-out infinite;
+    background-size: 100% 100%;
   }
 
-  /* Travelling dot along a horizontal rule */
+  /* Travelling dot along a horizontal rule (compositor transform via cqi) */
+  .animate-travel-track {
+    container-type: inline-size;
+  }
+
   .animate-travel-dot {
-    animation: travelDot 3.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    @media (prefers-reduced-motion: no-preference) {
+      animation: travelDotTransform 3.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
   }
 
   /* QR scan laser */
   .animate-qr-scan {
-    animation: qrScanLine 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    @media (prefers-reduced-motion: no-preference) {
+      animation: qrScanLine 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
   }
 
   /* Infinite horizontal marquee strip */
   .animate-marquee {
-    animation: marqueeX 38s linear infinite;
+    @media (prefers-reduced-motion: no-preference) {
+      animation: marqueeX 38s linear infinite;
+    }
   }
 
-  /* Animated gold text sheen — pair with a gradient background-image */
+  /* Gold text sheen — crisp gradient headline without continuous repaint */
   .text-sheen {
     background-clip: text;
     -webkit-background-clip: text;
     color: transparent;
-    background-size: 200% 100%;
-    animation: shimmerSweep 4.5s ease-in-out infinite;
   }
 
   /* Card shine that sweeps in on hover */
@@ -691,23 +716,33 @@ a.text-primary {
   }
 }
 
-/* Bright dot travelling along the How-It-Works connector */
-@keyframes travelDot {
+/* Diagonal gold light sweeping across a surface (transform-only compositor animation) */
+@keyframes shimmerTransform {
   0% {
-    left: 0%;
+    transform: translate3d(-100%, 0, 0);
+  }
+  100% {
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+/* Bright dot travelling along the How-It-Works connector (transform-only) */
+@keyframes travelDotTransform {
+  0% {
+    transform: translate3d(0, 0, 0);
     opacity: 0;
   }
 
-  6% {
+  8% {
     opacity: 1;
   }
 
-  94% {
+  92% {
     opacity: 1;
   }
 
   100% {
-    left: 100%;
+    transform: translate3d(calc(100cqi - 7px), 0, 0);
     opacity: 0;
   }
 }
@@ -1431,7 +1466,6 @@ html.reduce-motion *::after {
 html,
 body,
 #root {
-  will-change: width;
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
@@ -1509,4 +1543,86 @@ body::-webkit-scrollbar,
     width: 100% !important;
     overflow: visible !important;
   }
+}
+
+/* ── Native modal dialog scroll containment & backdrop ────────────────────── */
+dialog.policy-dialog:modal,
+dialog.studio-dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog.policy-dialog::backdrop,
+dialog.studio-dialog::backdrop {
+  background: rgba(13, 11, 9, 0.82);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* ── Brochure Wooden Frame with Crystal Glass Reflections ────────────────── */
+.wood-crystal-frame {
+  box-sizing: border-box;
+  padding: 4.5%;
+  background-color: #3a1f16;
+  background-image:
+    repeating-linear-gradient(
+      92deg,
+      rgba(20, 8, 4, 0.18) 0px,
+      rgba(20, 8, 4, 0.18) 2px,
+      transparent 2px,
+      transparent 7px,
+      rgba(95, 52, 34, 0.14) 7px,
+      rgba(95, 52, 34, 0.14) 10px
+    ),
+    linear-gradient(
+      135deg,
+      #542d20 0%,
+      #2d160f 36%,
+      #462418 68%,
+      #1f0e09 100%
+    );
+  border: 2px solid #1a0d09;
+  box-shadow:
+    0 18px 36px -10px rgba(0, 0, 0, 0.42),
+    0 6px 14px -4px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 224, 196, 0.28),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.65);
+}
+
+.wood-crystal-mat {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 4.5%;
+  background-color: #f6f2e9;
+  border: 2px solid #1c0f0a;
+  outline: 1px solid rgba(201, 169, 110, 0.45);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.28);
+}
+
+.wood-crystal-glass {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      128deg,
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.04) 22%,
+      rgba(255, 255, 255, 0.34) 26%,
+      rgba(255, 255, 255, 0.08) 31%,
+      transparent 36%,
+      transparent 58%,
+      rgba(255, 255, 255, 0.2) 62%,
+      rgba(255, 255, 255, 0.03) 67%,
+      transparent 72%
+    ),
+    radial-gradient(
+      circle at 18% 12%,
+      rgba(255, 255, 255, 0.24) 0%,
+      transparent 48%
+    );
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.5),
+    inset 0 0 14px rgba(255, 255, 255, 0.14);
 }

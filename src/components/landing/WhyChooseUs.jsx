@@ -74,25 +74,21 @@ export default function WhyChooseUs() {
       className="section-padding bg-primary relative overflow-hidden"
       aria-labelledby="why-heading"
     >
-      {/* ── Ambient gold halos ────────────────────────────────────────────── */}
-      <motion.div
+      {/* ── Static ambient gold halos (zero offscreen RAF loops) ─────────── */}
+      <div
         className="absolute -top-32 -left-24 w-[520px] h-[420px] rounded-full pointer-events-none"
         style={{
           background:
             "radial-gradient(ellipse, rgba(212,175,55,0.13) 0%, transparent 68%)",
         }}
-        animate={{ scale: [1, 1.12, 1], x: [0, 30, 0], y: [0, -20, 0] }}
-        transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
         aria-hidden="true"
       />
-      <motion.div
+      <div
         className="absolute -bottom-40 -right-20 w-[600px] h-[480px] rounded-full pointer-events-none"
         style={{
           background:
             "radial-gradient(ellipse, rgba(212,175,55,0.09) 0%, transparent 68%)",
         }}
-        animate={{ scale: [1.08, 1, 1.08], x: [0, -34, 0], y: [0, 24, 0] }}
-        transition={{ duration: 18, repeat: Infinity, ease: "easeInOut", delay: 2 }}
         aria-hidden="true"
       />
 
@@ -132,10 +128,10 @@ export default function WhyChooseUs() {
         {/* ── Features Grid ───────────────────────────────────────────────── */}
         <motion.div
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
-          variants={stagger(0.1, 0.1)}
+          variants={stagger(0.06, 0.05)}
           initial="hidden"
           whileInView="show"
-          viewport={{ ...viewport, margin: "-90px" }}
+          viewport={viewport}
         >
           {features.map((feature, index) => {
             const Icon = feature.icon;
@@ -146,46 +142,33 @@ export default function WhyChooseUs() {
                 className="
                   shine-on-hover relative p-7 rounded-2xl overflow-hidden
                   border border-white/8
-                  bg-white/4 backdrop-blur-sm
-                  hover:bg-white/8 hover:border-gold/30
-                  transition-colors duration-400 ease-smooth
+                  bg-white/4
+                  hover:bg-white/8 hover:border-gold/30 hover:-translate-y-1.5
+                  transition-[background-color,border-color,transform] duration-300 ease-smooth
                   group
                 "
                 variants={{
-                  hidden: { opacity: 0, y: 44, rotateX: 9 },
+                  hidden: { opacity: 0, y: 24 },
                   show: {
                     opacity: 1,
                     y: 0,
-                    rotateX: 0,
-                    transition: { duration: 0.7, ease: ease.smooth },
+                    transition: { duration: 0.45, ease: ease.expo },
                   },
                 }}
-                whileHover={{ y: -8, transition: { duration: 0.35, ease: ease.smooth } }}
-                style={{ transformPerspective: 900 }}
               >
-                {/* Icon — springs in, spins lightly on hover */}
-                <motion.div
+                {/* Icon */}
+                <div
                   className="
                     inline-flex items-center justify-center
                     w-12 h-12 rounded-xl mb-5
                     bg-gold/15 text-gold
-                    group-hover:bg-gold/25
-                    transition-colors duration-300
+                    group-hover:bg-gold/25 group-hover:scale-105
+                    transition-[background-color,transform] duration-300
                   "
                   aria-hidden="true"
-                  initial={{ scale: 0, rotate: -35 }}
-                  whileInView={{ scale: 1, rotate: 0 }}
-                  viewport={viewport}
-                  transition={{
-                    delay: 0.25 + index * 0.1,
-                    type: "spring",
-                    stiffness: 420,
-                    damping: 14,
-                  }}
-                  whileHover={{ rotate: [0, -10, 10, 0], scale: 1.08 }}
                 >
                   <Icon size={22} strokeWidth={1.75} />
-                </motion.div>
+                </div>
 
                 {/* Text */}
                 <h3 className="font-heading text-white text-lg font-medium mb-3">
@@ -195,7 +178,7 @@ export default function WhyChooseUs() {
                   {feature.description}
                 </p>
 
-                {/* Subtle corner accent — floats gently */}
+                {/* Subtle corner accent */}
                 <div
                   className="
                     absolute top-0 right-0 w-20 h-20
@@ -203,11 +186,7 @@ export default function WhyChooseUs() {
                   "
                   aria-hidden="true"
                 >
-                  <motion.div
-                    className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-gold/5 group-hover:bg-gold/10 transition-colors duration-300"
-                    animate={{ x: [0, 3, 0], y: [0, 3, 0] }}
-                    transition={{ duration: 7 + index, repeat: Infinity, ease: "easeInOut" }}
-                  />
+                  <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-gold/5 group-hover:bg-gold/10 transition-colors duration-300" />
                 </div>
 
                 {/* Hover index marker */}

@@ -304,7 +304,7 @@ const parseInclusionDetails = (rawText = "", allTiers = []) => {
   let subtitle = "Studio quality print";
   let icon = <Check size={13} className="stroke-[2.5]" />;
   let iconBg = "bg-amber-100/90 text-amber-800 border-amber-200/90";
-  let image = "https://images.unsplash.com/photo-1513519245088-0e12902e5a38?w=300&q=80&auto=format&fit=crop";
+  let image = "/images/brochure/grad/toga-hood-portrait.jpg";
 
   const dimMatch = text.match(/(\d+\s*[×x]\s*\d+\s*(?:\"|inch(?:es)?)?|\b2R\b|\b4R\b|\b5×7\"|\b8×10\"|\b10×12\"|\b11×14\"|\b12×16\"|\b12×18\"|\b24×30\")/i);
   if (dimMatch) {
@@ -317,27 +317,27 @@ const parseInclusionDetails = (rawText = "", allTiers = []) => {
   if (lower.includes("family")) {
     title = "Family Portrait";
     subtitle = "Studio family pictorial with parents/guardians";
-    image = "https://images.unsplash.com/photo-1511895426328-dc8714191300?w=300&q=80&auto=format&fit=crop";
+    image = "/images/brochure/grad/family-graduation.jpg";
     icon = <Users size={13} className="stroke-[2.2]" />;
     specBadge = specBadge || "8×10\"";
   } else if (lower.includes("filipiniana") || lower.includes("barong") || lower.includes("pilipiñ")) {
     if (lower.includes("wallet")) {
       title = "Wallet Prints (Attire)";
       subtitle = "Pocket prints in Barong / Filipiniana";
-      image = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&q=80&auto=format&fit=crop";
+      image = "/images/brochure/grad/barong-portrait.jpg";
       icon = <ImageIcon size={13} className="stroke-[2.2]" />;
       specBadge = "2R (2.5×3.5\")";
     } else {
       title = "Filipiniana / Barong";
       subtitle = lower.includes("crystal") ? "Crystal wood frame" : "Traditional national attire portrait";
-      image = "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=300&q=80&auto=format&fit=crop";
+      image = "/images/brochure/grad/filipiniana-portrait.jpg";
       icon = <Sparkles size={13} className="stroke-[2.2]" />;
       specBadge = specBadge || "8×10\"";
     }
   } else if (lower.includes("crystal") || (lower.includes("portrait") && (lower.includes("frame") || lower.includes("mount") || lower.includes("wood")))) {
     title = "Framed Portrait";
     subtitle = lower.includes("mount") ? "Crystal wood mount" : "Crystal wood frame with glass";
-    image = "https://images.unsplash.com/photo-1513519245088-0e12902e5a38?w=300&q=80&auto=format&fit=crop";
+    image = "/images/brochure/grad/toga-cap-formal.jpg";
     icon = <Layers size={13} className="stroke-[2.2]" />;
     specBadge = specBadge || "10×12\"";
   } else if (lower.includes("wallet")) {
@@ -346,40 +346,42 @@ const parseInclusionDetails = (rawText = "", allTiers = []) => {
     if (lower.includes("cap") || lower.includes("toga")) {
       title = "Wallet Prints (Cap)";
       subtitle = "Wallet photos with academic cap & gown";
-      image = "https://images.unsplash.com/photo-1526047932273-341f2a7631f9?w=300&q=80&auto=format&fit=crop";
+      image = "/images/brochure/grad/toga-cap-pose.jpg";
     } else if (lower.includes("attire") || lower.includes("barong") || lower.includes("filipiniana")) {
       title = "Wallet Prints (Attire)";
       subtitle = "Filipiniana or Barong prints";
-      image = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&q=80&auto=format&fit=crop";
+      image = "/images/brochure/grad/barong-portrait.jpg";
     } else {
       title = "Wallet Prints";
       subtitle = "Pocket-sized glossy prints on Fuji paper";
-      image = "https://images.unsplash.com/photo-1526047932273-341f2a7631f9?w=300&q=80&auto=format&fit=crop";
+      image = "/images/brochure/grad/toga-formal.jpg";
     }
   } else if (lower.includes("passport") || lower.includes("tesda")) {
     icon = <CreditCard size={13} className="stroke-[2.2]" />;
     title = "Passport ID Prints";
     specBadge = "TESDA (35×45mm)";
     subtitle = "Standard passport & official ID specification";
-    image = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&q=80&auto=format&fit=crop";
+    image = "/images/brochure/grad/toga-formal.jpg";
   } else if (lower.includes("2x2") || lower.includes("2×2")) {
     icon = <CreditCard size={13} className="stroke-[2.2]" />;
     specBadge = "2×2\" (51×51mm)";
     title = lower.includes("casual") ? "2×2\" Casual IDs" : "2×2\" Formal IDs";
     subtitle = lower.includes("casual") ? "Casual attire ID photos" : "Formal attire application photos";
-    image = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&q=80&auto=format&fit=crop";
+    image = lower.includes("casual")
+      ? "/images/brochure/grad/filipiniana-portrait.jpg"
+      : "/images/brochure/grad/toga-hood-portrait.jpg";
   } else if (lower.includes("1x1") || lower.includes("1×1")) {
     icon = <CreditCard size={13} className="stroke-[2.2]" />;
     specBadge = "1×1\" (25×25mm)";
     title = "1×1\" ID Prints";
     subtitle = "School records & official form photos";
-    image = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&q=80&auto=format&fit=crop";
+    image = "/images/brochure/grad/toga-cap-formal.jpg";
   } else if (lower.includes("desk") || lower.includes("5x7") || lower.includes("5×7")) {
     icon = <ImageIcon size={13} className="stroke-[2.2]" />;
     specBadge = "5×7\"";
     title = "Desk Photo Print";
     subtitle = "Desktop tabletop colored print";
-    image = "https://images.unsplash.com/photo-1582562124811-c09040d0a901?w=300&q=80&auto=format&fit=crop";
+    image = "/images/brochure/grad/filipiniana-portrait.jpg";
   } else if (lower.includes("makeup") || lower.includes("make-up") || lower.includes("hair")) {
     icon = <Heart size={13} className="stroke-[2.2]" />;
     iconBg = "bg-rose-100 text-rose-700 border-rose-200";
@@ -387,14 +389,14 @@ const parseInclusionDetails = (rawText = "", allTiers = []) => {
     specBadge = "Complimentary";
     subtitle = "Professional styling & cosmetics";
     quantity = "FREE";
-    image = "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=300&q=80&auto=format&fit=crop";
+    image = "/images/brochure/grad/toga-cap-formal.jpg";
   } else if (lower.includes("toga") || lower.includes("cap")) {
     icon = <GraduationCap size={13} className="stroke-[2.2]" />;
     title = "Graduation Toga";
     specBadge = "Regalia";
     subtitle = "Toga, cap & hood use";
     quantity = "FREE";
-    image = "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=300&q=80&auto=format&fit=crop";
+    image = "/images/brochure/grad/toga-cap-pose.jpg";
   } else {
     title = coreText.length > 25 ? coreText.slice(0, 23) + "..." : coreText;
   }
@@ -601,8 +603,8 @@ const getInclusionConfig = (text = "") => {
 
 // ── Fallback Photography Cover Images ─────────────────────────────────────────
 const SERVICE_COVER_MAP = {
-  "college-packages": "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=900&q=80&auto=format&fit=crop",
-  "senior-high-packages": "https://images.unsplash.com/photo-1627556592933-ffe99c1cd9eb?w=900&q=80&auto=format&fit=crop",
+  "college-packages": "/images/brochure/grad/family-graduation.jpg",
+  "senior-high-packages": "/images/brochure/grad/filipiniana-portrait.jpg",
 };
 
 // ── Currency Parser ───────────────────────────────────────────────────────────
@@ -5660,7 +5662,7 @@ export default function BookingPage() {
                           const isSelected = selectedService?.id === svc.id;
                           const isHovered = hoveredServiceId === svc.id;
 
-                          const coverImg = svc.coverImage || svc.cover_image || SERVICE_COVER_MAP[svc.slug] || "https://images.unsplash.com/photo-1537633552985-df8429e8048b?w=900&q=80&auto=format&fit=crop";
+                          const coverImg = svc.coverImage || svc.cover_image || SERVICE_COVER_MAP[svc.slug] || "/images/brochure/grad/toga-cap-formal.jpg";
 
                           const minPrice = svc.tiers?.length 
                             ? Math.min(...svc.tiers.map(t => parsePrice(t.price)).filter(Boolean)) 
@@ -5704,7 +5706,7 @@ export default function BookingPage() {
                                 <img 
                                   src={coverImg} 
                                   alt={svc.name}
-                                  className={`absolute inset-0 w-full h-full object-cover transition-transform duration-700 ${
+                                  className={`absolute inset-0 w-full h-full object-cover object-top transition-transform duration-700 ${
                                     isHovered ? 'scale-110' : 'scale-100'
                                   }`} 
                                 />
@@ -5863,9 +5865,10 @@ export default function BookingPage() {
 
                           const isHovered = hoveredTierName === tier.name;
                           const coverImg =
+                            tier.cover_image ||
                             selectedService?.galleryImages?.[idx % (selectedService.galleryImages?.length || 1)] ||
                             selectedService?.coverImage ||
-                            "https://images.unsplash.com/photo-1537633552985-df8429e8048b?w=900&q=80&auto=format&fit=crop";
+                            "/images/brochure/grad/toga-formal.jpg";
 
                           const total = selectedService.tiers.length;
                           const showPanelLeft = total > 2 ? idx >= Math.ceil(total / 2) : (idx === total - 1 && total > 1);
@@ -5917,7 +5920,7 @@ export default function BookingPage() {
                                 <img
                                   src={coverImg}
                                   alt={tier.name}
-                                  className={`absolute inset-0 w-full h-full object-cover transition-transform duration-700 ${
+                                  className={`absolute inset-0 w-full h-full object-cover object-top transition-transform duration-700 ${
                                     isHovered ? 'scale-105' : 'scale-100'
                                   }`}
                                 />
@@ -6140,7 +6143,7 @@ export default function BookingPage() {
               {step === 3 && (() => {
                 const activeProfile = customerProfile || profile;
                 const clientInitials = `${(activeProfile?.first_name || user?.email || "C")[0] || ""}${activeProfile?.last_name ? activeProfile.last_name[0] : ""}`.toUpperCase() || "CL";
-                const step4CoverImg = selectedTier?.cover_image || selectedService?.coverImage || selectedService?.cover_image || SERVICE_COVER_MAP[selectedService?.slug] || "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=900&q=80&auto=format&fit=crop";
+                const step4CoverImg = selectedTier?.cover_image || selectedService?.coverImage || selectedService?.cover_image || SERVICE_COVER_MAP[selectedService?.slug] || "/images/brochure/grad/toga-cap-formal.jpg";
 
                 return (
                   <div className="space-y-8 animate-fade-in overflow-visible">

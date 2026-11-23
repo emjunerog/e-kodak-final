@@ -4,12 +4,11 @@
  * ROOT APPLICATION ROUTER
  */
 
-import React, { Suspense, lazy, useEffect } from "react";
+import React, { Suspense, lazy, useEffect, useState } from "react";
 import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 
 // ── Global Components ─────────────────────────────────────────────────────────
 import ScrollToTop from "./components/layout/ScrollToTop";
-import AIAssistant from "./components/ai/AIAssistant";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import AdminProtectedRoute from "./components/auth/AdminProtectedRoute";
 import AdminOnlyRoute from "./components/auth/AdminOnlyRoute";
@@ -17,25 +16,14 @@ import PhotographerProtectedRoute from "./components/auth/PhotographerProtectedR
 import ErrorBoundary from "./components/common/ErrorBoundary";
 import { SiteConfigProvider } from "./context/SiteConfigContext";
 
-// ── Public & Auth Pages (Eagerly loaded for instant first paint) ──────────────
+// ── Landing Page (Eager for instant first paint) ──────────────────────────────
 import Home from "./pages/Home";
-import Services from "./pages/Services";
-import Gallery from "./pages/Gallery";
-import About from "./pages/About";
-import Contact from "./pages/Contact";
-import Legal from "./pages/Legal";
-import PublicPassPage from "./pages/PublicPassPage";
-import Login from "./pages/auth/Login";
-import Register from "./pages/auth/Register";
-import ResetPassword from "./pages/auth/ResetPassword";
-import AuthCallback from "./pages/auth/AuthCallback";
-import PendingApproval from "./pages/auth/PendingApproval";
 import { useAuth } from "./context/AuthContext";
 
 // ── Resilient Lazy Loader (retries transient HMR / chunk fetch glitches) ─────
 function lazyWithRetry(importer) {
   return lazy(() =>
-    importer().catch((err) => {
+    importer().catch(() => {
       // Retry once after a short delay in case Vite HMR or dev server is mid-reload
       return new Promise((resolve, reject) => {
         setTimeout(() => {
@@ -45,6 +33,22 @@ function lazyWithRetry(importer) {
     })
   );
 }
+
+// ── Floating Concierge (deferred chunk so it never blocks landing first paint) ─
+const AIAssistant = lazyWithRetry(() => import("./components/ai/AIAssistant"));
+
+// ── Secondary Public & Auth Pages (Lazy-loaded route chunks) ─────────────────
+const Services = lazyWithRetry(() => import("./pages/Services"));
+const Gallery = lazyWithRetry(() => import("./pages/Gallery"));
+const About = lazyWithRetry(() => import("./pages/About"));
+const Contact = lazyWithRetry(() => import("./pages/Contact"));
+const Legal = lazyWithRetry(() => import("./pages/Legal"));
+const PublicPassPage = lazyWithRetry(() => import("./pages/PublicPassPage"));
+const Login = lazyWithRetry(() => import("./pages/auth/Login"));
+const Register = lazyWithRetry(() => import("./pages/auth/Register"));
+const ResetPassword = lazyWithRetry(() => import("./pages/auth/ResetPassword"));
+const AuthCallback = lazyWithRetry(() => import("./pages/auth/AuthCallback"));
+const PendingApproval = lazyWithRetry(() => import("./pages/auth/PendingApproval"));
 
 // ── Customer Dashboard Pages (Lazy-loaded route chunks) ───────────────────────
 const DashboardLayout = lazyWithRetry(() => import("./components/dashboard/DashboardLayout"));
@@ -155,11 +159,28 @@ function RecoveryRedirectGuard() {
 }
 
 export default function App() {
+  const [mountAssistant, setMountAssistant] = useState(false);
+
+  // Defer mounting the floating AI assistant chunk until the main thread is idle
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if ("requestIdleCallback" in window) {
+      const id = window.requestIdleCallback(() => setMountAssistant(true), { timeout: 1200 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const timer = setTimeout(() => setMountAssistant(true), 400);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <SiteConfigProvider>
       <ScrollToTop />
       <RecoveryRedirectGuard />
-      <AIAssistant />
+      {mountAssistant && (
+        <Suspense fallback={null}>
+          <AIAssistant />
+        </Suspense>
+      )}
 
       <ErrorBoundary>
         <Suspense fallback={<RouteFallback />}>

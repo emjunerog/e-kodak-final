@@ -26,14 +26,13 @@
 
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Sparkles, X, Search, Shield, Check, FileText, ListChecks } from "lucide-react";
+import { ArrowRight, Sparkles, X, Search, FileText, ListChecks } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import Navbar from "../components/layout/Navbar";
 import Footer from "../components/layout/Footer";
 import PageHero from "../components/ui/PageHero";
 import SectionHeader from "../components/ui/SectionHeader";
-import PackageCard from "../components/services/PackageCard";
 import SetsSectionRenderer from "../components/services/SetsSectionRenderer";
 import PackageFinder from "../components/services/PackageFinder";
 import TermsPolicyModal from "../components/services/TermsPolicyModal";
@@ -61,18 +60,12 @@ const defaultServicesFaqs = FAQS.filter((f) =>
   ["booking", "pricing", "delivery"].includes(f.topic)
 );
 
-const setCountOf = (service) =>
-  Array.isArray(service?.tiers) ? service.tiers.length : 0;
-
-const recommendedCountOf = (service) =>
-  Array.isArray(service?.tiers) ? service.tiers.filter((t) => t?.popular).length : 0;
-
 export default function Services() {
   // ── Data State ────────────────────────────────────────────────────────────
   const [servicesList, setServicesList] = useState([]);
-  const [addOns, setAddOns]             = useState(STATIC_ADD_ONS);
-  const [faqsList, setFaqsList]         = useState(defaultServicesFaqs);
-  const [isLoading, setIsLoading]       = useState(true);
+  const [addOns, setAddOns] = useState(STATIC_ADD_ONS);
+  const [faqsList, setFaqsList] = useState(defaultServicesFaqs);
+  const [isLoading, setIsLoading] = useState(true);
   const [highlightedSlug, setHighlightedSlug] = useState(null);
   const [isFinderOpen, setIsFinderOpen] = useState(false);
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
@@ -180,7 +173,7 @@ export default function Services() {
   };
 
   const { ref: addOnsRef, inView: addOnsIn } = useScrollReveal({ threshold: 0.05 });
-  const { ref: ctaRef,    inView: ctaIn    } = useScrollReveal({ threshold: 0.2 });
+  const { ref: ctaRef, inView: ctaIn } = useScrollReveal({ threshold: 0.2 });
 
   return (
     <>
@@ -212,9 +205,8 @@ export default function Services() {
                 </span>
                 <span className="hidden sm:block h-1 w-1 shrink-0 rounded-full bg-gold/60" />
                 <span
-                  className={`min-w-0 truncate font-heading text-lg sm:text-xl transition-colors duration-300 ${
-                    activeService ? "text-primary" : "text-neutral-500"
-                  }`}
+                  className={`min-w-0 truncate font-heading text-lg sm:text-xl transition-colors duration-300 ${activeService ? "text-primary" : "text-neutral-500"
+                    }`}
                 >
                   {activeService ? shortServiceLabel(activeService) : "All Packages"}
                 </span>
@@ -235,11 +227,10 @@ export default function Services() {
                     type="button"
                     onClick={() => setIsSummaryOpen((open) => !open)}
                     aria-expanded={isSummaryOpen}
-                    className={`hidden sm:inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 font-body text-xs font-bold transition-all duration-300 ${
-                      isSummaryOpen
+                    className={`hidden sm:inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 font-body text-xs font-bold transition-all duration-300 ${isSummaryOpen
                         ? "border-gold text-gold bg-gold/5"
                         : "border-neutral-200 bg-white text-neutral-600 hover:border-gold hover:text-gold"
-                    }`}
+                      }`}
                   >
                     <ListChecks size={14} strokeWidth={2} />
                     Summary
@@ -271,9 +262,8 @@ export default function Services() {
                             <button
                               type="button"
                               onClick={() => jumpToPackage(service.slug)}
-                              className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors duration-200 hover:bg-neutral-50 ${
-                                activeSlug === service.slug ? "bg-gold/5" : ""
-                              }`}
+                              className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors duration-200 hover:bg-neutral-50 ${activeSlug === service.slug ? "bg-gold/5" : ""
+                                }`}
                             >
                               <span className="w-6 shrink-0 font-body text-[11px] font-bold text-neutral-400 tabular-nums">
                                 {String(index + 1).padStart(2, "0")}
@@ -281,9 +271,6 @@ export default function Services() {
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate font-body text-sm font-medium text-neutral-700">
                                   {shortServiceLabel(service)}
-                                </span>
-                                <span className="block font-body text-[11px] text-neutral-400">
-                                  {setCountOf(service)} sets · {recommendedCountOf(service)} recommended
                                 </span>
                               </span>
                               <ArrowRight size={14} className="shrink-0 text-neutral-300" />
@@ -304,70 +291,95 @@ export default function Services() {
           <div className="container-custom">
             {/* Right rail gutter — keeps content clear of the Packages rail on lg+ */}
             <div className="lg:pr-[13rem]">
-              {/* ── Booking policy card (Ultra Premium Black) ── */}
+              {/* ── Booking policy card ── */}
               <div className="mb-12">
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true, margin: "-100px" }}
-                  className="rounded-3xl bg-[#0a0a0a] border border-[#222] p-8 shadow-2xl flex flex-col md:flex-row md:items-center justify-between relative overflow-hidden gap-8"
+                  className="rounded-3xl border border-neutral-200/90 bg-white overflow-hidden shadow-warm-md"
                 >
-                  {/* Subtle gold mesh/glow */}
-                  <div className="absolute top-0 right-0 w-64 h-64 bg-gold/10 rounded-full blur-[80px] pointer-events-none mix-blend-screen transform translate-x-1/3 -translate-y-1/3" />
-                  <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] mix-blend-overlay pointer-events-none" />
-
-                  <div className="relative z-10 flex-1">
-                    <div className="flex items-center gap-4 mb-6">
-                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-gold/20 to-gold/5 border border-gold/10 flex items-center justify-center shrink-0 shadow-inner">
-                        <Shield className="text-gold" size={24} strokeWidth={1.5} />
-                      </div>
+                  {/* Obsidian Header Band matching package cards */}
+                  <div className="relative overflow-hidden bg-neutral-950 px-6 py-5 sm:px-7 sm:py-6">
+                    <div
+                      aria-hidden="true"
+                      className="absolute inset-0 -skew-x-12 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-shimmer"
+                    />
+                    <div
+                      aria-hidden="true"
+                      className="absolute -top-16 -right-10 w-44 h-44 rounded-full bg-gold/20 blur-2xl pointer-events-none"
+                    />
+                    <div className="relative flex flex-col sm:flex-row sm:items-end justify-between gap-3">
                       <div>
-                        <h3 className="font-heading text-2xl font-semibold text-white tracking-wide">Booking & Payment Policies</h3>
-                        <p className="text-xs font-body text-neutral-500 uppercase tracking-widest mt-1">Please read carefully</p>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-gold/20 border border-gold/30 text-gold font-body text-[10px] font-bold uppercase tracking-wider mb-2.5">
+                          Please Read Before Booking
+                        </span>
+                        <h3 className="font-heading text-2xl sm:text-3xl font-bold text-white leading-tight">
+                          Booking &amp; Payment Policies
+                        </h3>
                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div className="flex items-start gap-3 bg-white/[0.02] p-4 rounded-2xl border border-white/[0.05]">
-                        <div className="mt-0.5 shrink-0">
-                          <Check size={18} className="text-gold" />
-                        </div>
-                        <p className="font-body text-[13px] text-neutral-400 leading-relaxed">
-                          <span className="font-semibold text-white block mb-0.5">50% Downpayment</span>
-                          Required to officially secure your booking date.
-                        </p>
-                      </div>
-                      <div className="flex items-start gap-3 bg-white/[0.02] p-4 rounded-2xl border border-white/[0.05]">
-                        <div className="mt-0.5 shrink-0">
-                          <Check size={18} className="text-gold" />
-                        </div>
-                        <p className="font-body text-[13px] text-neutral-400 leading-relaxed">
-                          <span className="font-semibold text-white block mb-0.5">Full Payment</span>
-                          The remaining balance is due on the event day.
-                        </p>
-                      </div>
-                      <div className="flex items-start gap-3 bg-white/[0.02] p-4 rounded-2xl border border-white/[0.05]">
-                        <div className="mt-0.5 shrink-0">
-                          <Check size={18} className="text-gold" />
-                        </div>
-                        <p className="font-body text-[13px] text-neutral-400 leading-relaxed">
-                          <span className="font-semibold text-white block mb-0.5">Non-refundable</span>
-                          All downpayments are strictly non-transferable.
-                        </p>
-                      </div>
+                      <p className="font-body text-xs text-white/60 sm:text-right">
+                        Studio rules &amp; Philippine consumer protection
+                      </p>
                     </div>
                   </div>
 
-                  {/* Policy actions */}
-                  <div className="relative z-10 flex shrink-0 md:pl-8 md:border-l md:border-white/[0.08]">
-                    <button
-                      type="button"
-                      onClick={() => setIsPolicyModalOpen(true)}
-                      className="group inline-flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl bg-[#D4AF37] hover:bg-[#F3E5AB] text-neutral-950 font-body text-sm font-bold transition-all duration-300 cursor-pointer w-full md:w-auto shadow-[0_0_20px_rgba(212,175,55,0.2)] hover:shadow-[0_0_30px_rgba(212,175,55,0.4)] hover:-translate-y-0.5"
-                    >
-                      <FileText size={18} className="transition-transform group-hover:scale-110" />
-                      <span>Review Full Policy</span>
-                    </button>
+                  {/* White Body */}
+                  <div className="p-6 sm:p-7">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="rounded-2xl bg-neutral-50 border border-neutral-200/80 p-5">
+                        <span className="font-body text-xs font-bold tracking-[0.16em] text-gold-dark tabular-nums">
+                          01
+                        </span>
+                        <h4 className="font-heading text-base font-semibold text-primary mt-1.5">
+                          50% Downpayment
+                        </h4>
+                        <p className="font-body text-xs sm:text-[13px] text-neutral-600 leading-relaxed mt-1.5">
+                          Required to lock your date, studio bay, and creative team. Disclosed upfront under the Consumer Act (RA 7394).
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl bg-neutral-50 border border-neutral-200/80 p-5">
+                        <span className="font-body text-xs font-bold tracking-[0.16em] text-gold-dark tabular-nums">
+                          02
+                        </span>
+                        <h4 className="font-heading text-base font-semibold text-primary mt-1.5">
+                          Shoot-Day Balance
+                        </h4>
+                        <p className="font-body text-xs sm:text-[13px] text-neutral-600 leading-relaxed mt-1.5">
+                          Remaining 50% is settled on session day prior to shoot, backed by valid electronic receipts (RA 8792).
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl bg-neutral-50 border border-neutral-200/80 p-5">
+                        <span className="font-body text-xs font-bold tracking-[0.16em] text-gold-dark tabular-nums">
+                          03
+                        </span>
+                        <h4 className="font-heading text-base font-semibold text-primary mt-1.5">
+                          Fair Terms &amp; Remedies
+                        </h4>
+                        <p className="font-body text-xs sm:text-[13px] text-neutral-600 leading-relaxed mt-1.5">
+                          Voluntary cancellations are non-transferable, while 72-hour notice, force majeure, or studio cancellation get full protection.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Dashed Footer & Primary CTA Button */}
+                    <div className="mt-6 pt-5 border-t border-dashed border-neutral-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <p className="font-body text-xs text-neutral-500 leading-relaxed max-w-2xl">
+                        Governed by Philippine laws — <span className="font-medium text-primary">Consumer Act (RA 7394)</span>, <span className="font-medium text-primary">Data Privacy Act (RA 10173)</span>, <span className="font-medium text-primary">IP Code (RA 8293)</span>, <span className="font-medium text-primary">E-Commerce Act (RA 8792)</span>, and the <span className="font-medium text-primary">Civil Code</span> — protecting both client and studio.
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsPolicyModalOpen(true)}
+                        className="group shrink-0 inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-gradient-to-r from-gold to-gold-light text-primary font-body text-sm font-bold shadow-gold hover:brightness-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 transition-all duration-200 cursor-pointer w-full sm:w-auto whitespace-nowrap"
+                      >
+                        <FileText size={16} className="shrink-0" />
+                        <span>Review Full Policy</span>
+                        <ArrowRight size={16} className="shrink-0 transition-transform duration-200 group-hover:translate-x-0.5" />
+                      </button>
+                    </div>
                   </div>
                 </motion.div>
               </div>
@@ -398,11 +410,10 @@ export default function Services() {
                       key={service.id || service.slug}
                       id={`service-block-${service.slug}`}
                       data-service-slug={service.slug}
-                      className={`space-y-6 scroll-mt-[calc(var(--nav-h)_+_var(--viewing-h)_+_24px)] transition-all duration-500 ${
-                        highlightedSlug === service.slug
+                      className={`space-y-6 scroll-mt-[calc(var(--nav-h)_+_var(--viewing-h)_+_24px)] transition-all duration-500 ${highlightedSlug === service.slug
                           ? "ring-2 ring-gold/40 rounded-3xl ring-offset-4"
                           : ""
-                      }`}
+                        }`}
                     >
                       {/* ── Per-package header ────────────────────────────── */}
                       <div className="flex items-end gap-4 pt-2">
@@ -423,16 +434,9 @@ export default function Services() {
                           <h2 className="mt-1.5 font-heading text-2xl md:text-3xl text-primary leading-snug">
                             {shortServiceLabel(service)}
                           </h2>
-                          <p className="mt-1 font-body text-sm text-neutral-500">
-                            {setCountOf(service)} sets
-                            {recommendedCountOf(service) > 0 && ` · ${recommendedCountOf(service)} recommended`}
-                          </p>
                         </div>
                         <div className="hidden sm:block h-px flex-1 bg-gradient-to-r from-neutral-200 to-transparent mb-3" />
                       </div>
-
-                      {/* Overview card */}
-                      <PackageCard service={service} />
 
                       {/* Individual tier/set cards */}
                       <SetsSectionRenderer service={service} />
@@ -458,9 +462,8 @@ export default function Services() {
           <div className="container-custom">
             <div
               ref={addOnsRef}
-              className={`transition-all duration-700 ease-smooth ${
-                addOnsIn ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-              }`}
+              className={`transition-all duration-700 ease-smooth ${addOnsIn ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+                }`}
             >
               <SectionHeader
                 eyebrow="Customize Your Session"
@@ -503,9 +506,8 @@ export default function Services() {
         {/* ── 6. Closing CTA ────────────────────────────────────────────────── */}
         <section className="section-padding bg-neutral-50 border-t border-neutral-100" ref={ctaRef}>
           <div
-            className={`container-custom text-center transition-all duration-700 ease-smooth ${
-              ctaIn ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-            }`}
+            className={`container-custom text-center transition-all duration-700 ease-smooth ${ctaIn ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+              }`}
           >
             <p className="section-eyebrow">Ready to book?</p>
             <h2 className="section-title mb-4">Let's create something beautiful.</h2>

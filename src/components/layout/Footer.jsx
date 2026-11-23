@@ -16,7 +16,7 @@
 
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Camera, MapPin, Phone, Mail, Clock } from "lucide-react";
+import { MapPin, Phone, Mail, Clock } from "lucide-react";
 import { stagger, staggerChild, viewport, ease } from "../../lib/motion";
 
 // ── Inline SVG Social Icons (lucide-react v0.5+ removed brand icons) ─────────
@@ -73,15 +73,13 @@ export default function Footer() {
   
   return (
     <footer className="relative bg-primary text-white overflow-hidden" role="contentinfo">
-      {/* ── Ambient gold glow ───────────────────────────────────────────────── */}
-      <motion.div
+      {/* ── Static ambient gold glow ───────────────────────────────────────── */}
+      <div
         className="absolute pointer-events-none"
         style={{
           left: "-10%", top: "-40%", width: 620, height: 480,
           background: "radial-gradient(ellipse, rgba(212,175,55,0.10) 0%, transparent 68%)",
         }}
-        animate={{ scale: [1, 1.12, 1], x: [0, 40, 0] }}
-        transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
         aria-hidden="true"
       />
 
@@ -274,14 +272,9 @@ export default function Footer() {
                 </a>
               </li>
               <li className="flex items-start gap-3">
-                <motion.span
-                  className="text-gold mt-0.5 shrink-0"
-                  animate={{ rotate: 360 }}
-                  style={{ transformOrigin: "center" }}
-                  transition={{ duration: 26, repeat: Infinity, ease: "linear" }}
-                >
+                <span className="text-gold mt-0.5 shrink-0">
                   <Clock size={15} aria-hidden="true" />
-                </motion.span>
+                </span>
                 <span className="font-body text-sm text-neutral-300 leading-relaxed">
                   {siteConfig.contact.hours}
                 </span>

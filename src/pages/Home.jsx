@@ -40,22 +40,37 @@ export default function Home() {
       {/* ── 1. Navigation (Includes AnnouncementBar) ─────────────────────── */}
       <Navbar />
 
-      {/* ── Main Sections (Clean, non-repetitive flow) ───────────────────── */}
+      {/* ── Main Sections (Deferred rendering below the fold) ────────────── */}
       <main id="main-content">
         <Hero />
         <IntroSection />
-        <ServicesPreview />
-
-        <WhyChooseUs />
-        <GalleryShowcase />
-        <HowItWorks />
-        <MobileCompanionPreview />
-        <Testimonials />
-        <CTASection />
+        <div className="landing-deferred-section">
+          <ServicesPreview />
+        </div>
+        <div className="landing-deferred-section">
+          <WhyChooseUs />
+        </div>
+        <div className="landing-deferred-section">
+          <GalleryShowcase />
+        </div>
+        <div className="landing-deferred-section">
+          <HowItWorks />
+        </div>
+        <div className="landing-deferred-section">
+          <MobileCompanionPreview />
+        </div>
+        <div className="landing-deferred-section">
+          <Testimonials />
+        </div>
+        <div className="landing-deferred-section">
+          <CTASection />
+        </div>
       </main>
 
       {/* ── 11. Footer ────────────────────────────────────────────────────── */}
-      <Footer />
+      <div className="landing-deferred-section">
+        <Footer />
+      </div>
     </>
   );
 }

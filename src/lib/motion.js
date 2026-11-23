@@ -10,100 +10,89 @@
  * - Stagger creates rhythm, not speed
  */
 
-// ── Viewport (generous margin — reveal early, like Notelyf) ──────────────
-export const viewport = { once: true, margin: "-60px" };
+// ── Viewport (trigger reliably across short & tall viewports) ────────────────
+export const viewport = { once: true, margin: "0px 0px -32px 0px" };
 export const viewportEager = { once: true, margin: "0px" };
 
 // ── Core easing curves ────────────────────────────────────────────────────
 export const ease = {
   smooth:   [0.25, 0.46, 0.45, 0.94],
   spring:   [0.34, 1.20, 0.64, 1],      // slight overshoot — organic
-  expo:     [0.76, 0,   0.24, 1],        // sharp in, slow out
+  expo:     [0.22, 1,    0.36, 1],       // responsive snappy expo-out
   gentle:   [0.43, 0.13, 0.23, 0.96],
 };
 
-// ── Fade Up — main scroll reveal (cinematic: de-blurs, un-scales) ────────
-// transitionEnd drops the filter after the animation so we don't keep a
-// permanent compositing layer on hundreds of elements.
+// ── Fade Up — compositor-only scroll reveal (no filter: blur overhead) ────
 export const fadeUp = {
-  hidden: { opacity: 0, y: 36, scale: 0.985, filter: "blur(14px)" },
+  hidden: { opacity: 0, y: 24, scale: 0.985 },
   show: {
     opacity: 1,
     y: 0,
     scale: 1,
-    filter: "blur(0px)",
-    transition: { duration: 0.8, ease: ease.smooth },
-    transitionEnd: { filter: "none" },
+    transition: { duration: 0.5, ease: ease.expo },
   },
 };
 
-// ── Cinematic focus-in (blur → sharp) — motion-graphics staple ───────────
+// ── Focus-in (compositor opacity + scale + translate only) ────────────────
 export const blurIn = {
-  hidden: { opacity: 0, y: 44, scale: 0.97, filter: "blur(16px)" },
+  hidden: { opacity: 0, y: 28, scale: 0.975 },
   show: {
     opacity: 1,
     y: 0,
     scale: 1,
-    filter: "blur(0px)",
-    transition: { duration: 0.95, ease: ease.expo },
-    transitionEnd: { filter: "none" },
+    transition: { duration: 0.55, ease: ease.expo },
   },
 };
 
-// ── Kinetic rise: lifts, un-rotates and de-blurs in one gesture ──────────
-export const riseRotate = (rot = -4, distance = 72) => ({
+// ── Kinetic rise: lifts and un-rotates on GPU transform only ──────────────
+export const riseRotate = (rot = -3, distance = 44) => ({
   hidden: {
     opacity: 0,
     y: distance,
     rotate: rot,
-    scale: 0.94,
-    filter: "blur(10px)",
+    scale: 0.96,
   },
   show: {
     opacity: 1,
     y: 0,
     rotate: 0,
     scale: 1,
-    filter: "blur(0px)",
-    transition: { duration: 1, ease: ease.spring },
-    transitionEnd: { filter: "none" },
+    transition: { duration: 0.6, ease: ease.spring },
   },
 });
 
 // ── Side wipe — clip-path reveal (great for images/banners) ─────────────
 export const wipe = {
-  hidden: { opacity: 0, clipPath: "inset(0 100% 0 0)", scale: 1.06 },
+  hidden: { opacity: 0, clipPath: "inset(0 100% 0 0)", scale: 1.04 },
   show:   {
     opacity: 1,
     clipPath: "inset(0 0% 0 0)",
     scale: 1,
-    transition: { duration: 1.05, ease: ease.expo },
+    transition: { duration: 0.7, ease: ease.expo },
   },
 };
 
 // ── Pop — elastic overshoot (badges, prices, checks) ─────────────────────
 export const pop = {
-  hidden: { opacity: 0, scale: 0.55, rotate: -8 },
+  hidden: { opacity: 0, scale: 0.75, rotate: -6 },
   show:   {
     opacity: 1,
     scale: 1,
     rotate: 0,
-    transition: { type: "spring", stiffness: 260, damping: 14, mass: 0.7 },
+    transition: { type: "spring", stiffness: 320, damping: 18, mass: 0.65 },
   },
 };
 
 // ── One-word reveal (used by SplitReveal) ────────────────────────────────
 export const wordIn = (index = 0, delayChildren = 0) => ({
-  hidden:   { y: "115%", rotate: 4, opacity: 0, filter: "blur(6px)" },
+  hidden:   { y: "100%", opacity: 0 },
   show: {
     y: "0%",
-    rotate: 0,
     opacity: 1,
-    filter: "blur(0px)",
     transition: {
-      duration: 0.85,
+      duration: 0.55,
       ease: ease.expo,
-      delay: delayChildren + index * 0.07,
+      delay: delayChildren + index * 0.045,
     },
   },
 });
@@ -151,21 +140,19 @@ export const lineReveal = {
 };
 
 // ── Stagger container ─────────────────────────────────────────────────────
-export const stagger = (delay = 0.12, children = 0) => ({
+export const stagger = (delay = 0.08, children = 0) => ({
   hidden: {},
   show: { transition: { staggerChildren: delay, delayChildren: children } },
 });
 
-// ── Stagger child — default (cinematic de-blur + lift) ────────────────────
+// ── Stagger child — compositor-only lift + opacity ─────────────────────────
 export const staggerChild = {
-  hidden: { opacity: 0, y: 34, scale: 0.985, filter: "blur(12px)" },
+  hidden: { opacity: 0, y: 20, scale: 0.985 },
   show: {
     opacity: 1,
     y: 0,
     scale: 1,
-    filter: "blur(0px)",
-    transition: { duration: 0.75, ease: ease.smooth },
-    transitionEnd: { filter: "none" },
+    transition: { duration: 0.45, ease: ease.expo },
   },
 };
 

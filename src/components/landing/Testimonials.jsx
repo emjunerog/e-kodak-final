@@ -4,14 +4,9 @@
  * quote SVG draws itself, card hover produces a warm lift + gold ring
  */
 
-import { useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Star, Quote } from "lucide-react";
-import { gsap } from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { stagger, lineReveal, viewport, ease } from "../../lib/motion";
-
-gsap.registerPlugin(ScrollTrigger);
+import { stagger, viewport, ease } from "../../lib/motion";
 
 const TESTIMONIALS = [
   {
@@ -65,45 +60,21 @@ function StarRating({ rating }) {
 }
 
 export default function Testimonials() {
-  const quoteRefs = useRef([]);
-
-  // Draw each quote SVG path on scroll
-  useEffect(() => {
-    const ownTriggers = [];
-    quoteRefs.current.forEach((el) => {
-      if (!el) return;
-      const tween = gsap.fromTo(
-        el,
-        { opacity: 0, scale: 0.6, rotate: -15 },
-        {
-          opacity: 1, scale: 1, rotate: 0, duration: 0.7, ease: "back.out(1.8)",
-          scrollTrigger: { trigger: el, start: "top 85%" },
-        }
-      );
-      if (tween.scrollTrigger) ownTriggers.push(tween.scrollTrigger);
-    });
-    return () => ownTriggers.forEach((t) => t.kill());
-  }, []);
-
   return (
     <section className="section-padding bg-neutral-50 overflow-hidden relative" aria-labelledby="testimonials-heading">
-      {/* Decorative floating quote marks */}
-      <motion.span
+      {/* Decorative static quote marks (no offscreen JS loop) */}
+      <span
         className="absolute -left-10 top-24 font-heading text-[180px] leading-none text-gold/8 pointer-events-none select-none"
         aria-hidden="true"
-        animate={{ y: [0, -24, 0], rotate: [0, 6, 0] }}
-        transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
       >
         &ldquo;
-      </motion.span>
-      <motion.span
+      </span>
+      <span
         className="absolute -right-6 bottom-16 font-heading text-[200px] leading-none text-gold/8 pointer-events-none select-none"
         aria-hidden="true"
-        animate={{ y: [0, 26, 0], rotate: [0, -7, 0] }}
-        transition={{ duration: 15, repeat: Infinity, ease: "easeInOut", delay: 2 }}
       >
         &rdquo;
-      </motion.span>
+      </span>
 
       <div className="container-custom relative z-10">
 
@@ -195,9 +166,7 @@ export default function Testimonials() {
               {/* Top */}
               <div className="flex items-start justify-between mb-5 relative z-1">
                 <StarRating rating={t.rating} />
-                <div ref={(el) => (quoteRefs.current[idx] = el)}>
-                  <Quote size={22} className="text-gold/35 fill-gold/12" aria-hidden />
-                </div>
+                <Quote size={22} className="text-gold/35 fill-gold/12" aria-hidden />
               </div>
 
               {/* Quote */}

@@ -78,8 +78,8 @@ export default function Gallery() {
           eyebrow="Portfolio"
           title="From Our Lens"
           subtitle="A curated collection of our photography work — portraits, graduations, events, families, couples, and commercial sessions."
-            image="https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=1920&q=85&auto=format&fit=crop"
-            imageAlt="Golden-hour portrait captured during a studio session"
+          image="/images/brochure/grad/family-graduation.jpg"
+          imageAlt="E-Kodak Studio graduation family portrait"
         />
 
         {/* ── 2. Category Filter ────────────────────────────────────────────── */}
@@ -172,26 +172,18 @@ export default function Gallery() {
 
             {/* Masonry-style CSS columns grid */}
             {!isLoading && (
-              <motion.div
+              <div
                 className="columns-1 sm:columns-2 lg:columns-3"
                 style={{ columnGap: "1rem" }}
-                variants={stagger(0.06)}
-                initial="hidden"
-                whileInView="show"
-                viewport={{ once: true, margin: "-40px" }}
               >
-                <AnimatePresence mode="popLayout" initial={false}>
                 {filtered.map((item, idx) => (
-                  <motion.button
+                  <button
                     key={item.id}
-                    variants={staggerChild}
-                    exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.28 } }}
-                    whileHover={{ y: -8 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 24 }}
+                    type="button"
                     className="block w-full mb-4 relative group overflow-hidden rounded-xl
                       ring-0 group-hover:ring-2 group-hover:ring-gold/70 group-hover:ring-offset-2 group-hover:ring-offset-white
                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2
-                      break-inside-avoid shadow-warm-sm hover:shadow-warm-lg transition-shadow duration-300"
+                      break-inside-avoid shadow-warm-sm hover:shadow-warm-lg hover:-translate-y-1 transition-[transform,box-shadow] duration-300 text-left"
                     onClick={() => openLightbox(idx)}
                     aria-label={`View photo: ${item.title}`}
                   >
@@ -201,6 +193,7 @@ export default function Gallery() {
                       alt={item.title}
                       className="w-full object-cover transition-transform duration-700 ease-smooth group-hover:scale-105 block no-drag"
                       loading="lazy"
+                      decoding="async"
                     />
 
                     {/* Hover overlay */}
@@ -243,17 +236,16 @@ export default function Gallery() {
                     >
                       <Camera size={14} className="text-white" />
                     </div>
-                  </motion.button>
+                  </button>
                 ))}
-                </AnimatePresence>
-              </motion.div>
+              </div>
             )}
 
             {!isLoading && filtered.length === 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, ease: ease.smooth }}
+                transition={{ duration: 0.45, ease: ease.expo }}
                 className="text-center py-24"
               >
                 <p className="font-heading text-primary text-2xl mb-2">No photos found</p>
@@ -263,8 +255,8 @@ export default function Gallery() {
               </motion.div>
             )}
 
-            <p className="font-body text-neutral-300 text-xs text-center mt-10 italic">
-              * Gallery contains sample images — will be replaced with actual E-Kodak photography before launch.
+            <p className="font-body text-neutral-400 text-xs text-center mt-10 italic">
+              E-Kodak Studio portfolio showcase — click any photo to inspect full resolution.
             </p>
           </div>
         </section>

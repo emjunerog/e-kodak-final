@@ -45,12 +45,12 @@ export const SERVICES = [
     tagline: "Celebrate your collegiate milestone in style.",
     description:
       "Comprehensive college graduation packages featuring premium crystal wood framed portraits, formal Filipiniana or Barong attire, family portraits, and a complete set of passport and wallet prints.",
-    coverImage:
-      "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=900&q=80&auto=format&fit=crop",
+    coverImage: "/images/brochure/grad/family-graduation.jpg",
     galleryImages: [
-      "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=600&q=80&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1627556592933-ffe99c1cd9eb?w=600&q=80&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1606216794074-735e91aa2c92?w=600&q=80&auto=format&fit=crop",
+      "/images/brochure/grad/family-graduation.jpg",
+      "/images/brochure/grad/toga-cap-formal.jpg",
+      "/images/brochure/grad/toga-hood-portrait.jpg",
+      "/images/brochure/grad/filipiniana-portrait.jpg",
     ],
     inclusions: [
       "Free professional hair styling and makeup",
@@ -65,6 +65,7 @@ export const SERVICES = [
         edited: "All prints included",
         popular: true,
         duration: "45–60 Mins",
+        cover_image: "/images/brochure/grad/toga-cap-formal.jpg",
         highlights: [
           "1 piece 12×18\" portrait with crystal wood frame",
           "1 piece 8×10\" Filipiniana or Barong portrait with crystal frame",
@@ -85,6 +86,7 @@ export const SERVICES = [
         price: "₱3,575.00",
         edited: "All prints included",
         duration: "30–45 Mins",
+        cover_image: "/images/brochure/grad/toga-hood-portrait.jpg",
         highlights: [
           "1 piece 12×16\" portrait with crystal wood frame",
           "1 piece 8×10\" Filipiniana or Barong portrait (unframed)",
@@ -114,11 +116,12 @@ export const SERVICES = [
     tagline: "Essential graduation & toga portraits for Senior High School.",
     description:
       "Accessible Senior High School graduation photography packages focusing on classic toga, formal attire, and Filipiniana portraits. Complete with crystal wood frames and ID prints.",
-    coverImage:
-      "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?w=900&q=80&auto=format&fit=crop",
+    coverImage: "/images/brochure/grad/filipiniana-portrait.jpg",
     galleryImages: [
-      "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?w=600&q=80&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=600&q=80&auto=format&fit=crop",
+      "/images/brochure/grad/filipiniana-portrait.jpg",
+      "/images/brochure/grad/toga-cap-formal.jpg",
+      "/images/brochure/grad/toga-cap-pose.jpg",
+      "/images/brochure/grad/barong-portrait.jpg",
     ],
     inclusions: [
       "Free use of graduation toga (non-transferable, non-refundable)",
@@ -132,6 +135,7 @@ export const SERVICES = [
         edited: "Prints included",
         popular: true,
         duration: "30–40 Mins",
+        cover_image: "/images/brochure/grad/toga-cap-pose.jpg",
         highlights: [
           "1 piece 10×12\" colored portrait with crystal wood frame",
           "1 piece 8×10\" Filipiniana or Barong portrait (unframed)",
@@ -147,6 +151,7 @@ export const SERVICES = [
         price: "₱1,425.00",
         edited: "Prints included",
         duration: "25–35 Mins",
+        cover_image: "/images/brochure/grad/toga-formal.jpg",
         highlights: [
           "1 piece 8×10\" colored portrait on crystal wood mount",
           "4 pieces Wallet-size colored prints with academic cap (2R)",
@@ -160,6 +165,7 @@ export const SERVICES = [
         price: "₱1,100.00",
         edited: "Prints included",
         duration: "20–30 Mins",
+        cover_image: "/images/brochure/grad/barong-portrait.jpg",
         highlights: [
           "1 piece 8×10\" colored portrait (unframed)",
           "6 pieces Wallet-size colored prints (2R)",
@@ -173,6 +179,7 @@ export const SERVICES = [
         price: "₱795.00",
         edited: "Prints included",
         duration: "15–20 Mins",
+        cover_image: "/images/brochure/grad/filipiniana-portrait.jpg",
         highlights: [
           "1 piece 8×10\" colored portrait (unframed)",
           "4 pieces Wallet-size colored prints (2R)",

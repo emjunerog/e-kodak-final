@@ -21,6 +21,18 @@ export default function Legal({ slug }) {
     return () => { isMounted = false; };
   }, [slug]);
 
+  function renderInlineBold(text) {
+    return text.split(/(\*\*.*?\*\*)/).map((part, pi) =>
+      part.startsWith("**") && part.endsWith("**") ? (
+        <strong key={pi} className="font-semibold text-primary">
+          {part.slice(2, -2)}
+        </strong>
+      ) : (
+        part
+      )
+    );
+  }
+
   // A super basic markdown parser for the legal docs (headers and lists)
   function renderContent(content) {
     if (!content) return null;
@@ -30,23 +42,16 @@ export default function Legal({ slug }) {
       }
       if (line.startsWith('- ')) {
         const text = line.replace('- ', '');
-        const parts = text.split(/(\*\*.*?\*\*)/);
         return (
           <li key={i} className="font-body text-neutral-600 text-base leading-relaxed ml-6 list-disc mb-2">
-            {parts.map((part, pi) =>
-              part.startsWith('**') && part.endsWith('**') ? (
-                <strong key={pi} className="font-semibold">{part.slice(2, -2)}</strong>
-              ) : (
-                part
-              )
-            )}
+            {renderInlineBold(text)}
           </li>
         );
       }
       if (line.trim() === '') return null;
       
       // Paragraphs
-      return <p key={i} className="font-body text-neutral-600 text-base leading-relaxed mb-4">{line}</p>;
+      return <p key={i} className="font-body text-neutral-600 text-base leading-relaxed mb-4">{renderInlineBold(line)}</p>;
     });
   }
 

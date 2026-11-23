@@ -22,7 +22,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { motion, AnimatePresence, useScroll, useSpring } from "framer-motion";
-import { Menu, X, Camera, LayoutDashboard } from "lucide-react";
+import { Menu, X, LayoutDashboard } from "lucide-react";
 import { siteConfig } from "../../config/siteConfig";
 import { useAuth } from "../../context/AuthContext";
 import AnnouncementBar from "../landing/AnnouncementBar";
@@ -40,19 +40,19 @@ const navLinks = [
 // Header choreography: `enter` = page-load drop-in, `show` = visible,
 // `hide` = slid off-screen while scrolling down
 const headerVariants = {
-  enter: { y: -72, opacity: 0 },
-  show: { y: 0, opacity: 1, transition: { duration: 0.7, ease: [0.22, 1, 0.36, 1] } },
-  hide: { y: "-110%", opacity: 1, transition: { duration: 0.4, ease: [0.32, 0.72, 0, 1] } },
+  enter: { y: -48, opacity: 0 },
+  show: { y: 0, opacity: 1, transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] } },
+  hide: { y: "-110%", opacity: 1, transition: { duration: 0.32, ease: [0.32, 0.72, 0, 1] } },
 };
 
 const navLinkList = {
   hidden: {},
-  show: { transition: { staggerChildren: 0.06, delayChildren: 0.32 } },
+  show: { transition: { staggerChildren: 0.04, delayChildren: 0.1 } },
 };
 
 const navLinkItem = {
-  hidden: { opacity: 0, y: -10 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] } },
+  hidden: { opacity: 0, y: -8 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] } },
 };
 
 export default function Navbar() {
@@ -70,16 +70,23 @@ export default function Navbar() {
   const lastY          = useRef(typeof window !== 'undefined' ? window.scrollY : 0);
   const headerRef      = useRef(null);
   const navHRef        = useRef(100);
+  const lastPubNavHRef = useRef("");
   const navHiddenRef   = useRef(false);
+  const scrolledRef    = useRef(scrolled);
+  const menuOpenRef    = useRef(menuOpen);
+
+  useEffect(() => {
+    menuOpenRef.current = menuOpen;
+  }, [menuOpen]);
 
   // ── Publish header height → --nav-h (sticky bars below align to it) ────────
-  // While the bar is hidden the offset collapses to 0 so the sticky category
-  // filter rises to the top edge instead of leaving a dead gap.
+  // Only writes the CSS custom property when the resolved value actually changes.
   const publishNavH = () => {
-    document.documentElement.style.setProperty(
-      "--nav-h",
-      navHiddenRef.current ? "0px" : `${navHRef.current}px`
-    );
+    const nextVal = navHiddenRef.current ? "0px" : `${navHRef.current}px`;
+    if (lastPubNavHRef.current !== nextVal) {
+      lastPubNavHRef.current = nextVal;
+      document.documentElement.style.setProperty("--nav-h", nextVal);
+    }
   };
 
   const applyNavHidden = (value) => {
@@ -102,7 +109,7 @@ export default function Navbar() {
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    window.addEventListener("resize", measure);
+    window.addEventListener("resize", measure, { passive: true });
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", measure);
@@ -112,17 +119,22 @@ export default function Navbar() {
 
   // ── Reading progress — gold line tracking scroll depth ─────────────────────
   const { scrollYProgress } = useScroll();
-  const progress = useSpring(scrollYProgress, { stiffness: 130, damping: 28, restDelta: 0.001 });
+  const progress = useSpring(scrollYProgress, { stiffness: 160, damping: 28, restDelta: 0.002 });
 
-  // ── Scroll Detection + smart hide/show ─────────────────────────────────────
-  // Scrolling down past the top → bar slides away; scrolling up → returns.
+  // ── Scroll Detection + smart hide/show (rAF-throttled) ─────────────────────
   useEffect(() => {
-    const handleScroll = () => {
-      const y = window.scrollY;
-      setScrolled(y > 60);
+    let rafId = null;
 
-      // Always visible at the top of the page or while the mobile menu is open
-      if (menuOpen || y <= 60) {
+    const updateOnScroll = () => {
+      rafId = null;
+      const y = window.scrollY;
+      const nextScrolled = y > 60;
+      if (scrolledRef.current !== nextScrolled) {
+        scrolledRef.current = nextScrolled;
+        setScrolled(nextScrolled);
+      }
+
+      if (menuOpenRef.current || y <= 60) {
         applyNavHidden(false);
         lastY.current = y;
         return;
@@ -137,10 +149,19 @@ export default function Navbar() {
         lastY.current = y;
       }
     };
+
+    const handleScroll = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(updateOnScroll);
+    };
+
     window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menuOpen]);
+  }, []);
 
   // ── Mobile Menu: lock body scroll when open ─────────────────────────────────
   useEffect(() => {
@@ -167,7 +188,7 @@ export default function Navbar() {
         ref={headerRef}
         className={`
           fixed top-0 left-0 right-0 z-50 flex flex-col
-          transition-[background-color,box-shadow,border-color,backdrop-filter] duration-400 ease-smooth
+          transition-[background-color,box-shadow,border-color] duration-300 ease-smooth
           ${navClass}
         `}
         role="banner"

@@ -4,14 +4,9 @@
  * Each step number pops in with spring, connecting line draws across
  */
 
-import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Search, CalendarPlus, Activity, ImageDown } from "lucide-react";
-import { gsap } from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { lineReveal, viewport, ease } from "../../lib/motion";
-
-gsap.registerPlugin(ScrollTrigger);
+import { viewport, ease } from "../../lib/motion";
 
 const steps = [
   {
@@ -37,52 +32,6 @@ const steps = [
 ];
 
 export default function HowItWorks() {
-  const lineRef     = useRef(null);
-  const stepsRef    = useRef(null);
-
-  // GSAP: draw connecting line + stagger step entrance
-  useEffect(() => {
-    if (!lineRef.current || !stepsRef.current) return;
-    const ownTriggers = [];
-
-    // Draw the horizontal line
-    const lineTween = gsap.fromTo(
-      lineRef.current,
-      { scaleX: 0, transformOrigin: "left" },
-      {
-        scaleX: 1,
-        duration: 1.6,
-        ease: "power3.inOut",
-        scrollTrigger: {
-          trigger: stepsRef.current,
-          start: "top 70%",
-        },
-      }
-    );
-    if (lineTween.scrollTrigger) ownTriggers.push(lineTween.scrollTrigger);
-
-    // Stagger step circles in
-    const circles = stepsRef.current.querySelectorAll("[data-step-circle]");
-    const circleTween = gsap.fromTo(
-      circles,
-      { scale: 0, opacity: 0 },
-      {
-        scale: 1,
-        opacity: 1,
-        duration: 0.6,
-        stagger: 0.2,
-        ease: "back.out(1.4)",
-        scrollTrigger: {
-          trigger: stepsRef.current,
-          start: "top 70%",
-        },
-      }
-    );
-    if (circleTween.scrollTrigger) ownTriggers.push(circleTween.scrollTrigger);
-
-    return () => ownTriggers.forEach((t) => t.kill());
-  }, []);
-
   return (
     <section className="section-padding bg-surface overflow-hidden" aria-labelledby="how-heading">
       <div className="container-custom">
@@ -131,13 +80,19 @@ export default function HowItWorks() {
         </div>
 
         {/* Steps grid */}
-        <div ref={stepsRef} className="relative grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+        <div className="relative grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
 
-          {/* Animated connecting line + travelling pulse */}
-          <div className="hidden lg:block absolute top-10 left-[12.5%] right-[12.5%]" aria-hidden="true">
-            <div ref={lineRef} className="h-px bg-gradient-to-r from-transparent via-gold/50 to-transparent" />
-            <motion.span
-              className="absolute -top-[3px] h-[7px] w-[7px] rounded-full bg-gold animate-travel-dot"
+          {/* Animated connecting line + compositor travelling pulse */}
+          <div className="hidden lg:block absolute top-10 left-[12.5%] right-[12.5%] animate-travel-track" aria-hidden="true">
+            <motion.div
+              className="h-px origin-left bg-gradient-to-r from-transparent via-gold/50 to-transparent"
+              initial={{ scaleX: 0 }}
+              whileInView={{ scaleX: 1 }}
+              viewport={viewport}
+              transition={{ duration: 0.85, ease: ease.expo }}
+            />
+            <span
+              className="absolute left-0 -top-[3px] h-[7px] w-[7px] rounded-full bg-gold animate-travel-dot"
               style={{ boxShadow: "0 0 12px 3px rgba(212,175,55,0.75)" }}
               aria-hidden="true"
             />
@@ -148,56 +103,29 @@ export default function HowItWorks() {
             return (
               <motion.div
                 key={step.number}
-                className="relative flex flex-col items-center text-center px-3"
-                initial={{ opacity: 0, y: 40 }}
+                className="group relative flex flex-col items-center text-center px-3"
+                initial={{ opacity: 0, y: 24 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={viewport}
-                transition={{ duration: 0.7, delay: index * 0.14, ease: ease.smooth }}
+                transition={{ duration: 0.45, delay: index * 0.08, ease: ease.expo }}
               >
                 {/* Step circle */}
-                <motion.div
-                  data-step-circle
+                <div
                   className={`relative flex flex-col items-center justify-center w-20 h-20 rounded-2xl mb-5 shadow-warm-sm
-                    bg-gradient-to-br ${step.accent} border-2 border-neutral-100`}
-                  whileHover={{
-                    scale: 1.1,
-                    borderColor: "rgba(212,175,55,0.55)",
-                    boxShadow: "0 10px 35px rgba(212,175,55,0.18)",
-                    transition: { type: "spring", stiffness: 400, damping: 14 },
-                  }}
+                    bg-gradient-to-br ${step.accent} border-2 border-neutral-100
+                    transition-all duration-300 group-hover:scale-105 group-hover:border-gold/55`}
                 >
-                  {/* Breathing halo behind the circle */}
-                  <motion.span
-                    className="absolute -inset-2 rounded-2xl border border-gold/25 pointer-events-none"
-                    animate={{ scale: [1, 1.12, 1], opacity: [0.0, 0.55, 0.0] }}
-                    transition={{ duration: 3.4, repeat: Infinity, ease: "easeInOut", delay: index * 0.4 }}
-                    aria-hidden="true"
-                  />
-
                   {/* Step badge */}
-                  <motion.span
+                  <span
                     className="absolute -top-3 -right-3 font-body text-[10px] font-bold w-6 h-6 rounded-full bg-gold text-primary flex items-center justify-center shadow-gold z-10"
-                    initial={{ scale: 0, rotate: -20 }}
-                    whileInView={{ scale: 1, rotate: 0 }}
-                    viewport={viewport}
-                    transition={{
-                      type: "spring",
-                      stiffness: 550,
-                      damping: 18,
-                      delay: index * 0.14 + 0.4,
-                    }}
                   >
                     {index + 1}
-                  </motion.span>
+                  </span>
 
-                  <motion.span
-                    className="flex items-center justify-center text-primary"
-                    animate={{ y: [0, -3, 0] }}
-                    transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut", delay: index * 0.35 }}
-                  >
+                  <span className="flex items-center justify-center text-primary">
                     <Icon size={28} strokeWidth={1.5} aria-hidden="true" />
-                  </motion.span>
-                </motion.div>
+                  </span>
+                </div>
 
                 <h3 className="font-heading text-primary text-lg font-medium mb-2">{step.title}</h3>
                 <p className="font-body text-neutral-500 text-sm leading-relaxed">{step.description}</p>

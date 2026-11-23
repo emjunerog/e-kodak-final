@@ -4,17 +4,12 @@
  * Right: staggered pillars orbit in from right, icon spring on hover
  */
 
-import { useRef, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { Award, Heart, Smartphone } from "lucide-react";
-import { gsap } from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 import {
-  stagger, staggerChild, lineReveal, slideLeft, orbitIn,
-  drawPath, viewport, ease
+  stagger, slideLeft, orbitIn,
+  viewport, ease
 } from "../../lib/motion";
-
-gsap.registerPlugin(ScrollTrigger);
 
 const pillars = [
   {
@@ -41,21 +36,7 @@ const pillars = [
 ];
 
 export default function IntroSection() {
-  const svgRef = useRef(null);
-
-  useEffect(() => {
-    if (!svgRef.current) return;
-    const path = svgRef.current;
-    const len = path.getTotalLength?.() ?? 300;
-    gsap.set(path, { strokeDasharray: len, strokeDashoffset: len });
-    ScrollTrigger.create({
-      trigger: path,
-      start: "top 80%",
-      onEnter: () =>
-        gsap.to(path, { strokeDashoffset: 0, duration: 1.4, ease: "power3.inOut" }),
-    });
-    return () => ScrollTrigger.getAll().forEach((t) => t.kill());
-  }, []);
+  const reduceMotion = useReducedMotion();
 
   return (
     <section className="section-padding bg-surface overflow-hidden" aria-labelledby="intro-heading">
@@ -118,12 +99,15 @@ export default function IntroSection() {
                 fill="none"
                 aria-hidden="true"
               >
-                <path
-                  ref={svgRef}
+                <motion.path
                   d="M2 14C18 4 40 18 65 10 S85 3 96 8"
                   stroke="rgba(212,175,55,0.8)"
                   strokeWidth="2"
                   strokeLinecap="round"
+                  initial={{ pathLength: reduceMotion ? 1 : 0 }}
+                  whileInView={{ pathLength: 1 }}
+                  viewport={viewport}
+                  transition={{ duration: 0.9, delay: 0.2, ease: ease.expo }}
                 />
               </svg>
             </div>
@@ -159,7 +143,7 @@ export default function IntroSection() {
             whileInView="show"
             viewport={viewport}
           >
-            {pillars.map((pillar, i) => {
+            {pillars.map((pillar) => {
               const Icon = pillar.icon;
               return (
                 <motion.div
