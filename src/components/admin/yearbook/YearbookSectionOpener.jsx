@@ -1,39 +1,67 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { detectCampuses, detectSections, detectSchools } from '../../../services/yearbookService';
+import {
+  detectCampuses,
+  detectSections,
+  detectSchools,
+  resolveSchoolCrest,
+} from '../../../services/yearbookService';
 
 /**
  * Section divider sheet — photos only, no stats, no labels, no tags.
  * Shows the school / campus / section detected from the records plus a
- * creative strip of student photos.
+ * creative strip of student photos, and supports Custom Opener artwork + Cebu School Crests.
  */
 export default function YearbookSectionOpener({
   students = [],
   config = {},
   onSelectStudent,
 }) {
+  const safeStudents = Array.isArray(students) ? students : [];
   const school = (config.institutionName || '').trim()
     || (config.targetSchool || '').trim()
-    || detectSchools(students)[0]?.name
+    || detectSchools(safeStudents)[0]?.name
     || '';
-  const campuses = detectCampuses(students);
+  const campuses = detectCampuses(safeStudents);
   const campusLine = campuses.length > 0
     ? campuses.join(' · ')
     : (config.campus || '').trim();
-  const sections = detectSections(students);
+  const sections = detectSections(safeStudents);
   const sectionLine = sections.length > 0
     ? sections.join(' · ')
     : (config.sectionName || config.batchName || '').trim();
   const year = (config.academicYear || '').trim();
-  const strip = students.filter((s) => s.photoUrl).slice(0, 7);
+  const strip = safeStudents.filter((s) => s.photoUrl).slice(0, 7);
+
+  const openerBgUrl = (config.customTemplate?.openerBgUrl || '').trim();
+  const crest = !config.hideCoverLogo
+    ? ((config.coverLogoUrl || '').trim() || resolveSchoolCrest(school)?.src || '')
+    : '';
 
   return (
     <div className="h-full w-full bg-[#fbf9f3] text-neutral-800 flex flex-col p-8 sm:p-12 font-serif select-none relative overflow-hidden">
+      {openerBgUrl && (
+        <>
+          <img
+            src={openerBgUrl}
+            alt="Section opener artwork"
+            className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          />
+          <div className="absolute inset-0 bg-[#fbf9f3]/80 pointer-events-none" />
+        </>
+      )}
+
       {/* Hairline frame */}
       <div className="absolute inset-4 border border-neutral-900/10 pointer-events-none" />
 
       {/* Center */}
       <div className="relative z-10 my-auto text-center">
+        {crest && (
+          <div className="mx-auto mb-5 h-16 w-16 rounded-full bg-white/95 border border-amber-300/60 shadow-sm p-1.5 flex items-center justify-center overflow-hidden">
+            <img src={crest} alt="School seal" className="h-full w-full object-contain" />
+          </div>
+        )}
+
         {school && (
           <p className="text-xs tracking-[0.3em] uppercase font-semibold text-neutral-800 font-sans">
             {school}

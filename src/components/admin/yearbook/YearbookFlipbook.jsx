@@ -28,7 +28,12 @@ import YearbookPageModernEditorial from './YearbookPageModernEditorial';
 import YearbookPageMinimalist from './YearbookPageMinimalist';
 import YearbookPageDoodle from './YearbookPageDoodle';
 import YearbookPageChalkboard from './YearbookPageChalkboard';
-import { playRealisticPageFlipSound } from '../../../services/yearbookService';
+import YearbookPageCustom from './YearbookPageCustom';
+import YearbookInstitutionalSheet from './YearbookInstitutionalSheet';
+import {
+  playRealisticPageFlipSound,
+  getActiveInstitutionalSections,
+} from '../../../services/yearbookService';
 
 export default function YearbookFlipbook({
   students = [],
@@ -45,33 +50,41 @@ export default function YearbookFlipbook({
 
   const density = config.layoutDensity || 6;
 
+  const isCustomTheme = theme === 'custom';
+  const customTpl = config.customTemplate || {};
+  const activeInstitutionalSections = isCustomTheme
+    ? getActiveInstitutionalSections(customTpl)
+    : [];
+  const institutionalSpreadsCount = Math.ceil(activeInstitutionalSections.length / 2);
+
   // Calculate interior student pages and spreads
   // Spread 0: Hardcover Front
-  // Spread 1: Dedication + Section Directory
-  // Spreads 2..(1 + studentSpreads): Student portrait pages
+  // Spreads 1..institutionalSpreadsCount: Title & Institutional Pages (VMGO, Programme, Messages)
+  // Opening Spread (1 + institutionalSpreadsCount): Dedication + Section Directory
+  // Student Spreads: Student portrait pages
   // Final Spread: Concluding spread + Hardcover Back Cover
   const totalStudentPages = Math.max(2, Math.ceil(Math.max(1, students.length) / density));
   const normalizedStudentPages = totalStudentPages % 2 === 0 ? totalStudentPages : totalStudentPages + 1;
   const studentSpreadsCount = normalizedStudentPages / 2;
 
-  // Total spreads = 1 (Cover) + 1 (Intro) + studentSpreadsCount + 1 (Back Cover)
-  const totalSpreads = 2 + studentSpreadsCount + 1;
+  const totalSpreads = 2 + institutionalSpreadsCount + studentSpreadsCount + 1;
+  const safeSpreadIndex = Math.min(currentSpreadIndex, Math.max(0, totalSpreads - 1));
 
   const goToNextSpread = () => {
-    if (currentSpreadIndex < totalSpreads - 1) {
+    if (safeSpreadIndex < totalSpreads - 1) {
       if (soundEnabled) playRealisticPageFlipSound();
       setIsFlipping(true);
       setTimeout(() => setIsFlipping(false), 320);
-      setCurrentSpreadIndex((prev) => prev + 1);
+      setCurrentSpreadIndex(safeSpreadIndex + 1);
     }
   };
 
   const goToPrevSpread = () => {
-    if (currentSpreadIndex > 0) {
+    if (safeSpreadIndex > 0) {
       if (soundEnabled) playRealisticPageFlipSound();
       setIsFlipping(true);
       setTimeout(() => setIsFlipping(false), 320);
-      setCurrentSpreadIndex((prev) => prev - 1);
+      setCurrentSpreadIndex(safeSpreadIndex - 1);
     }
   };
 
@@ -115,6 +128,8 @@ export default function YearbookFlipbook({
       case 'scrapbook':
       case 'doodle':
         return <YearbookPageDoodle {...props} />;
+      case 'custom':
+        return <YearbookPageCustom {...props} />;
       case 'chalkboard':
       case 'contemporary':
         return <YearbookPageChalkboard {...props} />;
@@ -124,10 +139,30 @@ export default function YearbookFlipbook({
     }
   };
 
+  const renderCustomArtworkLeaf = (url, label) => {
+    const cleanUrl = (url || '').trim();
+    if (!cleanUrl) {
+      return (
+        <div className="h-full w-full bg-white flex flex-col items-center justify-center p-6 text-center text-neutral-400">
+          <p className="text-xs font-semibold text-neutral-600">{label}</p>
+          <p className="text-[11px] mt-1">Blank sheet — waiting for PDF/image upload in My Design</p>
+        </div>
+      );
+    }
+    return (
+      <div className="h-full w-full bg-white relative overflow-hidden">
+        <img src={cleanUrl} alt={label} className="w-full h-full object-cover" />
+      </div>
+    );
+  };
+
   // Render left and right sides of current spread
   const renderSpreadContent = () => {
+    const titlePageBgUrl = (customTpl.titlePageBgUrl || '').trim();
+    const introSpreadIndex = 1 + institutionalSpreadsCount;
+
     // Spread 0: Front Hardcover Spread
-    if (currentSpreadIndex === 0) {
+    if (safeSpreadIndex === 0) {
       return (
         <>
           {/* Left: Decorative Endpaper / Inside Flap */}
@@ -147,34 +182,85 @@ export default function YearbookFlipbook({
             </span>
           </div>
 
-          {/* Right: Front Hardcover */}
+          {/* Right: Front Cover */}
           <div className="w-1/2 h-full relative">
-            <YearbookHardcoverFront config={config} students={students} onOpenBook={goToNextSpread} />
+            {isCustomTheme ? (
+              renderCustomArtworkLeaf(config.coverBgUrl, 'Front Cover')
+            ) : (
+              <YearbookHardcoverFront config={config} students={students} onOpenBook={goToNextSpread} />
+            )}
           </div>
         </>
       );
     }
 
-    // Spread 1: Opening Spread (Dedication + Section Opener)
-    if (currentSpreadIndex === 1) {
+    // Institutional Spreads (VMGO, Graduation Programme, Official Messages)
+    if (safeSpreadIndex >= 1 && safeSpreadIndex <= institutionalSpreadsCount) {
+      const idx = (safeSpreadIndex - 1) * 2;
+      const leftSec = activeInstitutionalSections[idx];
+      const rightSec = activeInstitutionalSections[idx + 1];
       return (
         <>
           <div className="w-1/2 h-full relative">
-            <YearbookInsideDedication config={config} students={students} />
+            {leftSec ? (
+              <YearbookInstitutionalSheet
+                sectionKey={leftSec.key}
+                bgUrl={titlePageBgUrl}
+                data={leftSec.data}
+                tpl={customTpl}
+                config={config}
+                editable={false}
+              />
+            ) : (
+              renderCustomArtworkLeaf(titlePageBgUrl, 'Institutional Page')
+            )}
           </div>
           <div className="w-1/2 h-full relative">
-            <YearbookSectionOpener
-              students={students}
-              config={config}
-              onSelectStudent={(stu) => setSelectedStudent(stu)}
-            />
+            {rightSec ? (
+              <YearbookInstitutionalSheet
+                sectionKey={rightSec.key}
+                bgUrl={titlePageBgUrl}
+                data={rightSec.data}
+                tpl={customTpl}
+                config={config}
+                editable={false}
+              />
+            ) : (
+              renderCustomArtworkLeaf(titlePageBgUrl, 'Institutional Page')
+            )}
+          </div>
+        </>
+      );
+    }
+
+    // Opening Spread (Dedication + Section Opener)
+    if (safeSpreadIndex === introSpreadIndex) {
+      return (
+        <>
+          <div className="w-1/2 h-full relative">
+            {isCustomTheme ? (
+              renderCustomArtworkLeaf(customTpl.dedicationBgUrl, 'School Message')
+            ) : (
+              <YearbookInsideDedication config={config} students={students} />
+            )}
+          </div>
+          <div className="w-1/2 h-full relative">
+            {isCustomTheme ? (
+              renderCustomArtworkLeaf(customTpl.openerBgUrl, 'Section Opener')
+            ) : (
+              <YearbookSectionOpener
+                students={students}
+                config={config}
+                onSelectStudent={(stu) => setSelectedStudent(stu)}
+              />
+            )}
           </div>
         </>
       );
     }
 
     // Final Spread: Back Cover Spread
-    if (currentSpreadIndex === totalSpreads - 1) {
+    if (safeSpreadIndex === totalSpreads - 1) {
       const lastStudentPageNum = normalizedStudentPages;
       const interiorCount = Math.max(0, Math.ceil(students.length / density));
       return (
@@ -183,15 +269,18 @@ export default function YearbookFlipbook({
             {renderInteriorPage(lastStudentPageNum)}
           </div>
           <div className="w-1/2 h-full relative">
-            <YearbookHardcoverBack config={config} students={students} studentCount={students.length} pageCount={interiorCount} />
+            {isCustomTheme ? (
+              renderCustomArtworkLeaf(customTpl.backCoverBgUrl, 'Back Cover')
+            ) : (
+              <YearbookHardcoverBack config={config} students={students} studentCount={students.length} pageCount={interiorCount} />
+            )}
           </div>
         </>
       );
     }
 
     // Intermediate Spreads: Student Portrait Pages
-    // currentSpreadIndex is between 2 and (totalSpreads - 2)
-    const relativeSpread = currentSpreadIndex - 2;
+    const relativeSpread = safeSpreadIndex - (introSpreadIndex + 1);
     const leftPageNum = relativeSpread * 2 + 1;
     const rightPageNum = leftPageNum + 1;
 
@@ -209,10 +298,17 @@ export default function YearbookFlipbook({
 
   // Label for current spread
   const getSpreadLabel = () => {
-    if (currentSpreadIndex === 0) return 'Cover';
-    if (currentSpreadIndex === 1) return 'Message & Directory';
-    if (currentSpreadIndex === totalSpreads - 1) return 'Closing page';
-    const rel = currentSpreadIndex - 2;
+    const introSpreadIndex = 1 + institutionalSpreadsCount;
+    if (safeSpreadIndex === 0) return 'Cover';
+    if (safeSpreadIndex >= 1 && safeSpreadIndex <= institutionalSpreadsCount) {
+      const idx = (safeSpreadIndex - 1) * 2;
+      const leftLabel = activeInstitutionalSections[idx]?.shortLabel || 'Title Page';
+      const rightLabel = activeInstitutionalSections[idx + 1]?.shortLabel;
+      return rightLabel ? `${leftLabel} & ${rightLabel}` : leftLabel;
+    }
+    if (safeSpreadIndex === introSpreadIndex) return 'Message & Directory';
+    if (safeSpreadIndex === totalSpreads - 1) return 'Closing page';
+    const rel = safeSpreadIndex - (introSpreadIndex + 1);
     return `Student pages ${rel * 2 + 1}–${rel * 2 + 2}`;
   };
 
@@ -263,7 +359,7 @@ export default function YearbookFlipbook({
           <button
             type="button"
             onClick={goToPrevSpread}
-            disabled={currentSpreadIndex === 0}
+            disabled={safeSpreadIndex === 0}
             className="p-2 rounded-xl border border-neutral-200 hover:bg-neutral-100 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
             title="Previous Page (Left Arrow)"
           >
@@ -272,7 +368,7 @@ export default function YearbookFlipbook({
 
           <div className="flex flex-col">
             <span className="text-xs font-bold text-neutral-800 font-mono">
-              Spread {currentSpreadIndex + 1} of {totalSpreads}
+              Spread {safeSpreadIndex + 1} of {totalSpreads}
             </span>
             <span className="text-xs text-neutral-500 font-sans hidden sm:inline">
               {getSpreadLabel()}
@@ -282,7 +378,7 @@ export default function YearbookFlipbook({
           <button
             type="button"
             onClick={goToNextSpread}
-            disabled={currentSpreadIndex >= totalSpreads - 1}
+            disabled={safeSpreadIndex >= totalSpreads - 1}
             className="p-2 rounded-xl border border-neutral-200 hover:bg-neutral-100 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
             title="Next Page (Right Arrow)"
           >
@@ -301,7 +397,7 @@ export default function YearbookFlipbook({
                 setCurrentSpreadIndex(idx);
               }}
               className={`px-2.5 py-1 rounded-lg text-xs font-bold font-mono transition-all cursor-pointer shrink-0 ${
-                currentSpreadIndex === idx
+                safeSpreadIndex === idx
                   ? 'bg-neutral-900 text-amber-300 shadow-xs ring-1 ring-amber-400/40'
                   : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
               }`}

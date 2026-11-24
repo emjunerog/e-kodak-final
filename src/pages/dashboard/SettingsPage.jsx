@@ -345,7 +345,7 @@ export default function SettingsPage() {
       iconColor:    'text-red-500',
       iconBg:       'bg-red-50',
       onConfirm:    async () => {
-        await signOut();
+        await signOut({ global: true });
         navigate('/login');
       },
     });

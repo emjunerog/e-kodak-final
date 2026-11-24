@@ -39,17 +39,18 @@ export default function CompletenessAuditDrawer({
 }) {
   if (!isOpen) return null;
 
-  const { issues = [], warnings = [], passed, warningsCount = 0 } = preflight;
+  const safeStudents = Array.isArray(students) ? students : [];
+  const { passed, warningsCount = 0 } = preflight;
 
-  const missingPhotos = students.filter((s) => !s.photoUrl);
-  const missingQuotes = students.filter((s) => !s.motto || s.motto.trim() === '');
-  const missingDegree = students.filter((s) => !s.degree && !s.credentials);
-  const invalidRecords = students.filter((s) => !(s.validation || validateStudentRecord(s)).valid);
-  const duplicates = detectDuplicateRecords(students);
+  const missingPhotos = safeStudents.filter((s) => !s.photoUrl);
+  const missingQuotes = safeStudents.filter((s) => !s.motto || s.motto.trim() === '');
+  const missingDegree = safeStudents.filter((s) => !s.degree && !s.credentials);
+  const invalidRecords = safeStudents.filter((s) => !(s.validation || validateStudentRecord(s)).valid);
+  const duplicates = detectDuplicateRecords(safeStudents);
 
   // Overall readiness score
-  const totalWeight = students.length * 3 || 1;
-  const verifiedCount = (students.length - missingPhotos.length) * 1.5 + (students.length - missingQuotes.length) * 0.75 + (students.length - missingDegree.length) * 0.75;
+  const totalWeight = safeStudents.length * 3 || 1;
+  const verifiedCount = (safeStudents.length - missingPhotos.length) * 1.5 + (safeStudents.length - missingQuotes.length) * 0.75 + (safeStudents.length - missingDegree.length) * 0.75;
   const readinessPercentage = Math.min(100, Math.round((verifiedCount / totalWeight) * 100));
 
   return (

@@ -161,6 +161,8 @@ function RecoveryRedirectGuard() {
 
 export default function App() {
   const [mountAssistant, setMountAssistant] = useState(false);
+  const location = useLocation();
+  const isYearbookStudio = location.pathname.startsWith('/admin/yearbook');
 
   // Defer mounting the floating AI assistant chunk until the main thread is idle
   useEffect(() => {
@@ -177,7 +179,7 @@ export default function App() {
     <SiteConfigProvider>
       <ScrollToTop />
       <RecoveryRedirectGuard />
-      {mountAssistant && (
+      {mountAssistant && !isYearbookStudio && (
         <Suspense fallback={null}>
           <AIAssistant />
         </Suspense>

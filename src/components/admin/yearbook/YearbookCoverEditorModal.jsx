@@ -13,7 +13,8 @@ import {
   COVER_COLOR_OPTIONS,
   COVER_ART_OPTIONS,
 } from './YearbookCover';
-import { detectCampuses } from '../../../services/yearbookService';
+import { OFFICIAL_SCHOOL_LOGOS } from '../../booking/SchoolLogo';
+import { detectCampuses, STUDIO_BACKGROUND_RESOURCES } from '../../../services/yearbookService';
 
 /**
  * YearbookCoverEditorModal — edit the front and back covers.
@@ -164,19 +165,39 @@ export default function YearbookCoverEditorModal({
                 </select>
               ), 'Gold line art drawn over the cover.')}
               {field('Cover Background Photo (optional)', (
-                <div className="flex items-center gap-2">
-                  <label className="px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors">
-                    <Upload size={14} />
-                    <span>Upload Photo</span>
-                    <input type="file" accept="image/*" onChange={handleBgUpload} className="hidden" />
-                  </label>
-                  {form.coverBgUrl && (
-                    <button type="button" onClick={() => set('coverBgUrl', '')} className="text-xs text-rose-600 hover:text-rose-700 underline cursor-pointer">
-                      Remove
-                    </button>
-                  )}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <label className="px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors">
+                      <Upload size={14} />
+                      <span>Upload Photo</span>
+                      <input type="file" accept="image/*" onChange={handleBgUpload} className="hidden" />
+                    </label>
+                    {form.coverBgUrl && (
+                      <button type="button" onClick={() => set('coverBgUrl', '')} className="text-xs text-rose-600 hover:text-rose-700 underline cursor-pointer">
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {STUDIO_BACKGROUND_RESOURCES.slice(0, 4).map((res) => (
+                      <button
+                        key={res.id}
+                        type="button"
+                        onClick={() => set('coverBgUrl', res.url)}
+                        title={`Use ${res.label}`}
+                        className={`h-11 rounded-lg overflow-hidden border transition-all cursor-pointer relative group ${
+                          form.coverBgUrl === res.url ? 'border-amber-500 ring-2 ring-amber-400/50' : 'border-neutral-200 hover:border-amber-400'
+                        }`}
+                      >
+                        <img src={res.url} alt={res.label} className="w-full h-full object-cover" />
+                        <span className="absolute inset-x-0 bottom-0 bg-neutral-950/75 text-white text-[9px] truncate px-1 py-0.5">
+                          {res.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              ), 'Blended under the theme color with a readable shade.')}
+              ), 'Upload your own Canva cover or pick an E-Kodak studio portrait backdrop.')}
               {field(`Background Shade (${form.coverBgShade ?? 72}%)`, (
                 <input
                   type="range"
@@ -187,20 +208,49 @@ export default function YearbookCoverEditorModal({
                   className="w-full accent-amber-500 cursor-pointer"
                 />
               ), 'Higher = deeper theme color over the photo.')}
-              {field('School Logo (optional)', (
-                <div className="flex items-center gap-2">
-                  <label className="px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors">
-                    <Upload size={14} />
-                    <span>Upload Logo</span>
-                    <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-                  </label>
-                  {form.coverLogoUrl && (
-                    <button type="button" onClick={() => set('coverLogoUrl', '')} className="text-xs text-rose-600 hover:text-rose-700 underline cursor-pointer">
-                      Remove
-                    </button>
-                  )}
+              {field('School Seal / Crest (optional)', (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors">
+                      <Upload size={14} />
+                      <span>Upload Seal</span>
+                      <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                    </label>
+                    {form.coverLogoUrl && (
+                      <button type="button" onClick={() => set('coverLogoUrl', '')} className="text-xs text-rose-600 hover:text-rose-700 underline cursor-pointer">
+                        Reset
+                      </button>
+                    )}
+                    <label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-neutral-600 cursor-pointer ml-auto">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.hideCoverLogo)}
+                        onChange={(e) => set('hideCoverLogo', e.target.checked)}
+                        className="rounded accent-amber-600 cursor-pointer"
+                      />
+                      <span>Hide Seal</span>
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-5 gap-1.5 p-2 rounded-xl bg-neutral-50 border border-neutral-200/80 max-h-28 overflow-y-auto">
+                    {Object.entries(OFFICIAL_SCHOOL_LOGOS).map(([code, logo]) => (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => setDraft({ ...form, coverLogoUrl: logo.src, hideCoverLogo: false })}
+                        title={logo.label}
+                        className={`p-1 rounded-lg border bg-white flex flex-col items-center gap-0.5 cursor-pointer transition-all ${
+                          form.coverLogoUrl === logo.src
+                            ? 'border-amber-500 ring-2 ring-amber-400/40'
+                            : 'border-neutral-200 hover:border-amber-400'
+                        }`}
+                      >
+                        <img src={logo.src} alt={logo.short} className="w-6 h-6 object-contain" />
+                        <span className="text-[9px] font-mono font-bold text-neutral-700 uppercase">{logo.short}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              ))}
+              ), 'Auto-matches Cebu schools (CTU, USC, UC, CIT-U, CNU, UP, USJ-R, SWU, CDU, Velez) or pick one manually.')}
               {field('Photo Credit (optional)', (
                 <input type="text" value={form.curatorName || ''} onChange={(e) => set('curatorName', e.target.value)} placeholder="Leave blank to omit" className={inputCls} />
               ))}

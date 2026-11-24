@@ -176,7 +176,14 @@ export default function YearbookExportModal({
 }
 
 function currentThemeLabel(config) {
-  const map = { classic: 'Classic', editorial: 'Editorial', minimalist: 'Minimalist', scrapbook: 'Scrapbook', chalkboard: 'Chalkboard' };
+  const map = {
+    classic: 'Classic',
+    editorial: 'Editorial',
+    minimalist: 'Minimalist',
+    scrapbook: 'Scrapbook',
+    chalkboard: 'Chalkboard',
+    custom: 'My Design (Custom Template)',
+  };
   return map[config.templateId] || 'Classic';
 }
 

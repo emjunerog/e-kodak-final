@@ -13,6 +13,7 @@ import { isSupabaseConfigured } from "../../lib/supabase";
 import OtpCodeInput from "../../components/auth/OtpCodeInput";
 import TurnstileWidget from "../../components/common/TurnstileWidget";
 import { isTurnstileConfigured } from "../../lib/turnstile";
+import { saveBrowserPasswordCredential } from "../../lib/credentials";
 
 // Google "G" SVG icon
 function GoogleIcon({ size = 19 }) {
@@ -252,6 +253,11 @@ export default function Register() {
     try {
       const cleanEmail = email.trim().toLowerCase();
       await signUp(cleanEmail, password, firstName, lastName, role, captchaToken);
+      saveBrowserPasswordCredential({
+        email: cleanEmail,
+        password,
+        name: `${firstName} ${lastName}`.trim(),
+      });
       setCode("");
       setResendStatus("");
       setResendCooldown(60);
@@ -272,7 +278,13 @@ export default function Register() {
     if (!code || code.length !== 6) { setError("Please enter the 6-digit code."); return; }
     setIsSubmitting(true);
     try {
-      await verifyEmailCode(email.trim().toLowerCase(), code, "signup");
+      const cleanEmail = email.trim().toLowerCase();
+      await verifyEmailCode(cleanEmail, code, "signup");
+      saveBrowserPasswordCredential({
+        email: cleanEmail,
+        password,
+        name: `${firstName} ${lastName}`.trim(),
+      });
       await signOut(); // Force re-login so session is clean
       navigate("/login", { replace: true, state: { verified: true } });
     } catch (err) {
@@ -662,7 +674,7 @@ export default function Register() {
                   <div className={`flex-1 h-px ${isDark ? 'bg-neutral-800' : 'bg-neutral-200'}`} />
                 </div>
 
-                <form onSubmit={handleRegisterSubmit} className="space-y-4">
+                <form onSubmit={handleRegisterSubmit} method="post" autoComplete="on" className="space-y-4">
                   {/* Name row */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -679,10 +691,12 @@ export default function Register() {
                         </div>
                         <input
                           id="firstName"
+                          name="given-name"
                           type="text"
                           value={firstName}
                           onChange={(e) => setFirstName(e.target.value)}
                           required
+                          autoComplete="given-name"
                           disabled={isSubmitting}
                           placeholder="Juan"
                           className={`w-full pl-10 pr-3 py-2.5 rounded-xl outline-none font-body text-sm font-medium transition-all duration-200 disabled:opacity-60 border ${isDark
@@ -702,10 +716,12 @@ export default function Register() {
                       </label>
                       <input
                         id="lastName"
+                        name="family-name"
                         type="text"
                         value={lastName}
                         onChange={(e) => setLastName(e.target.value)}
                         required
+                        autoComplete="family-name"
                         disabled={isSubmitting}
                         placeholder="Dela Cruz"
                         className={`w-full px-3.5 py-2.5 rounded-xl outline-none font-body text-sm font-medium transition-all duration-200 disabled:opacity-60 border ${isDark
@@ -731,11 +747,15 @@ export default function Register() {
                       </div>
                       <input
                         id="reg-email"
+                        name="email"
                         type="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
-                        autoComplete="email"
+                        autoComplete="username"
+                        autoCapitalize="none"
+                        spellCheck="false"
+                        inputMode="email"
                         disabled={isSubmitting}
                         placeholder="you@example.com"
                         className={`w-full pl-10 pr-4 py-2.5 rounded-xl outline-none font-body text-sm font-medium transition-all duration-200 disabled:opacity-60 border ${isDark
@@ -761,6 +781,7 @@ export default function Register() {
                       </div>
                       <input
                         id="reg-password"
+                        name="password"
                         type={showPwd ? "text" : "password"}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
@@ -801,6 +822,7 @@ export default function Register() {
                       </div>
                       <input
                         id="confirmPwd"
+                        name="confirm-password"
                         type={showConfirm ? "text" : "password"}
                         value={confirmPwd}
                         onChange={(e) => setConfirmPwd(e.target.value)}

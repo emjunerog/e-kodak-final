@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Loader2, Camera, AlertCircle, ArrowLeft } from "lucide-react";
-import { supabase } from "../../lib/supabase";
+import { supabase, persistTabRoleSnapshot } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 
 export default function AuthCallback() {
@@ -112,13 +112,21 @@ export default function AuthCallback() {
           .eq("id", userId)
           .maybeSingle();
 
-        if (profileData) {
-          try {
-            sessionStorage.setItem("ekodak_user_profile", JSON.stringify(profileData));
-          } catch {}
-        }
+        const role =
+          profileData?.role ||
+          session.user?.app_metadata?.role ||
+          session.user?.user_metadata?.role ||
+          "customer";
 
-        const role = profileData?.role || session.user?.user_metadata?.role || "customer";
+        if (profileData) {
+          persistTabRoleSnapshot(profileData);
+        } else {
+          persistTabRoleSnapshot({
+            id: userId,
+            email: session.user?.email || null,
+            role,
+          });
+        }
 
         if (role === "admin") navigate("/admin", { replace: true });
         else if (role === "photographer") navigate("/photographer", { replace: true });

@@ -607,6 +607,76 @@ const SERVICE_COVER_MAP = {
   "senior-high-packages": "/images/brochure/grad/filipiniana-portrait.jpg",
 };
 
+/**
+ * Normalizes portrait scale, headroom, and eye-level alignment across graduation set cards
+ * so full/half-body portraits (Set B) and close-up portraits (Set C) appear visually balanced.
+ */
+function getBalancedSetPortraitProps(imgSrc, isHovered = false) {
+  const src = String(imgSrc || "").toLowerCase();
+
+  // Set A (Senior High) — Toga cap pose: lift slightly to trim excess dark space above cap & align eyes
+  if (src.includes("toga-cap-pose")) {
+    return {
+      className: "absolute inset-0 w-full h-full object-cover object-top transition-transform duration-700 ease-out",
+      style: {
+        transformOrigin: "50% 26%",
+        transform: isHovered ? "translateY(-5.5%) scale(1.15)" : "translateY(-5.5%) scale(1.10)",
+      },
+    };
+  }
+
+  // Set B (Senior High) — Toga formal: zoom in from waist-up framing so head/shoulder scale matches Set A/C/D
+  if (src.includes("toga-formal")) {
+    return {
+      className: "absolute inset-0 w-full h-full object-cover object-top transition-transform duration-700 ease-out",
+      style: {
+        transformOrigin: "50% 24%",
+        transform: isHovered ? "translateY(8%) scale(1.42)" : "translateY(8%) scale(1.36)",
+      },
+    };
+  }
+
+  // Set C (Senior High) — Barong close-up: reduce vertical fill to 81% so head size & headroom match Set A/B/D
+  if (src.includes("barong-portrait")) {
+    return {
+      className: "absolute inset-x-0 top-[7.5%] w-full h-[81%] object-cover object-top transition-transform duration-700 ease-out",
+      style: {
+        transformOrigin: "50% 25%",
+        transform: isHovered ? "scale(1.05)" : "scale(1.0)",
+      },
+    };
+  }
+
+  // Set D (Senior High) — Filipiniana portrait: lift slightly so eye level aligns horizontally with Set A/B/C
+  if (src.includes("filipiniana-portrait")) {
+    return {
+      className: "absolute inset-0 w-full h-full object-cover object-top transition-transform duration-700 ease-out",
+      style: {
+        transformOrigin: "50% 24%",
+        transform: isHovered ? "translateY(-6%) scale(1.13)" : "translateY(-6%) scale(1.08)",
+      },
+    };
+  }
+
+  // Set B (College) — Toga hood waist-up portrait: zoom in to match College Set A close-up scale
+  if (src.includes("toga-hood-portrait")) {
+    return {
+      className: "absolute inset-0 w-full h-full object-cover object-top transition-transform duration-700 ease-out",
+      style: {
+        transformOrigin: "50% 22%",
+        transform: isHovered ? "translateY(4%) scale(1.27)" : "translateY(4%) scale(1.22)",
+      },
+    };
+  }
+
+  return {
+    className: `absolute inset-0 w-full h-full object-cover object-top transition-transform duration-700 ease-out ${
+      isHovered ? "scale-105" : "scale-100"
+    }`,
+    style: undefined,
+  };
+}
+
 // ── Currency Parser ───────────────────────────────────────────────────────────
 function parsePrice(val) {
   if (typeof val === 'number') return val;
@@ -5909,7 +5979,7 @@ export default function BookingPage() {
 
                               {/* ── CARD SHELL (Same Size as Step 1 Package Cards) ── */}
                               <div
-                                className={`relative w-full h-[400px] sm:h-[430px] lg:h-[460px] rounded-3xl overflow-hidden flex flex-col justify-between shadow-xl transition-all duration-300 border-2 ${
+                                className={`relative w-full h-[400px] sm:h-[430px] lg:h-[460px] rounded-3xl overflow-hidden bg-[#18191d] flex flex-col justify-between shadow-xl transition-all duration-300 border-2 ${
                                   isTierSelected
                                     ? "border-gold ring-4 ring-gold/40 shadow-[0_0_40px_rgba(201,169,110,0.55),0_20px_45px_rgba(0,0,0,0.75)]"
                                     : isHovered
@@ -5917,16 +5987,20 @@ export default function BookingPage() {
                                     : "border-white/10 hover:border-gold/40"
                                 }`}
                               >
-                                <img
-                                  src={coverImg}
-                                  alt={tier.name}
-                                  className={`absolute inset-0 w-full h-full object-cover object-top transition-transform duration-700 ${
-                                    isHovered ? 'scale-105' : 'scale-100'
-                                  }`}
-                                />
+                                {(() => {
+                                  const portraitProps = getBalancedSetPortraitProps(coverImg, isHovered);
+                                  return (
+                                    <img
+                                      src={coverImg}
+                                      alt={tier.name}
+                                      className={portraitProps.className}
+                                      style={portraitProps.style}
+                                    />
+                                  );
+                                })()}
                                 <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-900/65 to-neutral-950/30 z-10 pointer-events-none" />
-                                <div className={`absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-transparent z-10 pointer-events-none transition-opacity duration-300 ${
-                                  isHovered ? 'opacity-90' : 'opacity-70'
+                                <div className={`absolute inset-0 bg-gradient-to-b from-black/75 via-black/20 to-transparent z-10 pointer-events-none transition-opacity duration-300 ${
+                                  isHovered ? 'opacity-90' : 'opacity-75'
                                 }`} />
 
                                 {/* TOP: Clean Unobstructed Imagery (No Roman Numerals, No Collection Top Text) */}

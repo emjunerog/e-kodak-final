@@ -5,6 +5,7 @@ import {
   buildAppRedirectUrl,
   persistTabRoleSnapshot,
   clearPersistentRoleSnapshot,
+  setAllowServerLogout,
 } from "../lib/supabase";
 
 /** Extract first_name, last_name, and avatar_url from Supabase auth metadata (supports Google OAuth). */
@@ -29,6 +30,7 @@ const AuthContext = createContext({});
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const loadedUserIdRef = useRef(null);
+  const lastProfileFetchAtRef = useRef(0);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [profile, setProfile] = useState(() => {
     try {
@@ -40,7 +42,12 @@ export const AuthProvider = ({ children }) => {
       return null;
     }
   });
+  const profileRef = useRef(profile);
   const [loading, setLoading] = useState(true); // true until first session check completes
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   const saveProfileCache = (data) => {
     try {
@@ -76,38 +83,30 @@ export const AuthProvider = ({ children }) => {
   const fetchProfile = useCallback(async (userId) => {
     if (!isSupabaseConfigured || !userId) return;
     try {
-      const [{ data, error }, { data: authData, error: authErr }] = await Promise.all([
+      const [{ data, error }, { data: sessionData }] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
-        supabase.auth.getUser(),
+        supabase.auth.getSession(),
       ]);
 
-      const authUser = authData?.user ?? null;
-
-      // If the auth user no longer exists (e.g., deleted by an admin), revoke access immediately
-      if (authErr || !authUser) {
-        loadedUserIdRef.current = null;
-        setProfile(null);
-        setUser(null);
-        saveProfileCache(null);
-        try {
-          sessionStorage.setItem(
-            'ekodak_account_removed_notice',
-            'Your account and associated bookings were deleted by studio administration. Please check your email for details.'
-          );
-        } catch {}
-        try {
-          await supabase.auth.signOut();
-        } catch {}
-        return;
-      }
+      const sessionUser = sessionData?.session?.user ?? null;
 
       if (error && error.code !== 'PGRST116') {
         console.error("Error fetching profile:", error.message);
+        // Never downgrade a user's role to 'customer' or overwrite persistent snapshots on transient DB errors.
+        try {
+          const rawCached = sessionStorage.getItem('ekodak_user_profile');
+          const parsedCached = rawCached ? JSON.parse(rawCached) : null;
+          if (parsedCached?.id === userId) {
+            setProfile((prev) => (prev?.id === userId ? prev : parsedCached));
+            persistTabRoleSnapshot(parsedCached);
+          }
+        } catch {}
+        lastProfileFetchAtRef.current = Date.now();
+        return;
       }
 
-      const metaProfile = extractAuthMetadataProfile(authUser);
-
       if (data) {
+        const metaProfile = extractAuthMetadataProfile(sessionUser);
         // Backfill missing Google OAuth name / avatar onto profile if still empty
         const needsPatch =
           (!data.first_name && metaProfile.first_name) ||
@@ -130,27 +129,79 @@ export const AuthProvider = ({ children }) => {
         setProfile((prev) => (JSON.stringify(prev) === JSON.stringify(mergedData) ? prev : mergedData));
         saveProfileCache(mergedData);
         loadedUserIdRef.current = userId;
-      } else {
-        // Never recreate a deleted customer profile if authUser is verified missing;
-        // authUser above is confirmed valid, so build from auth metadata.
-        const fallback = {
-          id: userId,
-          email: authUser.email || null,
-          first_name: metaProfile.first_name || '',
-          last_name: metaProfile.last_name || '',
-          avatar_url: metaProfile.avatar_url || null,
-          role: authUser?.user_metadata?.role || 'customer',
-          studio_specs: {},
-          created_at: new Date().toISOString(),
-        };
-
-        setProfile(fallback);
-        saveProfileCache(fallback);
-
-        try {
-          await supabase.from('profiles').insert([fallback]);
-        } catch {}
+        lastProfileFetchAtRef.current = Date.now();
+        return;
       }
+
+      // Only hit `/auth/v1/user` when the profile row is missing in `public.profiles`
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      const authUser = authData?.user ?? null;
+      const errMsg = String(authErr?.message || "").toLowerCase();
+      const isDeletedAccount =
+        !authUser &&
+        (authErr?.status === 404 ||
+          errMsg.includes("user from sub claim in jwt does not exist") ||
+          errMsg.includes("user not found"));
+
+      if (isDeletedAccount) {
+        loadedUserIdRef.current = null;
+        setProfile(null);
+        setUser(null);
+        saveProfileCache(null);
+        try {
+          sessionStorage.setItem(
+            'ekodak_account_removed_notice',
+            'Your account and associated bookings were deleted by studio administration. Please check your email for details.'
+          );
+        } catch {}
+        try {
+          setAllowServerLogout(false);
+          await supabase.auth.signOut({ scope: 'local' });
+        } catch {}
+        return;
+      }
+
+      if (authErr || !authUser) {
+        return;
+      }
+
+      const metaProfile = extractAuthMetadataProfile(authUser);
+
+      // Profile row does not exist yet for a verified auth user; resolve role from existing cache/metadata.
+      let cachedRole = null;
+      try {
+        const rawCached = sessionStorage.getItem('ekodak_user_profile');
+        const parsedCached = rawCached ? JSON.parse(rawCached) : null;
+        if (parsedCached?.id === userId && parsedCached?.role) {
+          cachedRole = parsedCached.role;
+        }
+      } catch {}
+
+      const resolvedRole =
+        cachedRole ||
+        authUser?.app_metadata?.role ||
+        authUser?.user_metadata?.role ||
+        'customer';
+
+      const fallback = {
+        id: userId,
+        email: authUser.email || null,
+        first_name: metaProfile.first_name || '',
+        last_name: metaProfile.last_name || '',
+        avatar_url: metaProfile.avatar_url || null,
+        role: resolvedRole,
+        studio_specs: {},
+        created_at: new Date().toISOString(),
+      };
+
+      setProfile(fallback);
+      saveProfileCache(fallback);
+      loadedUserIdRef.current = userId;
+      lastProfileFetchAtRef.current = Date.now();
+
+      try {
+        await supabase.from('profiles').upsert([fallback], { onConflict: 'id', ignoreDuplicates: true });
+      } catch {}
     } catch (err) {
       console.error("Unexpected error fetching profile:", err);
       try {
@@ -223,6 +274,8 @@ export const AuthProvider = ({ children }) => {
           const isAlreadyLoaded = loadedUserIdRef.current === currentUser.id;
           if (!isAlreadyLoaded || event === 'USER_UPDATED') {
             await fetchProfile(currentUser.id);
+          } else if (profileRef.current?.id === currentUser.id) {
+            persistTabRoleSnapshot(profileRef.current);
           }
           if (isMounted) setLoading(false);
         } else {
@@ -268,7 +321,8 @@ export const AuthProvider = ({ children }) => {
               );
             } catch {}
             try {
-              await supabase.auth.signOut();
+              setAllowServerLogout(false);
+              await supabase.auth.signOut({ scope: 'local' });
             } catch {}
             return;
           }
@@ -292,6 +346,7 @@ export const AuthProvider = ({ children }) => {
 
     const handleVisibilityRefresh = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        if (Date.now() - lastProfileFetchAtRef.current < 15000) return;
         fetchProfile(user.id);
       }
     };
@@ -362,7 +417,7 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
-  const signOut = async () => {
+  const signOut = async ({ global = false } = {}) => {
     const activeRole = profile?.role;
     loadedUserIdRef.current = null;
     setIsPasswordRecovery(false);
@@ -374,8 +429,10 @@ export const AuthProvider = ({ children }) => {
       sessionStorage.removeItem('ekodak_active_receipt_data');
       sessionStorage.removeItem('ekodak_pending_xendit_booking');
       sessionStorage.removeItem('ekodak_booking_form_draft');
-      localStorage.removeItem('ekodak_pending_xendit_booking');
-      localStorage.removeItem('ekodak_booking_form_draft');
+      if (global) {
+        localStorage.removeItem('ekodak_pending_xendit_booking');
+        localStorage.removeItem('ekodak_booking_form_draft');
+      }
       Object.keys(sessionStorage).forEach((k) => {
         if (k.startsWith('ekodak_processed_xendit_tx_') || k.startsWith('ekodak_fulfilled_ref_')) {
           sessionStorage.removeItem(k);
@@ -383,7 +440,8 @@ export const AuthProvider = ({ children }) => {
       });
     } catch {}
     if (!isSupabaseConfigured) return;
-    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    setAllowServerLogout(Boolean(global));
+    const { error } = await supabase.auth.signOut({ scope: global ? 'global' : 'local' });
     if (error) throw error;
   };
 

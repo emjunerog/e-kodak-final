@@ -8,7 +8,16 @@ import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useLocation, Navigate } from "react-router-dom";
 import { Camera, Mail, Lock, ArrowRight, ArrowLeft, Loader2, RefreshCw, AlertCircle, CheckCircle2, Eye, EyeOff, Sun, Moon, KeyRound } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
-import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import {
+  supabase,
+  isSupabaseConfigured,
+  persistTabRoleSnapshot,
+} from "../../lib/supabase";
+import {
+  saveBrowserPasswordCredential,
+  getRememberedCredential,
+  getRememberedEmails,
+} from "../../lib/credentials";
 import Toast from "../../components/ui/Toast";
 import OtpCodeInput from "../../components/auth/OtpCodeInput";
 import TurnstileWidget from "../../components/common/TurnstileWidget";
@@ -99,8 +108,17 @@ function playCameraShutterSound() {
 export default function Login() {
   const [step, setStep] = useState(1);
 
-  const [email, setEmail]         = useState("");
-  const [password, setPassword]   = useState("");
+  const initialRemembered = (() => {
+    if (typeof window !== "undefined" && window.location.search.includes("new_session=true")) {
+      return null;
+    }
+    return getRememberedCredential();
+  })();
+
+  const [email, setEmail]         = useState(() => initialRemembered?.email || "");
+  const [password, setPassword]   = useState(() => initialRemembered?.password || "");
+  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberedEmails, setRememberedEmails] = useState(() => getRememberedEmails());
   const [showPwd, setShowPwd]     = useState(false);
   const [code, setCode]           = useState("");
 
@@ -319,47 +337,28 @@ export default function Login() {
       return;
     }
 
-    let cleanEmail = email.trim().toLowerCase();
-    if (
-      cleanEmail === 'admin_ekodak@gmail.com' ||
-      cleanEmail === 'admin@ekodak.com' ||
-      cleanEmail === 'admin.ekodak@gmail.com' ||
-      cleanEmail === 'adminekodak@gmail.com'
-    ) {
-      cleanEmail = 'admine_kodak@gmail.com';
-    }
+    const cleanEmail = email.trim().toLowerCase();
 
-    const isStaffOrAdminEmail = 
-      cleanEmail === 'admine_kodak@gmail.com' ||
-      cleanEmail === 'photographerse_kodak@gmail.com';
+    const isStaffOrAdminEmail =
+      cleanEmail === 'markierepunte15@gmail.com' ||
+      cleanEmail === 'emjunieee@gmail.com';
 
     setIsSubmitting(true);
     try {
       const signInOptions = captchaToken ? { options: { captchaToken } } : {};
-      let { data, error: authErr } = await supabase.auth.signInWithPassword({ 
-        email: cleanEmail, 
+      let { data, error: authErr } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
         password,
         ...signInOptions,
       });
 
-      if (authErr) {
+      // Only retry whitespace-trimmed password when Turnstile is unconfigured (Turnstile tokens are single-use)
+      if (authErr && !captchaToken) {
         const cleanPassword = password.trim();
         if (cleanPassword !== password) {
           const retryRes = await supabase.auth.signInWithPassword({
             email: cleanEmail,
             password: cleanPassword,
-            ...signInOptions,
-          });
-          if (!retryRes.error) {
-            data = retryRes.data;
-            authErr = null;
-          }
-        }
-        if (authErr && isStaffOrAdminEmail && cleanPassword.toLowerCase() !== cleanPassword) {
-          const retryRes = await supabase.auth.signInWithPassword({
-            email: cleanEmail,
-            password: cleanPassword.toLowerCase(),
-            ...signInOptions,
           });
           if (!retryRes.error) {
             data = retryRes.data;
@@ -373,14 +372,31 @@ export default function Login() {
       const { data: profileData } = await supabase
         .from('profiles').select('*').eq('id', data.user.id).maybeSingle();
 
-      if (profileData) {
-        try {
-          sessionStorage.setItem('ekodak_user_profile', JSON.stringify(profileData));
-        } catch {}
-      }
+      const resolvedRole =
+        profileData?.role ||
+        data.user?.app_metadata?.role ||
+        data.user?.user_metadata?.role ||
+        'customer';
 
-      const role = profileData?.role || data.user?.user_metadata?.role || 'customer';
-      navigate(from || getDefaultRoute(role), { replace: true });
+      const resolvedProfile = profileData || {
+        id: data.user.id,
+        email: data.user.email || cleanEmail,
+        first_name: data.user?.user_metadata?.first_name || '',
+        last_name: data.user?.user_metadata?.last_name || '',
+        role: resolvedRole,
+      };
+      persistTabRoleSnapshot(resolvedProfile);
+
+      const fullName = `${resolvedProfile.first_name || ''} ${resolvedProfile.last_name || ''}`.trim();
+      saveBrowserPasswordCredential({
+        email: cleanEmail,
+        password,
+        name: fullName || cleanEmail,
+        remember: rememberMe,
+      });
+      setRememberedEmails(getRememberedEmails());
+
+      navigate(from || getDefaultRoute(resolvedRole), { replace: true });
     } catch (err) {
       const msg = err.message || "Failed to sign in.";
       const lowerMsg = msg.toLowerCase();
@@ -432,7 +448,10 @@ export default function Login() {
         }
       }
       const userId = authData?.user?.id;
-      let role = authData?.user?.user_metadata?.role || "customer";
+      let role =
+        authData?.user?.app_metadata?.role ||
+        authData?.user?.user_metadata?.role ||
+        "customer";
       if (userId) {
         const { data: profileData } = await supabase
           .from("profiles")
@@ -440,9 +459,7 @@ export default function Login() {
           .eq("id", userId)
           .maybeSingle();
         if (profileData) {
-          try {
-            sessionStorage.setItem("ekodak_user_profile", JSON.stringify(profileData));
-          } catch {}
+          persistTabRoleSnapshot(profileData);
           role = profileData.role || role;
         }
       }
@@ -535,7 +552,11 @@ export default function Login() {
       await updatePassword(newPassword);
 
       const userId = authData?.user?.id || user?.id;
-      let role = authData?.user?.user_metadata?.role || user?.user_metadata?.role || "customer";
+      let role =
+        authData?.user?.app_metadata?.role ||
+        authData?.user?.user_metadata?.role ||
+        user?.user_metadata?.role ||
+        "customer";
       if (userId) {
         const { data: profileData } = await supabase
           .from("profiles")
@@ -543,12 +564,12 @@ export default function Login() {
           .eq("id", userId)
           .maybeSingle();
         if (profileData) {
-          try {
-            sessionStorage.setItem("ekodak_user_profile", JSON.stringify(profileData));
-          } catch {}
+          persistTabRoleSnapshot(profileData);
           role = profileData.role || role;
         }
       }
+
+      saveBrowserPasswordCredential({ email: cleanEmail, password: newPassword });
 
       navigate(from || getDefaultRoute(role), { replace: true });
     } catch (err) {
@@ -994,7 +1015,7 @@ export default function Login() {
                   <div className={`flex-1 h-px ${isDark ? 'bg-neutral-800' : 'bg-neutral-200'}`} />
                 </div>
 
-                <form onSubmit={handleLoginSubmit} className="space-y-4">
+                <form onSubmit={handleLoginSubmit} method="post" autoComplete="on" className="space-y-4">
                   {/* Email Field */}
                   <div>
                     <label 
@@ -1013,8 +1034,16 @@ export default function Login() {
                         id="login-email"
                         name="email"
                         type="email"
+                        list="ekodak-remembered-emails"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        onChange={(e) => {
+                          const nextEmail = e.target.value;
+                          setEmail(nextEmail);
+                          const matched = getRememberedCredential(nextEmail);
+                          if (matched?.password) {
+                            setPassword(matched.password);
+                          }
+                        }}
                         required
                         autoComplete="username"
                         autoCapitalize="none"
@@ -1022,13 +1051,20 @@ export default function Login() {
                         inputMode="email"
                         enterKeyHint="next"
                         disabled={isSubmitting}
-                        placeholder="admine_kodak@gmail.com"
+                        placeholder="you@example.com"
                         className={`w-full pl-11 pr-4 py-3 min-h-[50px] rounded-xl outline-none font-body text-sm font-medium transition-all duration-200 disabled:opacity-60 border ${
                           isDark 
                             ? 'auth-input-dark bg-[#1a1c20] border-[#373b44] focus:border-gold focus:ring-1 focus:ring-gold text-white placeholder:text-neutral-400' 
                             : 'auth-input-light bg-white border-neutral-300 focus:border-gold focus:ring-1 focus:ring-gold text-neutral-900 placeholder:text-neutral-400 shadow-xs'
                         }`}
                       />
+                      {rememberedEmails.length > 0 && (
+                        <datalist id="ekodak-remembered-emails">
+                          {rememberedEmails.map((item) => (
+                            <option key={item} value={item} />
+                          ))}
+                        </datalist>
+                      )}
                     </div>
                   </div>
 
@@ -1083,6 +1119,18 @@ export default function Login() {
                         {showPwd ? <EyeOff size={17} strokeWidth={1.8} /> : <Eye size={17} strokeWidth={1.8} />}
                       </button>
                     </div>
+
+                    <label className="mt-2.5 inline-flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="h-4 w-4 rounded border-neutral-400 accent-[#c9a96e] cursor-pointer"
+                      />
+                      <span className={`text-xs font-body ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
+                        Remember password on this device
+                      </span>
+                    </label>
                   </div>
 
                   {/* Human Verification */}
@@ -1331,7 +1379,7 @@ export default function Login() {
             {/* ── STEP 4: FORGOT PASSWORD (CODE + NEW PASSWORD) ── */}
             {step === 4 && (
               <div className="animate-fade-in">
-                <form onSubmit={handleForgotComplete} className="space-y-4">
+                <form onSubmit={handleForgotComplete} method="post" autoComplete="on" className="space-y-4">
                   <input
                     type="email"
                     name="email"
@@ -1375,6 +1423,7 @@ export default function Login() {
                       </div>
                       <input
                         id="forgot-new-password"
+                        name="new-password"
                         type={showNewPwd ? "text" : "password"}
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
@@ -1445,6 +1494,7 @@ export default function Login() {
                       </div>
                       <input
                         id="forgot-confirm-password"
+                        name="confirm-password"
                         type={showConfirmNewPwd ? "text" : "password"}
                         value={confirmNewPassword}
                         onChange={(e) => setConfirmNewPassword(e.target.value)}

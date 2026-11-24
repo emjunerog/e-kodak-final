@@ -19,6 +19,22 @@ const TURNSTILE_SCRIPT_SRC =
 
 let scriptPromise = null;
 
+function formatTurnstileError(errorCode) {
+  const code = String(errorCode || "").trim();
+  if (code === "110200") {
+    const host =
+      typeof window !== "undefined" ? window.location.hostname : "this domain";
+    return `Domain "${host}" is not authorized in Cloudflare Turnstile Hostname Management (Error 110200).`;
+  }
+  if (code === "110100" || code === "400020") {
+    return `Invalid Turnstile Site Key configuration (Error ${code}).`;
+  }
+  if (code === "200500") {
+    return "Cloudflare Turnstile iframe could not load. Check network or browser blockers (Error 200500).";
+  }
+  return `Verification check could not complete${code ? ` (Error ${code})` : ""}. Retry below.`;
+}
+
 function loadTurnstileScript() {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("Window unavailable"));
@@ -121,10 +137,10 @@ export default function TurnstileWidget({
             setStatusText("Verification expired. Please confirm you are human again.");
             tokenCallbackRef.current?.("");
           },
-          "error-callback": () => {
+          "error-callback": (errorCode) => {
             if (cancelled) return;
             setStatus("error");
-            setStatusText("Verification check could not complete. Retry below.");
+            setStatusText(formatTurnstileError(errorCode));
             tokenCallbackRef.current?.("");
           },
         });

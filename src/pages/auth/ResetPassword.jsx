@@ -24,6 +24,7 @@ import { useAuth } from "../../context/AuthContext";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import TurnstileWidget from "../../components/common/TurnstileWidget";
 import { isTurnstileConfigured } from "../../lib/turnstile";
+import { saveBrowserPasswordCredential } from "../../lib/credentials";
 
 export default function ResetPassword() {
   const { user, profile, updatePassword, requestPasswordReset, clearPasswordRecovery } = useAuth();
@@ -156,6 +157,10 @@ export default function ResetPassword() {
     setIsSubmitting(true);
     try {
       await updatePassword(newPassword);
+      await updatePassword(newPassword);
+      if (user?.email) {
+        saveBrowserPasswordCredential({ email: user.email, password: newPassword });
+      }
       setSuccess(true);
 
       const role = profile?.role || user?.user_metadata?.role || "customer";
@@ -299,7 +304,7 @@ export default function ResetPassword() {
                 </div>
               )}
 
-              <form onSubmit={handleUpdateSubmit} className="space-y-4">
+              <form onSubmit={handleUpdateSubmit} method="post" autoComplete="on" className="space-y-4">
                 <input
                   type="email"
                   name="email"
@@ -325,6 +330,7 @@ export default function ResetPassword() {
                     </div>
                     <input
                       id="reset-new-password"
+                      name="new-password"
                       type={showPwd ? "text" : "password"}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
@@ -392,6 +398,7 @@ export default function ResetPassword() {
                     </div>
                     <input
                       id="reset-confirm-password"
+                      name="confirm-password"
                       type={showConfirm ? "text" : "password"}
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}

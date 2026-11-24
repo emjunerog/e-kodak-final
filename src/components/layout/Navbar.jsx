@@ -61,8 +61,16 @@ export default function Navbar() {
   // Pages without a dark hero need the glass bar from the very top
   const lightTop = pathname === "/privacy" || pathname === "/terms";
 
-  // Landing page displays "My Dashboard" ONLY for customer accounts
-  const isCustomer = user && (!profile || profile.role === 'customer');
+  // Resolve portal route & label strictly from verified profile role (wait for profile before rendering portal link)
+  const resolvedRole = profile?.role ? String(profile.role).toLowerCase() : null;
+  const portalLink =
+    user && resolvedRole
+      ? resolvedRole === "admin" || resolvedRole === "staff"
+        ? { to: "/admin", label: "Admin Portal" }
+        : resolvedRole === "photographer"
+        ? { to: "/photographer", label: "Studio Portal" }
+        : { to: "/dashboard", label: "My Dashboard" }
+      : null;
   const [scrolled,     setScrolled]     = useState(typeof window !== 'undefined' && window.scrollY > 60);
   const [menuOpen,     setMenuOpen]     = useState(false);
   const [navHidden,    setNavHidden]    = useState(false);
@@ -270,14 +278,14 @@ export default function Navbar() {
             initial="hidden"
             animate="show"
           >
-            {isCustomer ? (
-              /* Customer logged in: compact balanced studio pill matching nav item scale */
+            {portalLink ? (
+              /* Authenticated user: role-accurate portal pill */
               <Link
-                to="/dashboard"
+                to={portalLink.to}
                 className="inline-flex items-center gap-1.5 font-body text-xs lg:text-sm font-medium px-3.5 py-1.5 lg:px-4 lg:py-2 rounded-full bg-neutral-950/55 border border-white/15 text-white/95 backdrop-blur-md shadow-sm hover:border-gold/60 hover:bg-gold hover:text-primary transition-[background-color,color,border-color] duration-200 whitespace-nowrap group"
               >
                 <LayoutDashboard size={14} className="text-gold group-hover:text-primary transition-colors duration-200 shrink-0" />
-                My Dashboard
+                {portalLink.label}
               </Link>
             ) : (
               /* Guests & Administrative users: Login + Book a Session */
@@ -432,14 +440,14 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3, duration: 0.4 }}
               >
-                {isCustomer ? (
+                {portalLink ? (
                   <Link
-                    to="/dashboard"
+                    to={portalLink.to}
                     onClick={closeMenu}
                     className="btn-primary w-full text-center flex items-center justify-center gap-2"
                   >
                     <LayoutDashboard size={16} />
-                    My Dashboard
+                    {portalLink.label}
                   </Link>
                 ) : (
                   <>

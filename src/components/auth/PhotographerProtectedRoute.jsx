@@ -16,6 +16,15 @@ export default function PhotographerProtectedRoute({ children }) {
   const { user, profile, loading } = useAuth();
   const location = useLocation();
 
+  const cachedRole = (() => {
+    try {
+      const raw = sessionStorage.getItem('ekodak_user_profile');
+      return raw ? JSON.parse(raw)?.role : null;
+    } catch {
+      return null;
+    }
+  })();
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-neutral-50">
@@ -29,6 +38,13 @@ export default function PhotographerProtectedRoute({ children }) {
   }
 
   if (!profile) {
+    if (cachedRole === 'photographer' || cachedRole === 'admin') {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-neutral-50">
+          <Loader2 className="animate-spin text-gold" size={32} />
+        </div>
+      );
+    }
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

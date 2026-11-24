@@ -6,7 +6,7 @@ import {
   ChevronRight,
   GraduationCap,
 } from 'lucide-react';
-import { detectCampuses, detectSections, detectSchools } from '../../../services/yearbookService';
+import { detectCampuses, detectSections, detectSchools, resolveSchoolCrest } from '../../../services/yearbookService';
 
 // School name for covers: explicit title → selected school →
 // most common school in the records. Never a hardcoded name.
@@ -226,12 +226,13 @@ CoverArt.propTypes = {
 export function YearbookHardcoverFront({ config = {}, students = [], onOpenBook }) {
   const themeKey = config.coverColor || 'midnight';
   const theme = resolveTheme(themeKey);
-  const logoUrl = (config.coverLogoUrl || '').trim();
-  const bgUrl = (config.coverBgUrl || '').trim();
+  const schoolName = coverSchoolName(students, config);
+  const resolvedCrest = config.hideCoverLogo ? null : resolveSchoolCrest(schoolName);
+  const logoUrl = config.hideCoverLogo ? '' : ((config.coverLogoUrl || '').trim() || resolvedCrest?.src || '');
+  const bgUrl = (config.coverBgUrl || config.customTemplate?.coverBgUrl || '').trim();
   const shade = Math.min(92, Math.max(30, Number(config.coverBgShade ?? 72)));
   const art = config.coverArt || 'sunburst';
   const placeLine = campusSectionLine(students, config);
-  const schoolName = coverSchoolName(students, config);
   const coverPhotos = (students || []).filter((s) => s.photoUrl).slice(0, 3);
 
   return (
@@ -384,9 +385,16 @@ export function YearbookInsideDedication({ config = {}, students = [] }) {
   const signerTitle = (config.principalTitle || '').trim();
   const placeLine = campusSectionLine(students, config);
   const schoolName = coverSchoolName(students, config);
+  const dedicationBg = (config.customTemplate?.dedicationBgUrl || '').trim();
 
   return (
     <div className="h-full w-full bg-[#fbf9f3] text-neutral-800 flex flex-col p-8 sm:p-12 font-serif select-none relative overflow-hidden">
+      {dedicationBg && (
+        <>
+          <img src={dedicationBg} alt="Dedication background" className="absolute inset-0 w-full h-full object-cover pointer-events-none" />
+          <div className="absolute inset-0 bg-[#fbf9f3]/80 pointer-events-none" />
+        </>
+      )}
       {/* Hairline frame */}
       <div className="absolute inset-4 border border-neutral-900/10 pointer-events-none" />
 
@@ -453,6 +461,7 @@ YearbookInsideDedication.propTypes = {
 export function YearbookHardcoverBack({ config = {}, students = [], studentCount = 0, pageCount = 0 }) {
   const theme = resolveTheme(config.coverColor || 'midnight');
   const art = config.coverArt || 'sunburst';
+  const backBg = (config.customTemplate?.backCoverBgUrl || config.coverBgUrl || '').trim();
   const backTitle = (config.backTitle || '').trim();
   const backMessage = (config.backMessage || '').trim();
   const backCredit = (config.backCredit || config.curatorName || '').trim();
@@ -464,6 +473,20 @@ export function YearbookHardcoverBack({ config = {}, students = [], studentCount
     <div
       className={`h-full w-full ${theme.bg} text-white flex flex-col p-8 sm:p-12 font-serif select-none relative overflow-hidden border-4 ${theme.border}`}
     >
+      {backBg && (
+        <>
+          <img
+            src={backBg}
+            alt="Back cover artwork"
+            className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          />
+          <div
+            className={`absolute inset-0 ${theme.bg} pointer-events-none`}
+            style={{ opacity: Math.min(0.95, Math.max(0.25, (config.coverBgShade ?? 72) / 100)) }}
+          />
+        </>
+      )}
+
       {/* Soft glow */}
       <div
         className="absolute inset-0 pointer-events-none"
